@@ -3,23 +3,25 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
+from pathlib import Path
 from typing import Any, Dict
 
 
 class JsonlLogger:
     """Append-only JSONL logger with hash chaining."""
 
-    def __init__(self, path: str = "kernel.log") -> None:
-        self.path = path
+    def __init__(self, path: str | Path = "kernel.log") -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         self.prev_hash = "0" * 64
-        if os.path.exists(path):
+        if self.path.exists():
             try:
-                with open(path, "r", encoding="utf8") as fh:
+                with self.path.open("r", encoding="utf8") as fh:
+                    last_line = None
                     for line in fh:
-                        pass
-                if line:
-                    data = json.loads(line)
+                        last_line = line
+                if last_line:
+                    data = json.loads(last_line)
                     self.prev_hash = data.get("hash", self.prev_hash)
             except Exception:
                 # Corrupt log; continue chain from zero hash
@@ -33,7 +35,7 @@ class JsonlLogger:
             "prev": self.prev_hash,
             "hash": current_hash,
         }
-        with open(self.path, "a", encoding="utf8") as fh:
+        with self.path.open("a", encoding="utf8") as fh:
             fh.write(json.dumps(entry) + "\n")
         self.prev_hash = current_hash
 
