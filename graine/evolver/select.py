@@ -5,7 +5,9 @@ from __future__ import annotations
 The selection process accepts at most a single patch per cycle. All other
 candidates are rejected and the reasons for acceptance or rejection are
 logged. A conservative elitism strategy ensures that a previous elite patch
-is retained unless dominated by a newcomer.
+is retained unless dominated by a newcomer. Candidates that do not satisfy
+all required thresholds (tests, performance, quality and stability) are
+rejected before the multi-objective selection is performed.
 """
 
 from dataclasses import dataclass
@@ -19,14 +21,25 @@ logger = logging.getLogger(__name__)
 
 @dataclass(eq=False)
 class Candidate:
-    """Container for a patch and its objective values."""
+    """Container for a patch and its objective values.
+
+    Each candidate also records whether it satisfies a number of thresholds
+    (typically ``tests``, ``perf``, ``quality`` and ``stability``). Candidates
+    failing any threshold are ignored by :func:`select`.
+    """
 
     patch: Patch
     objectives: Dict[str, float]
+    thresholds: Dict[str, bool] | None = None
     name: str = ""
 
     def __str__(self) -> str:  # pragma: no cover - trivial
         return self.name or repr(self.patch)
+
+    def meets_thresholds(self) -> bool:
+        """Return ``True`` if all threshold checks are satisfied."""
+
+        return all(self.thresholds.values()) if self.thresholds else True
 
 
 def dominates(a: Candidate, b: Candidate) -> bool:
@@ -98,30 +111,49 @@ def crowding_distance(front: List[Candidate]) -> Dict[Candidate, float]:
 def select(candidates: List[Candidate], prev_best: Candidate | None = None) -> Candidate | None:
     """Select at most one candidate using NSGA-II with conservative elitism."""
 
-    population = list(candidates)
-    if prev_best is not None:
-        population.append(prev_best)
+    # First discard candidates that fail any of the required thresholds. These
+    # are never eligible for selection.
+    feasible: List[Candidate] = []
+    for cand in candidates:
+        if cand.meets_thresholds():
+            feasible.append(cand)
+        else:
+            logger.info("Rejected patch %s: failed thresholds", cand)
 
-    if not population:
+    elite = prev_best if prev_best and prev_best.meets_thresholds() else None
+    if prev_best and elite is None:
+        logger.info("Rejected patch %s: failed thresholds", prev_best)
+
+    if not feasible and elite is None:
         return None
 
+    # Conservative elitism: retain previous best if no feasible candidate
+    # dominates it.
+    if elite and not any(dominates(c, elite) for c in feasible):
+        logger.info("Accepted patch %s", elite)
+        for cand in feasible:
+            reason = "dominated by accepted patch" if dominates(elite, cand) else "crowded out"
+            logger.info("Rejected patch %s: %s", cand, reason)
+        return elite
+
+    population = feasible + ([elite] if elite else [])
     fronts = fast_non_dominated_sort(population)
     first_front = fronts[0]
     cd = crowding_distance(first_front)
-    first_front.sort(key=lambda c: (cd[c], c is prev_best), reverse=True)
+    first_front.sort(key=lambda c: cd[c], reverse=True)
     chosen = first_front[0]
 
     # Logging and enforcing single acceptance
-    for cand in candidates:
+    for cand in feasible:
         if cand is chosen:
             logger.info("Accepted patch %s", cand)
         else:
             reason = "dominated by accepted patch" if dominates(chosen, cand) else "crowded out"
             logger.info("Rejected patch %s: %s", cand, reason)
-    if prev_best is not None:
-        if chosen is prev_best:
-            logger.info("Accepted patch %s: retained as elite", prev_best)
+    if elite is not None:
+        if chosen is elite:
+            logger.info("Accepted patch %s: retained as elite", elite)
         else:
-            reason = "dominated by accepted patch" if dominates(chosen, prev_best) else "crowded out"
-            logger.info("Rejected patch %s: %s", prev_best, reason)
-    return chosen if chosen is not prev_best else prev_best
+            reason = "dominated by accepted patch" if dominates(chosen, elite) else "crowded out"
+            logger.info("Rejected patch %s: %s", elite, reason)
+    return chosen
