@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-import yaml
-
 from .interpreter import ALLOWED_OPS
 
 class VerificationError(Exception):
@@ -13,8 +11,53 @@ class VerificationError(Exception):
 
 
 def load_zones(path: str = "configs/zones.yaml") -> Dict[str, Any]:
-    with open(f"graine/{path}", "r", encoding="utf8") as fh:
-        return yaml.safe_load(fh)
+    """Load zone configuration without external YAML dependencies."""
+
+    file_path = f"graine/{path}"
+    zones: List[Dict[str, Any]] = []
+    zone: Dict[str, Any] | None = None
+    in_ops = False
+
+    with open(file_path, "r", encoding="utf8") as fh:
+        for raw in fh:
+            line = raw.rstrip()
+            if line.startswith("targets:"):
+                continue
+            if line.startswith("  -"):
+                if zone:
+                    zones.append(zone)
+                zone = {}
+                in_ops = False
+                after = line[3:].strip()
+                if after:
+                    key, value = after.split(":", 1)
+                    zone[key.strip()] = value.strip()
+                continue
+            if line.startswith("    operators:") and zone is not None:
+                zone["operators"] = []
+                in_ops = True
+                continue
+            if in_ops and line.strip().startswith("-") and zone is not None:
+                zone.setdefault("operators", []).append(line.strip().lstrip("-").strip())
+                continue
+            if line.strip() and zone is not None:
+                key, value = line.strip().split(":", 1)
+                value = value.strip()
+                if value == "true":
+                    parsed: Any = True
+                elif value == "false":
+                    parsed = False
+                else:
+                    try:
+                        parsed = int(value)
+                    except ValueError:
+                        parsed = value
+                zone[key] = parsed
+
+    if zone:
+        zones.append(zone)
+
+    return {"targets": zones}
 
 
 def verify_patch(patch: Dict[str, Any]) -> None:
