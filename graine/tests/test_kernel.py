@@ -1,6 +1,31 @@
 import pytest
 
 from graine.kernel import run_variant, VerificationError
+from graine.kernel import verifier
+
+
+def test_load_objectives_parses_config():
+    obj = verifier.load_objectives()
+    assert obj["perf"]["repetitions"] == 21
+
+
+def test_load_objectives_invalid(tmp_path):
+    bad = tmp_path / "objectives.yaml"
+    bad.write_text("perf:\n  target_improvement_pct: 5\n")
+    with pytest.raises(VerificationError):
+        verifier.load_objectives(str(bad))
+
+
+def test_load_operators_parses_config():
+    ops = verifier.load_operators()
+    assert "CONST_TUNE" in ops
+
+
+def test_load_operators_invalid(tmp_path):
+    bad = tmp_path / "operators.yaml"
+    bad.write_text("CONST_TUNE:\n  something: 1\n")
+    with pytest.raises(VerificationError):
+        verifier.load_operators(str(bad))
 
 
 def test_verify_accepts_valid_patch():
