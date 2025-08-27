@@ -4,8 +4,15 @@ from graine.target.src.algorithms.reduce_sum import reduce_sum
 
 # Helper benchmark to keep tests fast
 
-def _fast_benchmark(func, data, runs=21, bootstrap_samples=1000):
-    return {"median": 0.0, "ic95": (0.0, 0.0)}
+def _fast_benchmark(
+    func,
+    data,
+    runs=21,
+    warmups=0,
+    bootstrap_samples=1000,
+    cpu=None,
+):
+    return {"median": 0.0, "iqr": 0.0, "ic95": (0.0, 0.0)}
 
 
 # Unit and integration tests for evaluate()

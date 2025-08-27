@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import gc
+import os
 import random
 import statistics
 import time
@@ -12,24 +14,63 @@ def benchmark(
     func: Callable[[Iterable[int]], int],
     data: Iterable[int],
     runs: int = 21,
+    warmups: int = 5,
     bootstrap_samples: int = 1000,
+    cpu: int | None = 0,
 ) -> Dict[str, Tuple[float, float]]:
-    """Return median runtime and 95% confidence interval.
+    """Return benchmark statistics for ``func``.
+
+    The function performs a configurable number of warm-up runs before
+    measuring ``runs`` executions. During measurement the process is pinned to
+    a single logical CPU if possible to reduce variance. The median runtime,
+    interquartile range (IQR) and a 95% confidence interval for the median are
+    reported.
 
     Args:
         func: Function to benchmark.
         data: Input iterable passed to ``func`` each run.
         runs: Number of timing runs to execute.
+        warmups: Warm-up iterations executed before timing.
         bootstrap_samples: Number of bootstrap resamples for the CI.
+        cpu: Logical CPU to pin to. ``None`` disables pinning.
     """
-    timings = []
+
     payload = list(data)
-    for _ in range(runs):
-        start = time.perf_counter()
-        func(payload)
-        timings.append(time.perf_counter() - start)
+
+    # Optionally pin to a specific CPU to limit scheduling variance.
+    original_affinity = None
+    if cpu is not None:
+        try:
+            original_affinity = os.sched_getaffinity(0)
+            os.sched_setaffinity(0, {cpu})
+        except (AttributeError, PermissionError, OSError):
+            original_affinity = None
+
+    try:
+        # Warm-up runs to prime caches and JITs if any.
+        for _ in range(warmups):
+            func(payload)
+
+        timings = []
+        gc.collect()
+        gc.disable()
+        for _ in range(runs):
+            start = time.perf_counter()
+            func(payload)
+            timings.append(time.perf_counter() - start)
+        gc.enable()
+    finally:
+        if original_affinity is not None:
+            try:
+                os.sched_setaffinity(0, original_affinity)
+            except (AttributeError, PermissionError, OSError):
+                pass
 
     median = statistics.median(timings)
+    quartiles = statistics.quantiles(timings, n=4)
+    q1, q3 = quartiles[0], quartiles[2]
+    iqr = q3 - q1
+
     boot = []
     for _ in range(bootstrap_samples):
         sample = random.choices(timings, k=len(timings))
@@ -37,7 +78,7 @@ def benchmark(
     boot.sort()
     lower = boot[int(0.025 * len(boot))]
     upper = boot[int(0.975 * len(boot))]
-    return {"median": median, "ic95": (lower, upper)}
+    return {"median": median, "iqr": iqr, "ic95": (lower, upper)}
 
 
 def diff_test(
