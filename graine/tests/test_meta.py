@@ -1,6 +1,8 @@
 import pytest
+import random
 
 from graine.meta.dsl import MetaSpec, MetaValidationError, MAX_POPULATION_CAP
+from graine.meta.evolve import propose_mutation
 from graine.meta.phantom import replay
 from graine.kernel.verifier import DIFF_LIMIT
 
@@ -60,3 +62,17 @@ def test_phantom_rejects_invalid_history():
     }
     with pytest.raises(MetaValidationError):
         replay([bad_entry])
+
+
+def test_propose_mutation_produces_valid_spec():
+    spec = build_spec()
+    mutated = propose_mutation(spec, rng=random.Random(0))
+    assert mutated.validate()
+    assert abs(sum(mutated.weights.values()) - 1.0) < 1e-6
+    assert abs(sum(mutated.operator_mix.values()) - 1.0) < 1e-6
+
+
+def test_propose_mutation_obeys_population_ceiling():
+    spec = build_spec(population_cap=MAX_POPULATION_CAP)
+    mutated = propose_mutation(spec, rng=random.Random(1))
+    assert mutated.population_cap <= MAX_POPULATION_CAP
