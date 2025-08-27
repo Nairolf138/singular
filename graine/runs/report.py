@@ -35,10 +35,15 @@ def generate_report(snapshot_paths: Iterable[Path] | None = None, out_path: Path
     """Create a simple HTML report summarising Pareto fronts and Δperf curves."""
 
     if snapshot_paths is None:
-        snapshot_paths = SNAPSHOT_DIR.glob("*.json")
-    snapshots = [json.loads(p.read_text(encoding="utf-8")) for p in snapshot_paths]
-    named_snaps = [(p.stem, s) for p, s in zip(snapshot_paths, snapshots)]
-    points = [{"name": n, "err": s["history"][-1]["err"], "cost": s["history"][-1]["cost"]} for n, s in named_snaps]
+        snapshot_paths = SNAPSHOT_DIR.glob("*/snapshot.json")
+
+    paths = list(snapshot_paths)
+    snaps = [(p, json.loads(p.read_text(encoding="utf-8"))) for p in paths]
+    named_snaps = [(p.parent.name if p.name == "snapshot.json" else p.stem, s) for p, s in snaps]
+    points = [
+        {"name": name, "err": snap["history"][-1]["err"], "cost": snap["history"][-1]["cost"]}
+        for name, snap in named_snaps
+    ]
     front = _pareto_front(points)
 
     html: List[str] = ["<html><body>", "<h1>Run Report</h1>", "<h2>Pareto Front</h2>", "<ul>"]
