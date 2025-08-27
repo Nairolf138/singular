@@ -29,11 +29,11 @@ def test_integration_with_map():
     assert reduce_sum(data) == 6
 
 
-# Property-based tests using randomised examples
+# Property-based tests using randomised examples (≥10 000 cases)
 
-def test_property_equivalent_to_builtin_sum_random_cases():
-    for _ in range(100):
-        length = random.randint(0, 50)
+def test_property_equivalent_to_builtin_sum_random_cases_large():
+    for _ in range(10000):
+        length = random.randint(0, 20)
         xs = [random.randint(-1000, 1000) for _ in range(length)]
         assert reduce_sum(xs) == sum(xs)
 
