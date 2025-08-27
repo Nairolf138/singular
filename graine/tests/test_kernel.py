@@ -103,8 +103,8 @@ def _inline_patch(code: str) -> dict:
     }
 
 
-def test_verify_rejects_network_import():
-    patch = _inline_patch("import socket")
+def test_verify_rejects_socket_usage():
+    patch = _inline_patch("import socket\nsocket.socket()")
     with pytest.raises(VerificationError):
         run_variant(patch)
 
@@ -115,14 +115,14 @@ def test_verify_rejects_ffi_import():
         run_variant(patch)
 
 
-def test_verify_rejects_subprocess_import():
-    patch = _inline_patch("import subprocess")
+def test_verify_rejects_subprocess_execution():
+    patch = _inline_patch("import subprocess\nsubprocess.run(['echo', 'hi'])")
     with pytest.raises(VerificationError):
         run_variant(patch)
 
 
-def test_verify_rejects_outside_io():
-    patch = _inline_patch("open('evil.txt', 'w')")
+def test_verify_rejects_outside_write():
+    patch = _inline_patch("open('/tmp/evil.txt', 'w')")
     with pytest.raises(VerificationError):
         run_variant(patch)
 

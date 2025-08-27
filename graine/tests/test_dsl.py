@@ -5,6 +5,7 @@ from graine.evolver.dsl import (
     DSLValidationError,
     CYCLOMATIC_LIMIT,
     OPERATOR_NAMES,
+    THETA_DIFF_LIMIT,
 )
 from graine.evolver.generate import propose_mutations, load_zones
 
@@ -44,20 +45,12 @@ def test_dsl_accepts_all_whitelisted_ops(op):
 
 
 def test_dsl_rejects_bad_operator():
-    data = {
-        "type": "Patch",
-        "target": {"file": "dummy.py", "function": "foo"},
-        "ops": [{"op": "BAD_OP"}],
-        "theta_diff": 1,
-        "purity": True,
-        "cyclomatic": 1,
-    }
     with pytest.raises(DSLValidationError):
-        Patch.from_dict(data)
+        build_patch(ops=[{"op": "BAD_OP"}])
 
 
 def test_dsl_rejects_large_theta_diff():
-    patch = build_patch(theta_diff=50)
+    patch = build_patch(theta_diff=THETA_DIFF_LIMIT + 1)
     with pytest.raises(DSLValidationError):
         patch.validate()
 
