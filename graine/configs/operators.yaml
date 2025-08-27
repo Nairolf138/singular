@@ -1,0 +1,12 @@
+CONST_TUNE:
+  description: Adjust a numeric constant within bounds.
+EQ_REWRITE:
+  description: Apply a proven equivalence rewrite.
+INLINE:
+  description: Inline a pure function.
+EXTRACT:
+  description: Extract a pure block into a function.
+DEADCODE_ELIM:
+  description: Remove provably dead code.
+MICRO_MEMO:
+  description: Add local memoization with bounded memory.

@@ -1,0 +1,14 @@
+functional_pass: 100%
+perf:
+  target_improvement_pct: 5
+  repetitions: 21
+  confidence: 0.95
+robust:
+  property_cases: 10000
+  fuzz_runtime_s: 8
+quality:
+  max_cyclomatic: 12
+  min_coverage_pct: 85
+  lints_blocking: true
+stability:
+  stddev_max_pct: 3
