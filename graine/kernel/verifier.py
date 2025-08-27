@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Any, Dict, List
 
@@ -56,6 +57,65 @@ META_SCHEMA: Dict[str, Any] = {
     },
 }
 
+OBJECTIVES_SCHEMA: Dict[str, Any] = {
+    "required": [
+        "functional_pass",
+        "perf",
+        "robust",
+        "quality",
+        "stability",
+    ],
+    "properties": {
+        "functional_pass": {"type": "string"},
+        "perf": {
+            "type": "object",
+            "required": [
+                "target_improvement_pct",
+                "repetitions",
+                "confidence",
+            ],
+            "properties": {
+                "target_improvement_pct": {"type": "integer"},
+                "repetitions": {"type": "integer"},
+                "confidence": {"type": "number"},
+            },
+        },
+        "robust": {
+            "type": "object",
+            "required": ["property_cases", "fuzz_runtime_s"],
+            "properties": {
+                "property_cases": {"type": "integer"},
+                "fuzz_runtime_s": {"type": "integer"},
+            },
+        },
+        "quality": {
+            "type": "object",
+            "required": [
+                "max_cyclomatic",
+                "min_coverage_pct",
+                "lints_blocking",
+            ],
+            "properties": {
+                "max_cyclomatic": {"type": "integer"},
+                "min_coverage_pct": {"type": "integer"},
+                "lints_blocking": {"type": "boolean"},
+            },
+        },
+        "stability": {
+            "type": "object",
+            "required": ["stddev_max_pct"],
+            "properties": {
+                "stddev_max_pct": {"type": "integer"},
+            },
+        },
+    },
+}
+
+OPERATOR_SCHEMA: Dict[str, Any] = {
+    "required": ["description"],
+    "properties": {"description": {"type": "string"}},
+}
+
 
 def _check_type(value: Any, expected: str, location: str) -> None:
     type_map = {
@@ -64,6 +124,7 @@ def _check_type(value: Any, expected: str, location: str) -> None:
         "string": str,
         "integer": int,
         "number": (int, float),
+        "boolean": bool,
     }
     if expected and not isinstance(value, type_map.get(expected, object)):
         raise VerificationError(f"{location} must be of type {expected}")
@@ -120,10 +181,79 @@ def _check_forbidden_content(ops: List[Dict[str, Any]]) -> None:
                 _check_forbidden_content([v for v in value if isinstance(v, dict)])
 
 
+def _parse_simple_yaml(file_path: str) -> Dict[str, Any]:
+    """Parse a very small subset of YAML (mappings only)."""
+
+    data: Dict[str, Any] = {}
+    stack: List[tuple[int, Dict[str, Any]]] = [(0, data)]
+
+    with open(file_path, "r", encoding="utf8") as fh:
+        for raw in fh:
+            line = raw.rstrip()
+            if not line or line.lstrip().startswith("#"):
+                continue
+            indent = len(line) - len(line.lstrip(" "))
+            key, value = line.strip().split(":", 1)
+            key = key.strip()
+            value = value.strip()
+            while stack and indent < stack[-1][0]:
+                stack.pop()
+            current = stack[-1][1]
+            if value == "":
+                new: Dict[str, Any] = {}
+                current[key] = new
+                stack.append((indent + 2, new))
+            else:
+                if value == "true":
+                    parsed: Any = True
+                elif value == "false":
+                    parsed = False
+                else:
+                    try:
+                        parsed = int(value)
+                    except ValueError:
+                        try:
+                            parsed = float(value)
+                        except ValueError:
+                            parsed = value
+                current[key] = parsed
+
+    return data
+
+
+def load_objectives(path: str = "configs/objectives.yaml") -> Dict[str, Any]:
+    """Load and validate objective configuration."""
+
+    file_path = path if os.path.isabs(path) else f"graine/{path}"
+    data = _parse_simple_yaml(file_path)
+    verify_objectives(data)
+    return data
+
+
+def verify_objectives(obj: Dict[str, Any]) -> None:
+    _validate_schema(obj, OBJECTIVES_SCHEMA, "objectives")
+
+
+def load_operators(path: str = "configs/operators.yaml") -> Dict[str, Any]:
+    """Load and validate operator configuration."""
+
+    file_path = path if os.path.isabs(path) else f"graine/{path}"
+    data = _parse_simple_yaml(file_path)
+    verify_operators(data)
+    return data
+
+
+def verify_operators(ops: Dict[str, Any]) -> None:
+    if not isinstance(ops, dict):
+        raise VerificationError("operators must be an object")
+    for name, spec in ops.items():
+        _validate_schema(spec, OPERATOR_SCHEMA, f"operators.{name}")
+
+
 def load_zones(path: str = "configs/zones.yaml") -> Dict[str, Any]:
     """Load zone configuration without external YAML dependencies."""
 
-    file_path = f"graine/{path}"
+    file_path = path if os.path.isabs(path) else f"graine/{path}"
     zones: List[Dict[str, Any]] = []
     zone: Dict[str, Any] | None = None
     in_ops = False
