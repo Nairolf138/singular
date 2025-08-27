@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 import statistics
 import time
-from typing import Callable, Dict, Iterable, Tuple
+from typing import Callable, Dict, Iterable, List, Tuple
 
 
 def benchmark(
@@ -38,6 +38,62 @@ def benchmark(
     lower = boot[int(0.025 * len(boot))]
     upper = boot[int(0.975 * len(boot))]
     return {"median": median, "ic95": (lower, upper)}
+
+
+def diff_test(
+    baseline: Callable[[Iterable[int]], int],
+    variant: Callable[[Iterable[int]], int],
+    cases: int = 1000,
+) -> Dict[str, object]:
+    """Perform diff-testing between ``baseline`` and ``variant``.
+
+    Both functions are executed on the same randomly generated inputs. Any
+    difference in returned value or raised exceptions is recorded. The
+    function returns a dictionary describing whether the two implementations
+    behaved identically and, if not, examples of the mismatches.
+
+    Args:
+        baseline: Reference implementation considered correct.
+        variant: Alternative implementation to compare against ``baseline``.
+        cases: Number of random test cases to execute.
+    """
+
+    mismatches: List[Dict[str, object]] = []
+    for _ in range(cases):
+        arr = [random.randint(-1000, 1000) for _ in range(random.randint(0, 100))]
+        baseline_error = variant_error = None
+        try:
+            baseline_result = baseline(arr)
+        except Exception as exc:
+            baseline_error = exc
+        try:
+            variant_result = variant(arr)
+        except Exception as exc:
+            variant_error = exc
+
+        if baseline_error or variant_error:
+            mismatches.append(
+                {
+                    "input": arr,
+                    "baseline_error": repr(baseline_error),
+                    "variant_error": repr(variant_error),
+                }
+            )
+            continue
+        if baseline_result != variant_result:
+            mismatches.append(
+                {
+                    "input": arr,
+                    "baseline": baseline_result,
+                    "variant": variant_result,
+                }
+            )
+
+    return {
+        "cases": cases,
+        "mismatches": mismatches,
+        "equivalent": not mismatches,
+    }
 
 
 def evaluate(candidate: Callable[[Iterable[int]], int]) -> Dict[str, object]:
