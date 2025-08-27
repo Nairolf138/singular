@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict
+from typing import Dict, List, Any
 
 from graine.evolver.dsl import OPERATOR_NAMES
+from graine.kernel.verifier import DIFF_LIMIT
 
 
 class MetaValidationError(ValueError):
@@ -13,6 +14,21 @@ class MetaValidationError(ValueError):
 MAX_POPULATION_CAP = 100
 _WEIGHT_TOLERANCE = 1e-6
 
+SELECTION_STRATEGIES = {"elitism"}
+
+# Minimal JSON schema describing a meta specification
+META_SCHEMA: Dict[str, Any] = {
+    "required": ["weights", "operator_mix", "population_cap", "selection_strategy"],
+    "properties": {
+        "weights": {"type": "object"},
+        "operator_mix": {"type": "object"},
+        "population_cap": {"type": "integer"},
+        "selection_strategy": {"type": "string"},
+        "diff_max": {"type": "integer"},
+        "forbidden": {"type": "array"},
+    },
+}
+
 
 @dataclass
 class MetaSpec:
@@ -21,6 +37,9 @@ class MetaSpec:
     weights: Dict[str, float] = field(default_factory=dict)
     operator_mix: Dict[str, float] = field(default_factory=dict)
     population_cap: int = 0
+    selection_strategy: str = "elitism"
+    diff_max: int = DIFF_LIMIT
+    forbidden: List[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: Dict[str, object]) -> "MetaSpec":
@@ -28,6 +47,9 @@ class MetaSpec:
             weights=dict(data.get("weights", {})),
             operator_mix=dict(data.get("operator_mix", {})),
             population_cap=int(data.get("population_cap", 0)),
+            selection_strategy=str(data.get("selection_strategy", "elitism")),
+            diff_max=int(data.get("diff_max", DIFF_LIMIT)),
+            forbidden=list(data.get("forbidden", [])),
         )
 
     def validate(self) -> bool:
@@ -51,4 +73,14 @@ class MetaSpec:
         # Validate population cap
         if not (0 < self.population_cap <= MAX_POPULATION_CAP):
             raise MetaValidationError("Population cap exceeds constitutional limit")
+
+        # Validate selection strategy
+        if self.selection_strategy not in SELECTION_STRATEGIES:
+            raise MetaValidationError("Unknown selection strategy")
+
+        # Validate constitutional limits
+        if self.diff_max > DIFF_LIMIT:
+            raise MetaValidationError("diff_max exceeds constitutional limit")
+        if self.forbidden:
+            raise MetaValidationError("Cannot relax constitutional forbiddens")
         return True
