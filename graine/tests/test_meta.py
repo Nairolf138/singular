@@ -1,9 +1,11 @@
+import json
 import pytest
 import random
+from pathlib import Path
 
 from graine.meta.dsl import MetaSpec, MetaValidationError, MAX_POPULATION_CAP
 from graine.meta.evolve import propose_mutation
-from graine.meta.phantom import replay
+from graine.meta.phantom import replay_snapshots
 from graine.kernel.verifier import DIFF_LIMIT
 
 
@@ -54,14 +56,35 @@ def test_meta_rejects_forbidden_relaxation():
         spec.validate()
 
 
-def test_phantom_rejects_invalid_history():
-    bad_entry = {
+def test_phantom_rejects_invalid_snapshot(tmp_path: Path):
+    bad_meta = {
         "weights": {"perf": 1.0},
         "operator_mix": {"CONST_TUNE": 1.0},
         "population_cap": MAX_POPULATION_CAP + 1,
     }
+    snap = tmp_path / "bad.json"
+    snap.write_text(json.dumps({"meta": bad_meta, "history": [{"err": 0.5, "cost": 0.5}]}))
     with pytest.raises(MetaValidationError):
-        replay([bad_entry])
+        replay_snapshots(1, directory=tmp_path)
+
+
+def test_replay_snapshots_returns_metrics(tmp_path: Path):
+    meta = build_spec().__dict__
+    hist1 = [{"err": 0.5, "cost": 0.4}, {"err": 0.3, "cost": 0.2}]
+    hist2 = [{"err": 0.4, "cost": 0.3}, {"err": 0.2, "cost": 0.1}]
+    (tmp_path / "r1.json").write_text(json.dumps({"meta": meta, "history": hist1}))
+    (tmp_path / "r2.json").write_text(json.dumps({"meta": meta, "history": hist2}))
+    metrics = replay_snapshots(2, directory=tmp_path)
+    assert metrics["robustness"] == pytest.approx((0.3 + 0.2) / 2)
+    assert metrics["safety"] == pytest.approx((0.2 + 0.1) / 2)
+
+
+def test_replay_snapshots_detects_regression(tmp_path: Path):
+    meta = build_spec().__dict__
+    hist = [{"err": 0.1, "cost": 0.1}, {"err": 0.2, "cost": 0.1}]
+    (tmp_path / "r.json").write_text(json.dumps({"meta": meta, "history": hist}))
+    with pytest.raises(RuntimeError):
+        replay_snapshots(1, directory=tmp_path)
 
 
 def test_propose_mutation_produces_valid_spec():
