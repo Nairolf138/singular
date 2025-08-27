@@ -7,6 +7,8 @@ from typing import Any, Dict, List
 
 import json
 
+from .interpreter import ALLOWED_OPS
+
 class VerificationError(Exception):
     """Raised when a patch fails verification."""
 
@@ -36,17 +38,9 @@ def verify_patch(patch: Dict[str, Any]) -> None:
     if not isinstance(ops, list) or not ops:
         raise VerificationError("ops must be a non-empty list")
 
-    allowed_ops = {
-        "CONST_TUNE",
-        "EQ_REWRITE",
-        "INLINE",
-        "EXTRACT",
-        "DEADCODE_ELIM",
-        "MICRO_MEMO",
-    }
     for op in ops:
         name = op.get("op")
-        if name not in allowed_ops:
+        if name not in ALLOWED_OPS:
             raise VerificationError(f"operator {name} not allowed")
         if name == "CONST_TUNE":
             delta = op.get("delta")

@@ -40,3 +40,30 @@ def test_verify_rejects_large_diff():
     }
     with pytest.raises(VerificationError):
         run_variant(patch)
+
+
+def test_run_variant_times_out():
+    patch = {
+        "type": "Patch",
+        "target": {"file": "target/src/algorithms/reduce_sum.py", "function": "reduce_sum"},
+        "ops": [
+            {"op": "CONST_TUNE", "delta": 0.0, "bounds": [-0.1, 0.1]},
+        ],
+        "limits": {"diff_max": 5, "cpu": 0.0},
+    }
+    with pytest.raises(RuntimeError):
+        run_variant(patch)
+
+
+def test_run_variant_op_limit():
+    patch = {
+        "type": "Patch",
+        "target": {"file": "target/src/algorithms/reduce_sum.py", "function": "reduce_sum"},
+        "ops": [
+            {"op": "CONST_TUNE", "delta": 0.0, "bounds": [-0.1, 0.1]},
+            {"op": "CONST_TUNE", "delta": 0.0, "bounds": [-0.1, 0.1]},
+        ],
+        "limits": {"diff_max": 5, "ops": 1},
+    }
+    with pytest.raises(RuntimeError):
+        run_variant(patch)
