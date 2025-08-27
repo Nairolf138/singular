@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Dict, List
 
-import json
+import yaml
 
 from .interpreter import ALLOWED_OPS
 
@@ -13,9 +12,9 @@ class VerificationError(Exception):
     """Raised when a patch fails verification."""
 
 
-def load_zones(path: str = "configs/zones.json") -> Dict[str, Any]:
+def load_zones(path: str = "configs/zones.yaml") -> Dict[str, Any]:
     with open(f"graine/{path}", "r", encoding="utf8") as fh:
-        return json.load(fh)
+        return yaml.safe_load(fh)
 
 
 def verify_patch(patch: Dict[str, Any]) -> None:
