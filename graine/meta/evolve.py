@@ -1,44 +1,77 @@
 from __future__ import annotations
 
+from random import Random
 from typing import Dict
 
 from .dsl import MetaSpec, MAX_POPULATION_CAP
 
 
-def propose_mutation(spec: MetaSpec, delta: float = 0.1) -> MetaSpec:
-    """Propose a simple meta-mutation while respecting constitutional limits.
+def _renormalize(dist: Dict[str, float]) -> None:
+    """Scale the values in ``dist`` so they sum to ``1.0``.
 
-    The mutation deterministically adjusts the first two weights and operator
-    mixes while keeping the distributions normalized. The population cap is
-    increased by one but clamped to ``MAX_POPULATION_CAP``. The returned
-    ``MetaSpec`` is validated before being returned.
+    The operation happens in-place and ignores empty dictionaries. Negative
+    values are clamped to ``0`` before normalisation to guarantee a valid
+    probability distribution.
     """
+
+    if not dist:
+        return
+    total = 0.0
+    for k, v in dist.items():
+        if v < 0:
+            v = 0.0
+        dist[k] = v
+        total += v
+    if total == 0:
+        # Evenly distribute if everything was clamped to zero
+        share = 1.0 / len(dist)
+        for k in dist:
+            dist[k] = share
+        return
+    for k in dist:
+        dist[k] /= total
+
+
+def propose_mutation(
+    spec: MetaSpec, delta: float = 0.1, rng: Random | None = None
+) -> MetaSpec:
+    """Propose a meta-mutation compliant with :mod:`graine.meta.dsl`.
+
+    The mutation adjusts a random objective weight and operator frequency while
+    keeping the respective distributions normalised.  The population cap is
+    incremented or decremented by one without exceeding
+    ``MAX_POPULATION_CAP``.  All other constitutional parameters remain
+    unchanged.  The resulting :class:`MetaSpec` is validated prior to being
+    returned.
+    """
+
+    rng = rng or Random()
 
     new_spec = MetaSpec(
         weights=dict(spec.weights),
         operator_mix=dict(spec.operator_mix),
         population_cap=spec.population_cap,
+        selection_strategy=spec.selection_strategy,
+        diff_max=spec.diff_max,
+        forbidden=list(spec.forbidden),
     )
 
-    # Mutate weights
-    weight_keys = list(new_spec.weights.keys())
-    if len(weight_keys) >= 2:
-        a, b = weight_keys[:2]
-        new_a = min(1.0, max(0.0, new_spec.weights[a] + delta))
-        new_spec.weights[a] = new_a
-        new_spec.weights[b] = 1.0 - new_a
+    # Mutate weights by tweaking a random entry and re-normalising
+    if len(new_spec.weights) >= 1:
+        key = rng.choice(list(new_spec.weights.keys()))
+        new_spec.weights[key] += rng.uniform(-delta, delta)
+        _renormalize(new_spec.weights)
 
-    # Mutate operator mix
-    op_keys = list(new_spec.operator_mix.keys())
-    if len(op_keys) >= 2:
-        a, b = op_keys[:2]
-        new_a = min(1.0, max(0.0, new_spec.operator_mix[a] + delta))
-        new_spec.operator_mix[a] = new_a
-        new_spec.operator_mix[b] = 1.0 - new_a
+    # Mutate operator mix similarly
+    if len(new_spec.operator_mix) >= 1:
+        key = rng.choice(list(new_spec.operator_mix.keys()))
+        new_spec.operator_mix[key] += rng.uniform(-delta, delta)
+        _renormalize(new_spec.operator_mix)
 
-    # Increase population cap within limit
-    if new_spec.population_cap < MAX_POPULATION_CAP:
-        new_spec.population_cap += 1
+    # Adjust population cap but respect constitutional ceiling
+    pop_change = rng.choice([-1, 1])
+    new_pop = new_spec.population_cap + pop_change
+    new_spec.population_cap = max(1, min(MAX_POPULATION_CAP, new_pop))
 
     new_spec.validate()
     return new_spec
