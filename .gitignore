@@ -2,3 +2,9 @@ __pycache__/
 pytest_cache/
 .kernel.log
 kernel.log
+graine/runs/logs/*
+graine/runs/snapshots/*
+graine/runs/reports/*
+!graine/runs/logs/.gitkeep
+!graine/runs/snapshots/.gitkeep
+!graine/runs/reports/.gitkeep
