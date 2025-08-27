@@ -137,3 +137,29 @@ def test_verify_rejects_ram_quota():
     patch["limits"]["ram"] = 10**10
     with pytest.raises(VerificationError):
         run_variant(patch)
+
+
+def test_run_variant_hard_timeout_signal():
+    patch = {
+        "type": "Patch",
+        "target": {"file": "target/src/algorithms/reduce_sum.py", "function": "reduce_sum"},
+        "ops": [
+            {"op": "INLINE", "sleep": 1.0},
+        ],
+        "limits": {"diff_max": 5, "cpu": 0.1},
+    }
+    with pytest.raises(RuntimeError):
+        run_variant(patch)
+
+
+def test_run_variant_memory_limit_exceeded():
+    patch = {
+        "type": "Patch",
+        "target": {"file": "target/src/algorithms/reduce_sum.py", "function": "reduce_sum"},
+        "ops": [
+            {"op": "INLINE", "size": 300 * 1024 * 1024},
+        ],
+        "limits": {"diff_max": 5},
+    }
+    with pytest.raises(RuntimeError):
+        run_variant(patch)
