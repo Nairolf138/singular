@@ -44,7 +44,7 @@ def test_meta_rejects_bad_selection_strategy():
         spec.validate()
 
 
-def test_meta_rejects_excess_diff_max():
+def test_meta_rejects_diff_max_relaxation():
     spec = build_spec(diff_max=DIFF_LIMIT + 1)
     with pytest.raises(MetaValidationError):
         spec.validate()
