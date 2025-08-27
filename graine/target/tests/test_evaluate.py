@@ -15,25 +15,32 @@ def _fast_benchmark(
     return {"median": 0.0, "iqr": 0.0, "ic95": (0.0, 0.0)}
 
 
+def _stub_diff_test(baseline, variant, cases=100):
+    return {"equivalent": True, "mismatches": []}
+
+
 # Unit and integration tests for evaluate()
 
 def test_evaluate_success(monkeypatch):
     monkeypatch.setattr(evaluate, "benchmark", _fast_benchmark)
+    monkeypatch.setattr(evaluate, "diff_test", _stub_diff_test)
     result = evaluate.evaluate(reduce_sum)
-    assert result["functional"]
-    assert result["robustness"]
+    assert result["functional_pass"]
+    assert result["security_pass"]
+    assert result["robustness"]["pass_rate"] == 1.0
     assert "performance" in result
 
 
 def test_evaluate_robustness_failure(monkeypatch):
     monkeypatch.setattr(evaluate, "benchmark", _fast_benchmark)
+    monkeypatch.setattr(evaluate, "diff_test", _stub_diff_test)
 
     def bad_candidate(values):
         return sum(values) + 1
 
     result = evaluate.evaluate(bad_candidate)
-    assert not result["functional"]
-    assert not result["robustness"]
+    assert not result["functional_pass"]
+    assert result["robustness"]["pass_rate"] < 1.0
 
 
 # Tests for diff-testing
