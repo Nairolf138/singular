@@ -62,16 +62,45 @@ def capture_run(seed: int, name: str, steps: int = 5) -> Path:
     return snapshot_path
 
 
-def replay(snapshot_path: Path, seed: int) -> Dict[str, Any]:
-    """Replay a previously captured run and verify deterministic behaviour.
+def replay(snapshot_path: Path) -> Dict[str, Any]:
+    """Replay a previously captured run using the stored seed and config.
 
-    Raises ``RuntimeError`` if the recomputed history differs from the snapshot.
+    Parameters
+    ----------
+    snapshot_path:
+        Path to ``snapshot.json`` inside the captured run directory.
+
+    Returns
+    -------
+    Dict[str, Any]
+        The regenerated run data.
+
+    Raises
+    ------
+    RuntimeError
+        If the regenerated data differ from the snapshot (non-deterministic).
     """
 
+    run_dir = snapshot_path.parent
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
-    expected = {"seed": seed, "history": _generate_history(seed, len(snapshot["history"]))}
+
+    # Load seed and configuration
+    seed_data = json.loads((run_dir / "seeds.json").read_text(encoding="utf-8"))
+    config = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+    seed = seed_data["seed"]
+    steps = int(config.get("steps", len(snapshot["history"])))
+
+    expected = {"seed": seed, "history": _generate_history(seed, steps)}
     if snapshot != expected:
         raise RuntimeError("Replay mismatch")
+
+    # Log replay event
+    from ..kernel.logger import JsonlLogger
+
+    run_id = run_dir.name
+    logger = JsonlLogger(LOG_DIR / f"{run_id}.log")
+    logger.log({"event": "replay", "seed": seed, "steps": steps, "snapshot": snapshot_path.name})
+
     return expected
 
 
