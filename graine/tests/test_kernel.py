@@ -67,3 +67,73 @@ def test_run_variant_op_limit():
     }
     with pytest.raises(RuntimeError):
         run_variant(patch)
+
+
+def _inline_patch(code: str) -> dict:
+    return {
+        "type": "Patch",
+        "target": {"file": "target/src/algorithms/reduce_sum.py", "function": "reduce_sum"},
+        "ops": [{"op": "INLINE", "code": code}],
+        "limits": {"diff_max": 5},
+    }
+
+
+def test_verify_rejects_network_import():
+    patch = _inline_patch("import socket")
+    with pytest.raises(VerificationError):
+        run_variant(patch)
+
+
+def test_verify_rejects_ffi_import():
+    patch = _inline_patch("import ctypes")
+    with pytest.raises(VerificationError):
+        run_variant(patch)
+
+
+def test_verify_rejects_subprocess_import():
+    patch = _inline_patch("import subprocess")
+    with pytest.raises(VerificationError):
+        run_variant(patch)
+
+
+def test_verify_rejects_outside_io():
+    patch = _inline_patch("open('evil.txt', 'w')")
+    with pytest.raises(VerificationError):
+        run_variant(patch)
+
+
+def _limit_patch() -> dict:
+    return {
+        "type": "Patch",
+        "target": {"file": "target/src/algorithms/reduce_sum.py", "function": "reduce_sum"},
+        "ops": [{"op": "INLINE"}],
+        "limits": {"diff_max": 5},
+    }
+
+
+def test_verify_rejects_ops_quota():
+    patch = _limit_patch()
+    patch["limits"]["ops"] = 2000
+    with pytest.raises(VerificationError):
+        run_variant(patch)
+
+
+def test_verify_rejects_cpu_quota():
+    patch = _limit_patch()
+    patch["limits"]["cpu"] = 2.0
+    with pytest.raises(VerificationError):
+        run_variant(patch)
+
+
+def test_verify_rejects_time_max():
+    patch = _limit_patch()
+    patch["limits"]["time_max"] = 2.0
+    with pytest.raises(VerificationError):
+        run_variant(patch)
+
+
+def test_verify_rejects_ram_quota():
+    patch = _limit_patch()
+    patch["limits"]["ram"] = 10**10
+    with pytest.raises(VerificationError):
+        run_variant(patch)

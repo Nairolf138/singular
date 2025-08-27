@@ -2,12 +2,122 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
 from .interpreter import ALLOWED_OPS
 
 class VerificationError(Exception):
     """Raised when a patch fails verification."""
+
+
+# Constitutional limits
+DIFF_LIMIT = 12
+OPS_LIMIT = 1000
+CPU_LIMIT = 1.0
+RAM_LIMIT = 1024 * 1024 * 1024  # 1 GiB
+
+FORBIDDEN_IMPORT_RE = re.compile(
+    r"\b(?:import|from)\s+"
+    r"(socket|ssl|http|urllib|requests|ftplib|subprocess|ctypes|cffi)\b",
+    re.IGNORECASE,
+)
+OPEN_RE = re.compile(r"open\((['\"])(.+?)\1")
+ALLOWED_PATH_PREFIXES = ("runs/", "target/")
+
+
+# Minimal JSON schemas for validation
+PATCH_SCHEMA: Dict[str, Any] = {
+    "required": ["type", "target", "ops"],
+    "properties": {
+        "type": {"type": "string", "const": "Patch"},
+        "target": {
+            "type": "object",
+            "required": ["file", "function"],
+            "properties": {
+                "file": {"type": "string"},
+                "function": {"type": "string"},
+            },
+        },
+        "ops": {
+            "type": "array",
+            "items": {"type": "object", "required": ["op"]},
+        },
+        "limits": {"type": "object"},
+    },
+}
+
+META_SCHEMA: Dict[str, Any] = {
+    "required": ["weights", "operator_mix", "population_cap"],
+    "properties": {
+        "weights": {"type": "object"},
+        "operator_mix": {"type": "object"},
+        "population_cap": {"type": "integer"},
+    },
+}
+
+
+def _check_type(value: Any, expected: str, location: str) -> None:
+    type_map = {
+        "object": dict,
+        "array": list,
+        "string": str,
+        "integer": int,
+        "number": (int, float),
+    }
+    if expected and not isinstance(value, type_map.get(expected, object)):
+        raise VerificationError(f"{location} must be of type {expected}")
+
+
+def _validate_schema(data: Dict[str, Any], schema: Dict[str, Any], name: str) -> None:
+    if not isinstance(data, dict):
+        raise VerificationError(f"{name} must be an object")
+    for key in schema.get("required", []):
+        if key not in data:
+            raise VerificationError(f"{name} missing required field '{key}'")
+    for key, rule in schema.get("properties", {}).items():
+        if key not in data:
+            continue
+        value = data[key]
+        _check_type(value, rule.get("type"), f"{name}.{key}")
+        if "const" in rule and value != rule["const"]:
+            raise VerificationError(f"{name}.{key} must be {rule['const']}")
+        if rule.get("type") == "object":
+            _validate_schema(value, rule, f"{name}.{key}")
+        elif rule.get("type") == "array":
+            items = rule.get("items", {})
+            for i, item in enumerate(value):
+                if isinstance(items, dict):
+                    _validate_schema(item, items, f"{name}.{key}[{i}]")
+
+
+def verify_meta_rules(meta: Dict[str, Any]) -> None:
+    """Validate meta-rules against a minimal JSON schema."""
+
+    _validate_schema(meta, META_SCHEMA, "meta")
+
+
+def _is_allowed_path(path: str) -> bool:
+    return any(path.startswith(prefix) for prefix in ALLOWED_PATH_PREFIXES)
+
+
+def _check_forbidden_content(ops: List[Dict[str, Any]]) -> None:
+    for op in ops:
+        for key, value in op.items():
+            if isinstance(value, str):
+                text = value.lower()
+                if FORBIDDEN_IMPORT_RE.search(text):
+                    raise VerificationError("forbidden import detected")
+                for match in OPEN_RE.finditer(text):
+                    path = match.group(2)
+                    if not _is_allowed_path(path):
+                        raise VerificationError("I/O outside allowed directories")
+                if key in {"path", "file"} and not _is_allowed_path(value):
+                    raise VerificationError("I/O outside allowed directories")
+            elif isinstance(value, dict):
+                _check_forbidden_content([value])
+            elif isinstance(value, list):
+                _check_forbidden_content([v for v in value if isinstance(v, dict)])
 
 
 def load_zones(path: str = "configs/zones.yaml") -> Dict[str, Any]:
@@ -65,19 +175,15 @@ def verify_patch(patch: Dict[str, Any]) -> None:
 
     This function implements only a subset of the full specification.
     """
-    if patch.get("type") != "Patch":
-        raise VerificationError("type must be 'Patch'")
+    _validate_schema(patch, PATCH_SCHEMA, "patch")
 
-    target = patch.get("target")
-    if not target or "file" not in target or "function" not in target:
-        raise VerificationError("target must specify file and function")
-
+    target = patch["target"]
     zones = load_zones()["targets"]
     if not any(z["file"] == target["file"] and z["function"] == target["function"] for z in zones):
         raise VerificationError("target not whitelisted")
 
     ops: List[Dict[str, Any]] = patch.get("ops", [])
-    if not isinstance(ops, list) or not ops:
+    if not ops:
         raise VerificationError("ops must be a non-empty list")
 
     for op in ops:
@@ -92,7 +198,26 @@ def verify_patch(patch: Dict[str, Any]) -> None:
             if not (bounds[0] <= delta <= bounds[1]):
                 raise VerificationError("delta outside bounds")
 
+    _check_forbidden_content(ops)
+
     limits = patch.get("limits", {})
     diff_max = limits.get("diff_max", 0)
-    if diff_max > 12:
-        raise VerificationError("diff_max exceeds limit of 12")
+    if diff_max > DIFF_LIMIT:
+        raise VerificationError(f"diff_max exceeds limit of {DIFF_LIMIT}")
+
+    ops_max = limits.get("ops", limits.get("ops_max", 0))
+    if ops_max and ops_max > OPS_LIMIT:
+        raise VerificationError(f"ops exceeds limit of {OPS_LIMIT}")
+
+    time_max = limits.get("time_max", 0)
+    if time_max and time_max > CPU_LIMIT:
+        raise VerificationError(f"time_max exceeds limit of {CPU_LIMIT}")
+
+    cpu_limit = limits.get("cpu", 0)
+    if cpu_limit and cpu_limit > CPU_LIMIT:
+        raise VerificationError(f"cpu exceeds limit of {CPU_LIMIT}")
+
+    ram_limit = limits.get("ram")
+    if ram_limit is not None and ram_limit > RAM_LIMIT:
+        raise VerificationError("ram exceeds limit")
+
