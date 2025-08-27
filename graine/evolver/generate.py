@@ -11,7 +11,12 @@ used elsewhere in the project to avoid external dependencies.
 from pathlib import Path
 from typing import Any, Dict, List
 
-from .dsl import Patch
+from .dsl import (
+    Patch,
+    CYCLOMATIC_LIMIT,
+    THETA_DIFF_LIMIT,
+    DSLValidationError,
+)
 
 
 def load_zones(path: Path | None = None) -> List[Dict[str, Any]]:
@@ -67,10 +72,12 @@ def load_zones(path: Path | None = None) -> List[Dict[str, Any]]:
 
 
 def propose_mutations(zones: List[Dict[str, Any]] | None = None) -> List[Patch]:
-    """Return simple ``Patch`` objects for each configured zone.
+    """Return valid ``Patch`` objects for all configured operators.
 
-    The first operator listed for a zone is used to build a deterministic
-    patch, ensuring reproducibility for tests.
+    Each zone in ``zones.yaml`` may list multiple operators.  A patch is
+    produced for every operator while ensuring that global constraints such as
+    ``THETA_DIFF_LIMIT`` and ``CYCLOMATIC_LIMIT`` are honoured.  Invalid patches
+    are filtered out by running ``validate`` on each candidate.
     """
 
     if zones is None:
@@ -79,17 +86,27 @@ def propose_mutations(zones: List[Dict[str, Any]] | None = None) -> List[Patch]:
     patches: List[Patch] = []
     for zone in zones:
         ops = zone.get("operators", [])
-        if not ops:
-            continue
-        op_name = ops[0]
-        patch = Patch.from_dict(
-            {
-                "target": {"file": zone.get("file", ""), "function": zone.get("function", "")},
-                "ops": [{"op": op_name}],
-                "theta_diff": 0.0,
-                "purity": zone.get("purity", True),
-                "cyclomatic": zone.get("max_cyclomatic", 0),
-            }
-        )
-        patches.append(patch)
+        for op_name in ops:
+            try:
+                patch = Patch.from_dict(
+                    {
+                        "target": {
+                            "file": zone.get("file", ""),
+                            "function": zone.get("function", ""),
+                        },
+                        "ops": [{"op": op_name}],
+                        "theta_diff": min(
+                            zone.get("theta_diff", 0.0), THETA_DIFF_LIMIT
+                        ),
+                        "purity": zone.get("purity", True),
+                        "cyclomatic": min(
+                            zone.get("max_cyclomatic", 0), CYCLOMATIC_LIMIT
+                        ),
+                    }
+                )
+                if patch.validate():
+                    patches.append(patch)
+            except (DSLValidationError, ValueError):
+                # Skip invalid operators or patches that fail validation
+                continue
     return patches

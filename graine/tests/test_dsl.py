@@ -3,7 +3,10 @@ import pytest
 from graine.evolver.dsl import (
     Patch,
     DSLValidationError,
+    CYCLOMATIC_LIMIT,
+    OPERATOR_NAMES,
 )
+from graine.evolver.generate import propose_mutations, load_zones
 
 
 def build_patch(**overrides):
@@ -69,3 +72,14 @@ def test_dsl_rejects_high_cyclomatic():
     patch = build_patch(cyclomatic=50)
     with pytest.raises(DSLValidationError):
         patch.validate()
+
+
+def test_generate_produces_valid_patches():
+    patches = propose_mutations()
+    zones = load_zones()
+    total_ops = sum(len(z.get("operators", [])) for z in zones)
+    assert len(patches) == total_ops
+    for patch in patches:
+        assert patch.validate() is True
+        assert patch.cyclomatic <= CYCLOMATIC_LIMIT
+        assert patch.ops and patch.ops[0].name in OPERATOR_NAMES
