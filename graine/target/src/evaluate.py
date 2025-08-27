@@ -140,32 +140,61 @@ def diff_test(
 def evaluate(candidate: Callable[[Iterable[int]], int]) -> Dict[str, object]:
     """Evaluate a candidate implementation of ``reduce_sum``.
 
-    Returns functional correctness, performance metrics, and robustness.
-    """
-    # Functional correctness on a simple example
-    sample = [1, 2, 3, 4, 5]
-    functional = candidate(sample) == sum(sample)
+    The evaluation exercises several harnesses:
+    * unit/robustness tests
+    * differential testing against ``sum``
+    * micro benchmarks
 
+    It returns boolean passes for functional and security checks along with
+    metrics describing performance, robustness, quality and stability.
+    """
+
+    # ------------------------------------------------------------------
+    # Functional tests
+    sample = [1, 2, 3, 4, 5]
+    functional_pass = candidate(sample) == sum(sample)
+
+    # ------------------------------------------------------------------
+    # Security via differential testing against the trusted baseline ``sum``
+    diff_res = diff_test(sum, candidate, cases=100)
+    security_pass = diff_res["equivalent"]
+
+    # ------------------------------------------------------------------
     # Performance metrics
     performance = benchmark(candidate, range(1000))
 
-    # Robustness checks
-    robustness = True
-    # Property: agreement with built-in sum for random lists
-    for _ in range(10):
+    # ------------------------------------------------------------------
+    # Robustness metrics: proportion of random property tests that match ``sum``
+    trials = 10
+    passes = 0
+    for _ in range(trials):
         arr = [random.randint(-1000, 1000) for _ in range(random.randint(0, 100))]
-        if candidate(arr) != sum(arr):
-            robustness = False
-            break
-    # Metamorphic: permutation invariance
-    if robustness:
-        arr = [random.randint(-1000, 1000) for _ in range(50)]
-        shuffled = arr.copy()
-        random.shuffle(shuffled)
-        robustness = candidate(arr) == candidate(shuffled)
+        if candidate(arr) == sum(arr):
+            passes += 1
+    robustness = {"pass_rate": passes / trials}
+
+    # ------------------------------------------------------------------
+    # Quality metrics: presence of documentation and type hints
+    import inspect
+
+    annotations = getattr(candidate, "__annotations__", {})
+    quality = {
+        "has_docstring": bool(inspect.getdoc(candidate)),
+        "annotations": len(annotations),
+    }
+
+    # ------------------------------------------------------------------
+    # Stability metrics: variation over repeated runs on identical input
+    arr = [random.randint(-1000, 1000) for _ in range(50)]
+    outputs = [candidate(arr) for _ in range(5)]
+    std = statistics.pstdev(outputs)
+    stability = {"stddev": std}
 
     return {
-        "functional": functional,
+        "functional_pass": functional_pass,
+        "security_pass": security_pass,
         "performance": performance,
         "robustness": robustness,
+        "quality": quality,
+        "stability": stability,
     }
