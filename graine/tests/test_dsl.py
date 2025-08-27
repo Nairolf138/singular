@@ -24,6 +24,22 @@ def test_dsl_accepts_valid_patch():
     assert patch.validate() is True
 
 
+@pytest.mark.parametrize(
+    "op",
+    [
+        {"op": "CONST_TUNE", "delta": 0.0, "bounds": [-0.1, 0.1]},
+        {"op": "EQ_REWRITE", "rule_id": "algebra.id"},
+        {"op": "INLINE"},
+        {"op": "EXTRACT"},
+        {"op": "DEADCODE_ELIM"},
+        {"op": "MICRO_MEMO"},
+    ],
+)
+def test_dsl_accepts_all_whitelisted_ops(op):
+    patch = build_patch(ops=[op])
+    assert patch.validate() is True
+
+
 def test_dsl_rejects_bad_operator():
     data = {
         "type": "Patch",

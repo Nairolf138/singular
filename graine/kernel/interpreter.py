@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import signal
 import time
-from typing import Any, Dict, Set
+from typing import Any, Dict, Callable, Optional, Set
 
 try:  # pragma: no cover - psutil is optional
     import psutil
@@ -54,34 +54,87 @@ class _LimitManager:
 
 limits = _LimitManager()
 
-# Whitelisted operations understood by the interpreter.
-ALLOWED_OPS: Set[str] = {
-    "CONST_TUNE",
-    "EQ_REWRITE",
-    "INLINE",
-    "EXTRACT",
-    "DEADCODE_ELIM",
-    "MICRO_MEMO",
+# Simple marker used to tag whitelisted operators as pure.  The execute
+# function below will only dispatch to callables carrying this attribute.
+def pure(func: Callable[[Dict[str, Any]], Optional[bytearray]]) -> Callable[[Dict[str, Any]], Optional[bytearray]]:
+    func.__pure__ = True  # type: ignore[attr-defined]
+    return func
+
+
+@pure
+def const_tune(_: Dict[str, Any]) -> None:
+    """Adjust a constant; simulated as a no-op."""
+    return None
+
+
+@pure
+def eq_rewrite(_: Dict[str, Any]) -> None:
+    """Apply an equality rewrite; simulated as a no-op."""
+    return None
+
+
+@pure
+def inline(op: Dict[str, Any]) -> Optional[bytearray]:
+    """Simulate inlining by optionally allocating memory or sleeping."""
+
+    data: Optional[bytearray] = None
+    if (size := op.get("size")):
+        data = bytearray(int(size))
+    if (sleep := op.get("sleep")):
+        time.sleep(float(sleep))
+    return data
+
+
+@pure
+def extract(_: Dict[str, Any]) -> None:
+    """Extract code into a new function; simulated as a no-op."""
+    return None
+
+
+@pure
+def deadcode_elim(_: Dict[str, Any]) -> None:
+    """Eliminate dead code; simulated as a no-op."""
+    return None
+
+
+@pure
+def micro_memo(_: Dict[str, Any]) -> None:
+    """Introduce micro memoisation; simulated as a no-op."""
+    return None
+
+
+# Map of allowed operation names to their implementation functions.
+OPERATIONS: Dict[str, Callable[[Dict[str, Any]], Optional[bytearray]]] = {
+    "CONST_TUNE": const_tune,
+    "EQ_REWRITE": eq_rewrite,
+    "INLINE": inline,
+    "EXTRACT": extract,
+    "DEADCODE_ELIM": deadcode_elim,
+    "MICRO_MEMO": micro_memo,
 }
+
+# Public set of allowed operation names for external modules.
+ALLOWED_OPS: Set[str] = set(OPERATIONS.keys())
 
 
 def execute(op: Dict[str, Any]) -> None:
     """Execute a single operation.
 
-    The interpreter validates the operation name and applies a few helper
-    behaviours used in tests such as sleeping or allocating memory.  After
-    each operation the global :data:`limits` are updated.
+    Dispatches to whitelisted operator implementations.  After the operation
+    finishes the global :data:`limits` are updated.  Only callables decorated
+    with :func:`pure` are allowed to be executed.
     """
+
     name = op.get("op")
-    if name not in ALLOWED_OPS:
+    func = OPERATIONS.get(name)
+    if func is None:
         raise RuntimeError(f"Forbidden operation: {name}")
+    if not getattr(func, "__pure__", False):  # pragma: no cover - defensive
+        raise RuntimeError("operation not marked as pure")
+
     data = None
     try:
-        if name == "INLINE":
-            if (size := op.get("size")):
-                data = bytearray(int(size))
-            if (sleep := op.get("sleep")):
-                time.sleep(float(sleep))
+        data = func(op)
         limits.tick()
     finally:
         # Ensure any temporary buffers are released promptly.
