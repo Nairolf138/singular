@@ -43,3 +43,5 @@ def status() -> None:
     print(f"  curiosity: {psyche.curiosity:.2f}")
     print(f"  patience: {psyche.patience:.2f}")
     print(f"  playfulness: {psyche.playfulness:.2f}")
+    print(f"  optimism: {psyche.optimism:.2f}")
+    print(f"  resilience: {psyche.resilience:.2f}")
