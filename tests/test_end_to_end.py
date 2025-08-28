@@ -25,9 +25,10 @@ def test_full_workflow(monkeypatch, tmp_path):
     talk()
 
     episodes = read_episodes()
-    # After synthesize and one talk exchange we should have three episodes:
-    #   system (code), user, assistant
-    assert len(episodes) == 3
-    assert episodes[0]["text"] == code
+    # After run, synthesize and one talk exchange we should have four episodes:
+    #   mutation, system (code), user, assistant
+    assert len(episodes) == 4
+    assert episodes[0]["event"] == "mutation"
+    assert episodes[1]["text"] == code
     assert any(f"Reminder: {code}" in out for out in outputs)
 

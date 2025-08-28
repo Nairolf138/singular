@@ -10,6 +10,7 @@ from life.operators import const_tune, deadcode_elim, eq_rewrite_reduce_sum
 from life.score import score
 
 from ..psyche import Psyche
+from ..memory import add_episode
 
 
 def run(seed: int | None = None) -> str:
@@ -78,6 +79,8 @@ def run(seed: int | None = None) -> str:
     }
 
     psyche.process_run_record(record)
+    add_episode({"event": "mutation", **record, "mood": psyche.last_mood})
+    psyche.save_state()
 
     return mutated if mutated_score <= base_score else base
 

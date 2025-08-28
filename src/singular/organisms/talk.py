@@ -40,9 +40,25 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
 
     while True:
         episodes = read_episodes()
-        last_event = episodes[-1]["text"] if episodes else None
+        last_event = next((e["text"] for e in reversed(episodes) if "text" in e), None)
         latest_mutation = next(
             (e for e in reversed(episodes) if e.get("event") == "mutation"),
+            None,
+        )
+        last_success = next(
+            (
+                e
+                for e in reversed(episodes)
+                if e.get("event") == "mutation" and e.get("improved")
+            ),
+            None,
+        )
+        last_failure = next(
+            (
+                e
+                for e in reversed(episodes)
+                if e.get("event") == "mutation" and not e.get("improved")
+            ),
             None,
         )
         mood_event = latest_mutation.get("mood") if latest_mutation else None
@@ -80,6 +96,10 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
         parts = [reply]
         if last_event:
             parts.append(f"Reminder: {last_event}")
+        if last_success:
+            parts.append(f"Last success: {last_success.get('op')}")
+        if last_failure:
+            parts.append(f"Last failure: {last_failure.get('op')}")
         if perf_msg:
             parts.append(perf_msg)
         parts.append(f"Mood: {mood_report}")
