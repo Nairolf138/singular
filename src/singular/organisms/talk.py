@@ -27,7 +27,9 @@ def talk(seed: int | None = None) -> None:
 
     ensure_memory_structure()
 
-    provider_name = os.getenv("LLM_PROVIDER") or "dummy"
+    provider_name = os.getenv("LLM_PROVIDER")
+    if not provider_name:
+        provider_name = "openai" if os.getenv("OPENAI_API_KEY") else "stub"
     generate_reply: Callable[[str], str] | None = load_llm_provider(provider_name)
     if generate_reply is None:
         generate_reply = _default_reply
