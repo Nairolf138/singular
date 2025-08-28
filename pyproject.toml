@@ -6,7 +6,10 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [{name = "Singular Contributors"}]
-dependencies = []
+dependencies = [
+    "fastapi",
+    "uvicorn",
+]
 
 [build-system]
 requires = ["setuptools>=61"]
