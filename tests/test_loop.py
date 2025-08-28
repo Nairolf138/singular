@@ -40,10 +40,10 @@ def test_mutation_persistence(tmp_path: Path):
         checkpoint,
         budget_seconds=0.1,
         rng=random.Random(0),
-        operators={"inc": _inc_operator},
+        operators={"dec": _dec_operator},
     )
 
-    assert _read_result(skill) > 1
+    assert _read_result(skill) < 1
     state = json.loads(checkpoint.read_text(encoding="utf-8"))
     assert state["iteration"] >= 1
 
@@ -61,7 +61,7 @@ def test_resume_from_checkpoint(tmp_path: Path):
         checkpoint,
         budget_seconds=0.1,
         rng=rng,
-        operators={"inc": _inc_operator},
+        operators={"dec": _dec_operator},
     )
     first_val = _read_result(skill)
     first_iter = load_checkpoint(checkpoint).iteration
@@ -71,13 +71,13 @@ def test_resume_from_checkpoint(tmp_path: Path):
         checkpoint,
         budget_seconds=0.1,
         rng=rng,
-        operators={"inc": _inc_operator},
+        operators={"dec": _dec_operator},
     )
     second_val = _read_result(skill)
     second_iter = load_checkpoint(checkpoint).iteration
 
     assert second_iter > first_iter
-    assert second_val > first_val
+    assert second_val < first_val
 
 
 def test_log_and_memory_update(tmp_path: Path, monkeypatch):
@@ -108,11 +108,11 @@ def test_log_and_memory_update(tmp_path: Path, monkeypatch):
         budget_seconds=0.1,
         rng=random.Random(0),
         run_id="loop",
-        operators={"inc": _inc_operator},
+        operators={"dec": _dec_operator},
     )
 
     assert any((tmp_path / "logs").glob("loop-*.jsonl"))
-    assert json.loads(mem_file.read_text())["foo"]["score"] > 1
+    assert json.loads(mem_file.read_text())["foo"]["score"] < 1
 
 
 def test_corrupted_checkpoint(tmp_path: Path, caplog):
@@ -259,5 +259,5 @@ def test_bandit_persistence_and_exploitation(tmp_path: Path, monkeypatch):
     )
 
     second_stats = load_checkpoint(checkpoint).stats
-    assert second_stats["inc"]["count"] > first_stats["inc"]["count"]
-    assert second_stats["dec"]["count"] == first_stats["dec"]["count"]
+    assert second_stats["dec"]["count"] > first_stats["dec"]["count"]
+    assert second_stats["inc"]["count"] == first_stats["inc"]["count"]
