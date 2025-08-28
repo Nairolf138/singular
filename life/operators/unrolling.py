@@ -11,7 +11,6 @@ from __future__ import annotations
 import ast
 import copy
 import random
-from typing import Iterable
 
 # mypy: ignore-errors
 
