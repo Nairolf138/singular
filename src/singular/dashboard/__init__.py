@@ -2,8 +2,8 @@ from __future__ import annotations
 
 # mypy: ignore-errors
 
+import asyncio
 import json
-import time
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -33,20 +33,18 @@ def create_app(
         return json.loads(psyche_path.read_text())
 
     @app.websocket("/ws")
-    def websocket_endpoint(ws: WebSocket) -> None:
-        ws.accept()
+    async def websocket_endpoint(ws: WebSocket) -> None:
+        await ws.accept()
         last_psyche_mtime: float | None = None
         last_logs: dict[str, str] = {}
         try:
             while True:
-                if ws.closed:
-                    raise WebSocketDisconnect()
                 if psyche_path.exists():
                     mtime = psyche_path.stat().st_mtime
                     if mtime != last_psyche_mtime:
                         last_psyche_mtime = mtime
                         data = json.loads(psyche_path.read_text())
-                        ws.send_json({"type": "psyche", "data": data})
+                        await ws.send_json({"type": "psyche", "data": data})
                 logs: dict[str, str] = {}
                 if runs_path.exists():
                     for file in runs_path.iterdir():
@@ -54,8 +52,8 @@ def create_app(
                             logs[file.name] = file.read_text()
                 if logs != last_logs:
                     last_logs = logs
-                    ws.send_json({"type": "logs", "data": logs})
-                time.sleep(0.1)
+                    await ws.send_json({"type": "logs", "data": logs})
+                await asyncio.sleep(0.1)
         except WebSocketDisconnect:
             pass
 
