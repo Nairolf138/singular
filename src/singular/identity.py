@@ -46,6 +46,7 @@ def create_identity(name: str, soulseed: str, path: Path | str = Path("id.json")
     )
 
     path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as file:
         json.dump(identity.__dict__, file)
 

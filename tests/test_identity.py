@@ -19,3 +19,13 @@ def test_create_and_read_identity(tmp_path: Path) -> None:
     assert loaded.id == expected_id
     # Ensure born_at is a valid ISO timestamp
     datetime.fromisoformat(loaded.born_at)
+
+
+def test_create_identity_in_subdirectory(tmp_path: Path) -> None:
+    nested_path = tmp_path / "sub" / "id.json"
+    data = create_identity("Bob", "99", nested_path)
+
+    assert nested_path.exists()
+    loaded = read_identity(nested_path)
+
+    assert loaded == data
