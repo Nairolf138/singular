@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -74,7 +75,14 @@ def create_app(
 
 def run(host: str = "127.0.0.1", port: int = 8000) -> None:
     """Launch the dashboard using Uvicorn."""
-    import uvicorn
+    try:
+        import uvicorn
+    except ImportError as exc:
+        print(
+            "Uvicorn is required to run the dashboard. Install it with 'pip install uvicorn'.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from exc
 
     app = create_app()
     uvicorn.run(app, host=host, port=port)

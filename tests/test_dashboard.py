@@ -1,9 +1,10 @@
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
-from singular.dashboard import create_app
+from singular.dashboard import create_app, run
 
 
 def test_dashboard_endpoints(tmp_path: Path) -> None:
@@ -58,3 +59,24 @@ def test_websocket_stream(tmp_path: Path) -> None:
         updates = {msg_a["type"]: msg_a["data"], msg_b["type"]: msg_b["data"]}
         assert updates["logs"] == {"log.txt": "bye"}
         assert updates["psyche"] == {"mood": "sad"}
+
+
+def test_run_requires_uvicorn(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name: str, *args, **kwargs):
+        if name == "uvicorn":
+            raise ImportError("No module named 'uvicorn'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    with pytest.raises(SystemExit):
+        run()
+
+    captured = capsys.readouterr()
+    assert "pip install uvicorn" in captured.err
