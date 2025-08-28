@@ -212,9 +212,34 @@ def write_skills(skills: dict[str, Any], path: Path | str | None = None) -> None
 def update_score(
     skill: str, score: float, path: Path | str | None = None
 ) -> dict[str, Any]:
-    """Update a skill score in the skills file."""
+    """Update a skill score in the skills file.
+
+    Existing note text for ``skill`` is preserved if present.
+    """
+
     skills = read_skills(path)
-    skills[skill] = score
+    entry = skills.get(skill)
+    if isinstance(entry, dict):
+        entry["score"] = score
+    else:
+        entry = {"score": score}
+    skills[skill] = entry
+    write_skills(skills, path)
+    return skills
+
+
+def update_note(
+    skill: str, note: str, path: Path | str | None = None
+) -> dict[str, Any]:
+    """Update or add a free-form note for ``skill`` in the skills file."""
+
+    skills = read_skills(path)
+    entry = skills.get(skill)
+    if isinstance(entry, dict):
+        entry["note"] = note
+    else:
+        entry = {"score": 0.0, "note": note}
+    skills[skill] = entry
     write_skills(skills, path)
     return skills
 

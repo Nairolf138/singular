@@ -4,7 +4,7 @@ import json
 import pytest
 from typing import Any
 
-from singular.memory import add_episode, update_trait, update_score
+from singular.memory import add_episode, update_trait, update_score, update_note
 import singular.memory as memory
 from singular.organisms.birth import birth
 
@@ -54,7 +54,7 @@ def test_add_episode(tmp_path: Path) -> None:
     assert json.loads(lines[0]) == {"event": "test"}
 
 
-def test_update_trait_and_score(tmp_path: Path) -> None:
+def test_update_trait_score_and_note(tmp_path: Path) -> None:
     profile_path = tmp_path / "mem" / "profile.json"
     skills_path = tmp_path / "mem" / "skills.json"
 
@@ -62,7 +62,10 @@ def test_update_trait_and_score(tmp_path: Path) -> None:
     assert json.loads(profile_path.read_text(encoding="utf-8")) == {"courage": "high"}
 
     update_score("archery", 10, path=skills_path)
-    assert json.loads(skills_path.read_text(encoding="utf-8")) == {"archery": 10}
+    update_note("archery", "bullseye", path=skills_path)
+    assert json.loads(skills_path.read_text(encoding="utf-8")) == {
+        "archery": {"score": 10, "note": "bullseye"}
+    }
 
 
 def test_birth_initializes_default_skills(
@@ -80,9 +83,9 @@ def test_birth_initializes_default_skills(
         (tmp_path / "mem" / "skills.json").read_text(encoding="utf-8")
     )
     assert skills_data == {
-        "addition": 0.0,
-        "subtraction": 0.0,
-        "multiplication": 0.0,
+        "addition": {"score": 0.0},
+        "subtraction": {"score": 0.0},
+        "multiplication": {"score": 0.0},
     }
 
 

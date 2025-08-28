@@ -97,7 +97,7 @@ def test_log_and_memory_update(tmp_path: Path, monkeypatch):
 
     def fake_update_score(skill: str, score: float) -> None:
         data = json.loads(mem_file.read_text()) if mem_file.exists() else {}
-        data[skill] = score
+        data[skill] = {"score": score}
         mem_file.write_text(json.dumps(data))
 
     monkeypatch.setattr(life_loop, "update_score", fake_update_score)
@@ -112,7 +112,7 @@ def test_log_and_memory_update(tmp_path: Path, monkeypatch):
     )
 
     assert any((tmp_path / "logs").glob("loop-*.jsonl"))
-    assert json.loads(mem_file.read_text())["foo"] > 1
+    assert json.loads(mem_file.read_text())["foo"]["score"] > 1
 
 
 def test_corrupted_checkpoint(tmp_path: Path, caplog):

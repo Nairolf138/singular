@@ -17,7 +17,9 @@ def test_report_cli(monkeypatch, tmp_path, capsys):
             fh.write(json.dumps(rec) + "\n")
     mem = tmp_path / "mem"
     mem.mkdir()
-    (mem / "skills.json").write_text(json.dumps({"skillA": 0.8}), encoding="utf-8")
+    (mem / "skills.json").write_text(
+        json.dumps({"skillA": {"score": 0.8}}), encoding="utf-8"
+    )
 
     main(["report", "--id", "run1"])
     out = capsys.readouterr().out

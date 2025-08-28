@@ -32,7 +32,7 @@ def test_quest_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     assert skill_file.exists()
 
     skills_data = read_skills(tmp_path / "mem" / "skills.json")
-    assert skills_data == {"square": 0.0}
+    assert skills_data == {"square": {"score": 0.0}}
 
     episodes = read_episodes(tmp_path / "mem" / "episodic.jsonl")
     assert episodes[-1]["status"] == "success"
