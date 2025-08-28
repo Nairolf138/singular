@@ -16,6 +16,7 @@ from singular.memory import add_episode, update_score
 from singular.psyche import Psyche
 from singular.runs.logger import RunLogger
 from singular.perception import capture_signals
+from graine.evolver.generate import propose_mutations
 
 from . import sandbox
 from .death import DeathMonitor
@@ -187,7 +188,6 @@ def run(
     """
 
     rng = rng or random.Random()
-    start = time.time()
     state = load_checkpoint(checkpoint_path)
 
     if isinstance(skills_dirs, Path):
@@ -210,6 +210,10 @@ def run(
         stats.setdefault(name, {"count": 0, "reward": 0.0})
 
     psyche = Psyche.load_state()
+    start = time.time()
+    freq = max(1, int(getattr(psyche, "mutation_rate", 1.0) * (getattr(psyche, "energy", 100.0) / 100)))
+    for _ in range(freq):
+        propose_mutations([])
     mortality = mortality or DeathMonitor()
     seen_diffs: set[str] = set()
 

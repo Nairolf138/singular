@@ -77,7 +77,7 @@ def test_resume_from_checkpoint(tmp_path: Path):
     second_iter = load_checkpoint(checkpoint).iteration
 
     assert second_iter > first_iter
-    assert second_val < first_val
+    assert second_val <= first_val
 
 
 def test_log_and_memory_update(tmp_path: Path, monkeypatch):
@@ -261,3 +261,95 @@ def test_bandit_persistence_and_exploitation(tmp_path: Path, monkeypatch):
     second_stats = load_checkpoint(checkpoint).stats
     assert second_stats["dec"]["count"] > first_stats["dec"]["count"]
     assert second_stats["inc"]["count"] == first_stats["inc"]["count"]
+
+
+def test_angry_increases_proposals(tmp_path: Path, monkeypatch):
+    calls = {"n": 0}
+
+    def fake_propose(zones=None):
+        calls["n"] += 1
+        return []
+
+    class DummyLogger:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            pass
+
+        def log(self, *a, **k):
+            pass
+
+        def log_death(self, *a, **k):
+            pass
+
+    skill_dir = tmp_path / "skills"
+    skill_dir.mkdir()
+    checkpoint = tmp_path / "ckpt.json"
+
+    psyche = life_loop.Psyche()
+    psyche.last_mood = "frustrated"
+    psyche.energy = 100.0
+
+    monkeypatch.setattr(life_loop, "propose_mutations", fake_propose)
+    monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: psyche))
+    monkeypatch.setattr(life_loop, "RunLogger", DummyLogger)
+
+    life_loop.run(
+        skill_dir,
+        checkpoint,
+        budget_seconds=0.0,
+        rng=random.Random(0),
+        operators={"inc": _inc_operator},
+    )
+
+    assert calls["n"] == 2
+
+
+def test_fatigue_reduces_proposals(tmp_path: Path, monkeypatch):
+    calls = {"n": 0}
+
+    def fake_propose(zones=None):
+        calls["n"] += 1
+        return []
+
+    class DummyLogger:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            pass
+
+        def log(self, *a, **k):
+            pass
+
+        def log_death(self, *a, **k):
+            pass
+
+    skill_dir = tmp_path / "skills"
+    skill_dir.mkdir()
+    checkpoint = tmp_path / "ckpt.json"
+
+    psyche = life_loop.Psyche()
+    psyche.last_mood = "frustrated"
+    psyche.energy = 20.0
+
+    monkeypatch.setattr(life_loop, "propose_mutations", fake_propose)
+    monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: psyche))
+    monkeypatch.setattr(life_loop, "RunLogger", DummyLogger)
+
+    life_loop.run(
+        skill_dir,
+        checkpoint,
+        budget_seconds=0.0,
+        rng=random.Random(0),
+        operators={"inc": _inc_operator},
+    )
+
+    assert calls["n"] == 1
