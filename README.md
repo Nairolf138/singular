@@ -105,6 +105,13 @@ Installez les dépendances du tableau de bord :
 pip install -e .
 ```
 
+PyYAML est une dépendance optionnelle utilisée pour manipuler le fichier `values.yaml`.
+Vous pouvez l'installer via l'extra `yaml` :
+
+```bash
+pip install -e .[yaml]
+```
+
 Après installation, la commande CLI `singular` est disponible :
 
 ```bash
