@@ -102,6 +102,9 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
             user_input = input("you: ")
         except EOFError:
             break
+        except KeyboardInterrupt:
+            print("\nExiting conversation.")
+            break
 
         if user_input.strip().lower() in {"exit", "quit"}:
             break

@@ -44,6 +44,24 @@ def test_cli_provider_precedence(monkeypatch, tmp_path):
     assert captured["provider"] == "cli"
 
 
+def test_talk_handles_keyboard_interrupt(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("singular.organisms.talk.load_llm_provider", lambda _name: None)
+
+    def raise_interrupt(_=""):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("builtins.input", raise_interrupt)
+    outputs = []
+    monkeypatch.setattr("builtins.print", lambda msg: outputs.append(msg))
+
+    talk()
+
+    assert any("Exiting conversation." in out for out in outputs)
+    episodes = [e for e in read_episodes() if e.get("event") != "perception"]
+    assert episodes == []
+
+
 def _run_talk(monkeypatch, tmp_path, seed, run):
     subdir = tmp_path / f"{seed}_{run}"
     subdir.mkdir()
