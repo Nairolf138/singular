@@ -94,6 +94,20 @@ class RunLogger:
         self.psyche.process_run_record(record)
         add_episode({"event": "mutation", "mood": self.psyche.last_mood, **record})
 
+    def log_death(self, reason: str, **info: Any) -> None:
+        """Record a death event with optional additional information."""
+
+        record: dict[str, Any] = {
+            "ts": datetime.utcnow().isoformat(timespec="seconds"),
+            "event": "death",
+            "reason": reason,
+            **info,
+        }
+        self._file.write(json.dumps(record) + "\n")
+        self._file.flush()
+        os.fsync(self._file.fileno())
+        add_episode(record)
+
     def close(self) -> None:
         """Flush and finalize the log file atomically."""
         if not self._file.closed:

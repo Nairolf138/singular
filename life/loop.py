@@ -17,6 +17,7 @@ from singular.psyche import Psyche
 from singular.runs.logger import RunLogger
 
 from . import sandbox
+from .death import DeathMonitor
 
 
 log = logging.getLogger(__name__)
@@ -129,6 +130,7 @@ def run(
     rng: random.Random | None = None,
     run_id: str = "loop",
     operators: Dict[str, Callable[[ast.AST], ast.AST]] | None = None,
+    mortality: DeathMonitor | None = None,
 ) -> Checkpoint:
     """Run the evolutionary loop for at most ``budget_seconds`` seconds."""
 
@@ -144,6 +146,7 @@ def run(
     }
 
     psyche = Psyche.load_state()
+    mortality = mortality or DeathMonitor()
 
     with RunLogger(run_id, psyche=psyche) as logger:
         while time.time() - start < budget_seconds:
@@ -191,6 +194,14 @@ def run(
             )
 
             save_checkpoint(checkpoint_path, state)
+
+            dead, reason = mortality.check(
+                state.iteration, psyche, mutated_score >= base_score
+            )
+            if dead:
+                logger.log_death(reason or "unknown", age=state.iteration)
+                psyche.save_state()
+                break
 
     return state
 
