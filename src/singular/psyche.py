@@ -64,6 +64,7 @@ class Psyche:
     playfulness: float = 0.5
     optimism: float = 0.5
     resilience: float = 0.5
+    energy: float = 100.0
 
     # ``last_mood`` is updated every time :meth:`feel` is called and can be
     # queried by other subsystems (interaction and mutation policies).
@@ -178,6 +179,20 @@ class Psyche:
             return "analyze"
         return self._MUTATION_POLICIES.get(mood, "default")
 
+    # Energy management ---------------------------------------------------
+    def consume(self, amount: float = 1.0) -> float:
+        """Decrease energy by ``amount`` and return the new value.
+
+        Energy will not drop below ``0``.
+        """
+        self.energy = max(0.0, self.energy - amount)
+        return self.energy
+
+    def gain(self, amount: float = 1.0) -> float:
+        """Increase energy by ``amount`` and return the new value."""
+        self.energy += amount
+        return self.energy
+
     # Persistence helpers -------------------------------------------------
     def save_state(self, path: Path | str | None = None) -> None:
         """Persist current psyche state to disk."""
@@ -187,6 +202,7 @@ class Psyche:
             "playfulness": self.playfulness,
             "optimism": self.optimism,
             "resilience": self.resilience,
+            "energy": self.energy,
             "last_mood": self.last_mood,
         }
         if path is None:
@@ -207,6 +223,7 @@ class Psyche:
             playfulness=data.get("playfulness", 0.5),
             optimism=data.get("optimism", 0.5),
             resilience=data.get("resilience", 0.5),
+            energy=data.get("energy", 100.0),
         )
         psyche.last_mood = data.get("last_mood")
         return psyche

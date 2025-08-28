@@ -41,6 +41,7 @@ def test_birth_initializes_identity_profile_and_psyche(
         "playfulness": 0.5,
         "optimism": 0.5,
         "resilience": 0.5,
+        "energy": 100.0,
         "last_mood": None,
     }
 

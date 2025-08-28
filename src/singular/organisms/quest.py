@@ -37,4 +37,5 @@ def quest(spec: Path) -> None:
     add_episode(
         {"event": "quest", "status": "success", "skill": skill_path.stem, "mood": mood}
     )
+    psyche.gain()
     psyche.save_state()
