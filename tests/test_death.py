@@ -105,7 +105,7 @@ def test_death_by_failures(tmp_path: Path, monkeypatch):
         budget_seconds=1.0,
         rng=random.Random(0),
         run_id="loop",
-        operators={"dec": _dec_operator},
+        operators={"inc": _inc_operator},
         mortality=monitor,
     )
 

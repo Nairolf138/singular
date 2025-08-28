@@ -231,7 +231,7 @@ def run(
             if mutated_score == float("-inf"):
                 if hasattr(psyche, "feel"):
                     psyche.feel("pain")
-            elif mutated_score >= base_score:
+            elif mutated_score <= base_score:
                 if hasattr(psyche, "feel"):
                     psyche.feel("pleasure")
 
@@ -249,7 +249,7 @@ def run(
                     psyche.feel("curious")
                 seen_diffs.add(diff)
 
-            if mutated_score >= base_score:
+            if mutated_score <= base_score:
                 skill_path.write_text(mutated, encoding="utf-8")
                 key = (
                     f"{org_name}:{skill_path.stem}"
@@ -258,9 +258,9 @@ def run(
                 )
                 update_score(key, mutated_score)
                 org.last_score = mutated_score
-                org.energy += 0.2
+                org.energy += 0.2  # reward improvements
             else:
-                org.energy -= 0.1
+                org.energy -= 0.1  # penalize regressions
 
             stats[op_name]["count"] += 1
             stats[op_name]["reward"] += mutated_score - base_score
@@ -301,7 +301,7 @@ def run(
             save_checkpoint(checkpoint_path, state)
 
             dead, reason = org.monitor.check(
-                state.iteration, psyche, mutated_score >= base_score, org.resources
+                state.iteration, psyche, mutated_score <= base_score, org.resources
             )
             if dead:
                 logger.log_death(reason or "unknown", age=state.iteration)
