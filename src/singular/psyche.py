@@ -7,6 +7,7 @@ from typing import Dict, Any
 from pathlib import Path
 
 from .memory import read_psyche, write_psyche
+from .motivation import Objective
 
 
 def _clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
@@ -65,6 +66,7 @@ class Psyche:
     optimism: float = 0.5
     resilience: float = 0.5
     energy: float = 100.0
+    objectives: Dict[str, Objective] = field(default_factory=dict)
 
     # ``last_mood`` is updated every time :meth:`feel` is called and can be
     # queried by other subsystems (interaction and mutation policies).
@@ -94,6 +96,17 @@ class Psyche:
                 "playfulness": -0.05,
                 "optimism": -0.1,
                 "resilience": -0.05,
+            },
+            "curious": {
+                "curiosity": 0.1,
+            },
+            "pleasure": {
+                "optimism": 0.1,
+                "resilience": 0.1,
+            },
+            "pain": {
+                "optimism": -0.1,
+                "resilience": -0.1,
             },
             "neutral": {},
         },
@@ -158,7 +171,20 @@ class Psyche:
             value = getattr(self, attr)
             setattr(self, attr, _clamp(value + delta))
 
+        if mood == "pleasure":
+            for obj in self.objectives.values():
+                obj.apply_delta(0.1)
+        elif mood == "pain":
+            for obj in self.objectives.values():
+                obj.apply_delta(-0.1)
+        self.adjust_objectives()
+
         return mood
+
+    def adjust_objectives(self) -> None:
+        """Clamp objective weights to the ``[0, 1]`` range."""
+        for obj in self.objectives.values():
+            obj.weight = _clamp(obj.weight)
 
     # Exposed helpers -----------------------------------------------------
     def interaction_policy(self) -> str:
@@ -205,6 +231,11 @@ class Psyche:
             "energy": self.energy,
             "last_mood": self.last_mood,
         }
+        if self.objectives:
+            state["objectives"] = {
+                name: {"weight": obj.weight, "reward": obj.reward}
+                for name, obj in self.objectives.items()
+            }
         if path is None:
             write_psyche(state)
         else:
@@ -224,6 +255,14 @@ class Psyche:
             optimism=data.get("optimism", 0.5),
             resilience=data.get("resilience", 0.5),
             energy=data.get("energy", 100.0),
+            objectives={
+                name: Objective(
+                    name,
+                    obj.get("weight", 1.0),
+                    obj.get("reward", 0.0),
+                )
+                for name, obj in data.get("objectives", {}).items()
+            },
         )
         psyche.last_mood = data.get("last_mood")
         return psyche

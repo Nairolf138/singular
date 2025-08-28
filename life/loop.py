@@ -196,6 +196,7 @@ def run(
 
     psyche = Psyche.load_state()
     mortality = mortality or DeathMonitor()
+    seen_diffs: set[str] = set()
 
     with RunLogger(run_id, psyche=psyche) as logger:
         while time.time() - start < budget_seconds:
@@ -217,6 +218,13 @@ def run(
             mutated_score = score(mutated)
             ms_new = (time.perf_counter() - t0) * 1000
 
+            if mutated_score == float("-inf"):
+                if hasattr(psyche, "feel"):
+                    psyche.feel("pain")
+            elif mutated_score >= base_score:
+                if hasattr(psyche, "feel"):
+                    psyche.feel("pleasure")
+
             diff = "".join(
                 difflib.unified_diff(
                     original.splitlines(True),
@@ -225,6 +233,11 @@ def run(
                     tofile="mutated",
                 )
             )
+
+            if diff not in seen_diffs:
+                if hasattr(psyche, "feel"):
+                    psyche.feel("curious")
+                seen_diffs.add(diff)
 
             if mutated_score >= base_score:
                 skill_path.write_text(mutated, encoding="utf-8")
