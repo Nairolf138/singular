@@ -11,17 +11,40 @@ from typing import Any
 import json
 import os
 
-# Base directory for persistent files
-_BASE_DIR = Path(os.environ.get("SINGULAR_HOME", "."))
-# Base memory directory
-MEM_DIR = _BASE_DIR / "mem"
 
-# File paths within the memory directory
-PROFILE_FILE = MEM_DIR / "profile.json"
-VALUES_FILE = MEM_DIR / "values.yaml"
-EPISODIC_FILE = MEM_DIR / "episodic.jsonl"
-SKILLS_FILE = MEM_DIR / "skills.json"
-PSYCHE_FILE = MEM_DIR / "psyche.json"
+def get_base_dir() -> Path:
+    """Return the base directory for persistent files."""
+    return Path(os.environ.get("SINGULAR_HOME", "."))
+
+
+def get_mem_dir() -> Path:
+    """Return the base memory directory."""
+    return get_base_dir() / "mem"
+
+
+def get_profile_file() -> Path:
+    """Return the path to the profile JSON file."""
+    return get_mem_dir() / "profile.json"
+
+
+def get_values_file() -> Path:
+    """Return the path to the values YAML file."""
+    return get_mem_dir() / "values.yaml"
+
+
+def get_episodic_file() -> Path:
+    """Return the path to the episodic JSONL file."""
+    return get_mem_dir() / "episodic.jsonl"
+
+
+def get_skills_file() -> Path:
+    """Return the path to the skills JSON file."""
+    return get_mem_dir() / "skills.json"
+
+
+def get_psyche_file() -> Path:
+    """Return the path to the psyche JSON file."""
+    return get_mem_dir() / "psyche.json"
 
 
 def _ensure_dir(path: Path) -> None:
@@ -29,8 +52,10 @@ def _ensure_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def ensure_memory_structure(mem_dir: Path | str = MEM_DIR) -> None:
+def ensure_memory_structure(mem_dir: Path | str | None = None) -> None:
     """Create the memory directory structure if it does not exist."""
+    if mem_dir is None:
+        mem_dir = get_mem_dir()
     mem_dir = Path(mem_dir)
     mem_dir.mkdir(parents=True, exist_ok=True)
     (mem_dir / "profile.json").touch(exist_ok=True)
@@ -45,8 +70,10 @@ def ensure_memory_structure(mem_dir: Path | str = MEM_DIR) -> None:
 # ---------------------------------------------------------------------------
 
 
-def read_profile(path: Path | str = PROFILE_FILE) -> dict[str, Any]:
+def read_profile(path: Path | str | None = None) -> dict[str, Any]:
     """Read the profile JSON file."""
+    if path is None:
+        path = get_profile_file()
     path = Path(path)
     if not path.exists():
         return {}
@@ -57,8 +84,10 @@ def read_profile(path: Path | str = PROFILE_FILE) -> dict[str, Any]:
             return {}
 
 
-def write_profile(profile: dict[str, Any], path: Path | str = PROFILE_FILE) -> None:
+def write_profile(profile: dict[str, Any], path: Path | str | None = None) -> None:
     """Write the profile JSON file."""
+    if path is None:
+        path = get_profile_file()
     path = Path(path)
     _ensure_dir(path)
     with path.open("w", encoding="utf-8") as file:
@@ -66,7 +95,7 @@ def write_profile(profile: dict[str, Any], path: Path | str = PROFILE_FILE) -> N
 
 
 def update_trait(
-    trait: str, value: Any, path: Path | str = PROFILE_FILE
+    trait: str, value: Any, path: Path | str | None = None
 ) -> dict[str, Any]:
     """Update or add a trait in the profile file."""
     profile = read_profile(path)
@@ -80,11 +109,13 @@ def update_trait(
 # ---------------------------------------------------------------------------
 
 
-def read_values(path: Path | str = VALUES_FILE) -> dict[str, Any]:
+def read_values(path: Path | str | None = None) -> dict[str, Any]:
     """Read the values YAML file.
 
     Returns an empty dict if :mod:`pyyaml` is not installed.
     """
+    if path is None:
+        path = get_values_file()
     path = Path(path)
     if not path.exists():
         return {}
@@ -98,11 +129,13 @@ def read_values(path: Path | str = VALUES_FILE) -> dict[str, Any]:
     return data or {}
 
 
-def write_values(values: dict[str, Any], path: Path | str = VALUES_FILE) -> None:
+def write_values(values: dict[str, Any], path: Path | str | None = None) -> None:
     """Write the values YAML file.
 
     Requires :mod:`pyyaml` to be installed.
     """
+    if path is None:
+        path = get_values_file()
     path = Path(path)
     _ensure_dir(path)
     try:
@@ -120,8 +153,10 @@ def write_values(values: dict[str, Any], path: Path | str = VALUES_FILE) -> None
 # ---------------------------------------------------------------------------
 
 
-def read_episodes(path: Path | str = EPISODIC_FILE) -> list[dict[str, Any]]:
+def read_episodes(path: Path | str | None = None) -> list[dict[str, Any]]:
     """Read all episodes from the JSONL file."""
+    if path is None:
+        path = get_episodic_file()
     path = Path(path)
     if not path.exists():
         return []
@@ -135,8 +170,10 @@ def read_episodes(path: Path | str = EPISODIC_FILE) -> list[dict[str, Any]]:
     return episodes
 
 
-def add_episode(episode: dict[str, Any], path: Path | str = EPISODIC_FILE) -> None:
+def add_episode(episode: dict[str, Any], path: Path | str | None = None) -> None:
     """Append a new episode to the episodic memory file."""
+    if path is None:
+        path = get_episodic_file()
     path = Path(path)
     _ensure_dir(path)
     with path.open("a", encoding="utf-8") as file:
@@ -148,8 +185,10 @@ def add_episode(episode: dict[str, Any], path: Path | str = EPISODIC_FILE) -> No
 # ---------------------------------------------------------------------------
 
 
-def read_skills(path: Path | str = SKILLS_FILE) -> dict[str, Any]:
+def read_skills(path: Path | str | None = None) -> dict[str, Any]:
     """Read the skills JSON file."""
+    if path is None:
+        path = get_skills_file()
     path = Path(path)
     if not path.exists():
         return {}
@@ -160,8 +199,10 @@ def read_skills(path: Path | str = SKILLS_FILE) -> dict[str, Any]:
             return {}
 
 
-def write_skills(skills: dict[str, Any], path: Path | str = SKILLS_FILE) -> None:
+def write_skills(skills: dict[str, Any], path: Path | str | None = None) -> None:
     """Write the skills JSON file."""
+    if path is None:
+        path = get_skills_file()
     path = Path(path)
     _ensure_dir(path)
     with path.open("w", encoding="utf-8") as file:
@@ -169,7 +210,7 @@ def write_skills(skills: dict[str, Any], path: Path | str = SKILLS_FILE) -> None
 
 
 def update_score(
-    skill: str, score: float, path: Path | str = SKILLS_FILE
+    skill: str, score: float, path: Path | str | None = None
 ) -> dict[str, Any]:
     """Update a skill score in the skills file."""
     skills = read_skills(path)
@@ -183,8 +224,10 @@ def update_score(
 # ---------------------------------------------------------------------------
 
 
-def read_psyche(path: Path | str = PSYCHE_FILE) -> dict[str, Any]:
+def read_psyche(path: Path | str | None = None) -> dict[str, Any]:
     """Read the psyche JSON file."""
+    if path is None:
+        path = get_psyche_file()
     path = Path(path)
     if not path.exists():
         return {}
@@ -195,8 +238,10 @@ def read_psyche(path: Path | str = PSYCHE_FILE) -> dict[str, Any]:
             return {}
 
 
-def write_psyche(state: dict[str, Any], path: Path | str = PSYCHE_FILE) -> None:
+def write_psyche(state: dict[str, Any], path: Path | str | None = None) -> None:
     """Write the psyche JSON file."""
+    if path is None:
+        path = get_psyche_file()
     path = Path(path)
     _ensure_dir(path)
     with path.open("w", encoding="utf-8") as file:
