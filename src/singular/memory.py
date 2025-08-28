@@ -13,6 +13,7 @@ PROFILE_FILE = MEM_DIR / "profile.json"
 VALUES_FILE = MEM_DIR / "values.yaml"
 EPISODIC_FILE = MEM_DIR / "episodic.jsonl"
 SKILLS_FILE = MEM_DIR / "skills.json"
+PSYCHE_FILE = MEM_DIR / "psyche.json"
 
 
 def _ensure_dir(path: Path) -> None:
@@ -28,6 +29,7 @@ def ensure_memory_structure(mem_dir: Path | str = MEM_DIR) -> None:
     (mem_dir / "values.yaml").touch(exist_ok=True)
     (mem_dir / "episodic.jsonl").touch(exist_ok=True)
     (mem_dir / "skills.json").touch(exist_ok=True)
+    (mem_dir / "psyche.json").touch(exist_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -143,3 +145,28 @@ def update_score(skill: str, score: float, path: Path | str = SKILLS_FILE) -> di
     skills[skill] = score
     write_skills(skills, path)
     return skills
+
+
+# ---------------------------------------------------------------------------
+# Psyche helpers
+# ---------------------------------------------------------------------------
+
+
+def read_psyche(path: Path | str = PSYCHE_FILE) -> dict[str, Any]:
+    """Read the psyche JSON file."""
+    path = Path(path)
+    if not path.exists():
+        return {}
+    with path.open(encoding="utf-8") as file:
+        try:
+            return json.load(file)
+        except json.JSONDecodeError:
+            return {}
+
+
+def write_psyche(state: dict[str, Any], path: Path | str = PSYCHE_FILE) -> None:
+    """Write the psyche JSON file."""
+    path = Path(path)
+    _ensure_dir(path)
+    with path.open("w", encoding="utf-8") as file:
+        json.dump(state, file)

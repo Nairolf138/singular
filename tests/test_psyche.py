@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from singular.psyche import Psyche
 
 
@@ -26,3 +28,17 @@ def test_policies_and_lower_clamp() -> None:
     assert psyche.playfulness >= 0.0
     assert psyche.interaction_policy() == "retry"
     assert psyche.mutation_policy() == "explore"
+
+
+def test_state_persistence(tmp_path: Path) -> None:
+    path = tmp_path / "mem" / "psyche.json"
+    psyche = Psyche(curiosity=0.2, patience=0.3, playfulness=0.4)
+    psyche.feel("proud")
+    psyche.save_state(path)
+    assert path.exists()
+
+    loaded = Psyche.load_state(path)
+    assert loaded.curiosity == psyche.curiosity
+    assert loaded.patience == psyche.patience
+    assert loaded.playfulness == psyche.playfulness
+    assert loaded.last_mood == psyche.last_mood
