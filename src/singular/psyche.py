@@ -54,13 +54,16 @@ def derive_mood(record: dict) -> str:
 class Psyche:
     """Represents mutable traits and current mood of an organism.
 
-    The attributes ``curiosity``, ``patience`` and ``playfulness`` are kept in
-    the ``[0, 1]`` range and modified according to experienced moods.
+    The attributes ``curiosity``, ``patience``, ``playfulness``, ``optimism`` and
+    ``resilience`` are kept in the ``[0, 1]`` range and modified according to
+    experienced moods.
     """
 
     curiosity: float = 0.5
     patience: float = 0.5
     playfulness: float = 0.5
+    optimism: float = 0.5
+    resilience: float = 0.5
 
     # ``last_mood`` is updated every time :meth:`feel` is called and can be
     # queried by other subsystems (interaction and mutation policies).
@@ -70,9 +73,27 @@ class Psyche:
     # added after every event and clamped.
     _MOOD_EFFECTS: Dict[str, Dict[str, float]] = field(
         default_factory=lambda: {
-            "proud": {"curiosity": 0.1, "patience": 0.05, "playfulness": 0.1},
-            "frustrated": {"curiosity": -0.1, "patience": -0.2, "playfulness": -0.1},
-            "anxious": {"curiosity": -0.05, "patience": -0.1, "playfulness": -0.05},
+            "proud": {
+                "curiosity": 0.1,
+                "patience": 0.05,
+                "playfulness": 0.1,
+                "optimism": 0.1,
+                "resilience": 0.1,
+            },
+            "frustrated": {
+                "curiosity": -0.1,
+                "patience": -0.2,
+                "playfulness": -0.1,
+                "optimism": -0.2,
+                "resilience": -0.1,
+            },
+            "anxious": {
+                "curiosity": -0.05,
+                "patience": -0.1,
+                "playfulness": -0.05,
+                "optimism": -0.1,
+                "resilience": -0.05,
+            },
             "neutral": {},
         },
         init=False,
@@ -140,13 +161,21 @@ class Psyche:
 
     # Exposed helpers -----------------------------------------------------
     def interaction_policy(self) -> str:
-        """Return the interaction policy associated with ``last_mood``."""
+        """Return the interaction policy based on mood and traits."""
         mood = self.last_mood or "neutral"
+        if self.optimism >= 0.7:
+            return "engaging"
+        if self.resilience <= 0.3:
+            return "cautious"
         return self._INTERACTION_POLICIES.get(mood, "balanced")
 
     def mutation_policy(self) -> str:
-        """Return the mutation policy associated with ``last_mood``."""
+        """Return the mutation policy based on mood and traits."""
         mood = self.last_mood or "neutral"
+        if self.resilience >= 0.7:
+            return "exploit"
+        if self.optimism <= 0.3:
+            return "analyze"
         return self._MUTATION_POLICIES.get(mood, "default")
 
     # Persistence helpers -------------------------------------------------
@@ -156,6 +185,8 @@ class Psyche:
             "curiosity": self.curiosity,
             "patience": self.patience,
             "playfulness": self.playfulness,
+            "optimism": self.optimism,
+            "resilience": self.resilience,
             "last_mood": self.last_mood,
         }
         if path is None:
@@ -174,6 +205,8 @@ class Psyche:
             curiosity=data.get("curiosity", 0.5),
             patience=data.get("patience", 0.5),
             playfulness=data.get("playfulness", 0.5),
+            optimism=data.get("optimism", 0.5),
+            resilience=data.get("resilience", 0.5),
         )
         psyche.last_mood = data.get("last_mood")
         return psyche
