@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 import json
 import os
 from typing import Any
+
+from ..psyche import Psyche
+from ..memory import add_episode
 
 # Directory where run logs are stored
 RUNS_DIR = Path("runs")
@@ -32,6 +35,7 @@ class RunLogger:
 
     run_id: str
     root: Path = RUNS_DIR
+    psyche: Psyche = field(default_factory=Psyche.load_state)
 
     def __post_init__(self) -> None:
         self.root = Path(self.root)
@@ -85,6 +89,8 @@ class RunLogger:
         self._file.write(json.dumps(record) + "\n")
         self._file.flush()
         os.fsync(self._file.fileno())
+        self.psyche.process_run_record(record)
+        add_episode({"event": "mutation", "mood": self.psyche.last_mood, **record})
 
     def close(self) -> None:
         """Flush and finalize the log file atomically."""
