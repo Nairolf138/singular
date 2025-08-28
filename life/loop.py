@@ -12,9 +12,10 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable
 
-from singular.memory import update_score
+from singular.memory import add_episode, update_score
 from singular.psyche import Psyche
 from singular.runs.logger import RunLogger
+from singular.perception import capture_signals
 
 from . import sandbox
 from .death import DeathMonitor
@@ -198,6 +199,8 @@ def run(
 
     with RunLogger(run_id, psyche=psyche) as logger:
         while time.time() - start < budget_seconds:
+            signals = capture_signals()
+            add_episode({"event": "perception", **signals})
             state.iteration += 1
 
             org_name, skill_path = _choose_skill(rng, world.organisms)

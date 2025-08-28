@@ -16,7 +16,7 @@ def test_talk_loop(monkeypatch, tmp_path):
 
     talk()
 
-    episodes = read_episodes()
+    episodes = [e for e in read_episodes() if e.get("event") != "perception"]
     assert len(episodes) == 4
     assert episodes[0]["role"] == "user"
     assert episodes[1]["role"] == "assistant"
