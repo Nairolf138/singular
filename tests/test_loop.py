@@ -136,6 +136,14 @@ def _inc2_operator(tree: ast.AST, rng=None) -> ast.AST:
     return tree
 
 
+def _dec_operator(tree: ast.AST, rng=None) -> ast.AST:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, int):
+            node.value -= 1
+            break
+    return tree
+
+
 def test_multi_operator_selection(tmp_path: Path, monkeypatch):
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -181,3 +189,75 @@ def test_multi_operator_selection(tmp_path: Path, monkeypatch):
     entries = [json.loads(line) for line in log_files[0].read_text().splitlines()]
     used = {e["op"] for e in entries}
     assert {"op1", "op2"} <= used
+
+
+def test_bandit_persistence_and_exploitation(tmp_path: Path, monkeypatch):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    skill = skills_dir / "foo.py"
+    skill.write_text("result = 1", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+
+    from singular.runs.logger import RunLogger as RL
+
+    monkeypatch.setattr(
+        life_loop, "RunLogger", functools.partial(RL, root=tmp_path / "logs")
+    )
+
+    class PsyAnalyze:
+        def mutation_policy(self):
+            return "analyze"
+
+        def process_run_record(self, record):
+            pass
+
+        def save_state(self):
+            pass
+
+    class PsyExploit:
+        def mutation_policy(self):
+            return "exploit"
+
+        def process_run_record(self, record):
+            pass
+
+        def save_state(self):
+            pass
+
+    operators = {"inc": _inc_operator, "dec": _dec_operator}
+
+    monkeypatch.setattr(
+        life_loop.Psyche, "load_state", staticmethod(lambda: PsyAnalyze())
+    )
+
+    run(
+        skills_dir,
+        checkpoint,
+        budget_seconds=0.2,
+        rng=random.Random(0),
+        run_id="loop1",
+        operators=operators,
+        mortality=life_loop.DeathMonitor(max_failures=100),
+    )
+
+    first_stats = load_checkpoint(checkpoint).stats
+    assert first_stats["inc"]["count"] > 0
+    assert first_stats["dec"]["count"] > 0
+
+    monkeypatch.setattr(
+        life_loop.Psyche, "load_state", staticmethod(lambda: PsyExploit())
+    )
+
+    run(
+        skills_dir,
+        checkpoint,
+        budget_seconds=0.2,
+        rng=random.Random(0),
+        run_id="loop2",
+        operators=operators,
+        mortality=life_loop.DeathMonitor(max_failures=100),
+    )
+
+    second_stats = load_checkpoint(checkpoint).stats
+    assert second_stats["inc"]["count"] > first_stats["inc"]["count"]
+    assert second_stats["dec"]["count"] == first_stats["dec"]["count"]
