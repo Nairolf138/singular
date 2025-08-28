@@ -4,6 +4,7 @@ import functools
 import sys
 from pathlib import Path
 
+import logging
 import pytest
 
 root_dir = Path(__file__).resolve().parents[1]
@@ -84,3 +85,16 @@ def test_log_and_memory_update(tmp_path: Path, monkeypatch):
 
     assert any((tmp_path / "logs").glob("loop-*.jsonl"))
     assert json.loads(mem_file.read_text())["foo"] > 1
+
+
+def test_corrupted_checkpoint(tmp_path: Path, caplog):
+    ckpt = tmp_path / "ckpt.json"
+    ckpt.write_text("{", encoding="utf-8")
+    caplog.set_level(logging.WARNING)
+
+    state = load_checkpoint(ckpt)
+
+    assert state == life_loop.Checkpoint()
+    assert any(
+        "failed to load checkpoint" in record.message for record in caplog.records
+    )

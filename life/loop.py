@@ -4,6 +4,7 @@ import argparse
 import ast
 import difflib
 import json
+import logging
 import random
 import time
 from dataclasses import asdict, dataclass
@@ -14,6 +15,9 @@ from singular.memory import update_score
 from singular.runs.logger import RunLogger
 
 from . import sandbox
+
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -27,8 +31,12 @@ def load_checkpoint(path: Path) -> Checkpoint:
     """Load checkpoint state from *path* if it exists."""
 
     if path.exists():
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return Checkpoint(**data)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            log.warning("failed to load checkpoint from %s: %s", path, exc)
+        else:
+            return Checkpoint(**data)
     return Checkpoint()
 
 
