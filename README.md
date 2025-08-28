@@ -119,6 +119,7 @@ pip install -e .
 
 - `pip install -e .[yaml]` pour ajouter **PyYAML** et gérer `values.yaml`.
 - `pip install openai>=1.0.0` pour permettre à l'organisme de parler via l'API OpenAI.
+- `pip install transformers` pour activer un modèle local via Hugging Face.
 
 Après installation, la commande CLI `singular` est disponible :
 
@@ -166,4 +167,16 @@ Pour permettre à l'organisme de parler en utilisant l'API d'OpenAI, installez
 la dépendance optionnelle ``openai>=1.0.0`` et définissez la variable
 d'environnement ``OPENAI_API_KEY``. Les versions plus anciennes du paquet
 ``openai`` ne sont pas compatibles avec le fournisseur actuel.
+
+### Fournisseur local
+
+Installez ``transformers`` pour utiliser un petit modèle embarqué :
+
+```bash
+pip install transformers
+singular talk --provider local "Bonjour"
+```
+
+Le fournisseur local utilise le modèle ``sshleifer/tiny-gpt2`` de Hugging Face
+pour fonctionner hors-ligne.
 
