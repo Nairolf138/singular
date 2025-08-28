@@ -128,3 +128,10 @@ singular dashboard
 
 Ouvrez ensuite http://127.0.0.1:8000 dans votre navigateur.
 
+### Fournisseur OpenAI
+
+Pour permettre à l'organisme de parler en utilisant l'API d'OpenAI, installez
+la dépendance optionnelle ``openai>=1.0.0`` et définissez la variable
+d'environnement ``OPENAI_API_KEY``. Les versions plus anciennes du paquet
+``openai`` ne sont pas compatibles avec le fournisseur actuel.
+
