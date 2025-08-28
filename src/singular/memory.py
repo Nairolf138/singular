@@ -73,7 +73,11 @@ def read_values(path: Path | str = VALUES_FILE) -> dict[str, Any]:
     path = Path(path)
     if not path.exists():
         return {}
-    import yaml  # type: ignore
+    try:
+        import yaml  # type: ignore
+    except ImportError:
+        # PyYAML is optional; return an empty mapping if it's missing
+        return {}
     with path.open(encoding="utf-8") as file:
         data = yaml.safe_load(file)
     return data or {}
@@ -83,7 +87,12 @@ def write_values(values: dict[str, Any], path: Path | str = VALUES_FILE) -> None
     """Write the values YAML file."""
     path = Path(path)
     _ensure_dir(path)
-    import yaml  # type: ignore
+    try:
+        import yaml  # type: ignore
+    except ImportError as exc:
+        raise ImportError(
+            "PyYAML is required to write values. Please install PyYAML."
+        ) from exc
     with path.open("w", encoding="utf-8") as file:
         yaml.safe_dump(values, file)
 
