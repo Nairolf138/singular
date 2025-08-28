@@ -34,7 +34,6 @@ def report(
     *,
     runs_dir: Path | str = RUNS_DIR,
     skills_path: Path | str = SKILLS_FILE,
-    seed: int | None = None,
 ) -> None:
     """Summarize performance for a given run."""
 

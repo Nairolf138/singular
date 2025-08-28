@@ -10,15 +10,13 @@ from ..memory import add_episode, ensure_memory_structure, update_score
 from ..psyche import Psyche
 
 
-def quest(spec: Path, seed: int | None = None) -> None:
+def quest(spec: Path) -> None:
     """Handle the ``quest`` subcommand.
 
     Parameters
     ----------
     spec:
         Path to the JSON specification describing the desired skill.
-    seed:
-        Optional random seed for reproducibility. (Currently unused.)
     """
 
     ensure_memory_structure()

@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
 
     func: Command = args.func
     if args.command == "report":
-        func(run_id=args.id, seed=args.seed)
+        func(run_id=args.id)
     elif args.command == "talk":
         func(provider=args.provider, seed=args.seed)
     elif args.command == "loop":
@@ -79,9 +79,13 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
         )
     elif args.command == "quest":
-        func(spec=args.spec, seed=args.seed)
-    else:
+        func(spec=args.spec)
+    elif args.command == "status":
+        func()
+    elif args.command in {"birth", "run"}:
         func(seed=args.seed)
+    else:
+        func()
     return 0
 
 
