@@ -8,6 +8,7 @@ from typing import Callable, Any
 
 from .organisms.birth import birth
 from .organisms.talk import talk
+from .organisms.status import status
 from .runs.run import run as run_run
 from .runs.synthesize import synthesize
 from .runs.report import report
@@ -25,6 +26,8 @@ def main(argv: list[str] | None = None) -> int:
 
     subparsers.add_parser("birth", help="Birth a new organism").set_defaults(func=birth)
     subparsers.add_parser("run", help="Execute a run").set_defaults(func=run_run)
+
+    subparsers.add_parser("status", help="Show current status").set_defaults(func=status)
 
     talk_parser = subparsers.add_parser("talk", help="Talk with the system")
     talk_parser.add_argument("--provider", default=None, help="LLM provider to use")
