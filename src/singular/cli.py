@@ -10,10 +10,12 @@ from typing import Callable, Any
 from .organisms.birth import birth
 from .organisms.talk import talk
 from .organisms.status import status
+from .organisms.quest import quest
 from .runs.run import run as run_run
 from .runs.synthesize import synthesize
 from .runs.report import report
 from .runs.loop import loop as loop_run
+
 Command = Callable[..., Any]
 
 
@@ -43,7 +45,15 @@ def main(argv: list[str] | None = None) -> int:
     talk_parser.add_argument("--provider", default=None, help="LLM provider to use")
     talk_parser.set_defaults(func=talk)
 
-    subparsers.add_parser("synthesize", help="Synthesize results").set_defaults(func=synthesize)
+    quest_parser = subparsers.add_parser(
+        "quest", help="Generate a skill from a specification"
+    )
+    quest_parser.add_argument("spec", type=Path, help="Path to specification JSON")
+    quest_parser.set_defaults(func=quest)
+
+    subparsers.add_parser("synthesize", help="Synthesize results").set_defaults(
+        func=synthesize
+    )
     report_parser = subparsers.add_parser(
         "report", help="Summarize performance from a run"
     )
@@ -68,6 +78,8 @@ def main(argv: list[str] | None = None) -> int:
             run_id=args.run_id,
             seed=args.seed,
         )
+    elif args.command == "quest":
+        func(spec=args.spec, seed=args.seed)
     else:
         func(seed=args.seed)
     return 0
@@ -75,3 +87,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
     raise SystemExit(main())
+
