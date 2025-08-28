@@ -118,6 +118,23 @@ Après installation, la commande CLI `singular` est disponible :
 singular --help
 ```
 
+### Configuration
+
+Par défaut, les fichiers persistants sont écrits dans les dossiers `mem/` et
+`runs/` situés à la racine du projet. Vous pouvez changer cet emplacement en
+définissant la variable d'environnement `SINGULAR_HOME` ou en passant l'option
+CLI `--home` :
+
+```bash
+SINGULAR_HOME=/chemin/personnel singular birth
+# ou
+singular --home /chemin/personnel birth
+```
+
+Les journaux de `runs/` sont soumis à une rétention automatique : seuls les 20
+fichiers les plus récents sont conservés. Ce nombre peut être ajusté via
+`SINGULAR_RUNS_KEEP`.
+
 ### Utilisation
 
 Lancez le serveur local :

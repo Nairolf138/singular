@@ -6,6 +6,14 @@ import argparse
 import random
 from pathlib import Path
 from typing import Callable, Any
+import os
+
+# Pre-parse ``--home`` before importing modules that depend on it
+_early_parser = argparse.ArgumentParser(add_help=False)
+_early_parser.add_argument("--home", type=Path)
+_early_args, _ = _early_parser.parse_known_args()
+if _early_args.home:
+    os.environ["SINGULAR_HOME"] = str(_early_args.home)
 
 from .organisms.birth import birth
 from .organisms.talk import talk
@@ -28,6 +36,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="singular")
     parser.add_argument(
         "--seed", type=int, default=None, help="Random seed for reproducibility"
+    )
+    parser.add_argument(
+        "--home",
+        type=Path,
+        default=os.environ.get("SINGULAR_HOME"),
+        help="Base directory for mem/ and runs/ (env: SINGULAR_HOME)",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -70,6 +84,9 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
+
+    if args.home:
+        os.environ["SINGULAR_HOME"] = str(args.home)
 
     if args.seed is not None:
         random.seed(args.seed)
