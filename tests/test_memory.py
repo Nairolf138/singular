@@ -54,3 +54,24 @@ def test_update_trait_and_score(tmp_path: Path) -> None:
 
     update_score("archery", 10, path=skills_path)
     assert json.loads(skills_path.read_text(encoding="utf-8")) == {"archery": 10}
+
+
+def test_birth_initializes_default_skills(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    birth()
+
+    skills_dir = tmp_path / "skills"
+    assert (skills_dir / "addition.py").exists()
+    assert (skills_dir / "subtraction.py").exists()
+    assert (skills_dir / "multiplication.py").exists()
+
+    skills_data = json.loads(
+        (tmp_path / "mem" / "skills.json").read_text(encoding="utf-8")
+    )
+    assert skills_data == {
+        "addition": 0.0,
+        "subtraction": 0.0,
+        "multiplication": 0.0,
+    }
