@@ -7,6 +7,7 @@ import random
 from typing import Callable
 
 from ..memory import add_episode, ensure_memory_structure, read_episodes
+from ..perception import capture_signals
 from ..psyche import Psyche
 from ..providers import load_llm_provider
 
@@ -54,6 +55,8 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
     psyche = Psyche.load_state()
 
     while True:
+        signals = capture_signals()
+        add_episode({"event": "perception", **signals})
         episodes = read_episodes()
         last_event = next((e["text"] for e in reversed(episodes) if "text" in e), None)
         latest_mutation = next(

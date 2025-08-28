@@ -24,9 +24,9 @@ def test_full_workflow(monkeypatch, tmp_path):
 
     talk()
 
-    episodes = read_episodes()
-    # After run, synthesize and one talk exchange we should have four episodes:
-    #   mutation, system (code), user, assistant
+    episodes = [e for e in read_episodes() if e.get("event") != "perception"]
+    # After run, synthesize and one talk exchange we should have four episodes
+    # excluding perception captures: mutation, system (code), user, assistant
     assert len(episodes) == 4
     assert episodes[0]["event"] == "mutation"
     assert episodes[1]["text"] == code
