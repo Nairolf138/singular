@@ -57,7 +57,10 @@ class MetaSpec:
         if not self.weights:
             raise MetaValidationError("Weights must be provided")
         total = sum(self.weights.values())
-        if any(w < 0 or w > 1 for w in self.weights.values()) or abs(total - 1.0) > _WEIGHT_TOLERANCE:
+        if (
+            any(w < 0 or w > 1 for w in self.weights.values())
+            or abs(total - 1.0) > _WEIGHT_TOLERANCE
+        ):
             raise MetaValidationError("Weights must be within [0,1] and sum to 1")
 
         # Validate operator mix
@@ -67,7 +70,10 @@ class MetaSpec:
         if unknown:
             raise MetaValidationError(f"Unknown operator in mix: {unknown[0]}")
         op_total = sum(self.operator_mix.values())
-        if any(v < 0 for v in self.operator_mix.values()) or abs(op_total - 1.0) > _WEIGHT_TOLERANCE:
+        if (
+            any(v < 0 for v in self.operator_mix.values())
+            or abs(op_total - 1.0) > _WEIGHT_TOLERANCE
+        ):
             raise MetaValidationError("Operator mix must be non-negative and sum to 1")
 
         # Validate population cap

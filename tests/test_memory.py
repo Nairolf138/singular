@@ -9,7 +9,9 @@ import singular.memory as memory
 from singular.organisms.birth import birth
 
 
-def test_birth_creates_memory_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_birth_creates_memory_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.chdir(tmp_path)
     birth()
     mem = tmp_path / "mem"
@@ -18,7 +20,9 @@ def test_birth_creates_memory_files(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         assert (mem / name).exists()
 
 
-def test_birth_initializes_identity_profile_and_psyche(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_birth_initializes_identity_profile_and_psyche(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.chdir(tmp_path)
     birth(seed=123)
 

@@ -1,4 +1,5 @@
 """In-process execution of whitelisted patch operations."""
+
 from __future__ import annotations
 
 import os
@@ -54,9 +55,12 @@ class _LimitManager:
 
 limits = _LimitManager()
 
+
 # Simple marker used to tag whitelisted operators as pure.  The execute
 # function below will only dispatch to callables carrying this attribute.
-def pure(func: Callable[[Dict[str, Any]], Optional[bytearray]]) -> Callable[[Dict[str, Any]], Optional[bytearray]]:
+def pure(
+    func: Callable[[Dict[str, Any]], Optional[bytearray]],
+) -> Callable[[Dict[str, Any]], Optional[bytearray]]:
     func.__pure__ = True  # type: ignore[attr-defined]
     return func
 
@@ -78,9 +82,9 @@ def inline(op: Dict[str, Any]) -> Optional[bytearray]:
     """Simulate inlining by optionally allocating memory or sleeping."""
 
     data: Optional[bytearray] = None
-    if (size := op.get("size")):
+    if size := op.get("size"):
         data = bytearray(int(size))
-    if (sleep := op.get("sleep")):
+    if sleep := op.get("sleep"):
         time.sleep(float(sleep))
     return data
 

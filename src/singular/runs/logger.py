@@ -121,4 +121,3 @@ class RunLogger:
 
     def __exit__(self, exc_type, exc, tb) -> None:  # pragma: no cover - trivial
         self.close()
-

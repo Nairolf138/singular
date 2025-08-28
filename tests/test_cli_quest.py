@@ -63,4 +63,3 @@ def test_quest_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
     psyche = json.loads((tmp_path / "mem" / "psyche.json").read_text())
     assert psyche["last_mood"] == "frustrated"
-

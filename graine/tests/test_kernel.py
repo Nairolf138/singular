@@ -31,7 +31,10 @@ def test_load_operators_invalid(tmp_path):
 def test_verify_accepts_valid_patch():
     patch = {
         "type": "Patch",
-        "target": {"file": "target/src/algorithms/reduce_sum.py", "function": "reduce_sum"},
+        "target": {
+            "file": "target/src/algorithms/reduce_sum.py",
+            "function": "reduce_sum",
+        },
         "ops": [
             {"op": "CONST_TUNE", "delta": 0.0, "bounds": [-0.1, 0.1]},
         ],
@@ -44,7 +47,10 @@ def test_verify_accepts_valid_patch():
 def test_verify_rejects_bad_operator():
     patch = {
         "type": "Patch",
-        "target": {"file": "target/src/algorithms/reduce_sum.py", "function": "reduce_sum"},
+        "target": {
+            "file": "target/src/algorithms/reduce_sum.py",
+            "function": "reduce_sum",
+        },
         "ops": [
             {"op": "BAD_OP"},
         ],
@@ -57,7 +63,10 @@ def test_verify_rejects_bad_operator():
 def test_verify_rejects_large_diff():
     patch = {
         "type": "Patch",
-        "target": {"file": "target/src/algorithms/reduce_sum.py", "function": "reduce_sum"},
+        "target": {
+            "file": "target/src/algorithms/reduce_sum.py",
+            "function": "reduce_sum",
+        },
         "ops": [
             {"op": "EQ_REWRITE", "rule_id": "algebra.sum.reassociate.v1"},
         ],
@@ -70,7 +79,10 @@ def test_verify_rejects_large_diff():
 def test_run_variant_times_out():
     patch = {
         "type": "Patch",
-        "target": {"file": "target/src/algorithms/reduce_sum.py", "function": "reduce_sum"},
+        "target": {
+            "file": "target/src/algorithms/reduce_sum.py",
+            "function": "reduce_sum",
+        },
         "ops": [
             {"op": "CONST_TUNE", "delta": 0.0, "bounds": [-0.1, 0.1]},
         ],
@@ -83,7 +95,10 @@ def test_run_variant_times_out():
 def test_run_variant_op_limit():
     patch = {
         "type": "Patch",
-        "target": {"file": "target/src/algorithms/reduce_sum.py", "function": "reduce_sum"},
+        "target": {
+            "file": "target/src/algorithms/reduce_sum.py",
+            "function": "reduce_sum",
+        },
         "ops": [
             {"op": "CONST_TUNE", "delta": 0.0, "bounds": [-0.1, 0.1]},
             {"op": "CONST_TUNE", "delta": 0.0, "bounds": [-0.1, 0.1]},
@@ -97,7 +112,10 @@ def test_run_variant_op_limit():
 def _inline_patch(code: str) -> dict:
     return {
         "type": "Patch",
-        "target": {"file": "target/src/algorithms/reduce_sum.py", "function": "reduce_sum"},
+        "target": {
+            "file": "target/src/algorithms/reduce_sum.py",
+            "function": "reduce_sum",
+        },
         "ops": [{"op": "INLINE", "code": code}],
         "limits": {"diff_max": 5},
     }
@@ -130,7 +148,10 @@ def test_verify_rejects_outside_write():
 def _limit_patch() -> dict:
     return {
         "type": "Patch",
-        "target": {"file": "target/src/algorithms/reduce_sum.py", "function": "reduce_sum"},
+        "target": {
+            "file": "target/src/algorithms/reduce_sum.py",
+            "function": "reduce_sum",
+        },
         "ops": [{"op": "INLINE"}],
         "limits": {"diff_max": 5},
     }
@@ -167,7 +188,10 @@ def test_verify_rejects_ram_quota():
 def test_run_variant_hard_timeout_signal():
     patch = {
         "type": "Patch",
-        "target": {"file": "target/src/algorithms/reduce_sum.py", "function": "reduce_sum"},
+        "target": {
+            "file": "target/src/algorithms/reduce_sum.py",
+            "function": "reduce_sum",
+        },
         "ops": [
             {"op": "INLINE", "sleep": 1.0},
         ],
@@ -180,7 +204,10 @@ def test_run_variant_hard_timeout_signal():
 def test_run_variant_memory_limit_exceeded():
     patch = {
         "type": "Patch",
-        "target": {"file": "target/src/algorithms/reduce_sum.py", "function": "reduce_sum"},
+        "target": {
+            "file": "target/src/algorithms/reduce_sum.py",
+            "function": "reduce_sum",
+        },
         "ops": [
             {"op": "INLINE", "size": 300 * 1024 * 1024},
         ],

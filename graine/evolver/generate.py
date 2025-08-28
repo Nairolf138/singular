@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Generate candidate patches based on configuration zones.
 
 This module reads the ``zones.yaml`` configuration and produces minimal
@@ -7,6 +5,8 @@ This module reads the ``zones.yaml`` configuration and produces minimal
 specified for each zone. The parsing logic mirrors the lightweight approach
 used elsewhere in the project to avoid external dependencies.
 """
+
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, List

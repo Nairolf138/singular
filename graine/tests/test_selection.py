@@ -72,4 +72,6 @@ def test_select_filters_on_thresholds(caplog):
 
     chosen = select([good, bad])
     assert chosen is good
-    assert any("Rejected patch Bad: failed thresholds" in r.message for r in caplog.records)
+    assert any(
+        "Rejected patch Bad: failed thresholds" in r.message for r in caplog.records
+    )

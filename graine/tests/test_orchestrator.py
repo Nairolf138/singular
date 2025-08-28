@@ -41,4 +41,4 @@ def test_run_logs_and_snapshots(tmp_path: Path) -> None:
     assert "meta" in data and "history" in data
     assert log_path.exists()
     lines = log_path.read_text(encoding="utf-8").splitlines()
-    assert any("\"event\": \"generation\"" in line for line in lines)
+    assert any('"event": "generation"' in line for line in lines)

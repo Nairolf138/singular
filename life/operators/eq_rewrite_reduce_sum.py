@@ -45,19 +45,27 @@ class _ReduceSum(ast.NodeTransformer):
             i += 1
         return new_body
 
-    def visit_Module(self, node: ast.Module) -> ast.AST:  # pragma: no cover - delegating
+    def visit_Module(
+        self, node: ast.Module
+    ) -> ast.AST:  # pragma: no cover - delegating
         node.body = self._transform_body(node.body)
         return node
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:  # pragma: no cover - delegating
+    def visit_FunctionDef(
+        self, node: ast.FunctionDef
+    ) -> ast.AST:  # pragma: no cover - delegating
         node.body = self._transform_body(node.body)
         return node
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> ast.AST:  # pragma: no cover - delegating
+    def visit_AsyncFunctionDef(
+        self, node: ast.AsyncFunctionDef
+    ) -> ast.AST:  # pragma: no cover - delegating
         node.body = self._transform_body(node.body)
         return node
 
-    def visit_ClassDef(self, node: ast.ClassDef) -> ast.AST:  # pragma: no cover - delegating
+    def visit_ClassDef(
+        self, node: ast.ClassDef
+    ) -> ast.AST:  # pragma: no cover - delegating
         node.body = self._transform_body(node.body)
         return node
 

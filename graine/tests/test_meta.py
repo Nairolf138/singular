@@ -51,7 +51,7 @@ def test_meta_rejects_diff_max_relaxation():
 
 
 def test_meta_rejects_forbidden_relaxation():
-    spec = build_spec(forbidden=["net"]) 
+    spec = build_spec(forbidden=["net"])
     with pytest.raises(MetaValidationError):
         spec.validate()
 
@@ -63,7 +63,9 @@ def test_phantom_rejects_invalid_snapshot(tmp_path: Path):
         "population_cap": MAX_POPULATION_CAP + 1,
     }
     snap = tmp_path / "bad.json"
-    snap.write_text(json.dumps({"meta": bad_meta, "history": [{"err": 0.5, "cost": 0.5}]}))
+    snap.write_text(
+        json.dumps({"meta": bad_meta, "history": [{"err": 0.5, "cost": 0.5}]})
+    )
     with pytest.raises(MetaValidationError):
         replay_snapshots(1, directory=tmp_path)
 

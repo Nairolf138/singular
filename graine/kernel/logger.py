@@ -1,4 +1,5 @@
 """Hashed JSONL logging for kernel events."""
+
 from __future__ import annotations
 
 import hashlib

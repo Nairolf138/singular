@@ -1,4 +1,5 @@
 """Rule-based stub LLM provider for offline usage."""
+
 from __future__ import annotations
 
 import re

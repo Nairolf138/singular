@@ -31,4 +31,3 @@ def test_full_workflow(monkeypatch, tmp_path):
     assert episodes[0]["event"] == "mutation"
     assert episodes[1]["text"] == code
     assert any(f"Reminder: {code}" in out for out in outputs)
-

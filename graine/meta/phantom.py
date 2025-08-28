@@ -51,7 +51,9 @@ def replay_snapshots(k: int, directory: Path = SNAPSHOT_DIR) -> Dict[str, float]
             continue
         first = history[0]
         last = history[-1]
-        if last.get("err", 0.0) > first.get("err", 0.0) or last.get("cost", 0.0) > first.get("cost", 0.0):
+        if last.get("err", 0.0) > first.get("err", 0.0) or last.get(
+            "cost", 0.0
+        ) > first.get("cost", 0.0):
             raise RuntimeError("Regression detected")
         total_err += float(last.get("err", 0.0))
         total_cost += float(last.get("cost", 0.0))

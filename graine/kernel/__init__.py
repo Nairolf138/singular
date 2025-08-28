@@ -1,4 +1,5 @@
 """Kernel for patch verification and execution."""
+
 from __future__ import annotations
 
 import time

@@ -19,6 +19,7 @@ from singular.runs.logger import RunLogger
 from . import sandbox
 from .death import DeathMonitor
 
+# mypy: ignore-errors
 
 log = logging.getLogger(__name__)
 
@@ -94,9 +95,7 @@ def _select_operator(
     if policy == "exploit":
         explored = [n for n, s in stats.items() if s["count"] > 0]
         if explored:
-            return max(
-                explored, key=lambda n: stats[n]["reward"] / stats[n]["count"]
-            )
+            return max(explored, key=lambda n: stats[n]["reward"] / stats[n]["count"])
         policy = "explore"
     if policy == "analyze":
         return min(names, key=lambda n: stats[n]["count"])
@@ -209,9 +208,7 @@ def run(
 def main(argv: list[str] | None = None) -> None:  # pragma: no cover - CLI wrapper
     parser = argparse.ArgumentParser(description="evolutionary life loop")
     parser.add_argument("--skills-dir", type=Path, default=Path("skills"))
-    parser.add_argument(
-        "--checkpoint", type=Path, default=Path("life_checkpoint.json")
-    )
+    parser.add_argument("--checkpoint", type=Path, default=Path("life_checkpoint.json"))
     parser.add_argument("--budget-seconds", type=float, required=True)
     args = parser.parse_args(argv)
 

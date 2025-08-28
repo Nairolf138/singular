@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Orchestrator for evolutionary runs.
 
 This module coordinates patch generation, selection and meta-rule evolution.
@@ -7,6 +5,8 @@ Each generation is logged using a hash chained JSONL logger and a snapshot is
 written to disk capturing the current meta rules and history. Meta rules are
 mutated and conditionally adopted every ``K`` generations.
 """
+
+from __future__ import annotations
 
 import json
 import random

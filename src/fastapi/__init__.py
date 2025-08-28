@@ -4,6 +4,7 @@ This lightweight stub provides only the pieces of FastAPI that our
 unit tests require.  It avoids the heavy dependency on the real
 `fastapi` package which is unavailable in the execution environment.
 """
+
 from __future__ import annotations
 
 from typing import Any, Callable, Dict
@@ -24,7 +25,9 @@ class FastAPI:
     def __init__(self) -> None:
         self._routes: Dict[str, Callable[[], Any]] = {}
 
-    def get(self, path: str, **_kwargs: Any) -> Callable[[Callable[[], Any]], Callable[[], Any]]:
+    def get(
+        self, path: str, **_kwargs: Any
+    ) -> Callable[[Callable[[], Any]], Callable[[], Any]]:
         """Register a GET handler for ``path``.
 
         Extra keyword arguments (such as ``response_class``) are accepted

@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Snapshot capture and deterministic replay for evolutionary runs."""
+
+from __future__ import annotations
 
 import json
 import random
@@ -57,7 +57,14 @@ def capture_run(seed: int, name: str, steps: int = 5) -> Path:
     from ..kernel.logger import JsonlLogger
 
     logger = JsonlLogger(LOG_DIR / f"{run_id}.log")
-    logger.log({"event": "capture", "seed": seed, "steps": steps, "snapshot": snapshot_path.name})
+    logger.log(
+        {
+            "event": "capture",
+            "seed": seed,
+            "steps": steps,
+            "snapshot": snapshot_path.name,
+        }
+    )
 
     return snapshot_path
 
@@ -99,7 +106,14 @@ def replay(snapshot_path: Path) -> Dict[str, Any]:
 
     run_id = run_dir.name
     logger = JsonlLogger(LOG_DIR / f"{run_id}.log")
-    logger.log({"event": "replay", "seed": seed, "steps": steps, "snapshot": snapshot_path.name})
+    logger.log(
+        {
+            "event": "replay",
+            "seed": seed,
+            "steps": steps,
+            "snapshot": snapshot_path.name,
+        }
+    )
 
     return expected
 

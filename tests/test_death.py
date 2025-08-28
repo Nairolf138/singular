@@ -3,7 +3,6 @@ import ast
 import random
 from pathlib import Path
 
-import pytest
 import functools
 
 import life.loop as life_loop
@@ -57,7 +56,9 @@ def _patch_memory(monkeypatch, tmp_path: Path):
 
     monkeypatch.setattr(logger_mod, "add_episode", fake_add_episode)
     monkeypatch.setattr(life_loop, "update_score", lambda *a, **k: None)
-    monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: life_loop.Psyche()))
+    monkeypatch.setattr(
+        life_loop.Psyche, "load_state", staticmethod(lambda: life_loop.Psyche())
+    )
     return episodic
 
 
@@ -133,7 +134,9 @@ def test_death_by_traits(tmp_path: Path, monkeypatch):
         def save_state(self):
             pass
 
-    monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: LowPsyche()))
+    monkeypatch.setattr(
+        life_loop.Psyche, "load_state", staticmethod(lambda: LowPsyche())
+    )
 
     monitor = DeathMonitor(max_age=99, max_failures=99, min_trait=0.1)
 

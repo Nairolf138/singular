@@ -20,7 +20,9 @@ class Identity:
     born_at: str
 
 
-def create_identity(name: str, soulseed: str, path: Path | str = Path("id.json")) -> Identity:
+def create_identity(
+    name: str, soulseed: str, path: Path | str = Path("id.json")
+) -> Identity:
     """Create an identity JSON file.
 
     Parameters

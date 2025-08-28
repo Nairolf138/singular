@@ -40,7 +40,9 @@ def main(argv: list[str] | None = None) -> int:
     loop_parser.add_argument("--run-id", default="loop", help="Run identifier")
     loop_parser.set_defaults(func=loop_run)
 
-    subparsers.add_parser("status", help="Show current status").set_defaults(func=status)
+    subparsers.add_parser("status", help="Show current status").set_defaults(
+        func=status
+    )
 
     talk_parser = subparsers.add_parser("talk", help="Talk with the system")
     talk_parser.add_argument("--provider", default=None, help="LLM provider to use")
@@ -96,4 +98,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
     raise SystemExit(main())
-

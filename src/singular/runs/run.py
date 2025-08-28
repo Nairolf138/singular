@@ -28,12 +28,7 @@ def run(seed: int | None = None) -> str:
         Optional random seed for reproducibility.
     """
 
-    base = (
-        "total = 0\n"
-        "for i in range(1000):\n"
-        "    total += i\n"
-        "result = total\n"
-    )
+    base = "total = 0\n" "for i in range(1000):\n" "    total += i\n" "result = total\n"
 
     psyche = Psyche.load_state()
     policy = psyche.mutation_policy()
@@ -67,7 +62,10 @@ def run(seed: int | None = None) -> str:
         "op": op_name,
         "diff": "".join(
             difflib.unified_diff(
-                base.splitlines(True), mutated.splitlines(True), fromfile="base", tofile="mutated"
+                base.splitlines(True),
+                mutated.splitlines(True),
+                fromfile="base",
+                tofile="mutated",
             )
         ),
         "ok": True,
@@ -83,4 +81,3 @@ def run(seed: int | None = None) -> str:
     psyche.save_state()
 
     return mutated if mutated_score <= base_score else base
-
