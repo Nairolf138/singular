@@ -24,6 +24,31 @@ def _clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
     return max(minimum, min(maximum, value))
 
 
+def derive_mood(record: dict) -> str:
+    """Derive a mood from a run ``record``.
+
+    ``record`` is expected to contain the fields produced by
+    :class:`~singular.runs.logger.RunLogger`.  The heuristic is intentionally
+    simple:
+
+    * If the run ``improved`` a score, the psyche feels ``"proud"``.
+    * If execution became slower (``ms_new`` > ``ms_base``) without improving,
+      the psyche is ``"frustrated"``.
+    * In all other cases we assume an ``"anxious"`` mood.
+    """
+
+    if record.get("improved"):
+        return "proud"
+
+    ms_base = record.get("ms_base")
+    ms_new = record.get("ms_new")
+    if isinstance(ms_base, (int, float)) and isinstance(ms_new, (int, float)):
+        if ms_new > ms_base:
+            return "frustrated"
+
+    return "anxious"
+
+
 @dataclass
 class Psyche:
     """Represents mutable traits and current mood of an organism.
@@ -74,6 +99,17 @@ class Psyche:
         init=False,
         repr=False,
     )
+
+    def process_run_record(self, record: dict) -> None:
+        """Process a run ``record`` and persist psyche changes.
+
+        The record is converted to a mood using :func:`derive_mood` and fed to
+        :meth:`feel`.  After updating internal traits the state is saved via
+        :meth:`save_state` so the psyche persists across sessions.
+        """
+
+        self.feel(derive_mood(record))
+        self.save_state()
 
     def feel(self, event: str) -> str:
         """Register an event and update internal state.
