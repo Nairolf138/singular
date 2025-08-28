@@ -97,7 +97,6 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
                         perf_msg = f"runtime increased by {diff:.2f}ms"
                     elif diff < 0:
                         perf_msg = f"runtime decreased by {abs(diff):.2f}ms"
-        mood_report = mood_event or psyche.last_mood or "neutral"
 
         try:
             user_input = input("you: ")
@@ -110,6 +109,7 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
         add_episode({"role": "user", "text": user_input})
 
         mood = psyche.feel("neutral")
+        mood_report = mood_event or mood or "neutral"
         reply = generate_reply(user_input)
 
         parts = [reply]
