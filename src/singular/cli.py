@@ -69,7 +69,11 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     talk_parser = subparsers.add_parser("talk", help="Talk with the system")
-    talk_parser.add_argument("--provider", default=None, help="LLM provider to use")
+    talk_parser.add_argument(
+        "--provider",
+        default=None,
+        help="LLM provider to use (e.g. 'openai' or 'local')",
+    )
     talk_parser.set_defaults(func=talk)
 
     quest_parser = subparsers.add_parser(
