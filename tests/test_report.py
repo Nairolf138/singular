@@ -24,4 +24,5 @@ def test_report_cli(monkeypatch, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "Run run1" in out
     assert "Generations: 2" in out
+    assert "Best score: 1.0" in out
     assert "skillA" in out

@@ -84,7 +84,9 @@ class RunLogger:
             "ms_new": ms_new,
             "score_base": score_base,
             "score_new": score_new,
-            "improved": score_new > score_base,
+            # ``improved`` is ``True`` when the new score is lower than the
+            # baseline score.  Lower values indicate better performance.
+            "improved": score_new < score_base,
         }
         self._file.write(json.dumps(record) + "\n")
         self._file.flush()
