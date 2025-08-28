@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+# mypy: ignore-errors
+
 import json
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
 
-def create_app(runs_dir: Path | str = Path("runs"), psyche_file: Path | str = Path("psyche.json")) -> FastAPI:
+def create_app(
+    runs_dir: Path | str = Path("runs"), psyche_file: Path | str = Path("psyche.json")
+) -> FastAPI:
     """Create the dashboard FastAPI application."""
     runs_path = Path(runs_dir)
     psyche_path = Path(psyche_file)

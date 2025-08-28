@@ -11,7 +11,9 @@ from .logger import RUNS_DIR
 from ..memory import read_skills, SKILLS_FILE
 
 
-def load_run_records(run_id: str, runs_dir: Path | str = RUNS_DIR) -> list[dict[str, Any]]:
+def load_run_records(
+    run_id: str, runs_dir: Path | str = RUNS_DIR
+) -> list[dict[str, Any]]:
     """Load run records for ``run_id`` from JSONL log file."""
     runs_dir = Path(runs_dir)
     pattern = f"{run_id}-*.jsonl"

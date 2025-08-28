@@ -4,6 +4,7 @@ from graine.target.src.algorithms.reduce_sum import reduce_sum
 
 # Helper benchmark to keep tests fast
 
+
 def _fast_benchmark(
     func,
     data,
@@ -20,6 +21,7 @@ def _stub_diff_test(baseline, variant, cases=100):
 
 
 # Unit and integration tests for evaluate()
+
 
 def test_evaluate_success(monkeypatch):
     monkeypatch.setattr(evaluate, "benchmark", _fast_benchmark)
@@ -44,6 +46,7 @@ def test_evaluate_robustness_failure(monkeypatch):
 
 
 # Tests for diff-testing
+
 
 def baseline(xs):
     return sum(xs)
@@ -87,4 +90,3 @@ def test_diff_test_baseline_error():
     res = evaluate.diff_test(baseline_error, variant_ok, cases=1)
     assert not res["equivalent"]
     assert "baseline_error" in res["mismatches"][0]
-

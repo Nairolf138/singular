@@ -34,9 +34,7 @@ def test_cli_provider_precedence(monkeypatch, tmp_path):
         captured["provider"] = name or ""
         return lambda _: "ok"
 
-    monkeypatch.setattr(
-        "singular.organisms.talk.load_llm_provider", fake_load
-    )
+    monkeypatch.setattr("singular.organisms.talk.load_llm_provider", fake_load)
     inputs = iter(["quit"])
     monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
     monkeypatch.setattr("builtins.print", lambda _msg: None)

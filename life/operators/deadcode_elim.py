@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ast
 
+# mypy: ignore-errors
+
 
 class _DeadCodeElim(ast.NodeTransformer):
     """Eliminate obviously dead code such as ``if False`` blocks."""

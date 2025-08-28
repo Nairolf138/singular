@@ -1,4 +1,5 @@
 """Dummy LLM provider for tests and offline usage."""
+
 from __future__ import annotations
 
 

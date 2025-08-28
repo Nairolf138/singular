@@ -1,4 +1,5 @@
 """Memory management utilities."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -36,6 +37,7 @@ def ensure_memory_structure(mem_dir: Path | str = MEM_DIR) -> None:
 # Profile helpers
 # ---------------------------------------------------------------------------
 
+
 def read_profile(path: Path | str = PROFILE_FILE) -> dict[str, Any]:
     """Read the profile JSON file."""
     path = Path(path)
@@ -56,7 +58,9 @@ def write_profile(profile: dict[str, Any], path: Path | str = PROFILE_FILE) -> N
         json.dump(profile, file)
 
 
-def update_trait(trait: str, value: Any, path: Path | str = PROFILE_FILE) -> dict[str, Any]:
+def update_trait(
+    trait: str, value: Any, path: Path | str = PROFILE_FILE
+) -> dict[str, Any]:
     """Update or add a trait in the profile file."""
     profile = read_profile(path)
     profile[trait] = value
@@ -67,6 +71,7 @@ def update_trait(trait: str, value: Any, path: Path | str = PROFILE_FILE) -> dic
 # ---------------------------------------------------------------------------
 # Values helpers
 # ---------------------------------------------------------------------------
+
 
 def read_values(path: Path | str = VALUES_FILE) -> dict[str, Any]:
     """Read the values YAML file."""
@@ -101,6 +106,7 @@ def write_values(values: dict[str, Any], path: Path | str = VALUES_FILE) -> None
 # Episodic helpers
 # ---------------------------------------------------------------------------
 
+
 def read_episodes(path: Path | str = EPISODIC_FILE) -> list[dict[str, Any]]:
     """Read all episodes from the JSONL file."""
     path = Path(path)
@@ -128,6 +134,7 @@ def add_episode(episode: dict[str, Any], path: Path | str = EPISODIC_FILE) -> No
 # Skills helpers
 # ---------------------------------------------------------------------------
 
+
 def read_skills(path: Path | str = SKILLS_FILE) -> dict[str, Any]:
     """Read the skills JSON file."""
     path = Path(path)
@@ -148,7 +155,9 @@ def write_skills(skills: dict[str, Any], path: Path | str = SKILLS_FILE) -> None
         json.dump(skills, file)
 
 
-def update_score(skill: str, score: float, path: Path | str = SKILLS_FILE) -> dict[str, Any]:
+def update_score(
+    skill: str, score: float, path: Path | str = SKILLS_FILE
+) -> dict[str, Any]:
     """Update a skill score in the skills file."""
     skills = read_skills(path)
     skills[skill] = score

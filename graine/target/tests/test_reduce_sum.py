@@ -5,6 +5,7 @@ from graine.target.src.algorithms.reduce_sum import reduce_sum
 
 # Unit tests
 
+
 def test_unit_basic_sum():
     assert reduce_sum([1, 2, 3]) == 6
 
@@ -19,6 +20,7 @@ def test_unit_empty_iterable():
 
 # Integration tests
 
+
 def test_integration_with_generator():
     data = (i for i in range(5))
     assert reduce_sum(data) == 10
@@ -31,6 +33,7 @@ def test_integration_with_map():
 
 # Property-based tests using randomised examples (≥10 000 cases)
 
+
 def test_property_equivalent_to_builtin_sum_random_cases_large():
     for _ in range(10000):
         length = random.randint(0, 20)
@@ -39,6 +42,7 @@ def test_property_equivalent_to_builtin_sum_random_cases_large():
 
 
 # Metamorphic tests
+
 
 def test_metamorphic_permutation_invariance_random():
     xs = [random.randint(-10, 10) for _ in range(20)]

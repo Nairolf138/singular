@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Generate static reports and KPI exports from run snapshots."""
+
+from __future__ import annotations
 
 import csv
 import json
@@ -16,7 +16,11 @@ def _pareto_front(points: List[Dict[str, float]]) -> List[Dict[str, float]]:
     front: List[Dict[str, float]] = []
     for p in points:
         if not any(
-            (q["err"] <= p["err"] and q["cost"] <= p["cost"] and (q["err"] < p["err"] or q["cost"] < p["cost"]))
+            (
+                q["err"] <= p["err"]
+                and q["cost"] <= p["cost"]
+                and (q["err"] < p["err"] or q["cost"] < p["cost"])
+            )
             for q in points
             if q is not p
         ):
@@ -68,10 +72,16 @@ def generate_report(
 
     paths = list(snapshot_paths)
     snaps = [(p, json.loads(p.read_text(encoding="utf-8"))) for p in paths]
-    named_snaps = [(p.parent.name if p.name == "snapshot.json" else p.stem, s) for p, s in snaps]
+    named_snaps = [
+        (p.parent.name if p.name == "snapshot.json" else p.stem, s) for p, s in snaps
+    ]
 
     points = [
-        {"name": name, "err": snap["history"][-1]["err"], "cost": snap["history"][-1]["cost"]}
+        {
+            "name": name,
+            "err": snap["history"][-1]["err"],
+            "cost": snap["history"][-1]["cost"],
+        }
         for name, snap in named_snaps
     ]
     front = _pareto_front(points)
@@ -148,7 +158,14 @@ def generate_report(
 
     # Export CSV
     with csv_path.open("w", newline="", encoding="utf-8") as fh:
-        fieldnames = ["name", "median_delta_perf", "tech_debt", "archive_diversity", "final_err", "acceptance"]
+        fieldnames = [
+            "name",
+            "median_delta_perf",
+            "tech_debt",
+            "archive_diversity",
+            "final_err",
+            "acceptance",
+        ]
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
         writer.writeheader()
         for rec in records:

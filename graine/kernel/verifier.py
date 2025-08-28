@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 
 from .interpreter import ALLOWED_OPS
 
+
 class VerificationError(Exception):
     """Raised when a patch fails verification."""
 
@@ -278,7 +279,9 @@ def load_zones(path: str = "configs/zones.yaml") -> Dict[str, Any]:
                 in_ops = True
                 continue
             if in_ops and line.strip().startswith("-") and zone is not None:
-                zone.setdefault("operators", []).append(line.strip().lstrip("-").strip())
+                zone.setdefault("operators", []).append(
+                    line.strip().lstrip("-").strip()
+                )
                 continue
             if line.strip() and zone is not None:
                 key, value = line.strip().split(":", 1)
@@ -309,7 +312,10 @@ def verify_patch(patch: Dict[str, Any]) -> None:
 
     target = patch["target"]
     zones = load_zones()["targets"]
-    if not any(z["file"] == target["file"] and z["function"] == target["function"] for z in zones):
+    if not any(
+        z["file"] == target["file"] and z["function"] == target["function"]
+        for z in zones
+    ):
         raise VerificationError("target not whitelisted")
 
     ops: List[Dict[str, Any]] = patch.get("ops", [])
@@ -350,4 +356,3 @@ def verify_patch(patch: Dict[str, Any]) -> None:
     ram_limit = limits.get("ram")
     if ram_limit is not None and ram_limit > RAM_LIMIT:
         raise VerificationError("ram exceeds limit")
-

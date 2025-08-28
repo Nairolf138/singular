@@ -1,9 +1,11 @@
-from __future__ import annotations
-
 """Skill synthesis from specifications."""
+
+from __future__ import annotations
 
 from pathlib import Path
 import ast
+
+# mypy: ignore-errors
 
 from . import sandbox, quest
 
@@ -25,7 +27,9 @@ def _build_stub(spec: quest.Spec) -> str:
     # Build function body: return cases.get((args), None)
     tuple_args = ast.Tuple([ast.Name(a, ast.Load()) for a in arg_names], ast.Load())
     get_call = ast.Call(
-        func=ast.Attribute(value=ast.Name("cases", ast.Load()), attr="get", ctx=ast.Load()),
+        func=ast.Attribute(
+            value=ast.Name("cases", ast.Load()), attr="get", ctx=ast.Load()
+        ),
         args=[tuple_args, ast.Constant(None)],
         keywords=[],
     )

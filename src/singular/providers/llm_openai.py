@@ -1,4 +1,5 @@
 """OpenAI LLM provider using the ChatCompletion API."""
+
 from __future__ import annotations
 
 import os

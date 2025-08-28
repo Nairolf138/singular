@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Specification loading utilities."""
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -103,8 +103,12 @@ def load(path: Path) -> Spec:
 
     time_ms_max = constraints_raw.get("time_ms_max")
     if not isinstance(time_ms_max, int) or time_ms_max <= 0:
-        raise SpecValidationError("'constraints.time_ms_max' must be a positive integer")
+        raise SpecValidationError(
+            "'constraints.time_ms_max' must be a positive integer"
+        )
 
     constraints = Constraints(pure=True, no_import=True, time_ms_max=time_ms_max)
 
-    return Spec(name=name, signature=signature, examples=examples, constraints=constraints)
+    return Spec(
+        name=name, signature=signature, examples=examples, constraints=constraints
+    )

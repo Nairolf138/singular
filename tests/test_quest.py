@@ -38,4 +38,3 @@ def test_load_invalid_constraints(tmp_path, constraints):
     path.write_text(json.dumps(spec_data), encoding="utf-8")
     with pytest.raises(quest.SpecValidationError):
         quest.load(path)
-

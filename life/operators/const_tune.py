@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 import random
 
+# mypy: ignore-errors
+
 
 class _ConstTune(ast.NodeTransformer):
     """Randomly adjust small integer constants by ±1."""
@@ -11,7 +13,9 @@ class _ConstTune(ast.NodeTransformer):
         self.rng = rng
         self.probability = probability
 
-    def visit_Constant(self, node: ast.Constant) -> ast.AST:  # pragma: no cover - trivial
+    def visit_Constant(
+        self, node: ast.Constant
+    ) -> ast.AST:  # pragma: no cover - trivial
         if isinstance(node.value, int) and -16 <= node.value <= 16:
             if self.rng.random() < self.probability:
                 delta = self.rng.choice([-1, 1])

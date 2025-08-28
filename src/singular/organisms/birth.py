@@ -28,19 +28,19 @@ def birth(seed: int | None = None) -> None:
             "addition.py": (
                 '"""Simple addition skill."""\n\n'
                 "def add(a: float, b: float) -> float:\n"
-                "    \"\"\"Return the sum of ``a`` and ``b``.\"\"\"\n"
+                '    """Return the sum of ``a`` and ``b``."""\n'
                 "    return a + b\n"
             ),
             "subtraction.py": (
                 '"""Simple subtraction skill."""\n\n'
                 "def subtract(a: float, b: float) -> float:\n"
-                "    \"\"\"Return the difference of ``a`` and ``b``.\"\"\"\n"
+                '    """Return the difference of ``a`` and ``b``."""\n'
                 "    return a - b\n"
             ),
             "multiplication.py": (
                 '"""Simple multiplication skill."""\n\n'
                 "def multiply(a: float, b: float) -> float:\n"
-                "    \"\"\"Return the product of ``a`` and ``b``.\"\"\"\n"
+                '    """Return the product of ``a`` and ``b``."""\n'
                 "    return a * b\n"
             ),
         }
@@ -53,9 +53,7 @@ def birth(seed: int | None = None) -> None:
 
     # Generate a random name and soulseed for the new identity
     name = f"organism-{random.randint(0, 999999):06d}"
-    soulseed = "".join(
-        random.choices(string.ascii_lowercase + string.digits, k=16)
-    )
+    soulseed = "".join(random.choices(string.ascii_lowercase + string.digits, k=16))
 
     # Create the identity file and persist a base profile
     identity = create_identity(name, soulseed)

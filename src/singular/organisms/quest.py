@@ -26,12 +26,15 @@ def quest(spec: Path) -> None:
         skill_path = synthesise(spec, Path("skills"))
     except Exception as exc:  # pragma: no cover - re-raised after logging
         mood = psyche.feel("frustrated")
-        add_episode({"event": "quest", "status": "failure", "error": str(exc), "mood": mood})
+        add_episode(
+            {"event": "quest", "status": "failure", "error": str(exc), "mood": mood}
+        )
         psyche.save_state()
         raise
 
     update_score(skill_path.stem, 0.0)
     mood = psyche.feel("proud")
-    add_episode({"event": "quest", "status": "success", "skill": skill_path.stem, "mood": mood})
+    add_episode(
+        {"event": "quest", "status": "success", "skill": skill_path.stem, "mood": mood}
+    )
     psyche.save_state()
-

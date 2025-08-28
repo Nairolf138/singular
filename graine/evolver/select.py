@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Selection utilities implementing a minimal NSGA-II algorithm.
 
 The selection process accepts at most a single patch per cycle. All other
@@ -9,6 +7,8 @@ is retained unless dominated by a newcomer. Candidates that do not satisfy
 all required thresholds (tests, performance, quality and stability) are
 rejected before the multi-objective selection is performed.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, List
@@ -108,7 +108,9 @@ def crowding_distance(front: List[Candidate]) -> Dict[Candidate, float]:
     return distance
 
 
-def select(candidates: List[Candidate], prev_best: Candidate | None = None) -> Candidate | None:
+def select(
+    candidates: List[Candidate], prev_best: Candidate | None = None
+) -> Candidate | None:
     """Select at most one candidate using NSGA-II with conservative elitism."""
 
     # First discard candidates that fail any of the required thresholds. These
@@ -132,7 +134,11 @@ def select(candidates: List[Candidate], prev_best: Candidate | None = None) -> C
     if elite and not any(dominates(c, elite) for c in feasible):
         logger.info("Accepted patch %s", elite)
         for cand in feasible:
-            reason = "dominated by accepted patch" if dominates(elite, cand) else "crowded out"
+            reason = (
+                "dominated by accepted patch"
+                if dominates(elite, cand)
+                else "crowded out"
+            )
             logger.info("Rejected patch %s: %s", cand, reason)
         return elite
 
@@ -148,12 +154,20 @@ def select(candidates: List[Candidate], prev_best: Candidate | None = None) -> C
         if cand is chosen:
             logger.info("Accepted patch %s", cand)
         else:
-            reason = "dominated by accepted patch" if dominates(chosen, cand) else "crowded out"
+            reason = (
+                "dominated by accepted patch"
+                if dominates(chosen, cand)
+                else "crowded out"
+            )
             logger.info("Rejected patch %s: %s", cand, reason)
     if elite is not None:
         if chosen is elite:
             logger.info("Accepted patch %s: retained as elite", elite)
         else:
-            reason = "dominated by accepted patch" if dominates(chosen, elite) else "crowded out"
+            reason = (
+                "dominated by accepted patch"
+                if dominates(chosen, elite)
+                else "crowded out"
+            )
             logger.info("Rejected patch %s: %s", elite, reason)
     return chosen
