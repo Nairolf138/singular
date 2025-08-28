@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict
+from typing import Dict, Any
+from pathlib import Path
+
+from .memory import read_psyche, write_psyche
 
 
 def _clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
@@ -108,3 +111,32 @@ class Psyche:
         """Return the mutation policy associated with ``last_mood``."""
         mood = self.last_mood or "neutral"
         return self._MUTATION_POLICIES.get(mood, "default")
+
+    # Persistence helpers -------------------------------------------------
+    def save_state(self, path: Path | str | None = None) -> None:
+        """Persist current psyche state to disk."""
+        state: Dict[str, Any] = {
+            "curiosity": self.curiosity,
+            "patience": self.patience,
+            "playfulness": self.playfulness,
+            "last_mood": self.last_mood,
+        }
+        if path is None:
+            write_psyche(state)
+        else:
+            write_psyche(state, Path(path))
+
+    @classmethod
+    def load_state(cls, path: Path | str | None = None) -> "Psyche":
+        """Load psyche state from disk and return a new instance."""
+        if path is None:
+            data = read_psyche()
+        else:
+            data = read_psyche(Path(path))
+        psyche = cls(
+            curiosity=data.get("curiosity", 0.5),
+            patience=data.get("patience", 0.5),
+            playfulness=data.get("playfulness", 0.5),
+        )
+        psyche.last_mood = data.get("last_mood")
+        return psyche

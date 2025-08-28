@@ -36,7 +36,7 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
     if generate_reply is None:
         generate_reply = _default_reply
 
-    psyche = Psyche()
+    psyche = Psyche.load_state()
 
     while True:
         episodes = read_episodes()
@@ -63,3 +63,4 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
 
         print(response)
         add_episode({"role": "assistant", "text": response, "mood": mood})
+        psyche.save_state()
