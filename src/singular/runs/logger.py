@@ -92,7 +92,8 @@ class RunLogger:
         self._file.flush()
         os.fsync(self._file.fileno())
         self.psyche.process_run_record(record)
-        add_episode({"event": "mutation", "mood": self.psyche.last_mood, **record})
+        mood = getattr(self.psyche, "last_mood", None)
+        add_episode({"event": "mutation", "mood": mood, **record})
 
     def log_death(self, reason: str, **info: Any) -> None:
         """Record a death event with optional additional information."""
