@@ -16,6 +16,7 @@ if _early_args.home:
     os.environ["SINGULAR_HOME"] = str(_early_args.home)
 
 from .organisms.birth import birth
+from .organisms.spawn import spawn
 from .organisms.talk import talk
 from .organisms.status import status
 from .organisms.quest import quest
@@ -46,6 +47,13 @@ def main(argv: list[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("birth", help="Birth a new organism").set_defaults(func=birth)
+    spawn_parser = subparsers.add_parser(
+        "spawn", help="Create child organism from two parents"
+    )
+    spawn_parser.add_argument("parent_a", type=Path)
+    spawn_parser.add_argument("parent_b", type=Path)
+    spawn_parser.add_argument("--out-dir", type=Path, default=None)
+    spawn_parser.set_defaults(func=spawn)
     subparsers.add_parser("run", help="Execute a run").set_defaults(func=run_run)
     loop_parser = subparsers.add_parser("loop", help="Execute evolutionary loop")
     loop_parser.add_argument("--skills-dir", type=Path, default=Path("skills"))
@@ -108,6 +116,13 @@ def main(argv: list[str] | None = None) -> int:
         func(spec=args.spec)
     elif args.command == "status":
         func()
+    elif args.command == "spawn":
+        func(
+            parent_a=args.parent_a,
+            parent_b=args.parent_b,
+            out_dir=args.out_dir,
+            seed=args.seed,
+        )
     elif args.command in {"birth", "run"}:
         func(seed=args.seed)
     else:

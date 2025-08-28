@@ -19,6 +19,7 @@ from singular.perception import capture_signals
 
 from . import sandbox
 from .death import DeathMonitor
+from .reproduction import crossover
 
 # mypy: ignore-errors
 
@@ -39,6 +40,9 @@ class Organism:
 
     skills_dir: Path
     last_score: float = float("-inf")
+    energy: float = 1.0
+    resources: float = 1.0
+    monitor: DeathMonitor = field(default_factory=DeathMonitor)
 
 
 @dataclass
@@ -46,6 +50,7 @@ class WorldState:
     """Shared state tracking all organisms and their interactions."""
 
     organisms: Dict[str, Organism] = field(default_factory=dict)
+    resource_pool: float = 100.0
 
 
 def load_checkpoint(path: Path) -> Checkpoint:
@@ -187,7 +192,11 @@ def run(
     world = world or WorldState()
     for skills_dir in skills_dirs:
         skills_dir.mkdir(parents=True, exist_ok=True)
-        world.organisms.setdefault(skills_dir.name, Organism(skills_dir))
+        if skills_dir.name not in world.organisms:
+            prototype = mortality or DeathMonitor()
+            world.organisms[skills_dir.name] = Organism(
+                skills_dir, monitor=prototype
+            )
 
     operators = operators or _load_default_operators()
     stats: Dict[str, Dict[str, float]] = state.stats
@@ -210,6 +219,7 @@ def run(
             policy = psyche.mutation_policy()
             op_name = _select_operator(operators, stats, policy, rng)
             mutated = mutate(original, operators[op_name], rng)
+            org = world.organisms[org_name]
 
             t0 = time.perf_counter()
             base_score = score(original)
@@ -247,11 +257,25 @@ def run(
                     else skill_path.stem
                 )
                 update_score(key, mutated_score)
-                world.organisms[org_name].last_score = mutated_score
+                org.last_score = mutated_score
+                org.energy += 0.2
+            else:
+                org.energy -= 0.1
 
             stats[op_name]["count"] += 1
             stats[op_name]["reward"] += mutated_score - base_score
             state.stats = stats
+
+            # Shared resource competition
+            if world.resource_pool > 0:
+                world.resource_pool -= 1
+                org.resources += 1
+            else:
+                org.resources -= 1
+
+            for other in world.organisms.values():
+                other.energy -= 0.05
+                other.resources -= 0.02
 
             key = (
                 f"{org_name}:{skill_path.stem}"
@@ -269,7 +293,6 @@ def run(
                 mutated_score,
             )
 
-            # Energy consumption per mutation
             if hasattr(psyche, "consume"):
                 psyche.consume()
             if hasattr(psyche, "save_state"):
@@ -277,13 +300,35 @@ def run(
 
             save_checkpoint(checkpoint_path, state)
 
-            dead, reason = mortality.check(
-                state.iteration, psyche, mutated_score >= base_score
+            dead, reason = org.monitor.check(
+                state.iteration, psyche, mutated_score >= base_score, org.resources
             )
             if dead:
                 logger.log_death(reason or "unknown", age=state.iteration)
-                psyche.save_state()
-                break
+                del world.organisms[org_name]
+                if not world.organisms:
+                    break
+                continue
+
+            # Remove organisms with depleted stores
+            to_remove = [
+                name
+                for name, o in world.organisms.items()
+                if o.energy <= 0 or o.resources <= 0
+            ]
+            for name in to_remove:
+                del world.organisms[name]
+
+            # Periodic crossover
+            if state.iteration % 50 == 0 and len(world.organisms) >= 2:
+                parent_names = rng.sample(list(world.organisms.keys()), 2)
+                pa = world.organisms[parent_names[0]].skills_dir
+                pb = world.organisms[parent_names[1]].skills_dir
+                child_dir = pa.parent / f"child_{state.iteration}"
+                child_dir.mkdir(parents=True, exist_ok=True)
+                fname, code = crossover(pa, pb, rng)
+                (child_dir / fname).write_text(code, encoding="utf-8")
+                world.organisms[child_dir.name] = Organism(child_dir)
 
     return state
 

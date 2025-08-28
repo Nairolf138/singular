@@ -16,7 +16,7 @@ class DeathMonitor:
     failures: int = 0
 
     def check(
-        self, iteration: int, psyche: Psyche, success: bool
+        self, iteration: int, psyche: Psyche, success: bool, resources: float | None = None
     ) -> Tuple[bool, str | None]:
         """Update state and return ``(dead, reason)`` for current iteration."""
         if not success:
@@ -30,6 +30,8 @@ class DeathMonitor:
             return True, "old age"
         if getattr(psyche, "energy", 1.0) <= 0:
             return True, "energy depleted"
+        if resources is not None and resources <= 0:
+            return True, "resources exhausted"
         traits_low = [
             getattr(psyche, attr, 1.0) <= self.min_trait
             for attr in ("curiosity", "patience", "playfulness")
