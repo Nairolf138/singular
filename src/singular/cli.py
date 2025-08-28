@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import random
+from pathlib import Path
 from typing import Callable, Any
 
 from .organisms.birth import birth
@@ -12,6 +13,7 @@ from .organisms.status import status
 from .runs.run import run as run_run
 from .runs.synthesize import synthesize
 from .runs.report import report
+from .runs.loop import loop as loop_run
 Command = Callable[..., Any]
 
 
@@ -26,6 +28,14 @@ def main(argv: list[str] | None = None) -> int:
 
     subparsers.add_parser("birth", help="Birth a new organism").set_defaults(func=birth)
     subparsers.add_parser("run", help="Execute a run").set_defaults(func=run_run)
+    loop_parser = subparsers.add_parser("loop", help="Execute evolutionary loop")
+    loop_parser.add_argument("--skills-dir", type=Path, default=Path("skills"))
+    loop_parser.add_argument(
+        "--checkpoint", type=Path, default=Path("life_checkpoint.json")
+    )
+    loop_parser.add_argument("--budget-seconds", type=float, required=True)
+    loop_parser.add_argument("--run-id", default="loop", help="Run identifier")
+    loop_parser.set_defaults(func=loop_run)
 
     subparsers.add_parser("status", help="Show current status").set_defaults(func=status)
 
@@ -50,6 +60,14 @@ def main(argv: list[str] | None = None) -> int:
         func(run_id=args.id, seed=args.seed)
     elif args.command == "talk":
         func(provider=args.provider, seed=args.seed)
+    elif args.command == "loop":
+        func(
+            skills_dir=args.skills_dir,
+            checkpoint=args.checkpoint,
+            budget_seconds=args.budget_seconds,
+            run_id=args.run_id,
+            seed=args.seed,
+        )
     else:
         func(seed=args.seed)
     return 0
