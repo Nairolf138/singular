@@ -12,13 +12,34 @@ from typing import Any
 from ..psyche import Psyche
 from ..memory import add_episode
 
+# Base directory for persistent files
+_BASE_DIR = Path(os.environ.get("SINGULAR_HOME", "."))
 # Directory where run logs are stored
-RUNS_DIR = Path("runs")
+RUNS_DIR = _BASE_DIR / "runs"
+# Number of run logs to retain
+MAX_RUN_LOGS = int(os.environ.get("SINGULAR_RUNS_KEEP", "20"))
 
 
 def _ensure_dir(path: Path) -> None:
     """Ensure ``path``'s parent directory exists."""
     path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _enforce_retention(root: Path, keep: int = MAX_RUN_LOGS) -> None:
+    """Remove oldest log files beyond the retention limit."""
+    logs = sorted(root.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for old in logs[keep:]:
+        try:
+            old.unlink()
+        except FileNotFoundError:  # pragma: no cover - race condition
+            pass
+    # Clean up any leftover temporary files
+    tmps = sorted(root.glob("*.jsonl.tmp"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for old in tmps[keep:]:
+        try:
+            old.unlink()
+        except FileNotFoundError:  # pragma: no cover - race condition
+            pass
 
 
 @dataclass
@@ -40,6 +61,7 @@ class RunLogger:
     def __post_init__(self) -> None:
         self.root = Path(self.root)
         self.root.mkdir(parents=True, exist_ok=True)
+        _enforce_retention(self.root)
         # Resume from existing temporary file if present
         tmp_pattern = f"{self.run_id}-*.jsonl.tmp"
         existing = sorted(self.root.glob(tmp_pattern))
@@ -116,6 +138,7 @@ class RunLogger:
             os.fsync(self._file.fileno())
             self._file.close()
             os.replace(self.tmp_path, self.path)
+            _enforce_retention(self.root)
 
     def __enter__(self) -> RunLogger:  # pragma: no cover - trivial
         return self

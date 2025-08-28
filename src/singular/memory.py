@@ -9,9 +9,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 import json
+import os
 
+# Base directory for persistent files
+_BASE_DIR = Path(os.environ.get("SINGULAR_HOME", "."))
 # Base memory directory
-MEM_DIR = Path("mem")
+MEM_DIR = _BASE_DIR / "mem"
 
 # File paths within the memory directory
 PROFILE_FILE = MEM_DIR / "profile.json"
