@@ -41,6 +41,28 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
     while True:
         episodes = read_episodes()
         last_event = episodes[-1]["text"] if episodes else None
+        latest_mutation = next(
+            (e for e in reversed(episodes) if e.get("event") == "mutation"),
+            None,
+        )
+        mood_event = latest_mutation.get("mood") if latest_mutation else None
+        perf_msg = None
+        if latest_mutation:
+            if latest_mutation.get("improved"):
+                sb = latest_mutation.get("score_base")
+                sn = latest_mutation.get("score_new")
+                if isinstance(sb, (int, float)) and isinstance(sn, (int, float)):
+                    perf_msg = f"score improved from {sb:.2f} to {sn:.2f}"
+            else:
+                msb = latest_mutation.get("ms_base")
+                msn = latest_mutation.get("ms_new")
+                if isinstance(msb, (int, float)) and isinstance(msn, (int, float)):
+                    diff = msn - msb
+                    if diff > 0:
+                        perf_msg = f"runtime increased by {diff:.2f}ms"
+                    elif diff < 0:
+                        perf_msg = f"runtime decreased by {abs(diff):.2f}ms"
+        mood_report = mood_event or psyche.last_mood or "neutral"
 
         try:
             user_input = input("you: ")
@@ -58,7 +80,9 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
         parts = [reply]
         if last_event:
             parts.append(f"Reminder: {last_event}")
-        parts.append(f"Mood: {psyche.last_mood}")
+        if perf_msg:
+            parts.append(perf_msg)
+        parts.append(f"Mood: {mood_report}")
         response = " | ".join(parts)
 
         print(response)
