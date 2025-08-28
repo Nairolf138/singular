@@ -17,6 +17,8 @@ from .runs.report import report
 from .runs.loop import loop as loop_run
 from .dashboard import run as dashboard_run
 
+__all__ = ["main"]
+
 Command = Callable[..., Any]
 
 

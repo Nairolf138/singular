@@ -102,6 +102,12 @@ Installez les dépendances du tableau de bord :
 pip install -e .
 ```
 
+Après installation, la commande CLI `singular` est disponible :
+
+```bash
+singular --help
+```
+
 ### Utilisation
 
 Lancez le serveur local :
