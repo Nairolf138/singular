@@ -181,9 +181,7 @@ class _Unroll(ast.NodeTransformer):
         node.orelse = self._transform_body(node.orelse)
         return node
 
-    def visit_While(
-        self, node: ast.While
-    ) -> ast.AST:  # pragma: no cover - delegating
+    def visit_While(self, node: ast.While) -> ast.AST:  # pragma: no cover - delegating
         node.body = self._transform_body(node.body)
         node.orelse = self._transform_body(node.orelse)
         return node
@@ -211,4 +209,3 @@ def apply(tree: ast.AST, rng: random.Random | None = None) -> ast.AST:
 
     _Unroll().visit(tree)
     return ast.fix_missing_locations(tree)
-

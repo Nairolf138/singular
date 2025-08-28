@@ -58,4 +58,3 @@ def f():
     new_tree = unrolling.apply(tree)
     assert _dump(new_tree) == _dump(ast.parse(expected))
     compile(ast.unparse(new_tree), "<test>", "exec")
-
