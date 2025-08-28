@@ -256,6 +256,12 @@ def run(
                 mutated_score,
             )
 
+            # Energy consumption per mutation
+            if hasattr(psyche, "consume"):
+                psyche.consume()
+            if hasattr(psyche, "save_state"):
+                psyche.save_state()
+
             save_checkpoint(checkpoint_path, state)
 
             dead, reason = mortality.check(

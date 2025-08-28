@@ -28,6 +28,8 @@ class DeathMonitor:
             return True, "too many failures"
         if iteration >= self.max_age:
             return True, "old age"
+        if getattr(psyche, "energy", 1.0) <= 0:
+            return True, "energy depleted"
         traits_low = [
             getattr(psyche, attr, 1.0) <= self.min_trait
             for attr in ("curiosity", "patience", "playfulness")

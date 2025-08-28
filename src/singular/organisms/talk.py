@@ -57,6 +57,7 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
     while True:
         signals = capture_signals()
         add_episode({"event": "perception", **signals})
+        psyche.consume()
         episodes = read_episodes()
         last_event = next((e["text"] for e in reversed(episodes) if "text" in e), None)
         latest_mutation = next(
@@ -125,4 +126,5 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
 
         print(response)
         add_episode({"role": "assistant", "text": response, "mood": mood})
+        psyche.gain()
         psyche.save_state()
