@@ -35,7 +35,7 @@ def test_multi_organisms_independent(tmp_path: Path, monkeypatch):
 
     def fake_update_score(skill: str, score: float) -> None:
         data = json.loads(mem_file.read_text()) if mem_file.exists() else {}
-        data[skill] = score
+        data[skill] = {"score": score}
         mem_file.write_text(json.dumps(data))
 
     monkeypatch.setattr(life_loop, "update_score", fake_update_score)
@@ -64,8 +64,8 @@ def test_multi_organisms_independent(tmp_path: Path, monkeypatch):
     assert val2 > 1
 
     scores = json.loads(mem_file.read_text())
-    assert scores["org1:foo"] == val1
-    assert scores["org2:foo"] == val2
+    assert scores["org1:foo"]["score"] == val1
+    assert scores["org2:foo"]["score"] == val2
 
     assert world.organisms["org1"].last_score == val1
     assert world.organisms["org2"].last_score == val2

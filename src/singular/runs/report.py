@@ -68,7 +68,16 @@ def report(
     skills = read_skills(path=skills_path)
     if skills:
         print("Skills:")
-        for skill, score in skills.items():
-            print(f"  {skill}: {score}")
+        for skill, data in skills.items():
+            if isinstance(data, dict):
+                score = data.get("score")
+                note = data.get("note")
+            else:
+                score = data
+                note = None
+            line = f"  {skill}: {score}"
+            if note:
+                line += f" ({note})"
+            print(line)
     else:
         print("No skills recorded.")
