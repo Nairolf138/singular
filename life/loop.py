@@ -3,15 +3,17 @@ from __future__ import annotations
 import argparse
 import ast
 import difflib
+import importlib
 import json
 import logging
 import random
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Dict, Iterable
 
 from singular.memory import update_score
+from singular.psyche import Psyche
 from singular.runs.logger import RunLogger
 
 from . import sandbox
@@ -47,25 +49,57 @@ def save_checkpoint(path: Path, state: Checkpoint) -> None:
     path.write_text(json.dumps(asdict(state)), encoding="utf-8")
 
 
-class _IncInt(ast.NodeTransformer):
-    """Increment the first integer constant encountered."""
+def mutate(
+    code: str,
+    operator: Callable[[ast.AST], ast.AST],
+    rng: random.Random | None = None,
+) -> str:
+    """Return ``code`` transformed by ``operator``.
 
-    def __init__(self) -> None:
-        self.done = False
-
-    def visit_Constant(self, node: ast.Constant) -> ast.AST:  # pragma: no cover - trivial
-        if not self.done and isinstance(node.value, int):
-            self.done = True
-            return ast.copy_location(ast.Constant(node.value + 1), node)
-        return node
-
-
-def mutate(code: str) -> str:
-    """Return *code* with one integer constant incremented by one."""
+    The ``operator`` is expected to accept an :class:`ast.AST` instance and
+    return a modified tree.  If the operator supports a ``rng`` keyword
+    argument it will be passed the provided random number generator.
+    """
 
     tree = ast.parse(code)
-    _IncInt().visit(tree)
-    return ast.unparse(tree)
+    try:
+        new_tree = operator(tree, rng=rng)
+    except TypeError:
+        new_tree = operator(tree)
+    return ast.unparse(new_tree)
+
+
+def _load_default_operators() -> Dict[str, Callable[[ast.AST], ast.AST]]:
+    """Load operators defined in :mod:`life.operators`."""
+
+    from . import operators as ops
+
+    loaded: Dict[str, Callable[[ast.AST], ast.AST]] = {}
+    for name in getattr(ops, "__all__", []):
+        mod = importlib.import_module(f"{__package__}.operators.{name}")
+        loaded[name] = getattr(mod, "apply")
+    return loaded
+
+
+def _select_operator(
+    operators: Dict[str, Callable[[ast.AST], ast.AST]],
+    stats: Dict[str, Dict[str, float]],
+    policy: str,
+    rng: random.Random,
+) -> str:
+    """Choose an operator according to ``policy`` and bandit ``stats``."""
+
+    names = list(operators.keys())
+    if policy == "exploit":
+        explored = [n for n, s in stats.items() if s["count"] > 0]
+        if explored:
+            return max(
+                explored, key=lambda n: stats[n]["reward"] / stats[n]["count"]
+            )
+        policy = "explore"
+    if policy == "analyze":
+        return min(names, key=lambda n: stats[n]["count"])
+    return rng.choice(names)
 
 
 def score(code: str) -> float:
@@ -94,6 +128,7 @@ def run(
     budget_seconds: float,
     rng: random.Random | None = None,
     run_id: str = "loop",
+    operators: Dict[str, Callable[[ast.AST], ast.AST]] | None = None,
 ) -> Checkpoint:
     """Run the evolutionary loop for at most ``budget_seconds`` seconds."""
 
@@ -103,13 +138,23 @@ def run(
 
     skills_dir.mkdir(parents=True, exist_ok=True)
 
-    with RunLogger(run_id) as logger:
+    operators = operators or _load_default_operators()
+    stats: Dict[str, Dict[str, float]] = {
+        name: {"count": 0, "reward": 0.0} for name in operators
+    }
+
+    psyche = Psyche.load_state()
+
+    with RunLogger(run_id, psyche=psyche) as logger:
         while time.time() - start < budget_seconds:
             state.iteration += 1
 
             skill_path = _choose_skill(rng, skills_dir.glob("*.py"))
             original = skill_path.read_text(encoding="utf-8")
-            mutated = mutate(original)
+
+            policy = psyche.mutation_policy()
+            op_name = _select_operator(operators, stats, policy, rng)
+            mutated = mutate(original, operators[op_name], rng)
 
             t0 = time.perf_counter()
             base_score = score(original)
@@ -131,9 +176,12 @@ def run(
                 skill_path.write_text(mutated, encoding="utf-8")
                 update_score(skill_path.stem, mutated_score)
 
+            stats[op_name]["count"] += 1
+            stats[op_name]["reward"] += mutated_score - base_score
+
             logger.log(
                 skill_path.stem,
-                "inc_int",
+                op_name,
                 diff,
                 True,
                 ms_base,
