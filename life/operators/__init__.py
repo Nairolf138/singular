@@ -4,4 +4,5 @@ __all__ = [
     "eq_rewrite_reduce_sum",
     "const_tune",
     "deadcode_elim",
+    "unrolling",
 ]
