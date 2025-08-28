@@ -25,7 +25,31 @@ Contrairement aux chatbots classiques (qui ne changent pas leur cœur) ou aux si
 
 - **Vie artificielle** : un organisme qui modifie réellement son code et s’optimise par sélection naturelle.  
 - **Compagnon interactif** : une entité qui parle, garde une mémoire et exprime des émotions.  
-- **Open-source et local** : chacun peut “faire naître” son compagnon, qui vivra et évoluera à sa manière, en toute sécurité (sandbox, pas de réseau).  
+- **Open-source et local** : chacun peut “faire naître” son compagnon, qui vivra et évoluera à sa manière, en toute sécurité (sandbox, pas de réseau).
+
+---
+
+## ⚡ Quickstart
+
+```bash
+pip install -e .[yaml]
+singular birth --name Lumen
+singular talk "Bonjour"
+singular loop --ticks 10
+singular report
+singular dashboard
+```
+
+## 🔒 Security
+
+- Pas de réseau (no net).
+- Pas d’accès disque externe (hors dossier de l’organisme).
+- Sandbox stricte :
+  - Limites CPU/RAM (`timeout` & `memory_limit` : 1.5s et 256 MB par défaut).
+  - Environnement isolé : `os.environ` vidé et répertoire de travail temporaire.
+  - Interdiction d’import et de fonctions sensibles (`open()`, `exec()`, `eval()`, etc.).
+- Tests automatiques avant toute intégration de code.
+- Résultats traçables : chaque mutation est loggée, reproductible par seed.
 
 ---
 
@@ -58,20 +82,6 @@ Contrairement aux chatbots classiques (qui ne changent pas leur cœur) ou aux si
 - Un événement “suicide” peut survenir s’il “choisit” de cesser sa propre évolution.
 - Les journaux et la mémoire restent → vous pouvez consulter sa “biographie”.
 
----
-
-### 🔒 Sécurité
-- Pas de réseau (no net).
-- Pas d’accès disque externe (hors dossier de l’organisme).
-- Sandbox stricte :
-  - Limites CPU/RAM (`timeout` & `memory_limit` : 1.5s et 256 MB par défaut).
-  - Environnement isolé : `os.environ` vidé et répertoire de travail temporaire.
-  - Interdiction d’import et de fonctions sensibles (`open()`, `exec()`, `eval()`, etc.).
-- Tests automatiques avant toute intégration de code.
-- Résultats traçables : chaque mutation est loggée, reproductible par seed.
-
----
-
 ### 🌍 Cas d’usage
 - Art numérique : créer un compagnon unique qui évolue et raconte sa vie.
 - Recherche expérimentale : plateforme simple pour tester des approches d’évolution de code.
@@ -99,41 +109,44 @@ Un petit serveur web permet de consulter les fichiers de `runs/` et l'état de `
 
 ### Installation
 
-Installez les dépendances du tableau de bord :
+Installez la base :
 
 ```bash
 pip install -e .
 ```
 
-PyYAML est une dépendance optionnelle utilisée pour manipuler le fichier `values.yaml`.
-Vous pouvez l'installer via l'extra `yaml` :
+#### Dépendances optionnelles
 
-```bash
-pip install -e .[yaml]
-```
+- `pip install -e .[yaml]` pour ajouter **PyYAML** et gérer `values.yaml`.
+- `pip install openai>=1.0.0` pour permettre à l'organisme de parler via l'API OpenAI.
 
-Après installation, la commande CLI `singular` est disponible :
+Après installation, la commande CLI `singular` est disponible :
 
 ```bash
 singular --help
 ```
-
 ### Configuration
 
-Par défaut, les fichiers persistants sont écrits dans les dossiers `mem/` et
-`runs/` situés à la racine du projet. Vous pouvez changer cet emplacement en
-définissant la variable d'environnement `SINGULAR_HOME` ou en passant l'option
-CLI `--home` :
+Les variables d'environnement suivantes contrôlent le comportement :
+
+- `SINGULAR_HOME` : répertoire pour `mem/` et `runs/` (par défaut à la racine du projet).
+- `SINGULAR_RUNS_KEEP` : nombre de journaux `runs/` conservés (20 par défaut).
+- `OPENAI_API_KEY` : clé API requise si l'option OpenAI est activée.
+
+Exemples :
 
 ```bash
+# Choisir un dossier de données
 SINGULAR_HOME=/chemin/personnel singular birth
 # ou
 singular --home /chemin/personnel birth
-```
 
-Les journaux de `runs/` sont soumis à une rétention automatique : seuls les 20
-fichiers les plus récents sont conservés. Ce nombre peut être ajusté via
-`SINGULAR_RUNS_KEEP`.
+# Ajuster la rétention des journaux
+SINGULAR_RUNS_KEEP=50 singular report
+
+# Utiliser l'API OpenAI
+OPENAI_API_KEY=sk-... singular talk "Salut"
+```
 
 ### Utilisation
 
@@ -141,6 +154,8 @@ Lancez le serveur local :
 
 ```bash
 singular dashboard
+# ou avec un dossier personnalisé
+SINGULAR_HOME=/chemin/personnel singular dashboard
 ```
 
 Ouvrez ensuite http://127.0.0.1:8000 dans votre navigateur.
