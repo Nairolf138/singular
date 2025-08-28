@@ -32,6 +32,21 @@ class Checkpoint:
     stats: Dict[str, Dict[str, float]] = field(default_factory=dict)
 
 
+@dataclass
+class Organism:
+    """State for a single organism participating in the loop."""
+
+    skills_dir: Path
+    last_score: float = float("-inf")
+
+
+@dataclass
+class WorldState:
+    """Shared state tracking all organisms and their interactions."""
+
+    organisms: Dict[str, Organism] = field(default_factory=dict)
+
+
 def load_checkpoint(path: Path) -> Checkpoint:
     """Load checkpoint state from *path* if it exists."""
 
@@ -123,29 +138,55 @@ def score(code: str) -> float:
     return float(result) if isinstance(result, (int, float)) else float("-inf")
 
 
-def _choose_skill(rng: random.Random, skills: Iterable[Path]) -> Path:
-    available = list(skills)
+def _choose_skill(
+    rng: random.Random, organisms: Dict[str, Organism]
+) -> tuple[str, Path]:
+    """Randomly choose an organism and one of its skills."""
+
+    if not organisms:
+        raise RuntimeError("no organisms available")
+
+    org_name = rng.choice(list(organisms.keys()))
+    org = organisms[org_name]
+    available = list(org.skills_dir.glob("*.py"))
     if not available:
-        raise RuntimeError("no skills available")
-    return rng.choice(available)
+        raise RuntimeError(f"no skills available for organism {org_name}")
+    return org_name, rng.choice(available)
 
 
 def run(
-    skills_dir: Path,
+    skills_dirs: Iterable[Path] | Path,
     checkpoint_path: Path,
     budget_seconds: float,
     rng: random.Random | None = None,
     run_id: str = "loop",
     operators: Dict[str, Callable[[ast.AST], ast.AST]] | None = None,
     mortality: DeathMonitor | None = None,
+    world: WorldState | None = None,
 ) -> Checkpoint:
-    """Run the evolutionary loop for at most ``budget_seconds`` seconds."""
+    """Run the evolutionary loop for at most ``budget_seconds`` seconds.
+
+    Parameters
+    ----------
+    skills_dirs:
+        A collection of directories, each representing an organism and
+        containing its skill files. A single :class:`~pathlib.Path` is accepted
+        for backward compatibility.
+    """
 
     rng = rng or random.Random()
     start = time.time()
     state = load_checkpoint(checkpoint_path)
 
-    skills_dir.mkdir(parents=True, exist_ok=True)
+    if isinstance(skills_dirs, Path):
+        skills_dirs = [skills_dirs]
+    else:
+        skills_dirs = list(skills_dirs)
+
+    world = world or WorldState()
+    for skills_dir in skills_dirs:
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        world.organisms.setdefault(skills_dir.name, Organism(skills_dir))
 
     operators = operators or _load_default_operators()
     stats: Dict[str, Dict[str, float]] = state.stats
@@ -159,7 +200,7 @@ def run(
         while time.time() - start < budget_seconds:
             state.iteration += 1
 
-            skill_path = _choose_skill(rng, skills_dir.glob("*.py"))
+            org_name, skill_path = _choose_skill(rng, world.organisms)
             original = skill_path.read_text(encoding="utf-8")
 
             policy = psyche.mutation_policy()
@@ -184,14 +225,25 @@ def run(
 
             if mutated_score >= base_score:
                 skill_path.write_text(mutated, encoding="utf-8")
-                update_score(skill_path.stem, mutated_score)
+                key = (
+                    f"{org_name}:{skill_path.stem}"
+                    if len(world.organisms) > 1
+                    else skill_path.stem
+                )
+                update_score(key, mutated_score)
+                world.organisms[org_name].last_score = mutated_score
 
             stats[op_name]["count"] += 1
             stats[op_name]["reward"] += mutated_score - base_score
             state.stats = stats
 
+            key = (
+                f"{org_name}:{skill_path.stem}"
+                if len(world.organisms) > 1
+                else skill_path.stem
+            )
             logger.log(
-                skill_path.stem,
+                key,
                 op_name,
                 diff,
                 True,
