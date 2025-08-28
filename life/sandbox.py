@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import ast
 import multiprocessing
+import os
 import resource
+import tempfile
 from typing import Any, Dict
 
 
@@ -26,6 +28,11 @@ FORBIDDEN_NAMES = {
     "compile",
     "__import__",
     "input",
+    # Block access to common system modules even if provided
+    "os",
+    "sys",
+    "socket",
+    "subprocess",
 }
 
 FORBIDDEN_NODES = (
@@ -65,13 +72,16 @@ def run(code: str, timeout: float = 1.5, memory_limit: int = 256 * 1024 * 1024) 
         resource.setrlimit(resource.RLIMIT_AS, (memory_limit, memory_limit))
         cpu_seconds = max(1, int(timeout))
         resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
-        allowed = {name: ALLOWED_BUILTINS[name] for name in ALLOWED_BUILTINS}
-        env: Dict[str, Any] = {"__builtins__": allowed}
-        try:
-            exec(compile(tree, "<sandbox>", "exec"), env, env)
-            q.put(env.get("result"))
-        except Exception as exc:  # pragma: no cover - delivered to parent
-            q.put(exc)
+        os.environ.clear()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.chdir(tmpdir)
+            allowed = {name: ALLOWED_BUILTINS[name] for name in ALLOWED_BUILTINS}
+            env: Dict[str, Any] = {"__builtins__": allowed}
+            try:
+                exec(compile(tree, "<sandbox>", "exec"), env, env)
+                q.put(env.get("result"))
+            except Exception as exc:  # pragma: no cover - delivered to parent
+                q.put(exc)
 
     proc = multiprocessing.Process(target=target, args=(queue,))
     proc.start()
