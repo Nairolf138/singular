@@ -3,8 +3,9 @@ from __future__ import annotations
 # mypy: ignore-errors
 
 import json
+import time
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
 
@@ -31,6 +32,33 @@ def create_app(
             raise HTTPException(status_code=404, detail="psyche.json not found")
         return json.loads(psyche_path.read_text())
 
+    @app.websocket("/ws")
+    def websocket_endpoint(ws: WebSocket) -> None:
+        ws.accept()
+        last_psyche_mtime: float | None = None
+        last_logs: dict[str, str] = {}
+        try:
+            while True:
+                if ws.closed:
+                    raise WebSocketDisconnect()
+                if psyche_path.exists():
+                    mtime = psyche_path.stat().st_mtime
+                    if mtime != last_psyche_mtime:
+                        last_psyche_mtime = mtime
+                        data = json.loads(psyche_path.read_text())
+                        ws.send_json({"type": "psyche", "data": data})
+                logs: dict[str, str] = {}
+                if runs_path.exists():
+                    for file in runs_path.iterdir():
+                        if file.is_file():
+                            logs[file.name] = file.read_text()
+                if logs != last_logs:
+                    last_logs = logs
+                    ws.send_json({"type": "logs", "data": logs})
+                time.sleep(0.1)
+        except WebSocketDisconnect:
+            pass
+
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
         return (
@@ -38,13 +66,9 @@ def create_app(
             "<h1>Singular Dashboard</h1>"
             "<h2>Psyche</h2><pre id='psyche'></pre>"
             "<h2>Runs</h2><div id='logs'></div>"
-            "<script>async function load(){"
-            "const ps=await fetch('/psyche').then(r=>r.json()).catch(()=>null);"
-            "document.getElementById('psyche').textContent=JSON.stringify(ps,null,2);"
-            "const ls=await fetch('/logs').then(r=>r.json());"
-            "const div=document.getElementById('logs');"
-            "for(const [n,c] of Object.entries(ls)){const pre=document.createElement('pre');pre.textContent=n+'\n'+c;div.appendChild(pre);}"
-            "}load();</script></body></html>"
+            "<script>const ws=new WebSocket(`ws://${location.host}/ws`);"
+            "ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);}else if(m.type==='logs'){const d=document.getElementById('logs');d.innerHTML='';for(const [n,c] of Object.entries(m.data)){const pre=document.createElement('pre');pre.textContent=n+'\n'+c;d.appendChild(pre);}}};"
+            "</script></body></html>"
         )
 
     return app

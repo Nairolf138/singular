@@ -30,3 +30,31 @@ def test_psyche_missing_returns_404(tmp_path: Path) -> None:
 
     response = client.get("/psyche")
     assert response.status_code == 404
+
+
+def test_websocket_stream(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    log_file = runs_dir / "log.txt"
+    log_file.write_text("hello")
+    psyche_file = tmp_path / "psyche.json"
+    psyche_file.write_text(json.dumps({"mood": "happy"}))
+
+    app = create_app(runs_dir=runs_dir, psyche_file=psyche_file)
+    client = TestClient(app)
+
+    with client.websocket_connect("/ws") as ws:
+        first = ws.receive_json()
+        second = ws.receive_json()
+        received = {first["type"]: first["data"], second["type"]: second["data"]}
+        assert received["psyche"] == {"mood": "happy"}
+        assert received["logs"] == {"log.txt": "hello"}
+
+        log_file.write_text("bye")
+        psyche_file.write_text(json.dumps({"mood": "sad"}))
+
+        msg_a = ws.receive_json()
+        msg_b = ws.receive_json()
+        updates = {msg_a["type"]: msg_a["data"], msg_b["type"]: msg_b["data"]}
+        assert updates["logs"] == {"log.txt": "bye"}
+        assert updates["psyche"] == {"mood": "sad"}
