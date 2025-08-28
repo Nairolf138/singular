@@ -373,3 +373,117 @@ def test_fatigue_reduces_proposals(tmp_path: Path, monkeypatch):
     )
 
     assert calls["n"] == 1
+
+
+def _setup_dummy_psyche(monkeypatch, tmp_path, action):
+    """Helper to prepare a ``Psyche`` that always triggers ``action``."""
+
+    class DummyPsyche:
+        last_mood = "anxious"
+
+        def mutation_policy(self):
+            return "default"
+
+        def process_run_record(self, record):
+            pass
+
+        def save_state(self):
+            pass
+
+        def consume(self):
+            pass
+
+        def irrational_decision(self, rng=None):
+            return True
+
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: DummyPsyche()))
+
+    rng = random.Random(0)
+    orig_choice = rng.choice
+
+    def custom_choice(seq):
+        if seq == ["refuse", "procrastinate", "absurd"]:
+            return action
+        return orig_choice(seq)
+
+    rng.choice = custom_choice  # type: ignore[attr-defined]
+
+    from singular.runs.logger import RunLogger as RL
+
+    monkeypatch.setattr(
+        life_loop, "RunLogger", functools.partial(RL, root=tmp_path / "logs")
+    )
+    monkeypatch.setattr(life_loop, "update_score", lambda *a, **k: None)
+    monkeypatch.setattr(life_loop, "add_episode", lambda *a, **k: None)
+    monkeypatch.setattr(life_loop, "capture_signals", lambda: {})
+
+    return rng
+
+
+def test_irrational_refusal(tmp_path: Path, monkeypatch):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    skill = skills_dir / "foo.py"
+    skill.write_text("result = 1", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+
+    rng = _setup_dummy_psyche(monkeypatch, tmp_path, "refuse")
+
+    life_loop.run(
+        skills_dir,
+        checkpoint,
+        budget_seconds=0.05,
+        rng=rng,
+        operators={"dec": _dec_operator},
+    )
+
+    assert skill.read_text(encoding="utf-8") == "result = 1"
+
+
+def test_irrational_procrastination(tmp_path: Path, monkeypatch):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    skill = skills_dir / "foo.py"
+    skill.write_text("result = 1", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+
+    rng = _setup_dummy_psyche(monkeypatch, tmp_path, "procrastinate")
+
+    called = {"sleep": False}
+
+    def fake_sleep(seconds):
+        called["sleep"] = seconds
+
+    monkeypatch.setattr(life_loop.time, "sleep", fake_sleep)
+
+    life_loop.run(
+        skills_dir,
+        checkpoint,
+        budget_seconds=0.05,
+        rng=rng,
+        operators={"dec": _dec_operator},
+    )
+
+    assert skill.read_text(encoding="utf-8") == "result = 1"
+    assert called["sleep"] == 0.01
+
+
+def test_irrational_absurd_mutation(tmp_path: Path, monkeypatch):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    skill = skills_dir / "foo.py"
+    skill.write_text("result = 1", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+
+    rng = _setup_dummy_psyche(monkeypatch, tmp_path, "absurd")
+
+    life_loop.run(
+        skills_dir,
+        checkpoint,
+        budget_seconds=0.05,
+        rng=rng,
+        operators={"dec": _dec_operator},
+    )
+
+    assert "absurd" in skill.read_text(encoding="utf-8")

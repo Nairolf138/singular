@@ -208,6 +208,8 @@ def run(
     stats: Dict[str, Dict[str, float]] = state.stats
     for name in operators:
         stats.setdefault(name, {"count": 0, "reward": 0.0})
+    # accounting for potential "absurd" operator triggered by irrational decisions
+    stats.setdefault("absurd", {"count": 0, "reward": 0.0})
 
     psyche = Psyche.load_state()
     start = time.time()
@@ -226,9 +228,19 @@ def run(
             org_name, skill_path = _choose_skill(rng, world.organisms)
             original = skill_path.read_text(encoding="utf-8")
 
-            policy = psyche.mutation_policy()
-            op_name = _select_operator(operators, stats, policy, rng)
-            mutated = mutate(original, operators[op_name], rng)
+            if hasattr(psyche, "irrational_decision") and psyche.irrational_decision(rng):
+                action = rng.choice(["refuse", "procrastinate", "absurd"])
+                if action == "refuse":
+                    continue
+                if action == "procrastinate":
+                    time.sleep(0.01)
+                    continue
+                op_name = "absurd"
+                mutated = "result = 0  # absurd mutation\n"
+            else:
+                policy = psyche.mutation_policy()
+                op_name = _select_operator(operators, stats, policy, rng)
+                mutated = mutate(original, operators[op_name], rng)
             org = world.organisms[org_name]
 
             t0 = time.perf_counter()
