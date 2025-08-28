@@ -16,18 +16,20 @@ def _default_reply(prompt: str) -> str:
     return f"I heard you say: {prompt}"
 
 
-def talk(seed: int | None = None) -> None:
+def talk(provider: str | None = None, seed: int | None = None) -> None:
     """Handle the ``talk`` subcommand.
 
     Parameters
     ----------
+    provider:
+        Optional name of the LLM provider. Overrides environment variables.
     seed:
         Optional random seed for reproducibility.
     """
 
     ensure_memory_structure()
 
-    provider_name = os.getenv("LLM_PROVIDER")
+    provider_name = provider or os.getenv("LLM_PROVIDER")
     if not provider_name:
         provider_name = "openai" if os.getenv("OPENAI_API_KEY") else "stub"
     generate_reply: Callable[[str], str] | None = load_llm_provider(provider_name)

@@ -25,7 +25,11 @@ def main(argv: list[str] | None = None) -> int:
 
     subparsers.add_parser("birth", help="Birth a new organism").set_defaults(func=birth)
     subparsers.add_parser("run", help="Execute a run").set_defaults(func=run_run)
-    subparsers.add_parser("talk", help="Talk with the system").set_defaults(func=talk)
+
+    talk_parser = subparsers.add_parser("talk", help="Talk with the system")
+    talk_parser.add_argument("--provider", default=None, help="LLM provider to use")
+    talk_parser.set_defaults(func=talk)
+
     subparsers.add_parser("synthesize", help="Synthesize results").set_defaults(func=synthesize)
     report_parser = subparsers.add_parser(
         "report", help="Summarize performance from a run"
@@ -41,6 +45,8 @@ def main(argv: list[str] | None = None) -> int:
     func: Command = args.func
     if args.command == "report":
         func(run_id=args.id, seed=args.seed)
+    elif args.command == "talk":
+        func(provider=args.provider, seed=args.seed)
     else:
         func(seed=args.seed)
     return 0
