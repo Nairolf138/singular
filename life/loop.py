@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import argparse
 import ast
+import difflib
 import json
 import random
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
+
+from singular.memory import update_score
+from singular.runs.logger import RunLogger
 
 from . import sandbox
 
@@ -81,6 +85,7 @@ def run(
     checkpoint_path: Path,
     budget_seconds: float,
     rng: random.Random | None = None,
+    run_id: str = "loop",
 ) -> Checkpoint:
     """Run the evolutionary loop for at most ``budget_seconds`` seconds."""
 
@@ -90,20 +95,46 @@ def run(
 
     skills_dir.mkdir(parents=True, exist_ok=True)
 
-    while time.time() - start < budget_seconds:
-        state.iteration += 1
+    with RunLogger(run_id) as logger:
+        while time.time() - start < budget_seconds:
+            state.iteration += 1
 
-        skill_path = _choose_skill(rng, skills_dir.glob("*.py"))
-        original = skill_path.read_text(encoding="utf-8")
-        mutated = mutate(original)
+            skill_path = _choose_skill(rng, skills_dir.glob("*.py"))
+            original = skill_path.read_text(encoding="utf-8")
+            mutated = mutate(original)
 
-        base_score = score(original)
-        mutated_score = score(mutated)
+            t0 = time.perf_counter()
+            base_score = score(original)
+            ms_base = (time.perf_counter() - t0) * 1000
+            t0 = time.perf_counter()
+            mutated_score = score(mutated)
+            ms_new = (time.perf_counter() - t0) * 1000
 
-        if mutated_score >= base_score:
-            skill_path.write_text(mutated, encoding="utf-8")
+            diff = "".join(
+                difflib.unified_diff(
+                    original.splitlines(True),
+                    mutated.splitlines(True),
+                    fromfile="original",
+                    tofile="mutated",
+                )
+            )
 
-        save_checkpoint(checkpoint_path, state)
+            if mutated_score >= base_score:
+                skill_path.write_text(mutated, encoding="utf-8")
+                update_score(skill_path.stem, mutated_score)
+
+            logger.log(
+                skill_path.stem,
+                "inc_int",
+                diff,
+                True,
+                ms_base,
+                ms_new,
+                base_score,
+                mutated_score,
+            )
+
+            save_checkpoint(checkpoint_path, state)
 
     return state
 
