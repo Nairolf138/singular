@@ -2,8 +2,10 @@ from pathlib import Path
 import json
 
 import pytest
+from typing import Any
 
 from singular.memory import add_episode, update_trait, update_score
+import singular.memory as memory
 from singular.organisms.birth import birth
 
 
@@ -75,3 +77,33 @@ def test_birth_initializes_default_skills(
         "subtraction": 0.0,
         "multiplication": 0.0,
     }
+
+
+def test_values_helpers_without_yaml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Simulate missing PyYAML and ensure graceful handling."""
+    import builtins
+    import sys
+
+    # Ensure ``yaml`` cannot be imported
+    monkeypatch.delitem(sys.modules, "yaml", raising=False)
+
+    real_import = builtins.__import__
+
+    def fake_import(name: str, *args: Any, **kwargs: Any):  # type: ignore[override]
+        if name == "yaml":
+            raise ImportError("No module named 'yaml'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    values_path = tmp_path / "values.yaml"
+    values_path.write_text("a: 1\n", encoding="utf-8")
+
+    # Reading values without PyYAML should return an empty dict
+    assert memory.read_values(values_path) == {}
+
+    # Writing values should raise an informative ImportError
+    with pytest.raises(ImportError):
+        memory.write_values({"a": 1}, values_path)
