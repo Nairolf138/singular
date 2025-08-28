@@ -11,6 +11,9 @@ dependencies = [
     "uvicorn",
 ]
 
+[project.optional-dependencies]
+yaml = ["pyyaml"]
+
 [project.scripts]
 singular = "singular.cli:main"
 

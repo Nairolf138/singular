@@ -1,4 +1,8 @@
-"""Memory management utilities."""
+"""Memory management utilities.
+
+JSON is used for most memory files.  The ``values.yaml`` file is only handled
+when the optional :mod:`PyYAML <yaml>` package is available.
+"""
 
 from __future__ import annotations
 
@@ -74,7 +78,10 @@ def update_trait(
 
 
 def read_values(path: Path | str = VALUES_FILE) -> dict[str, Any]:
-    """Read the values YAML file."""
+    """Read the values YAML file.
+
+    Returns an empty dict if :mod:`pyyaml` is not installed.
+    """
     path = Path(path)
     if not path.exists():
         return {}
@@ -89,7 +96,10 @@ def read_values(path: Path | str = VALUES_FILE) -> dict[str, Any]:
 
 
 def write_values(values: dict[str, Any], path: Path | str = VALUES_FILE) -> None:
-    """Write the values YAML file."""
+    """Write the values YAML file.
+
+    Requires :mod:`pyyaml` to be installed.
+    """
     path = Path(path)
     _ensure_dir(path)
     try:
