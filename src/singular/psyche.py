@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Any
 from pathlib import Path
+import random
 
 from .memory import read_psyche, write_psyche
 from .motivation import Objective
@@ -152,6 +153,25 @@ class Psyche:
         """Return a mutation rate derived from the latest mood."""
         mood = self.last_mood or "neutral"
         return self._MUTATION_RATES.get(mood, 1.0)
+
+    def irrational_decision(self, rng: random.Random | None = None) -> bool:
+        """Return ``True`` if the psyche makes an irrational choice.
+
+        The probability depends on the last recorded mood and is perturbed by
+        random noise drawn from ``rng`` (or the global :mod:`random` module when
+        not provided). Moods associated with negative experiences increase the
+        chance of an irrational behaviour, whereas positive moods make it less
+        likely.
+        """
+
+        rng = rng or random
+        mood = self.last_mood or "neutral"
+        base = {
+            "proud": 0.05,
+            "frustrated": 0.3,
+            "anxious": 0.2,
+        }.get(mood, 0.1)
+        return rng.random() < base
 
     def process_run_record(self, record: dict) -> None:
         """Process a run ``record`` and persist psyche changes.
