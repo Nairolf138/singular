@@ -42,8 +42,15 @@ def crossover(parent_a: Path, parent_b: Path, rng: random.Random | None = None) 
     file_a = rng.choice(skills_a)
     file_b = rng.choice(skills_b)
 
-    tree_a = ast.parse(file_a.read_text(encoding="utf-8"))
-    tree_b = ast.parse(file_b.read_text(encoding="utf-8"))
+    try:
+        tree_a = ast.parse(file_a.read_text(encoding="utf-8"))
+    except SyntaxError as e:
+        raise ValueError(f"invalid syntax in skill file {file_a}") from e
+
+    try:
+        tree_b = ast.parse(file_b.read_text(encoding="utf-8"))
+    except SyntaxError as e:
+        raise ValueError(f"invalid syntax in skill file {file_b}") from e
 
     func_a = next((n for n in tree_a.body if isinstance(n, ast.FunctionDef)), None)
     func_b = next((n for n in tree_b.body if isinstance(n, ast.FunctionDef)), None)
