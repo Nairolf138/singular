@@ -27,14 +27,22 @@ def _ensure_dir(path: Path) -> None:
 
 def _enforce_retention(root: Path, keep: int = MAX_RUN_LOGS) -> None:
     """Remove oldest log files beyond the retention limit."""
-    logs = sorted(root.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    logs = sorted(
+        root.glob("*.jsonl"),
+        key=lambda p: (p.stat().st_mtime, p.name),
+        reverse=True,
+    )
     for old in logs[keep:]:
         try:
             old.unlink()
         except FileNotFoundError:  # pragma: no cover - race condition
             pass
     # Clean up any leftover temporary files
-    tmps = sorted(root.glob("*.jsonl.tmp"), key=lambda p: p.stat().st_mtime, reverse=True)
+    tmps = sorted(
+        root.glob("*.jsonl.tmp"),
+        key=lambda p: (p.stat().st_mtime, p.name),
+        reverse=True,
+    )
     for old in tmps[keep:]:
         try:
             old.unlink()
