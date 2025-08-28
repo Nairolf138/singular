@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Selection utilities implementing a minimal NSGA-II algorithm.
 
 The selection process accepts at most a single patch per cycle. All other
@@ -9,6 +7,8 @@ is retained unless dominated by a newcomer. Candidates that do not satisfy
 all required thresholds (tests, performance, quality and stability) are
 rejected before the multi-objective selection is performed.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, List

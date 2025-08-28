@@ -47,7 +47,8 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
         provider_name = "openai" if os.getenv("OPENAI_API_KEY") else "stub"
     generate_reply: Callable[[str], str] | None = load_llm_provider(provider_name)
     if generate_reply is None:
-        generate_reply = lambda prompt: _default_reply(prompt, rng)
+        def generate_reply(prompt: str) -> str:
+            return _default_reply(prompt, rng)
 
     psyche = Psyche.load_state()
 

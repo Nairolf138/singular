@@ -3,7 +3,6 @@ import ast
 import random
 from pathlib import Path
 
-import pytest
 import functools
 
 import life.loop as life_loop

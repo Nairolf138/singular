@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Skill synthesis from specifications."""
+
+from __future__ import annotations
 
 from pathlib import Path
 import ast

@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Generate static reports and KPI exports from run snapshots."""
+
+from __future__ import annotations
 
 import csv
 import json

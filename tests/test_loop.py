@@ -1,20 +1,18 @@
-import json
-import random
-import functools
-import sys
 from pathlib import Path
 
 import ast
-
+import functools
+import json
 import logging
-import pytest
+import random
+import sys
 
 root_dir = Path(__file__).resolve().parents[1]
 sys.path.append(str(root_dir))
 sys.path.append(str(root_dir / "src"))
 
-import life.loop as life_loop
-from life.loop import run, load_checkpoint
+import life.loop as life_loop  # noqa: E402
+from life.loop import run, load_checkpoint  # noqa: E402
 
 
 def _inc_operator(tree: ast.AST, rng=None) -> ast.AST:

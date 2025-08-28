@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Snapshot capture and deterministic replay for evolutionary runs."""
+
+from __future__ import annotations
 
 import json
 import random

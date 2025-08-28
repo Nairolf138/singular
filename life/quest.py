@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Specification loading utilities."""
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
