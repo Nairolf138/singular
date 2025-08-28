@@ -20,6 +20,7 @@ from singular.perception import capture_signals
 from . import sandbox
 from .death import DeathMonitor
 from .reproduction import crossover
+from .map_elites import MapElites
 
 # mypy: ignore-errors
 
@@ -169,6 +170,7 @@ def run(
     operators: Dict[str, Callable[[ast.AST], ast.AST]] | None = None,
     mortality: DeathMonitor | None = None,
     world: WorldState | None = None,
+    map_elites: MapElites | None = None,
 ) -> Checkpoint:
     """Run the evolutionary loop for at most ``budget_seconds`` seconds.
 
@@ -178,6 +180,10 @@ def run(
         A collection of directories, each representing an organism and
         containing its skill files. A single :class:`~pathlib.Path` is accepted
         for backward compatibility.
+    map_elites:
+        Optional :class:`MapElites` instance. When provided, mutations are
+        inserted into the MAP-Elites grid and only persisted if they improve
+        their corresponding cell.
     """
 
     rng = rng or random.Random()
@@ -249,7 +255,12 @@ def run(
                     psyche.feel("curious")
                 seen_diffs.add(diff)
 
-            if mutated_score <= base_score:
+            accepted = (
+                map_elites.add(mutated, mutated_score)
+                if map_elites
+                else mutated_score <= base_score
+            )
+            if accepted:
                 skill_path.write_text(mutated, encoding="utf-8")
                 key = (
                     f"{org_name}:{skill_path.stem}"
