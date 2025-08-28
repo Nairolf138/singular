@@ -16,6 +16,27 @@ def test_birth_creates_memory_files(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         assert (mem / name).exists()
 
 
+def test_birth_initializes_identity_profile_and_psyche(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    birth(seed=123)
+
+    identity_data = json.loads((tmp_path / "id.json").read_text(encoding="utf-8"))
+    profile_data = json.loads(
+        (tmp_path / "mem" / "profile.json").read_text(encoding="utf-8")
+    )
+    assert profile_data["id"] == identity_data["id"]
+
+    psyche_data = json.loads(
+        (tmp_path / "mem" / "psyche.json").read_text(encoding="utf-8")
+    )
+    assert psyche_data == {
+        "curiosity": 0.5,
+        "patience": 0.5,
+        "playfulness": 0.5,
+        "last_mood": None,
+    }
+
+
 def test_add_episode(tmp_path: Path) -> None:
     episode_path = tmp_path / "mem" / "episodic.jsonl"
     add_episode({"event": "test"}, path=episode_path)
