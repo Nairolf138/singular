@@ -1,17 +1,17 @@
-import json
-import random
 from pathlib import Path
 
 import ast
+import json
+import random
 
 import life.loop as life_loop
 from life.loop import WorldState
 
 
-def _inc_operator(tree: ast.AST, rng=None) -> ast.AST:
+def _dec_operator(tree: ast.AST, rng=None) -> ast.AST:
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, int):
-            node.value += 1
+            node.value -= 1
             break
     return tree
 
@@ -46,7 +46,7 @@ def test_multi_organisms_independent(tmp_path: Path, monkeypatch):
         checkpoint,
         budget_seconds=0.3,
         rng=random.Random(1),
-        operators={"inc": _inc_operator},
+        operators={"dec": _dec_operator},
         world=world,
     )
     life_loop.run(
@@ -54,14 +54,14 @@ def test_multi_organisms_independent(tmp_path: Path, monkeypatch):
         checkpoint,
         budget_seconds=0.3,
         rng=random.Random(5),
-        operators={"inc": _inc_operator},
+        operators={"dec": _dec_operator},
         world=world,
     )
 
     val1 = _read_result(skill1)
     val2 = _read_result(skill2)
-    assert val1 > 1
-    assert val2 > 1
+    assert val1 < 1
+    assert val2 < 1
 
     scores = json.loads(mem_file.read_text())
     assert scores["org1:foo"]["score"] == val1
