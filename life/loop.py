@@ -8,7 +8,7 @@ import json
 import logging
 import random
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable
 
@@ -29,6 +29,7 @@ class Checkpoint:
     """Simple persistent state for the evolutionary loop."""
 
     iteration: int = 0
+    stats: Dict[str, Dict[str, float]] = field(default_factory=dict)
 
 
 def load_checkpoint(path: Path) -> Checkpoint:
@@ -89,17 +90,24 @@ def _select_operator(
     policy: str,
     rng: random.Random,
 ) -> str:
-    """Choose an operator according to ``policy`` and bandit ``stats``."""
+    """Choose an operator using an epsilon-greedy bandit policy."""
 
     names = list(operators.keys())
-    if policy == "exploit":
-        explored = [n for n, s in stats.items() if s["count"] > 0]
-        if explored:
-            return max(explored, key=lambda n: stats[n]["reward"] / stats[n]["count"])
-        policy = "explore"
+
     if policy == "analyze":
+        # deterministically explore least-used operator
         return min(names, key=lambda n: stats[n]["count"])
-    return rng.choice(names)
+
+    epsilon = {"exploit": 0.0, "explore": 1.0}.get(policy, 0.1)
+
+    if rng.random() < epsilon or all(stats[n]["count"] == 0 for n in names):
+        return rng.choice(names)
+
+    def expected(name: str) -> float:
+        s = stats[name]
+        return s["reward"] / s["count"] if s["count"] else 0.0
+
+    return max(names, key=expected)
 
 
 def score(code: str) -> float:
@@ -140,9 +148,9 @@ def run(
     skills_dir.mkdir(parents=True, exist_ok=True)
 
     operators = operators or _load_default_operators()
-    stats: Dict[str, Dict[str, float]] = {
-        name: {"count": 0, "reward": 0.0} for name in operators
-    }
+    stats: Dict[str, Dict[str, float]] = state.stats
+    for name in operators:
+        stats.setdefault(name, {"count": 0, "reward": 0.0})
 
     psyche = Psyche.load_state()
     mortality = mortality or DeathMonitor()
@@ -180,6 +188,7 @@ def run(
 
             stats[op_name]["count"] += 1
             stats[op_name]["reward"] += mutated_score - base_score
+            state.stats = stats
 
             logger.log(
                 skill_path.stem,
