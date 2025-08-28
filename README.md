@@ -63,7 +63,10 @@ Contrairement aux chatbots classiques (qui ne changent pas leur cœur) ou aux si
 ### 🔒 Sécurité
 - Pas de réseau (no net).
 - Pas d’accès disque externe (hors dossier de l’organisme).
-- Sandbox stricte : limites CPU/RAM, interdiction d’import, de `open()`, `exec()`, etc.
+- Sandbox stricte :
+  - Limites CPU/RAM (`timeout` & `memory_limit` : 1.5s et 256 MB par défaut).
+  - Environnement isolé : `os.environ` vidé et répertoire de travail temporaire.
+  - Interdiction d’import et de fonctions sensibles (`open()`, `exec()`, `eval()`, etc.).
 - Tests automatiques avant toute intégration de code.
 - Résultats traçables : chaque mutation est loggée, reproductible par seed.
 

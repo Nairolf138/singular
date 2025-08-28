@@ -25,3 +25,13 @@ def test_timeout():
 def test_memory_limit():
     with pytest.raises(MemoryError):
         run("'x' * (300 * 1024 * 1024)")
+
+
+def test_forbidden_network_access():
+    with pytest.raises(SandboxError):
+        run("import socket\nsocket.socket()")
+
+
+def test_forbidden_subprocess_access():
+    with pytest.raises(SandboxError):
+        run("import subprocess\nsubprocess.run(['echo', 'hi'])")
