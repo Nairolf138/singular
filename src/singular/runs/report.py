@@ -8,7 +8,7 @@ import json
 from typing import Any
 
 from .logger import RUNS_DIR
-from ..memory import read_skills, SKILLS_FILE
+from ..memory import read_skills, get_skills_file
 
 
 def load_run_records(
@@ -35,7 +35,7 @@ def report(
     run_id: str,
     *,
     runs_dir: Path | str = RUNS_DIR,
-    skills_path: Path | str = SKILLS_FILE,
+    skills_path: Path | str | None = None,
 ) -> None:
     """Summarize performance for a given run."""
 
@@ -63,6 +63,8 @@ def report(
     for op, count in counter.items():
         print(f"  {op}: {count}")
 
+    if skills_path is None:
+        skills_path = get_skills_file()
     skills = read_skills(path=skills_path)
     if skills:
         print("Skills:")
