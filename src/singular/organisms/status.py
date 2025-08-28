@@ -9,10 +9,8 @@ from ..psyche import Psyche
 from ..runs.logger import RUNS_DIR
 
 
-def status(seed: int | None = None) -> None:
+def status() -> None:
     """Display basic metrics and current psyche state."""
-
-    del seed  # unused
 
     runs_dir = Path(RUNS_DIR)
     files = sorted(runs_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)

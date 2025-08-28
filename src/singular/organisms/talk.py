@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import random
 from typing import Callable
 
 from ..memory import add_episode, ensure_memory_structure, read_episodes
@@ -10,10 +11,19 @@ from ..psyche import Psyche
 from ..providers import load_llm_provider
 
 
-def _default_reply(prompt: str) -> str:
-    """Fallback reply generation when no provider is available."""
+def _default_reply(prompt: str, rng: random.Random) -> str:
+    """Fallback reply generation when no provider is available.
 
-    return f"I heard you say: {prompt}"
+    The ``seed`` passed to :func:`talk` is used to seed ``rng`` so that stub
+    responses become deterministic when desired.
+    """
+
+    options = [
+        "I heard you say",
+        "You said",
+        "Echoing",
+    ]
+    return f"{rng.choice(options)}: {prompt}"
 
 
 def talk(provider: str | None = None, seed: int | None = None) -> None:
@@ -24,17 +34,20 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
     provider:
         Optional name of the LLM provider. Overrides environment variables.
     seed:
-        Optional random seed for reproducibility.
+        Optional random seed for reproducibility. It affects stub replies when
+        no provider is available.
     """
 
     ensure_memory_structure()
+
+    rng = random.Random(seed)
 
     provider_name = provider or os.getenv("LLM_PROVIDER")
     if not provider_name:
         provider_name = "openai" if os.getenv("OPENAI_API_KEY") else "stub"
     generate_reply: Callable[[str], str] | None = load_llm_provider(provider_name)
     if generate_reply is None:
-        generate_reply = _default_reply
+        generate_reply = lambda prompt: _default_reply(prompt, rng)
 
     psyche = Psyche.load_state()
 
