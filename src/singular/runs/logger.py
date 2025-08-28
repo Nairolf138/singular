@@ -11,6 +11,7 @@ from typing import Any
 
 from ..psyche import Psyche
 from ..memory import add_episode
+from typing import Callable, Dict
 
 # Base directory for persistent files
 _BASE_DIR = Path(os.environ.get("SINGULAR_HOME", "."))
@@ -18,6 +19,37 @@ _BASE_DIR = Path(os.environ.get("SINGULAR_HOME", "."))
 RUNS_DIR = _BASE_DIR / "runs"
 # Number of run logs to retain
 MAX_RUN_LOGS = int(os.environ.get("SINGULAR_RUNS_KEEP", "20"))
+
+# ---------------------------------------------------------------------------
+# Mood style helpers
+# ---------------------------------------------------------------------------
+
+
+def _style_colere(mood: str) -> str:
+    """Rendering for the ``colere`` (anger) mood."""
+
+    return mood.upper()
+
+
+def _style_fatigue(mood: str) -> str:
+    """Rendering for the ``fatigue`` (tired) mood."""
+
+    return f"{mood}..."
+
+
+def _style_neutre(mood: str) -> str:
+    """Rendering for the ``neutre`` (neutral) mood."""
+
+    return mood
+
+
+mood_styles: Dict[str | None, Callable[[str], str]] = {
+    "colere": _style_colere,
+    "colère": _style_colere,
+    "fatigue": _style_fatigue,
+    "neutre": _style_neutre,
+    None: _style_neutre,
+}
 
 
 def _ensure_dir(path: Path) -> None:
@@ -123,7 +155,9 @@ class RunLogger:
         os.fsync(self._file.fileno())
         self.psyche.process_run_record(record)
         mood = getattr(self.psyche, "last_mood", None)
-        add_episode({"event": "mutation", "mood": mood, **record})
+        add_episode(
+            {"event": "mutation", "mood": mood, **record}, mood_styles=mood_styles
+        )
 
     def log_death(self, reason: str, **info: Any) -> None:
         """Record a death event with optional additional information."""
