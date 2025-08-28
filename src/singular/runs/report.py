@@ -54,7 +54,8 @@ def report(
     print(f"Run {run_id}")
     print(f"Generations: {len(scores)}")
     print(f"Final score: {scores[-1]}")
-    print(f"Best score: {max(scores)}")
+    # Lower scores indicate better performance.
+    print(f"Best score: {min(scores)}")
 
     counter = Counter(ops)
     print("Operator histogram:")

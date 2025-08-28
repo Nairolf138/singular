@@ -6,7 +6,7 @@ from singular.runs import RunLogger
 
 def test_log_creation(tmp_path: Path) -> None:
     logger = RunLogger("test", root=tmp_path)
-    logger.log("skill", "op", "diff", True, 1.0, 2.0, 0.1, 0.2)
+    logger.log("skill", "op", "diff", True, 1.0, 2.0, 0.2, 0.1)
     logger.close()
     files = list(tmp_path.glob("test-*.jsonl"))
     assert len(files) == 1

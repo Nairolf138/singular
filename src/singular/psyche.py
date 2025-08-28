@@ -31,7 +31,8 @@ def derive_mood(record: dict) -> str:
     :class:`~singular.runs.logger.RunLogger`.  The heuristic is intentionally
     simple:
 
-    * If the run ``improved`` a score, the psyche feels ``"proud"``.
+    * If the run ``improved`` a score (``score_new < score_base``), the psyche
+      feels ``"proud"``.
     * If execution became slower (``ms_new`` > ``ms_base``) without improving,
       the psyche is ``"frustrated"``.
     * In all other cases we assume an ``"anxious"`` mood.
