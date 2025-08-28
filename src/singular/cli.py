@@ -15,6 +15,7 @@ from .runs.run import run as run_run
 from .runs.synthesize import synthesize
 from .runs.report import report
 from .runs.loop import loop as loop_run
+from .dashboard import run as dashboard_run
 
 Command = Callable[..., Any]
 
@@ -59,6 +60,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     report_parser.add_argument("--id", required=True, help="Run identifier")
     report_parser.set_defaults(func=report)
+
+    subparsers.add_parser("dashboard", help="Launch web dashboard").set_defaults(
+        func=dashboard_run
+    )
 
     args = parser.parse_args(argv)
 

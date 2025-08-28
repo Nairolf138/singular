@@ -90,3 +90,25 @@ Contrairement aux chatbots classiques (qui ne changent pas leur cœur) ou aux si
   - Personnalités plus complexes.
   - “Écosystème” multi-organismes → possibilité de faire interagir plusieurs compagnons.
 
+## 🖥️ Tableau de bord web
+
+Un petit serveur web permet de consulter les fichiers de `runs/` et l'état de `psyche.json`.
+
+### Installation
+
+Installez les dépendances du tableau de bord :
+
+```bash
+pip install -e .
+```
+
+### Utilisation
+
+Lancez le serveur local :
+
+```bash
+singular dashboard
+```
+
+Ouvrez ensuite http://127.0.0.1:8000 dans votre navigateur.
+
