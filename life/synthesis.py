@@ -61,7 +61,7 @@ def _verify(code: str, spec: quest.Spec) -> bool:
         args = ", ".join(repr(x) for x in ex.inputs)
         test = f"{code}\nresult = {spec.name}({args})"
         try:
-            out = sandbox.run(test)
+            out = sandbox.run(test, timeout=spec.constraints.time_ms_max / 1000)
         except Exception:
             return False
         if out != ex.output:
@@ -72,7 +72,9 @@ def _verify(code: str, spec: quest.Spec) -> bool:
 def synthesise(spec_path: Path, skills_dir: Path | None = None) -> Path:
     """Generate a skill from *spec_path* and persist it to *skills_dir*.
 
-    A :class:`RuntimeError` is raised if the synthesised code fails any example.
+    A :class:`RuntimeError` is raised if the synthesised code fails any
+    example. The time limit declared in the specification is enforced during
+    verification.
     """
 
     spec = quest.load(spec_path)
