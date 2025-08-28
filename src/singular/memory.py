@@ -7,7 +7,7 @@ when the optional :mod:`PyYAML <yaml>` package is available.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Mapping
 import json
 import os
 
@@ -170,8 +170,22 @@ def read_episodes(path: Path | str | None = None) -> list[dict[str, Any]]:
     return episodes
 
 
-def add_episode(episode: dict[str, Any], path: Path | str | None = None) -> None:
-    """Append a new episode to the episodic memory file."""
+def add_episode(
+    episode: dict[str, Any],
+    path: Path | str | None = None,
+    mood_styles: Mapping[str | None, Callable[[str], str]] | None = None,
+) -> None:
+    """Append a new episode to the episodic memory file.
+
+    If ``mood_styles`` is provided and the episode contains a ``mood`` field,
+    the corresponding rendering function is applied to the mood value before the
+    episode is serialized.
+    """
+
+    if mood_styles and (mood := episode.get("mood")) is not None:
+        style = mood_styles.get(mood) or mood_styles.get(None) or (lambda x: x)
+        episode = {**episode, "mood": style(mood)}
+
     if path is None:
         path = get_episodic_file()
     path = Path(path)

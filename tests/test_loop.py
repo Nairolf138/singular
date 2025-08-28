@@ -115,6 +115,26 @@ def test_log_and_memory_update(tmp_path: Path, monkeypatch):
     assert json.loads(mem_file.read_text())["foo"]["score"] < 1
 
 
+def test_mood_style_logged(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+
+    class DummyPsyche:
+        last_mood = "colere"
+
+        def process_run_record(self, record):
+            pass
+
+    from singular.runs.logger import RunLogger, mood_styles
+
+    logger = RunLogger("mood", root=tmp_path / "logs", psyche=DummyPsyche())
+    logger.log("skill", "op", "diff", True, 0, 0, 0, 0)
+    logger.close()
+
+    episodes = (tmp_path / "mem" / "episodic.jsonl").read_text().splitlines()
+    rec = json.loads(episodes[-1])
+    assert rec["mood"] == mood_styles["colere"]("colere")
+
+
 def test_corrupted_checkpoint(tmp_path: Path, caplog):
     ckpt = tmp_path / "ckpt.json"
     ckpt.write_text("{", encoding="utf-8")
