@@ -136,6 +136,23 @@ class Psyche:
         repr=False,
     )
 
+    _MUTATION_RATES: Dict[str, float] = field(
+        default_factory=lambda: {
+            "frustrated": 2.0,
+            "anxious": 0.5,
+            "proud": 1.2,
+            "neutral": 1.0,
+        },
+        init=False,
+        repr=False,
+    )
+
+    @property
+    def mutation_rate(self) -> float:
+        """Return a mutation rate derived from the latest mood."""
+        mood = self.last_mood or "neutral"
+        return self._MUTATION_RATES.get(mood, 1.0)
+
     def process_run_record(self, record: dict) -> None:
         """Process a run ``record`` and persist psyche changes.
 

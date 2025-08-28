@@ -8,6 +8,7 @@ import random
 
 from life.operators import const_tune, deadcode_elim, eq_rewrite_reduce_sum
 from life.score import score
+from graine.evolver.generate import propose_mutations
 
 from ..psyche import Psyche
 from ..memory import add_episode
@@ -31,6 +32,9 @@ def run(seed: int | None = None) -> str:
     base = "total = 0\n" "for i in range(1000):\n" "    total += i\n" "result = total\n"
 
     psyche = Psyche.load_state()
+    freq = max(1, int(getattr(psyche, "mutation_rate", 1.0) * (getattr(psyche, "energy", 100.0) / 100)))
+    for _ in range(freq):
+        propose_mutations([])
     policy = psyche.mutation_policy()
 
     tree = ast.parse(base)
