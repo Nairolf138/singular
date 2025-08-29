@@ -15,6 +15,7 @@ sys.path.append(str(root_dir / "src"))
 import life.loop as life_loop  # noqa: E402
 from life.loop import run, load_checkpoint  # noqa: E402
 from singular.resource_manager import ResourceManager  # noqa: E402
+from singular.psyche import Psyche  # noqa: E402
 
 
 def _inc_operator(tree: ast.AST, rng=None) -> ast.AST:
@@ -376,8 +377,11 @@ def test_fatigue_reduces_proposals(tmp_path: Path, monkeypatch):
     assert calls["n"] == 1
 
 
-def _setup_dummy_psyche(monkeypatch, tmp_path, action):
-    """Helper to prepare a ``Psyche`` that always triggers ``action``."""
+def _setup_dummy_psyche(monkeypatch, tmp_path, decisions):
+    """Prepare a ``Psyche`` yielding predetermined ``decisions``."""
+
+    decisions = list(decisions)
+    episodes: list[dict] = []
 
     class DummyPsyche:
         last_mood = "anxious"
@@ -395,31 +399,28 @@ def _setup_dummy_psyche(monkeypatch, tmp_path, action):
             pass
 
         def irrational_decision(self, rng=None):
-            return True
+            if decisions:
+                return decisions.pop(0)
+            return Psyche.Decision.ACCEPT
 
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
     monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: DummyPsyche()))
 
-    rng = random.Random(0)
-    orig_choice = rng.choice
-
-    def custom_choice(seq):
-        if seq == ["refuse", "procrastinate", "absurd"]:
-            return action
-        return orig_choice(seq)
-
-    rng.choice = custom_choice  # type: ignore[attr-defined]
-
-    from singular.runs.logger import RunLogger as RL
+    from singular.runs import logger as run_logger
 
     monkeypatch.setattr(
-        life_loop, "RunLogger", functools.partial(RL, root=tmp_path / "logs")
+        life_loop, "RunLogger", functools.partial(run_logger.RunLogger, root=tmp_path / "logs")
     )
     monkeypatch.setattr(life_loop, "update_score", lambda *a, **k: None)
-    monkeypatch.setattr(life_loop, "add_episode", lambda *a, **k: None)
+
+    def fake_add_episode(ep, **k):
+        episodes.append(ep)
+
+    monkeypatch.setattr(life_loop, "add_episode", fake_add_episode)
+    monkeypatch.setattr(run_logger, "add_episode", fake_add_episode)
     monkeypatch.setattr(life_loop, "capture_signals", lambda: {})
 
-    return rng
+    return random.Random(0), episodes
 
 
 def test_irrational_refusal(tmp_path: Path, monkeypatch):
@@ -429,7 +430,9 @@ def test_irrational_refusal(tmp_path: Path, monkeypatch):
     skill.write_text("result = 1", encoding="utf-8")
     checkpoint = tmp_path / "ckpt.json"
 
-    rng = _setup_dummy_psyche(monkeypatch, tmp_path, "refuse")
+    rng, episodes = _setup_dummy_psyche(
+        monkeypatch, tmp_path, [Psyche.Decision.REFUSE] * 1000
+    )
 
     life_loop.run(
         skills_dir,
@@ -440,54 +443,30 @@ def test_irrational_refusal(tmp_path: Path, monkeypatch):
     )
 
     assert skill.read_text(encoding="utf-8") == "result = 1"
+    assert any(ep.get("event") == "refuse" for ep in episodes)
 
 
-def test_irrational_procrastination(tmp_path: Path, monkeypatch):
+def test_irrational_delay(tmp_path: Path, monkeypatch):
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     skill = skills_dir / "foo.py"
     skill.write_text("result = 1", encoding="utf-8")
     checkpoint = tmp_path / "ckpt.json"
 
-    rng = _setup_dummy_psyche(monkeypatch, tmp_path, "procrastinate")
-
-    called = {"sleep": False}
-
-    def fake_sleep(seconds):
-        called["sleep"] = seconds
-
-    monkeypatch.setattr(life_loop.time, "sleep", fake_sleep)
+    rng, episodes = _setup_dummy_psyche(
+        monkeypatch, tmp_path, [Psyche.Decision.DELAY, Psyche.Decision.ACCEPT]
+    )
 
     life_loop.run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.05,
+        budget_seconds=0.1,
         rng=rng,
         operators={"dec": _dec_operator},
     )
 
-    assert skill.read_text(encoding="utf-8") == "result = 1"
-    assert called["sleep"] == 0.01
-
-
-def test_irrational_absurd_mutation(tmp_path: Path, monkeypatch):
-    skills_dir = tmp_path / "skills"
-    skills_dir.mkdir()
-    skill = skills_dir / "foo.py"
-    skill.write_text("result = 1", encoding="utf-8")
-    checkpoint = tmp_path / "ckpt.json"
-
-    rng = _setup_dummy_psyche(monkeypatch, tmp_path, "absurd")
-
-    life_loop.run(
-        skills_dir,
-        checkpoint,
-        budget_seconds=0.05,
-        rng=rng,
-        operators={"dec": _dec_operator},
-    )
-
-    assert "absurd" in skill.read_text(encoding="utf-8")
+    assert skill.read_text(encoding="utf-8") != "result = 1"
+    assert any(ep.get("event") == "delay" for ep in episodes)
 
 
 def _dummy_psyche(events):
