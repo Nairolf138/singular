@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from singular.psyche import Psyche
+from singular.resource_manager import ResourceManager
 
 
 def test_feel_updates_traits_and_last_mood() -> None:
@@ -68,3 +69,22 @@ def test_state_persistence(tmp_path: Path) -> None:
     assert loaded.optimism == psyche.optimism
     assert loaded.resilience == psyche.resilience
     assert loaded.last_mood == psyche.last_mood
+
+
+def test_resource_manager_influences_mood(tmp_path: Path) -> None:
+    psyche = Psyche()
+
+    rm = ResourceManager(energy=5.0, path=tmp_path / "res.json")
+    mood = psyche.update_from_resource_manager(rm)
+    assert mood == "fatigue"
+    assert psyche.last_mood == "fatigue"
+
+    rm = ResourceManager(food=5.0, path=tmp_path / "res2.json")
+    mood = psyche.update_from_resource_manager(rm)
+    assert mood == "anger"
+    assert psyche.last_mood == "anger"
+
+    rm = ResourceManager(warmth=5.0, path=tmp_path / "res3.json")
+    mood = psyche.update_from_resource_manager(rm)
+    assert mood == "lonely"
+    assert psyche.last_mood == "lonely"
