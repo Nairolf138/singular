@@ -34,3 +34,15 @@ def spawn(parent_a: Path, parent_b: Path, out_dir: Path | None = None, seed: int
     filename, code = crossover(parent_a, parent_b, rng)
     (out_dir / filename).write_text(code, encoding="utf-8")
     return out_dir
+
+
+def mutation_absurde(code: str) -> str:
+    """Return ``code`` with an intentionally useless mutation.
+
+    The transformation appends a meaningless ``0`` expression at the end of
+    the module, producing a diff without altering behaviour.  It serves as a
+    placeholder for curious but unproductive exploration.
+    """
+
+    line = "0  # mutation absurde"
+    return code + ("\n" if not code.endswith("\n") else "") + line + "\n"
