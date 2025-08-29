@@ -161,6 +161,7 @@ class Psyche:
         REFUSE = "REFUSE"
         DELAY = "DELAY"
         ACCEPT = "ACCEPT"
+        CURIOUS = "CURIOUS"
 
     def irrational_decision(self, rng: random.Random | None = None) -> "Psyche.Decision":
         """Return the outcome of a potentially irrational choice.
@@ -179,6 +180,8 @@ class Psyche:
         }.get(mood, 0.1)
         if rng.random() < base:
             return rng.choice([self.Decision.REFUSE, self.Decision.DELAY])
+        if rng.random() < self.curiosity * 0.01:
+            return self.Decision.CURIOUS
         return self.Decision.ACCEPT
 
     def process_run_record(self, record: dict) -> None:

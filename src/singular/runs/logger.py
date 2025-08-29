@@ -200,6 +200,20 @@ class RunLogger:
         os.fsync(self._file.fileno())
         add_episode(record)
 
+    def log_absurde(self, skill: str, diff: str) -> None:
+        """Record an absurd mutation event."""
+
+        record: dict[str, Any] = {
+            "ts": datetime.utcnow().isoformat(timespec="seconds"),
+            "event": "absurde",
+            "skill": skill,
+            "diff": diff,
+        }
+        self._file.write(json.dumps(record) + "\n")
+        self._file.flush()
+        os.fsync(self._file.fileno())
+        add_episode(record)
+
     def close(self) -> None:
         """Flush and finalize the log file atomically."""
         if not self._file.closed:

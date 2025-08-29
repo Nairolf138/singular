@@ -16,6 +16,7 @@ from typing import Callable, Dict, Iterable
 from singular.memory import add_episode, update_score
 from singular.psyche import Psyche
 from singular.runs.logger import RunLogger
+from singular.organisms.spawn import mutation_absurde
 from singular.perception import capture_signals
 from graine.evolver.generate import propose_mutations
 from singular.environment import artifacts as env_artifacts
@@ -252,6 +253,19 @@ def run(
                 delay_until = time.time() + 0.01
                 heapq.heappush(delayed, (delay_until, org_name, skill_path))
                 logger.log_delay(skill_path.name, delay_until)
+                continue
+            if decision is Psyche.Decision.CURIOUS:
+                mutated = mutation_absurde(original)
+                diff = "".join(
+                    difflib.unified_diff(
+                        original.splitlines(True),
+                        mutated.splitlines(True),
+                        fromfile="original",
+                        tofile="mutated",
+                    )
+                )
+                skill_path.write_text(mutated, encoding="utf-8")
+                logger.log_absurde(skill_path.name, diff)
                 continue
 
             policy = psyche.mutation_policy()

@@ -469,6 +469,34 @@ def test_irrational_delay(tmp_path: Path, monkeypatch):
     assert any(ep.get("event") == "delay" for ep in episodes)
 
 
+def test_irrational_curiosity(tmp_path: Path, monkeypatch):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    skill = skills_dir / "foo.py"
+    skill.write_text("result = 1", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+
+    rng, episodes = _setup_dummy_psyche(
+        monkeypatch, tmp_path, [Psyche.Decision.CURIOUS] * 1000
+    )
+
+    life_loop.run(
+        skills_dir,
+        checkpoint,
+        budget_seconds=0.05,
+        rng=rng,
+        operators={"dec": _dec_operator},
+    )
+
+    content = skill.read_text(encoding="utf-8")
+    assert "mutation absurde" in content
+    logs = list((tmp_path / "logs").glob("loop-*.jsonl"))
+    assert logs, "log file not created"
+    records = [json.loads(l) for l in logs[0].read_text().splitlines()]
+    assert any(rec.get("event") == "absurde" for rec in records)
+    assert any(ep.get("event") == "absurde" for ep in episodes)
+
+
 def _dummy_psyche(events):
     class DummyPsyche:
         mutation_rate = 1.0
