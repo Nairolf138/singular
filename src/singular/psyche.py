@@ -10,6 +10,7 @@ from enum import Enum
 
 from .memory import read_psyche, write_psyche
 from .motivation import Objective
+from .resource_manager import ResourceManager
 
 
 def _clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
@@ -111,6 +112,20 @@ class Psyche:
                 "resilience": -0.1,
             },
             "neutral": {},
+            "fatigue": {
+                "curiosity": -0.05,
+                "playfulness": -0.05,
+                "optimism": -0.1,
+            },
+            "anger": {
+                "patience": -0.2,
+                "playfulness": -0.1,
+                "optimism": -0.1,
+            },
+            "lonely": {
+                "optimism": -0.1,
+                "resilience": -0.1,
+            },
         },
         init=False,
         repr=False,
@@ -149,11 +164,49 @@ class Psyche:
         repr=False,
     )
 
+    _RESOURCE_MOOD_MAP: Dict[str, str] = field(
+        default_factory=lambda: {
+            "tired": "fatigue",
+            "angry": "anger",
+            "cold": "lonely",
+            "content": "pleasure",
+        },
+        init=False,
+        repr=False,
+    )
+
     @property
     def mutation_rate(self) -> float:
         """Return a mutation rate derived from the latest mood."""
         mood = self.last_mood or "neutral"
         return self._MUTATION_RATES.get(mood, 1.0)
+
+    def update_from_resource_manager(self, rm: ResourceManager) -> str:
+        """Adjust mood based on ``rm`` resource metrics.
+
+        The :class:`~singular.resource_manager.ResourceManager` exposes a
+        :meth:`mood` method returning a list of resource-derived states such as
+        ``"tired"`` or ``"angry"``.  Each state is mapped to an internal mood
+        via :attr:`_RESOURCE_MOOD_MAP` and processed through :meth:`feel` to
+        update :attr:`last_mood` and traits.
+
+        Parameters
+        ----------
+        rm:
+            Resource manager providing energy, food and warmth metrics.
+
+        Returns
+        -------
+        str
+            The final mood after processing all resource states.
+        """
+
+        moods = rm.mood()
+        last = "neutral"
+        for state in moods:
+            event = self._RESOURCE_MOOD_MAP.get(state, "neutral")
+            last = self.feel(event)
+        return last
 
     class Decision(Enum):
         """Possible outcomes of an irrational decision."""
