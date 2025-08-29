@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Any
 from pathlib import Path
 import random
+from enum import Enum
 
 from .memory import read_psyche, write_psyche
 from .motivation import Objective
@@ -154,14 +155,19 @@ class Psyche:
         mood = self.last_mood or "neutral"
         return self._MUTATION_RATES.get(mood, 1.0)
 
-    def irrational_decision(self, rng: random.Random | None = None) -> bool:
-        """Return ``True`` if the psyche makes an irrational choice.
+    class Decision(Enum):
+        """Possible outcomes of an irrational decision."""
 
-        The probability depends on the last recorded mood and is perturbed by
-        random noise drawn from ``rng`` (or the global :mod:`random` module when
-        not provided). Moods associated with negative experiences increase the
-        chance of an irrational behaviour, whereas positive moods make it less
-        likely.
+        REFUSE = "REFUSE"
+        DELAY = "DELAY"
+        ACCEPT = "ACCEPT"
+
+    def irrational_decision(self, rng: random.Random | None = None) -> "Psyche.Decision":
+        """Return the outcome of a potentially irrational choice.
+
+        Depending on the current mood the psyche may decide to refuse the
+        action, delay it or accept it.  ``REFUSE`` and ``DELAY`` share the
+        irrationality probability while ``ACCEPT`` represents the normal path.
         """
 
         rng = rng or random
@@ -171,7 +177,9 @@ class Psyche:
             "frustrated": 0.3,
             "anxious": 0.2,
         }.get(mood, 0.1)
-        return rng.random() < base
+        if rng.random() < base:
+            return rng.choice([self.Decision.REFUSE, self.Decision.DELAY])
+        return self.Decision.ACCEPT
 
     def process_run_record(self, record: dict) -> None:
         """Process a run ``record`` and persist psyche changes.

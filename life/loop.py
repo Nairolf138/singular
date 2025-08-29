@@ -8,6 +8,7 @@ import json
 import logging
 import random
 import time
+import heapq
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable
@@ -214,8 +215,6 @@ def run(
     stats: Dict[str, Dict[str, float]] = state.stats
     for name in operators:
         stats.setdefault(name, {"count": 0, "reward": 0.0})
-    # accounting for potential "absurd" operator triggered by irrational decisions
-    stats.setdefault("absurd", {"count": 0, "reward": 0.0})
 
     psyche = Psyche.load_state()
     resource_manager = resource_manager or ResourceManager()
@@ -228,27 +227,36 @@ def run(
     seen_diffs: set[str] = set()
 
     with RunLogger(run_id, psyche=psyche) as logger:
+        delayed: list[tuple[float, str, Path]] = []
         while time.time() - start < budget_seconds:
             signals = capture_signals()
             add_episode({"event": "perception", **signals})
             state.iteration += 1
 
-            org_name, skill_path = _choose_skill(rng, world.organisms)
+            now = time.time()
+            if delayed and delayed[0][0] <= now:
+                _, org_name, skill_path = heapq.heappop(delayed)
+                decision = Psyche.Decision.ACCEPT
+            else:
+                org_name, skill_path = _choose_skill(rng, world.organisms)
+                decision = Psyche.Decision.ACCEPT
+                if hasattr(psyche, "irrational_decision"):
+                    decision = psyche.irrational_decision(rng)
+
             original = skill_path.read_text(encoding="utf-8")
 
-            if hasattr(psyche, "irrational_decision") and psyche.irrational_decision(rng):
-                action = rng.choice(["refuse", "procrastinate", "absurd"])
-                if action == "refuse":
-                    continue
-                if action == "procrastinate":
-                    time.sleep(0.01)
-                    continue
-                op_name = "absurd"
-                mutated = "# absurd mutation\nresult = 0\n"
-            else:
-                policy = psyche.mutation_policy()
-                op_name = _select_operator(operators, stats, policy, rng)
-                mutated = mutate(original, operators[op_name], rng)
+            if decision is Psyche.Decision.REFUSE:
+                logger.log_refusal(skill_path.name)
+                continue
+            if decision is Psyche.Decision.DELAY:
+                delay_until = time.time() + 0.01
+                heapq.heappush(delayed, (delay_until, org_name, skill_path))
+                logger.log_delay(skill_path.name, delay_until)
+                continue
+
+            policy = psyche.mutation_policy()
+            op_name = _select_operator(operators, stats, policy, rng)
+            mutated = mutate(original, operators[op_name], rng)
             org = world.organisms[org_name]
 
             t0 = time.perf_counter()
