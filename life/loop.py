@@ -220,6 +220,7 @@ def run(
     psyche = Psyche.load_state()
     resource_manager = resource_manager or ResourceManager()
     start = time.time()
+    last_post = 0.0
     freq = max(1, int(getattr(psyche, "mutation_rate", 1.0) * (getattr(psyche, "energy", 100.0) / 100)))
     for _ in range(freq):
         propose_mutations([])
@@ -327,6 +328,18 @@ def run(
                 psyche.feel("anger")
             if "cold" in moods and hasattr(psyche, "feel"):
                 psyche.feel("lonely")
+
+            if time.time() - last_post >= 0.05:
+                env_notifications.auto_post(
+                    log.info,
+                    (
+                        f"moods={','.join(moods)} "
+                        f"energy={resource_manager.energy:.1f} "
+                        f"food={resource_manager.food:.1f} "
+                        f"warmth={resource_manager.warmth:.1f}"
+                    ),
+                )
+                last_post = time.time()
 
             # Shared resource competition
             if world.resource_pool > 0:

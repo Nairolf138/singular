@@ -575,3 +575,28 @@ def test_warmth_interaction_api(tmp_path: Path):
     rm = ResourceManager(warmth=10.0, path=tmp_path / "res.json")
     rm.simulate_human_interaction(15.0)
     assert rm.warmth == 25.0
+
+
+def test_auto_post_messages(tmp_path: Path, monkeypatch):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    skill = skills_dir / "foo.py"
+    skill.write_text("result = 1", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+
+    posts: list[str] = []
+
+    def fake_auto_post(channel, message):
+        posts.append(message)
+
+    monkeypatch.setattr(life_loop.env_notifications, "auto_post", fake_auto_post)
+
+    run(
+        skills_dir,
+        checkpoint,
+        budget_seconds=0.5,
+        rng=random.Random(0),
+        operators={"dec": _dec_operator},
+    )
+
+    assert posts
