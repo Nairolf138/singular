@@ -17,6 +17,9 @@ from singular.psyche import Psyche
 from singular.runs.logger import RunLogger
 from singular.perception import capture_signals
 from graine.evolver.generate import propose_mutations
+from singular.environment import artifacts as env_artifacts
+from singular.environment import files as env_files
+from singular.environment import notifications as env_notifications
 
 from . import sandbox
 from .death import DeathMonitor
@@ -286,8 +289,16 @@ def run(
                 update_score(key, mutated_score)
                 org.last_score = mutated_score
                 org.energy += 0.2
+                env_artifacts.save_text(
+                    f"mutation_{state.iteration}", diff
+                )
             else:
                 org.energy -= 0.1
+
+            env_notifications.notify(
+                f"iteration {state.iteration}: {op_name}", channel=log.info
+            )
+            _ = env_files.list_files()
 
             stats[op_name]["count"] += 1
             stats[op_name]["reward"] += base_score - mutated_score
