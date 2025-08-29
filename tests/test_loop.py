@@ -600,3 +600,35 @@ def test_auto_post_messages(tmp_path: Path, monkeypatch):
     )
 
     assert posts
+
+
+def test_artifact_creation_persistence(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+
+    import importlib
+    from singular.environment import artifacts as env_artifacts
+    importlib.reload(env_artifacts)
+
+    from singular.environment.artifacts import (
+        create_text_art,
+        create_ascii_drawing,
+        create_simple_melody,
+        ARTIFACTS_DIR,
+    )
+
+    mood = "neutre"
+    resources = {"energy": 1}
+    text = create_text_art("bonjour", mood=mood, resources=resources)
+    drawing = create_ascii_drawing(2, 2, mood=mood, resources=resources)
+    melody = create_simple_melody(["C", "E", "G"], mood=mood, resources=resources)
+
+    art_dir = tmp_path / "runs" / "artifacts"
+    assert ARTIFACTS_DIR == art_dir
+
+    for path in (text, drawing, melody):
+        assert path.exists()
+        assert path.parent == art_dir
+        meta = json.loads((path.with_suffix(path.suffix + ".json")).read_text())
+        assert meta["mood"] == mood
+        assert meta["resources"] == resources
+        assert "date" in meta
