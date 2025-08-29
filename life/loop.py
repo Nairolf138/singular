@@ -20,6 +20,7 @@ from graine.evolver.generate import propose_mutations
 from singular.environment import artifacts as env_artifacts
 from singular.environment import files as env_files
 from singular.environment import notifications as env_notifications
+from singular.resource_manager import ResourceManager
 
 from . import sandbox
 from .death import DeathMonitor
@@ -175,6 +176,8 @@ def run(
     mortality: DeathMonitor | None = None,
     world: WorldState | None = None,
     map_elites: MapElites | None = None,
+    resource_manager: ResourceManager | None = None,
+    test_runner: Callable[[], int] | None = None,
 ) -> Checkpoint:
     """Run the evolutionary loop for at most ``budget_seconds`` seconds.
 
@@ -215,6 +218,7 @@ def run(
     stats.setdefault("absurd", {"count": 0, "reward": 0.0})
 
     psyche = Psyche.load_state()
+    resource_manager = resource_manager or ResourceManager()
     start = time.time()
     freq = max(1, int(getattr(psyche, "mutation_rate", 1.0) * (getattr(psyche, "energy", 100.0) / 100)))
     for _ in range(freq):
@@ -239,7 +243,7 @@ def run(
                     time.sleep(0.01)
                     continue
                 op_name = "absurd"
-                mutated = "result = 0  # absurd mutation\n"
+                mutated = "# absurd mutation\nresult = 0\n"
             else:
                 policy = psyche.mutation_policy()
                 op_name = _select_operator(operators, stats, policy, rng)
@@ -303,6 +307,26 @@ def run(
             stats[op_name]["count"] += 1
             stats[op_name]["reward"] += base_score - mutated_score
             state.stats = stats
+
+            # Resource accounting
+            cpu_ms = ms_base + ms_new
+            resource_manager.consume_energy(cpu_ms / 1000.0)
+            if test_runner:
+                try:
+                    passed = test_runner()
+                except Exception:
+                    passed = 0
+                resource_manager.add_food(passed)
+
+            moods = resource_manager.mood()
+            if "tired" in moods:
+                if hasattr(psyche, "feel"):
+                    psyche.feel("fatigue")
+                time.sleep(0.01)
+            if "angry" in moods and hasattr(psyche, "feel"):
+                psyche.feel("anger")
+            if "cold" in moods and hasattr(psyche, "feel"):
+                psyche.feel("lonely")
 
             # Shared resource competition
             if world.resource_pool > 0:

@@ -14,6 +14,7 @@ sys.path.append(str(root_dir / "src"))
 
 import life.loop as life_loop  # noqa: E402
 from life.loop import run, load_checkpoint  # noqa: E402
+from singular.resource_manager import ResourceManager  # noqa: E402
 
 
 def _inc_operator(tree: ast.AST, rng=None) -> ast.AST:
@@ -487,3 +488,90 @@ def test_irrational_absurd_mutation(tmp_path: Path, monkeypatch):
     )
 
     assert "absurd" in skill.read_text(encoding="utf-8")
+
+
+def _dummy_psyche(events):
+    class DummyPsyche:
+        mutation_rate = 1.0
+        energy = 100.0
+
+        def mutation_policy(self):
+            return "default"
+
+        def process_run_record(self, record):
+            pass
+
+        def save_state(self):
+            pass
+
+        def consume(self):
+            pass
+
+        def irrational_decision(self, rng=None):
+            return False
+
+        def feel(self, mood):
+            events.append(mood)
+
+    return DummyPsyche()
+
+
+def test_energy_debit_and_food_credit(tmp_path: Path, monkeypatch):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    skill = skills_dir / "foo.py"
+    skill.write_text("result = 1", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+
+    events = []
+    psyche = _dummy_psyche(events)
+    monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: psyche))
+
+    rm = ResourceManager(energy=50.0, food=30.0, warmth=50.0, path=tmp_path / "res.json")
+
+    run(
+        skills_dir,
+        checkpoint,
+        budget_seconds=0.2,
+        rng=random.Random(0),
+        operators={"dec": _dec_operator},
+        resource_manager=rm,
+        test_runner=lambda: 3,
+    )
+
+    assert rm.energy < 50.0
+    assert rm.food >= 3.0
+    assert "fatigue" not in events and "anger" not in events
+
+
+def test_resource_moods_trigger(monkeypatch, tmp_path):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    skill = skills_dir / "foo.py"
+    skill.write_text("result = 1", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+
+    events = []
+    psyche = _dummy_psyche(events)
+    monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: psyche))
+
+    rm = ResourceManager(energy=5.0, food=5.0, warmth=50.0, path=tmp_path / "res.json")
+
+    run(
+        skills_dir,
+        checkpoint,
+        budget_seconds=0.2,
+        rng=random.Random(0),
+        operators={"dec": _dec_operator},
+        resource_manager=rm,
+        test_runner=lambda: 0,
+    )
+
+    assert "fatigue" in events
+    assert "anger" in events
+
+
+def test_warmth_interaction_api(tmp_path: Path):
+    rm = ResourceManager(warmth=10.0, path=tmp_path / "res.json")
+    rm.simulate_human_interaction(15.0)
+    assert rm.warmth == 25.0
