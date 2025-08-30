@@ -37,6 +37,7 @@ def create_app(
     async def websocket_endpoint(ws: WebSocket) -> None:
         await ws.accept()
         last_psyche_mtime: float | None = None
+        log_cache: dict[str, tuple[float, str]] = {}
         last_logs: dict[str, str] = {}
         try:
             while True:
@@ -48,11 +49,24 @@ def create_app(
                         await ws.send_json({"type": "psyche", "data": data})
                 logs: dict[str, str] = {}
                 if runs_path.exists():
+                    current_files: set[str] = set()
                     for file in runs_path.iterdir():
                         if file.is_file():
-                            logs[file.name] = file.read_text()
+                            current_files.add(file.name)
+                            mtime = file.stat().st_mtime
+                            cached = log_cache.get(file.name)
+                            if not cached or cached[0] != mtime:
+                                content = await asyncio.to_thread(file.read_text)
+                                log_cache[file.name] = (mtime, content)
+                            logs[file.name] = log_cache[file.name][1]
+                    # Remove cache entries for files that no longer exist
+                    for name in set(log_cache) - current_files:
+                        del log_cache[name]
+                else:
+                    if log_cache:
+                        log_cache.clear()
                 if logs != last_logs:
-                    last_logs = logs
+                    last_logs = dict(logs)
                     await ws.send_json({"type": "logs", "data": logs})
                 await asyncio.sleep(0.1)
         except WebSocketDisconnect:
