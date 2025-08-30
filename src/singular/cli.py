@@ -74,6 +74,11 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="LLM provider to use (e.g. 'openai' or 'local')",
     )
+    talk_parser.add_argument(
+        "--prompt",
+        default=None,
+        help="If provided, generate a single response to the prompt and exit",
+    )
     talk_parser.set_defaults(func=talk)
 
     quest_parser = subparsers.add_parser(
@@ -107,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "report":
         func(run_id=args.id)
     elif args.command == "talk":
-        func(provider=args.provider, seed=args.seed)
+        func(provider=args.provider, seed=args.seed, prompt=args.prompt)
     elif args.command == "loop":
         func(
             skills_dir=args.skills_dir,

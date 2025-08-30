@@ -62,6 +62,22 @@ def test_talk_handles_keyboard_interrupt(monkeypatch, tmp_path):
     assert episodes == []
 
 
+def test_talk_single_prompt(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("singular.organisms.talk.load_llm_provider", lambda _name: None)
+    outputs: list[str] = []
+    monkeypatch.setattr("builtins.print", lambda msg: outputs.append(msg))
+
+    main(["--seed", "123", "talk", "--prompt", "hello"])
+
+    episodes = [e for e in read_episodes() if e.get("event") != "perception"]
+    assert len(episodes) == 2
+    assert episodes[0]["role"] == "user"
+    assert episodes[0]["text"] == "hello"
+    expected = _default_reply("hello", random.Random(123)) + " | Mood: neutral"
+    assert outputs[0] == expected
+
+
 def _run_talk(monkeypatch, tmp_path, seed, run):
     subdir = tmp_path / f"{seed}_{run}"
     subdir.mkdir()
