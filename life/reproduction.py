@@ -1,6 +1,24 @@
 from __future__ import annotations
 
-"""Utilities for reproducing organisms by combining skills."""
+"""Utilities for reproducing organisms by combining skills.
+
+Limitations
+-----------
+The crossover strategy implemented here is intentionally simple: it merely
+splices together portions of two parent function bodies. This approach comes
+with a few constraints:
+
+* Parent functions must share the exact same signature. Mismatched arguments
+  would produce nonsensical hybrids and therefore raise a :class:`ValueError`.
+* When a return annotation is present, at least one ``return`` statement must
+  remain in the hybrid body. Otherwise the result would violate the declared
+  contract and we fail fast with :class:`ValueError`.
+* Parent functions need at least one statement each and the resulting hybrid
+  body must not be empty.
+
+The algorithm performs no semantic analysis beyond these checks; generated code
+may still be meaningless even though it is syntactically valid.
+"""
 
 import ast
 import random
@@ -57,11 +75,22 @@ def crossover(parent_a: Path, parent_b: Path, rng: random.Random | None = None) 
     if func_a is None or func_b is None:
         raise ValueError("skills must contain a function definition")
 
+    if ast.dump(func_a.args) != ast.dump(func_b.args):
+        raise ValueError("parent functions must have matching signatures")
+
+    if not func_a.body or not func_b.body:
+        raise ValueError("parent functions must not have empty bodies")
+
     split_a = len(func_a.body) // 2
     split_b = len(func_b.body) // 2
     new_body = func_a.body[:split_a] + func_b.body[split_b:]
     if not new_body:
-        new_body = [ast.Pass()]
+        raise ValueError("resulting function body is empty")
+
+    needs_return = func_a.returns is not None or func_b.returns is not None
+    has_return = any(isinstance(n, ast.Return) for n in new_body)
+    if needs_return and not has_return:
+        raise ValueError("hybrid function missing required return statement")
 
     new_func = ast.FunctionDef(
         name=f"hybrid_{func_a.name}_{func_b.name}",
