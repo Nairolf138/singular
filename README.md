@@ -32,7 +32,7 @@ Contrairement aux chatbots classiques (qui ne changent pas leur cœur) ou aux si
 ## ⚡ Quickstart
 
 ```bash
-pip install -e .[yaml]
+pip install -e .[yaml,dashboard]
 singular birth --name Lumen
 singular talk "Bonjour"
 singular loop --ticks 10
@@ -117,6 +117,7 @@ pip install -e .
 
 #### Dépendances optionnelles
 
+- `pip install -e .[dashboard]` pour activer le tableau de bord web.
 - `pip install -e .[yaml]` pour ajouter **PyYAML** et gérer `values.yaml`.
 - `pip install openai>=1.0.0` pour permettre à l'organisme de parler via l'API OpenAI.
 - `pip install transformers` pour activer un modèle local via Hugging Face.
