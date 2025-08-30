@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Callable, Dict, Iterable
 
 from singular.memory import add_episode, update_score
-from singular.psyche import Psyche
+from singular.psyche import Psyche, Mood
 from singular.runs.logger import RunLogger
 from singular.organisms.spawn import mutation_absurde
 from singular.perception import capture_signals
@@ -282,10 +282,10 @@ def run(
 
             if mutated_score == float("-inf"):
                 if hasattr(psyche, "feel"):
-                    psyche.feel("pain")
+                    psyche.feel(Mood.PAIN)
             elif mutated_score <= base_score:
                 if hasattr(psyche, "feel"):
-                    psyche.feel("pleasure")
+                    psyche.feel(Mood.PLEASURE)
 
             diff = "".join(
                 difflib.unified_diff(
@@ -298,7 +298,7 @@ def run(
 
             if diff not in seen_diffs:
                 if hasattr(psyche, "feel"):
-                    psyche.feel("curious")
+                    psyche.feel(Mood.CURIOUS)
                 seen_diffs.add(diff)
 
             accepted = (
@@ -344,12 +344,12 @@ def run(
             moods = resource_manager.mood()
             if "tired" in moods:
                 if hasattr(psyche, "feel"):
-                    psyche.feel("fatigue")
+                    psyche.feel(Mood.FATIGUE)
                 time.sleep(0.01)
             if "angry" in moods and hasattr(psyche, "feel"):
-                psyche.feel("anger")
+                psyche.feel(Mood.ANGER)
             if "cold" in moods and hasattr(psyche, "feel"):
-                psyche.feel("lonely")
+                psyche.feel(Mood.LONELY)
 
             if time.time() - last_post >= 0.05:
                 env_notifications.auto_post(

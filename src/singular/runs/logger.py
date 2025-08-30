@@ -155,8 +155,9 @@ class RunLogger:
         os.fsync(self._file.fileno())
         self.psyche.process_run_record(record)
         mood = getattr(self.psyche, "last_mood", None)
+        mood_val = getattr(mood, "value", mood)
         add_episode(
-            {"event": "mutation", "mood": mood, **record}, mood_styles=mood_styles
+            {"event": "mutation", "mood": mood_val, **record}, mood_styles=mood_styles
         )
 
     def log_death(self, reason: str, **info: Any) -> None:

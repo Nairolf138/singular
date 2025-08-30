@@ -1,14 +1,14 @@
 from pathlib import Path
 
-from singular.psyche import Psyche
+from singular.psyche import Psyche, Mood
 from singular.resource_manager import ResourceManager
 
 
 def test_feel_updates_traits_and_last_mood() -> None:
     psyche = Psyche()
-    mood = psyche.feel("proud")
-    assert mood == "proud"
-    assert psyche.last_mood == "proud"
+    mood = psyche.feel(Mood.PROUD)
+    assert mood is Mood.PROUD
+    assert psyche.last_mood is Mood.PROUD
     assert psyche.curiosity > 0.5
     assert psyche.patience > 0.5
     assert psyche.playfulness > 0.5
@@ -17,7 +17,7 @@ def test_feel_updates_traits_and_last_mood() -> None:
 
     # Test clamping at upper bound
     for _ in range(20):
-        psyche.feel("proud")
+        psyche.feel(Mood.PROUD)
     assert 0.0 <= psyche.curiosity <= 1.0
     assert 0.0 <= psyche.patience <= 1.0
     assert 0.0 <= psyche.playfulness <= 1.0
@@ -33,7 +33,7 @@ def test_policies_and_lower_clamp() -> None:
         optimism=0.05,
         resilience=0.05,
     )
-    psyche.feel("frustrated")
+    psyche.feel(Mood.FRUSTRATED)
     assert psyche.curiosity >= 0.0
     assert psyche.patience >= 0.0
     assert psyche.playfulness >= 0.0
@@ -58,7 +58,7 @@ def test_state_persistence(tmp_path: Path) -> None:
         optimism=0.6,
         resilience=0.7,
     )
-    psyche.feel("proud")
+    psyche.feel(Mood.PROUD)
     psyche.save_state(path)
     assert path.exists()
 
@@ -76,15 +76,15 @@ def test_resource_manager_influences_mood(tmp_path: Path) -> None:
 
     rm = ResourceManager(energy=5.0, path=tmp_path / "res.json")
     mood = psyche.update_from_resource_manager(rm)
-    assert mood == "fatigue"
-    assert psyche.last_mood == "fatigue"
+    assert mood is Mood.FATIGUE
+    assert psyche.last_mood is Mood.FATIGUE
 
     rm = ResourceManager(food=5.0, path=tmp_path / "res2.json")
     mood = psyche.update_from_resource_manager(rm)
-    assert mood == "anger"
-    assert psyche.last_mood == "anger"
+    assert mood is Mood.ANGER
+    assert psyche.last_mood is Mood.ANGER
 
     rm = ResourceManager(warmth=5.0, path=tmp_path / "res3.json")
     mood = psyche.update_from_resource_manager(rm)
-    assert mood == "lonely"
-    assert psyche.last_mood == "lonely"
+    assert mood is Mood.LONELY
+    assert psyche.last_mood is Mood.LONELY

@@ -15,7 +15,7 @@ sys.path.append(str(root_dir / "src"))
 import life.loop as life_loop  # noqa: E402
 from life.loop import run, load_checkpoint  # noqa: E402
 from singular.resource_manager import ResourceManager  # noqa: E402
-from singular.psyche import Psyche  # noqa: E402
+from singular.psyche import Psyche, Mood  # noqa: E402
 
 
 def _inc_operator(tree: ast.AST, rng=None) -> ast.AST:
@@ -313,7 +313,7 @@ def test_angry_increases_proposals(tmp_path: Path, monkeypatch):
     checkpoint = tmp_path / "ckpt.json"
 
     psyche = life_loop.Psyche()
-    psyche.last_mood = "frustrated"
+    psyche.last_mood = Mood.FRUSTRATED
     psyche.energy = 100.0
 
     monkeypatch.setattr(life_loop, "propose_mutations", fake_propose)
@@ -359,7 +359,7 @@ def test_fatigue_reduces_proposals(tmp_path: Path, monkeypatch):
     checkpoint = tmp_path / "ckpt.json"
 
     psyche = life_loop.Psyche()
-    psyche.last_mood = "frustrated"
+    psyche.last_mood = Mood.FRUSTRATED
     psyche.energy = 20.0
 
     monkeypatch.setattr(life_loop, "propose_mutations", fake_propose)
@@ -384,7 +384,7 @@ def _setup_dummy_psyche(monkeypatch, tmp_path, decisions):
     episodes: list[dict] = []
 
     class DummyPsyche:
-        last_mood = "anxious"
+        last_mood = Mood.ANXIOUS
 
         def mutation_policy(self):
             return "default"
@@ -548,7 +548,7 @@ def test_energy_debit_and_food_credit(tmp_path: Path, monkeypatch):
 
     assert rm.energy < 50.0
     assert rm.food >= 3.0
-    assert "fatigue" not in events and "anger" not in events
+    assert Mood.FATIGUE not in events and Mood.ANGER not in events
 
 
 def test_resource_moods_trigger(monkeypatch, tmp_path):
@@ -574,8 +574,8 @@ def test_resource_moods_trigger(monkeypatch, tmp_path):
         test_runner=lambda: 0,
     )
 
-    assert "fatigue" in events
-    assert "anger" in events
+    assert Mood.FATIGUE in events
+    assert Mood.ANGER in events
 
 
 def test_warmth_interaction_api(tmp_path: Path):

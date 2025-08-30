@@ -8,7 +8,7 @@ from typing import Callable
 
 from ..memory import add_episode, ensure_memory_structure, read_episodes
 from ..perception import capture_signals
-from ..psyche import Psyche
+from ..psyche import Psyche, Mood
 from ..providers import load_llm_provider
 
 
@@ -111,8 +111,8 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
 
         add_episode({"role": "user", "text": user_input})
 
-        mood = psyche.feel("neutral")
-        mood_report = mood_event or mood or "neutral"
+        mood = psyche.feel(Mood.NEUTRAL)
+        mood_report = mood_event or mood.value
         reply = generate_reply(user_input)
 
         parts = [reply]
@@ -128,6 +128,6 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
         response = " | ".join(parts)
 
         print(response)
-        add_episode({"role": "assistant", "text": response, "mood": mood})
+        add_episode({"role": "assistant", "text": response, "mood": mood.value})
         psyche.gain()
         psyche.save_state()
