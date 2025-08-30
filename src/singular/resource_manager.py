@@ -90,6 +90,20 @@ class ResourceManager:
         self._clamp()
         self._save()
 
+    def update_from_environment(self, temp: float) -> None:
+        """Adjust ``warmth`` based on the surrounding temperature.
+
+        ``20°C`` is treated as neutral. Temperatures above this increase
+        warmth while colder values decrease it.
+        """
+
+        neutral = 20.0
+        diff = temp - neutral
+        if diff > 0:
+            self.add_warmth(diff * 0.1)
+        elif diff < 0:
+            self.cool_down(-diff * 0.1)
+
     def simulate_human_interaction(self, amount: float = 5.0) -> None:
         """API used by tests/CLI to increase warmth."""
         self.add_warmth(amount)

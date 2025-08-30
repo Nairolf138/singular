@@ -47,6 +47,31 @@ def _query_optional_weather_api() -> Dict[str, Any]:
         return {}
 
 
+def get_temperature() -> float:
+    """Return the current temperature.
+
+    A weather API can be provided via ``SINGULAR_WEATHER_API``. When present
+    and a ``temp`` or ``temperature`` field is found in the returned JSON it is
+    used.  Otherwise a simulated temperature is produced.
+    """
+
+    data = _query_optional_weather_api()
+    weather = data.get("weather") if isinstance(data, dict) else None
+    if isinstance(weather, dict):
+        containers = [weather]
+        main = weather.get("main")
+        if isinstance(main, dict):
+            containers.append(main)
+        for container in containers:
+            for key in ("temp", "temperature"):
+                if key in container:
+                    try:
+                        return float(container[key])
+                    except (TypeError, ValueError):
+                        pass
+    return random.uniform(-20.0, 40.0)
+
+
 def capture_signals() -> Dict[str, Any]:
     """Collect sensory signals from virtual and optional real sources."""
     signals: Dict[str, Any] = {
