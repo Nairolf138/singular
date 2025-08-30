@@ -34,10 +34,17 @@ Contrairement aux chatbots classiques (qui ne changent pas leur cœur) ou aux si
 ```bash
 pip install -e .[yaml,dashboard,viz]
 singular birth --name Lumen
-singular talk "Bonjour"
+singular talk
 singular loop --ticks 10
 singular report
 singular dashboard
+```
+
+Par défaut, ``talk`` ouvre une session interactive. Pour obtenir une réponse
+unique et quitter immédiatement :
+
+```bash
+singular talk --prompt "Bonjour"
 ```
 
 ## 🧬 Reproduction
@@ -159,7 +166,7 @@ singular --home /chemin/personnel birth
 SINGULAR_RUNS_KEEP=50 singular report
 
 # Utiliser l'API OpenAI
-OPENAI_API_KEY=sk-... singular talk "Salut"
+OPENAI_API_KEY=sk-... singular talk --prompt "Salut"
 ```
 
 #### Capteur météo
@@ -197,7 +204,7 @@ Installez ``transformers`` pour utiliser un petit modèle embarqué :
 
 ```bash
 pip install transformers
-singular talk --provider local "Bonjour"
+singular talk --provider local --prompt "Bonjour"
 ```
 
 Le fournisseur local utilise le modèle ``sshleifer/tiny-gpt2`` de Hugging Face

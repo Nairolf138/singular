@@ -27,7 +27,11 @@ def _default_reply(prompt: str, rng: random.Random) -> str:
     return f"{rng.choice(options)}: {prompt}"
 
 
-def talk(provider: str | None = None, seed: int | None = None) -> None:
+def talk(
+    provider: str | None = None,
+    seed: int | None = None,
+    prompt: str | None = None,
+) -> None:
     """Handle the ``talk`` subcommand.
 
     Parameters
@@ -37,6 +41,8 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
     seed:
         Optional random seed for reproducibility. It affects stub replies when
         no provider is available.
+    prompt:
+        Optional user prompt. If provided, generate a single response and exit.
     """
 
     ensure_memory_structure()
@@ -54,7 +60,7 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
 
     psyche = Psyche.load_state()
 
-    while True:
+    def gather_context() -> tuple[str | None, dict | None, dict | None, str | None, str | None]:
         signals = capture_signals()
         add_episode({"event": "perception", **signals})
         psyche.consume()
@@ -97,20 +103,17 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
                         perf_msg = f"runtime increased by {diff:.2f}ms"
                     elif diff < 0:
                         perf_msg = f"runtime decreased by {abs(diff):.2f}ms"
+        return last_event, last_success, last_failure, mood_event, perf_msg
 
-        try:
-            user_input = input("you: ")
-        except EOFError:
-            break
-        except KeyboardInterrupt:
-            print("\nExiting conversation.")
-            break
-
-        if user_input.strip().lower() in {"exit", "quit"}:
-            break
-
+    def respond(
+        user_input: str,
+        last_event: str | None,
+        last_success: dict | None,
+        last_failure: dict | None,
+        mood_event: str | None,
+        perf_msg: str | None,
+    ) -> None:
         add_episode({"role": "user", "text": user_input})
-
         mood = psyche.feel(Mood.NEUTRAL)
         mood_report = mood_event or mood.value
         reply = generate_reply(user_input)
@@ -131,3 +134,23 @@ def talk(provider: str | None = None, seed: int | None = None) -> None:
         add_episode({"role": "assistant", "text": response, "mood": mood.value})
         psyche.gain()
         psyche.save_state()
+
+    if prompt is not None:
+        context = gather_context()
+        respond(prompt, *context)
+        return
+
+    while True:
+        context = gather_context()
+        try:
+            user_input = input("you: ")
+        except EOFError:
+            break
+        except KeyboardInterrupt:
+            print("\nExiting conversation.")
+            break
+
+        if user_input.strip().lower() in {"exit", "quit"}:
+            break
+
+        respond(user_input, *context)
