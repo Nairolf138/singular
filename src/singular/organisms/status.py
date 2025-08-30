@@ -37,7 +37,7 @@ def status() -> None:
         print("No run logs found.")
 
     psyche = Psyche.load_state()
-    mood = psyche.last_mood or "neutral"
+    mood = psyche.last_mood.value if psyche.last_mood else "neutral"
     print(f"Mood: {mood}")
     print("Traits:")
     print(f"  curiosity: {psyche.curiosity:.2f}")

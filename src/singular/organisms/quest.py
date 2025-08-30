@@ -7,7 +7,7 @@ from pathlib import Path
 from life.synthesis import synthesise
 
 from ..memory import add_episode, ensure_memory_structure, update_score
-from ..psyche import Psyche
+from ..psyche import Psyche, Mood
 
 
 def quest(spec: Path) -> None:
@@ -25,17 +25,27 @@ def quest(spec: Path) -> None:
     try:
         skill_path = synthesise(spec, Path("skills"))
     except Exception as exc:  # pragma: no cover - re-raised after logging
-        mood = psyche.feel("frustrated")
+        mood = psyche.feel(Mood.FRUSTRATED)
         add_episode(
-            {"event": "quest", "status": "failure", "error": str(exc), "mood": mood}
+            {
+                "event": "quest",
+                "status": "failure",
+                "error": str(exc),
+                "mood": mood.value,
+            }
         )
         psyche.save_state()
         raise
 
     update_score(skill_path.stem, 0.0)
-    mood = psyche.feel("proud")
+    mood = psyche.feel(Mood.PROUD)
     add_episode(
-        {"event": "quest", "status": "success", "skill": skill_path.stem, "mood": mood}
+        {
+            "event": "quest",
+            "status": "success",
+            "skill": skill_path.stem,
+            "mood": mood.value,
+        }
     )
     psyche.gain()
     psyche.save_state()

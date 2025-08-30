@@ -81,7 +81,13 @@ def run(seed: int | None = None) -> str:
     }
 
     psyche.process_run_record(record)
-    add_episode({"event": "mutation", **record, "mood": psyche.last_mood})
+    add_episode(
+        {
+            "event": "mutation",
+            **record,
+            "mood": psyche.last_mood.value if psyche.last_mood else None,
+        }
+    )
     psyche.save_state()
 
     return mutated if mutated_score <= base_score else base
