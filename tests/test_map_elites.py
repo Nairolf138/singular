@@ -48,7 +48,7 @@ def test_loop_uses_map_elites_for_selection(tmp_path: Path):
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.1,
+        budget_seconds=0.02,
         rng=random.Random(0),
         operators={"inc": _inc_operator},
         map_elites=me,

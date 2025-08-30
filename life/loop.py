@@ -81,7 +81,7 @@ def save_checkpoint(path: Path, state: Checkpoint) -> None:
     path.write_text(json.dumps(asdict(state)), encoding="utf-8")
 
 
-def mutate(
+def apply_mutation(
     code: str,
     operator: Callable[[ast.AST], ast.AST],
     rng: random.Random | None = None,
@@ -89,7 +89,7 @@ def mutate(
     """Return ``code`` transformed by ``operator``.
 
     The ``operator`` is expected to accept an :class:`ast.AST` instance and
-    return a modified tree.  If the operator supports a ``rng`` keyword
+    return a modified tree. If the operator supports a ``rng`` keyword
     argument it will be passed the provided random number generator.
     """
 
@@ -113,13 +113,13 @@ def _load_default_operators() -> Dict[str, Callable[[ast.AST], ast.AST]]:
     return loaded
 
 
-def _select_operator(
+def select_operator(
     operators: Dict[str, Callable[[ast.AST], ast.AST]],
     stats: Dict[str, Dict[str, float]],
     policy: str,
     rng: random.Random,
 ) -> str:
-    """Choose an operator using an epsilon-greedy bandit policy."""
+    """Choose an operator name using an epsilon-greedy bandit policy."""
 
     names = list(operators.keys())
 
@@ -139,8 +139,8 @@ def _select_operator(
     return max(names, key=expected)
 
 
-def score(code: str) -> float:
-    """Execute *code* in the sandbox and return a numeric score.
+def score_code(code: str) -> float:
+    """Execute ``code`` in the sandbox and return a numeric score.
 
     Non-numeric or failing executions yield ``-inf``.
     """
@@ -150,6 +150,57 @@ def score(code: str) -> float:
     except Exception:
         return float("-inf")
     return float(result) if isinstance(result, (int, float)) else float("-inf")
+
+
+def manage_resources(
+    resource_manager: ResourceManager,
+    cpu_seconds: float,
+    test_runner: Callable[[], int] | None = None,
+) -> list[str]:
+    """Update resources according to CPU usage and test results.
+
+    Returns the list of moods reported by ``resource_manager`` after
+    consumption and replenishment steps.
+    """
+
+    resource_manager.consume_energy(cpu_seconds)
+    if test_runner:
+        try:
+            passed = test_runner()
+        except Exception:
+            passed = 0
+        resource_manager.add_food(passed)
+    return resource_manager.mood()
+
+
+def log_mutation(
+    logger: RunLogger,
+    iteration: int,
+    key: str,
+    op_name: str,
+    diff: str,
+    accepted: bool,
+    ms_base: float,
+    ms_new: float,
+    base_score: float,
+    mutated_score: float,
+) -> None:
+    """Record mutation outcome and notify observers."""
+
+    env_notifications.notify(
+        f"iteration {iteration}: {op_name}", channel=log.info
+    )
+    _ = env_files.list_files()
+    logger.log(
+        key,
+        op_name,
+        diff,
+        accepted,
+        ms_base,
+        ms_new,
+        base_score,
+        mutated_score,
+    )
 
 
 def _choose_skill(
@@ -269,15 +320,15 @@ def run(
                 continue
 
             policy = psyche.mutation_policy()
-            op_name = _select_operator(operators, stats, policy, rng)
-            mutated = mutate(original, operators[op_name], rng)
+            op_name = select_operator(operators, stats, policy, rng)
+            mutated = apply_mutation(original, operators[op_name], rng)
             org = world.organisms[org_name]
 
             t0 = time.perf_counter()
-            base_score = score(original)
+            base_score = score_code(original)
             ms_base = (time.perf_counter() - t0) * 1000
             t0 = time.perf_counter()
-            mutated_score = score(mutated)
+            mutated_score = score_code(mutated)
             ms_new = (time.perf_counter() - t0) * 1000
 
             if mutated_score == float("-inf"):
@@ -322,26 +373,13 @@ def run(
             else:
                 org.energy -= 0.1
 
-            env_notifications.notify(
-                f"iteration {state.iteration}: {op_name}", channel=log.info
-            )
-            _ = env_files.list_files()
-
             stats[op_name]["count"] += 1
             stats[op_name]["reward"] += base_score - mutated_score
             state.stats = stats
 
             # Resource accounting
             cpu_ms = ms_base + ms_new
-            resource_manager.consume_energy(cpu_ms / 1000.0)
-            if test_runner:
-                try:
-                    passed = test_runner()
-                except Exception:
-                    passed = 0
-                resource_manager.add_food(passed)
-
-            moods = resource_manager.mood()
+            moods = manage_resources(resource_manager, cpu_ms / 1000.0, test_runner)
             if "tired" in moods:
                 if hasattr(psyche, "feel"):
                     psyche.feel(Mood.FATIGUE)
@@ -379,11 +417,13 @@ def run(
                 if len(world.organisms) > 1
                 else skill_path.stem
             )
-            logger.log(
+            log_mutation(
+                logger,
+                state.iteration,
                 key,
                 op_name,
                 diff,
-                True,
+                accepted,
                 ms_base,
                 ms_new,
                 base_score,

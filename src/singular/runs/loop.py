@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
-from life.loop import run as life_run
+from life.loop import run
 
 
 def loop(
@@ -19,4 +19,4 @@ def loop(
     """Wrapper around :func:`life.loop.run` used by the CLI."""
 
     rng = random.Random(seed) if seed is not None else None
-    life_run(skills_dir, checkpoint, budget_seconds, rng=rng, run_id=run_id)
+    run(skills_dir, checkpoint, budget_seconds, rng=rng, run_id=run_id)
