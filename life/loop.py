@@ -17,7 +17,7 @@ from singular.memory import add_episode, update_score
 from singular.psyche import Psyche, Mood
 from singular.runs.logger import RunLogger
 from singular.organisms.spawn import mutation_absurde
-from singular.perception import capture_signals
+from singular.perception import capture_signals, get_temperature
 from graine.evolver.generate import propose_mutations
 from singular.environment import artifacts as env_artifacts
 from singular.environment import files as env_files
@@ -314,6 +314,9 @@ def run(
             )
             resource_manager.metabolize()
             signals = capture_signals()
+            temp = get_temperature()
+            signals["temperature"] = temp
+            resource_manager.update_from_environment(temp)
             add_episode({"event": "perception", **signals})
             state.iteration += 1
 
