@@ -84,6 +84,7 @@ class Psyche:
     optimism: float = 0.5
     resilience: float = 0.5
     energy: float = 100.0
+    sleeping: bool = False
     objectives: Dict[str, Objective] = field(default_factory=dict)
 
     # ``last_mood`` is updated every time :meth:`feel` is called and can be
@@ -331,6 +332,23 @@ class Psyche:
     def gain(self, amount: float = 1.0) -> float:
         """Increase energy by ``amount`` and return the new value."""
         self.energy += amount
+        return self.energy
+
+    def sleep_tick(self, amount: float = 5.0) -> float:
+        """Regenerate energy while sleeping without altering traits.
+
+        Parameters
+        ----------
+        amount:
+            Energy to recover during this tick.  Energy is capped at ``100``.
+
+        Returns
+        -------
+        float
+            The new energy level after regeneration.
+        """
+
+        self.energy = min(100.0, self.energy + amount)
         return self.energy
 
     # Persistence helpers -------------------------------------------------

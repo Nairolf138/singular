@@ -33,6 +33,12 @@ from .map_elites import MapElites
 
 log = logging.getLogger(__name__)
 
+# Energy management during the evolutionary loop. When the psyche's energy
+# falls below ``SLEEP_THRESHOLD`` the organism will enter a sleeping phase for
+# ``SLEEP_TICKS`` iterations where no mutations are attempted.
+SLEEP_THRESHOLD = 10.0
+SLEEP_TICKS = 5
+
 
 @dataclass
 class Checkpoint:
@@ -279,10 +285,26 @@ def run(
         propose_mutations([])
     mortality = mortality or DeathMonitor()
     seen_diffs: set[str] = set()
+    sleep_ticks_remaining = 0
 
     with RunLogger(run_id, psyche=psyche) as logger:
         delayed: list[tuple[float, str, Path]] = []
         while time.time() - start < budget_seconds:
+            if getattr(psyche, "sleeping", False) or (
+                hasattr(psyche, "energy") and getattr(psyche, "energy") < SLEEP_THRESHOLD
+            ):
+                if not getattr(psyche, "sleeping", False):
+                    setattr(psyche, "sleeping", True)
+                    sleep_ticks_remaining = SLEEP_TICKS
+                if hasattr(psyche, "sleep_tick"):
+                    psyche.sleep_tick()
+                sleep_ticks_remaining -= 1
+                if sleep_ticks_remaining <= 0:
+                    setattr(psyche, "sleeping", False)
+                if hasattr(psyche, "save_state"):
+                    psyche.save_state()
+                continue
+
             freq = max(
                 1,
                 int(
@@ -390,6 +412,7 @@ def run(
             # Resource accounting
             cpu_ms = ms_base + ms_new
             moods = manage_resources(resource_manager, cpu_ms / 1000.0, test_runner)
+            resource_manager.consume_energy(0.5)
             if "tired" in moods:
                 if hasattr(psyche, "feel"):
                     psyche.feel(Mood.FATIGUE)
