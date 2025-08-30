@@ -6,13 +6,11 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [{name = "Singular Contributors"}]
-dependencies = [
-    "fastapi",
-    "uvicorn",
-]
+dependencies = []
 
 [project.optional-dependencies]
 yaml = ["pyyaml"]
+dashboard = ["fastapi", "uvicorn"]
 
 [project.scripts]
 singular = "singular.cli:main"
