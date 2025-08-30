@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 import json
 import os
+import tempfile
 
 
 def get_base_dir() -> Path:
@@ -52,6 +53,25 @@ def _ensure_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _atomic_write_text(path: Path, data: str) -> None:
+    """Atomically write ``data`` to ``path``."""
+    _ensure_dir(path)
+    tmp = tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=path.parent, delete=False
+    )
+    try:
+        with tmp:
+            tmp.write(data)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        os.replace(tmp.name, path)
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except FileNotFoundError:
+            pass
+
+
 def ensure_memory_structure(mem_dir: Path | str | None = None) -> None:
     """Create the memory directory structure if it does not exist."""
     if mem_dir is None:
@@ -89,9 +109,7 @@ def write_profile(profile: dict[str, Any], path: Path | str | None = None) -> No
     if path is None:
         path = get_profile_file()
     path = Path(path)
-    _ensure_dir(path)
-    with path.open("w", encoding="utf-8") as file:
-        json.dump(profile, file)
+    _atomic_write_text(path, json.dumps(profile))
 
 
 def update_trait(
@@ -139,15 +157,13 @@ def write_values(values: dict[str, Any], path: Path | str | None = None) -> None
     if path is None:
         path = get_values_file()
     path = Path(path)
-    _ensure_dir(path)
     try:
         import yaml  # type: ignore
     except ImportError as exc:
         raise ImportError(
             "PyYAML is required to write values. Please install PyYAML."
         ) from exc
-    with path.open("w", encoding="utf-8") as file:
-        yaml.safe_dump(values, file)
+    _atomic_write_text(path, yaml.safe_dump(values))
 
 
 # ---------------------------------------------------------------------------
@@ -191,9 +207,8 @@ def add_episode(
     if path is None:
         path = get_episodic_file()
     path = Path(path)
-    _ensure_dir(path)
-    with path.open("a", encoding="utf-8") as file:
-        file.write(json.dumps(episode) + "\n")
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    _atomic_write_text(path, existing + json.dumps(episode) + "\n")
 
 
 # ---------------------------------------------------------------------------
@@ -220,9 +235,7 @@ def write_skills(skills: dict[str, Any], path: Path | str | None = None) -> None
     if path is None:
         path = get_skills_file()
     path = Path(path)
-    _ensure_dir(path)
-    with path.open("w", encoding="utf-8") as file:
-        json.dump(skills, file)
+    _atomic_write_text(path, json.dumps(skills))
 
 
 def update_score(
@@ -284,6 +297,4 @@ def write_psyche(state: dict[str, Any], path: Path | str | None = None) -> None:
     if path is None:
         path = get_psyche_file()
     path = Path(path)
-    _ensure_dir(path)
-    with path.open("w", encoding="utf-8") as file:
-        json.dump(state, file)
+    _atomic_write_text(path, json.dumps(state))
