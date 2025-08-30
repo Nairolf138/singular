@@ -67,6 +67,19 @@ class ResourceManager:
         self._clamp()
         self._save()
 
+    def metabolize(self, rate: float = 0.1) -> None:
+        """Convert stored food into energy.
+
+        ``rate`` units of food are consumed and twice that amount of energy is
+        regenerated. Values are clamped to the ``[0, 100]`` range and the state
+        is persisted.
+        """
+
+        self.food -= rate
+        self.energy += rate * 2
+        self._clamp()
+        self._save()
+
     def cool_down(self, amount: float) -> None:
         self.warmth -= amount
         self._clamp()
