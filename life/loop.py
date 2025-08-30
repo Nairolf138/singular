@@ -272,8 +272,10 @@ def run(
     resource_manager = resource_manager or ResourceManager()
     start = time.time()
     last_post = 0.0
-    freq = max(1, int(getattr(psyche, "mutation_rate", 1.0) * (getattr(psyche, "energy", 100.0) / 100)))
-    for _ in range(freq):
+    initial_freq = max(
+        1, int(getattr(psyche, "mutation_rate", 1.0) * (getattr(psyche, "energy", 100.0) / 100))
+    )
+    for _ in range(initial_freq):
         propose_mutations([])
     mortality = mortality or DeathMonitor()
     seen_diffs: set[str] = set()
@@ -281,6 +283,14 @@ def run(
     with RunLogger(run_id, psyche=psyche) as logger:
         delayed: list[tuple[float, str, Path]] = []
         while time.time() - start < budget_seconds:
+            freq = max(
+                1,
+                int(
+                    getattr(psyche, "mutation_rate", 1.0)
+                    * (getattr(psyche, "energy", 100.0) / 100)
+                ),
+            )
+            resource_manager.metabolize()
             signals = capture_signals()
             add_episode({"event": "perception", **signals})
             state.iteration += 1
