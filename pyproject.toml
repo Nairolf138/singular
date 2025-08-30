@@ -11,6 +11,7 @@ dependencies = []
 [project.optional-dependencies]
 yaml = ["pyyaml"]
 dashboard = ["fastapi", "uvicorn"]
+sensors = ["requests"]
 
 [project.scripts]
 singular = "singular.cli:main"

@@ -130,6 +130,7 @@ pip install -e .
 
 - `pip install -e .[dashboard]` pour activer le tableau de bord web.
 - `pip install -e .[yaml]` pour ajouter **PyYAML** et gérer `values.yaml`.
+- `pip install -e .[sensors]` pour activer la récupération météo via une API.
 - `pip install openai>=1.0.0` pour permettre à l'organisme de parler via l'API OpenAI.
 - `pip install transformers` pour activer un modèle local via Hugging Face.
 
@@ -160,6 +161,17 @@ SINGULAR_RUNS_KEEP=50 singular report
 # Utiliser l'API OpenAI
 OPENAI_API_KEY=sk-... singular talk "Salut"
 ```
+
+#### Capteur météo
+
+Pour tenter de récupérer la météo réelle :
+
+- installez `pip install -e .[sensors]` pour ajouter la dépendance `requests` ;
+- définissez la variable `SINGULAR_WEATHER_API` avec l'URL de l'API désirée ;
+- optionnellement, ajustez `SINGULAR_HTTP_TIMEOUT` (en secondes, 5 par défaut).
+
+Si la requête échoue ou dépasse le délai d'attente, l'organisme ignore le
+capteur et continue avec des valeurs simulées.
 
 ### Utilisation
 

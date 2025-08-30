@@ -35,7 +35,12 @@ def _query_optional_weather_api() -> Dict[str, Any]:
     try:  # pragma: no cover - network failures are expected
         import requests
 
-        response = requests.get(url, timeout=5)
+        timeout_str = os.getenv("SINGULAR_HTTP_TIMEOUT", "5")
+        try:
+            timeout = float(timeout_str)
+        except ValueError:
+            timeout = 5.0
+        response = requests.get(url, timeout=timeout)
         response.raise_for_status()
         return {"weather": response.json()}
     except Exception:
