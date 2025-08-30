@@ -126,7 +126,9 @@ def read_values(path: Path | str | None = None) -> dict[str, Any]:
         return {}
     with path.open(encoding="utf-8") as file:
         data = yaml.safe_load(file)
-    return data or {}
+    if not isinstance(data, dict):
+        return {}
+    return data
 
 
 def write_values(values: dict[str, Any], path: Path | str | None = None) -> None:
