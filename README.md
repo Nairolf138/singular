@@ -204,3 +204,16 @@ singular talk --provider local "Bonjour"
 Le fournisseur local utilise le modèle ``sshleifer/tiny-gpt2`` de Hugging Face
 pour fonctionner hors-ligne.
 
+### Fournisseurs externes
+
+Pour enregistrer un provider LLM personnalisé, ajoutez un entry point dans le
+``pyproject.toml`` de votre paquet :
+
+```toml
+[project.entry-points."singular.llm"]
+mon_provider = "mon_package.module:generate_reply"
+```
+
+Une fois le paquet installé, ``singular`` peut le charger via
+``--provider mon_provider``.
+
