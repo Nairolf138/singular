@@ -13,7 +13,7 @@ sys.path.append(str(root_dir))
 sys.path.append(str(root_dir / "src"))
 
 import life.loop as life_loop  # noqa: E402
-from life.loop import run, load_checkpoint  # noqa: E402
+from life.loop import run, load_checkpoint, log_mutation, manage_resources  # noqa: E402
 from singular.resource_manager import ResourceManager  # noqa: E402
 from singular.psyche import Psyche, Mood  # noqa: E402
 
@@ -104,6 +104,15 @@ def test_log_and_memory_update(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(life_loop, "update_score", fake_update_score)
 
+    calls = {"n": 0}
+    original = life_loop.log_mutation
+
+    def wrapped(*a, **k):
+        calls["n"] += 1
+        return original(*a, **k)
+
+    monkeypatch.setattr(life_loop, "log_mutation", wrapped)
+
     run(
         skills_dir,
         checkpoint,
@@ -113,6 +122,7 @@ def test_log_and_memory_update(tmp_path: Path, monkeypatch):
         operators={"dec": _dec_operator},
     )
 
+    assert calls["n"] > 0
     assert any((tmp_path / "logs").glob("loop-*.jsonl"))
     assert json.loads(mem_file.read_text())["foo"]["score"] < 1
 
@@ -536,6 +546,15 @@ def test_energy_debit_and_food_credit(tmp_path: Path, monkeypatch):
 
     rm = ResourceManager(energy=50.0, food=30.0, warmth=50.0, path=tmp_path / "res.json")
 
+    calls = {"n": 0}
+    original = life_loop.manage_resources
+
+    def wrapped(*a, **k):
+        calls["n"] += 1
+        return original(*a, **k)
+
+    monkeypatch.setattr(life_loop, "manage_resources", wrapped)
+
     run(
         skills_dir,
         checkpoint,
@@ -546,6 +565,7 @@ def test_energy_debit_and_food_credit(tmp_path: Path, monkeypatch):
         test_runner=lambda: 3,
     )
 
+    assert calls["n"] > 0
     assert rm.energy < 50.0
     assert rm.food >= 3.0
     assert Mood.FATIGUE not in events and Mood.ANGER not in events
