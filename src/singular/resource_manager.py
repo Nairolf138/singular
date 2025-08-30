@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
+from .memory import _atomic_write_text
+
 
 @dataclass
 class ResourceManager:
@@ -42,7 +44,7 @@ class ResourceManager:
 
     def _save(self) -> None:
         data = {"energy": self.energy, "food": self.food, "warmth": self.warmth}
-        self.path.write_text(json.dumps(data), encoding="utf-8")
+        _atomic_write_text(self.path, json.dumps(data))
 
     # mutation methods -----------------------------------------------------
     def consume_energy(self, amount: float) -> None:
