@@ -32,7 +32,7 @@ Contrairement aux chatbots classiques (qui ne changent pas leur cœur) ou aux si
 ## ⚡ Quickstart
 
 ```bash
-pip install -e .[yaml,dashboard]
+pip install -e .[yaml,dashboard,viz]
 singular birth --name Lumen
 singular talk "Bonjour"
 singular loop --ticks 10
@@ -129,8 +129,8 @@ pip install -e .
 #### Dépendances optionnelles
 
 - `pip install -e .[dashboard]` pour activer le tableau de bord web.
+- `pip install -e .[viz]` pour générer des graphiques via `viz.py`.
 - `pip install -e .[yaml]` pour ajouter **PyYAML** et gérer `values.yaml`.
-- `pip install -e .[sensors]` pour activer la récupération météo via une API.
 - `pip install openai>=1.0.0` pour permettre à l'organisme de parler via l'API OpenAI.
 - `pip install transformers` pour activer un modèle local via Hugging Face.
 
@@ -166,7 +166,6 @@ OPENAI_API_KEY=sk-... singular talk "Salut"
 
 Pour tenter de récupérer la météo réelle :
 
-- installez `pip install -e .[sensors]` pour ajouter la dépendance `requests` ;
 - définissez la variable `SINGULAR_WEATHER_API` avec l'URL de l'API désirée ;
 - optionnellement, ajustez `SINGULAR_HTTP_TIMEOUT` (en secondes, 5 par défaut).
 
