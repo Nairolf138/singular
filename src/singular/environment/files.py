@@ -16,7 +16,7 @@ def _resolve(path: str | Path) -> Path:
     """
 
     candidate = (SANDBOX_ROOT / path).resolve()
-    if not str(candidate).startswith(str(SANDBOX_ROOT)):
+    if not candidate.is_relative_to(SANDBOX_ROOT):
         raise ValueError("attempted access outside sandbox")
     return candidate
 
