@@ -9,22 +9,16 @@ import singular.memory as memory
 from singular.organisms.birth import birth
 
 
-def test_birth_creates_memory_files(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    birth()
+def test_birth_creates_memory_files(tmp_path: Path) -> None:
+    birth(home=tmp_path)
     mem = tmp_path / "mem"
     assert mem.is_dir()
     for name in ["profile.json", "values.yaml", "episodic.jsonl", "skills.json"]:
         assert (mem / name).exists()
 
 
-def test_birth_initializes_identity_profile_and_psyche(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    birth(seed=123)
+def test_birth_initializes_identity_profile_and_psyche(tmp_path: Path) -> None:
+    birth(seed=123, home=tmp_path)
 
     identity_data = json.loads((tmp_path / "id.json").read_text(encoding="utf-8"))
     profile_data = json.loads(
@@ -68,11 +62,8 @@ def test_update_trait_score_and_note(tmp_path: Path) -> None:
     }
 
 
-def test_birth_initializes_default_skills(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    birth()
+def test_birth_initializes_default_skills(tmp_path: Path) -> None:
+    birth(home=tmp_path)
 
     skills_dir = tmp_path / "skills"
     assert (skills_dir / "addition.py").exists()
