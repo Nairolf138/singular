@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -11,11 +12,16 @@ from fastapi.responses import HTMLResponse
 
 
 def create_app(
-    runs_dir: Path | str = Path("runs"), psyche_file: Path | str = Path("psyche.json")
+    runs_dir: Path | str | None = None, psyche_file: Path | str | None = None
 ) -> FastAPI:
     """Create the dashboard FastAPI application."""
-    runs_path = Path(runs_dir)
-    psyche_path = Path(psyche_file)
+    base_dir = Path(os.environ.get("SINGULAR_HOME", "."))
+    runs_path = Path(runs_dir) if runs_dir is not None else base_dir / "runs"
+    psyche_path = (
+        Path(psyche_file)
+        if psyche_file is not None
+        else base_dir / "mem" / "psyche.json"
+    )
     app = FastAPI()
 
     @app.get("/logs")

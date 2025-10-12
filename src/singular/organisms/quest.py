@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from life.synthesis import synthesise
@@ -22,8 +23,12 @@ def quest(spec: Path) -> None:
     ensure_memory_structure()
     psyche = Psyche.load_state()
 
+    base_dir = Path(os.environ.get("SINGULAR_HOME", Path.cwd()))
+    skills_root = base_dir / "skills"
+    skills_root.mkdir(parents=True, exist_ok=True)
+
     try:
-        skill_path = synthesise(spec, Path("skills"))
+        skill_path = synthesise(spec, skills_root)
     except Exception as exc:  # pragma: no cover - re-raised after logging
         mood = psyche.feel(Mood.FRUSTRATED)
         add_episode(

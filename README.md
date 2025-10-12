@@ -47,6 +47,25 @@ unique et quitter immédiatement :
 singular talk --prompt "Bonjour"
 ```
 
+## 🧿 Gérer plusieurs vies
+
+Les organismes peuvent désormais partager un même répertoire racine tout en
+vivant dans des dossiers distincts. L’option globale ``--root`` contrôle le
+catalogue des vies (fichier ``lives/registry.json``), tandis que ``--life``
+permet de cibler une vie précise pour une commande ponctuelle.
+
+```bash
+singular --root lab lives create --name "Alpha"
+singular --root lab lives list
+singular --root lab lives use alpha
+singular --root lab talk --prompt "Bonjour"
+```
+
+Les sous-commandes qui consultent la mémoire (``talk``, ``run``, ``loop``,
+``quest``, ``status`` ou ``dashboard``) exigent qu’une vie active soit
+sélectionnée. Utilisez ``singular lives delete <nom>`` pour supprimer une vie et
+libérer son espace disque.
+
 ## 🧬 Reproduction
 
 ```bash
