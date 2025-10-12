@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -190,3 +191,44 @@ def bootstrap_life(name: str, seed: int | None = None) -> LifeMetadata:
     registry = load_registry()
     lives: dict[str, LifeMetadata] = registry.get("lives", {})
     return lives.get(metadata.slug, metadata)
+
+
+def delete_life(name: str) -> LifeMetadata:
+    """Remove a life from the registry and delete its directory."""
+
+    registry = load_registry()
+    lives: dict[str, LifeMetadata] = registry.setdefault("lives", {})
+    if not lives:
+        raise KeyError(name)
+
+    slug: str | None = None
+    metadata: LifeMetadata | None = None
+    if name in lives:
+        slug = name
+        metadata = lives[name]
+    else:
+        candidate = _slugify(name)
+        if candidate in lives:
+            slug = candidate
+            metadata = lives[candidate]
+        else:
+            for candidate_slug, meta in lives.items():
+                if meta.name == name:
+                    slug = candidate_slug
+                    metadata = meta
+                    break
+
+    if slug is None or metadata is None:
+        raise KeyError(name)
+
+    try:
+        shutil.rmtree(metadata.path)
+    except FileNotFoundError:
+        pass
+
+    lives.pop(slug, None)
+    if registry.get("active") == slug:
+        registry["active"] = next(iter(lives), None)
+    save_registry(registry)
+
+    return metadata
