@@ -1,7 +1,7 @@
 import json
 import pytest
 
-from life import quest
+from singular.life import quest
 
 
 def test_load_valid_spec(tmp_path):

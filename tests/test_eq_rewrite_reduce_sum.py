@@ -1,6 +1,6 @@
 import ast
 
-from life.operators import eq_rewrite_reduce_sum
+from singular.life.operators import eq_rewrite_reduce_sum
 
 
 def test_reduce_sum_rewrites_loop():

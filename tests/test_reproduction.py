@@ -4,7 +4,7 @@ import ast
 import pytest
 
 from singular.organisms.spawn import spawn
-from life.reproduction import crossover
+from singular.life.reproduction import crossover
 
 
 def test_reproduction(tmp_path: Path):

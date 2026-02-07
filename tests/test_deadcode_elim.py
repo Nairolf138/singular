@@ -1,6 +1,6 @@
 import ast
 
-from life.operators import deadcode_elim
+from singular.life.operators import deadcode_elim
 
 
 def test_deadcode_elim_removes_trivial_ifs():

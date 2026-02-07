@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
-from life.reproduction import crossover
+from singular.life.reproduction import crossover
 from singular.memory import read_psyche, write_psyche
 
 

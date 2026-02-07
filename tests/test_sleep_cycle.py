@@ -1,7 +1,7 @@
 import random
 
-import life.loop as life_loop
-from life.loop import run
+import singular.life.loop as life_loop
+from singular.life.loop import run
 from singular.psyche import Psyche
 
 

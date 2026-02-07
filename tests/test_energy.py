@@ -1,4 +1,4 @@
-from life.death import DeathMonitor
+from singular.life.death import DeathMonitor
 from singular.psyche import Psyche
 
 

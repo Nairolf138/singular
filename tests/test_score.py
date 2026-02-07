@@ -1,4 +1,4 @@
-from life.score import score
+from singular.life.score import score
 
 
 def test_score_single_run_variance_zero():

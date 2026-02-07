@@ -73,7 +73,7 @@ singular spawn parent_a parent_b --out-dir child/
 ```
 
 Cette commande croise deux organismes en combinant aléatoirement une *skill* de chaque parent.
-L’algorithme de crossover (voir `life/reproduction.py`) prend la signature de la fonction du parent A,
+L’algorithme de crossover (voir `src/singular/life/reproduction.py`) prend la signature de la fonction du parent A,
 fusionne la première moitié de son corps avec la seconde moitié de la fonction du parent B, puis écrit
 le fichier hybride dans `child/`.
 
@@ -241,4 +241,3 @@ mon_provider = "mon_package.module:generate_reply"
 
 Une fois le paquet installé, ``singular`` peut le charger via
 ``--provider mon_provider``.
-
