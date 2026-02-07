@@ -5,9 +5,14 @@ from __future__ import annotations
 import ast
 import multiprocessing
 import os
-import resource
+import sys
 import tempfile
 from typing import Any, Dict
+
+try:
+    import resource
+except ImportError:  # pragma: no cover - Windows or unsupported platforms
+    resource = None
 
 
 ALLOWED_BUILTINS = {
@@ -62,6 +67,9 @@ def run(code: str, timeout: float = 1.5, memory_limit: int = 256 * 1024 * 1024) 
     A :class:`TimeoutError` is raised if the execution exceeds *timeout* seconds.
     A :class:`MemoryError` is raised if the code exceeds *memory_limit* bytes of
     address space.
+
+    On Windows (or platforms without :mod:`resource`), memory/CPU limits are not
+    enforced.
     """
     tree = ast.parse(code, mode="exec")
     _validate_ast(tree)
@@ -69,9 +77,10 @@ def run(code: str, timeout: float = 1.5, memory_limit: int = 256 * 1024 * 1024) 
     queue: multiprocessing.Queue[Any] = multiprocessing.Queue()
 
     def target(q: multiprocessing.Queue[Any]) -> None:
-        resource.setrlimit(resource.RLIMIT_AS, (memory_limit, memory_limit))
-        cpu_seconds = max(1, int(timeout))
-        resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
+        if resource is not None and sys.platform != "win32":
+            resource.setrlimit(resource.RLIMIT_AS, (memory_limit, memory_limit))
+            cpu_seconds = max(1, int(timeout))
+            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
         os.environ.clear()
         with tempfile.TemporaryDirectory() as tmpdir:
             os.chdir(tmpdir)
