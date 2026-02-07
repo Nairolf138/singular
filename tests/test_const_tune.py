@@ -1,7 +1,7 @@
 import ast
 import random
 
-from life.operators import const_tune
+from singular.life.operators import const_tune
 
 
 def test_const_tune_adjusts_small_ints():

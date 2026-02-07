@@ -4,9 +4,9 @@ import random
 import json
 from pathlib import Path
 
-import life.loop as life_loop
-from life.loop import run
-from life.death import DeathMonitor
+import singular.life.loop as life_loop
+from singular.life.loop import run
+from singular.life.death import DeathMonitor
 
 
 def _inc_operator(tree: ast.AST, rng=None) -> ast.AST:

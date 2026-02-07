@@ -4,8 +4,8 @@ import ast
 import json
 import random
 
-import life.loop as life_loop
-from life.loop import WorldState
+import singular.life.loop as life_loop
+from singular.life.loop import WorldState
 
 
 def _dec_operator(tree: ast.AST, rng=None) -> ast.AST:

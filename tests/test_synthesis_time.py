@@ -1,4 +1,4 @@
-from life import quest, synthesis
+from singular.life import quest, synthesis
 
 
 def test_verification_honours_time_limit():

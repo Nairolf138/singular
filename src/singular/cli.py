@@ -69,7 +69,6 @@ def main(argv: list[str] | None = None) -> int:
     from .runs.report import report
     from .runs.run import run as run_run
     from .runs.synthesize import synthesize
-    from .dashboard import run as dashboard_run
 
     parser = argparse.ArgumentParser(prog="singular")
     parser.add_argument(
@@ -231,6 +230,8 @@ def main(argv: list[str] | None = None) -> int:
 
     elif args.command == "dashboard":
         _ensure_active_life(resolve_life, args.life)
+        from .dashboard import run as dashboard_run
+
         dashboard_run()
 
     elif args.command == "lives":

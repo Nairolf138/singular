@@ -12,8 +12,8 @@ root_dir = Path(__file__).resolve().parents[1]
 sys.path.append(str(root_dir))
 sys.path.append(str(root_dir / "src"))
 
-import life.loop as life_loop  # noqa: E402
-from life.loop import run, load_checkpoint, log_mutation, manage_resources  # noqa: E402
+import singular.life.loop as life_loop  # noqa: E402
+from singular.life.loop import run, load_checkpoint, log_mutation, manage_resources  # noqa: E402
 from singular.resource_manager import ResourceManager  # noqa: E402
 from singular.psyche import Psyche, Mood  # noqa: E402
 

@@ -1,6 +1,6 @@
 import pytest
 
-from life.sandbox import run, SandboxError
+from singular.life.sandbox import run, SandboxError
 
 
 def test_basic_execution():

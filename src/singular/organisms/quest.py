@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from life.synthesis import synthesise
+from singular.life.synthesis import synthesise
 
 from ..memory import add_episode, ensure_memory_structure, update_score
 from ..psyche import Psyche, Mood

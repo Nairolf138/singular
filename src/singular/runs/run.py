@@ -6,8 +6,8 @@ import ast
 import difflib
 import random
 
-from life.operators import const_tune, deadcode_elim, eq_rewrite_reduce_sum
-from life.score import score
+from singular.life.operators import const_tune, deadcode_elim, eq_rewrite_reduce_sum
+from singular.life.score import score
 from graine.evolver.generate import propose_mutations
 
 from ..psyche import Psyche

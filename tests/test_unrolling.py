@@ -1,6 +1,6 @@
 import ast
 
-from life.operators import unrolling
+from singular.life.operators import unrolling
 
 
 def _dump(tree: ast.AST) -> str:
