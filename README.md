@@ -165,6 +165,28 @@ Après installation, la commande CLI `singular` est disponible :
 ```bash
 singular --help
 ```
+
+#### Windows : ajouter `singular` au `PATH` utilisateur
+
+Si `singular` n'est pas reconnu dans PowerShell après installation de Python,
+ajoutez le dossier `Scripts` de votre installation utilisateur dans la variable
+`PATH` **utilisateur**.
+
+1. Ouvrez **Variables d’environnement** (Windows) puis la section des variables
+   utilisateur.
+2. Éditez `PATH` (utilisateur) et ajoutez, par exemple :
+   `C:\Users\Florian\AppData\Roaming\Python\Python313\Scripts`
+3. Fermez puis rouvrez PowerShell pour recharger l’environnement.
+4. Vérifiez ensuite :
+
+   ```powershell
+   Get-Command singular
+   singular --help
+   ```
+
+> Le segment `Python313` dépend de votre version Python (exemples :
+> `Python312`, `Python313`).
+
 ### Configuration
 
 Les variables d'environnement suivantes contrôlent le comportement :
