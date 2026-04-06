@@ -166,26 +166,51 @@ Après installation, la commande CLI `singular` est disponible :
 singular --help
 ```
 
-#### Windows : ajouter `singular` au `PATH` utilisateur
+#### Windows + PowerShell
 
-Si `singular` n'est pas reconnu dans PowerShell après installation de Python,
-ajoutez le dossier `Scripts` de votre installation utilisateur dans la variable
-`PATH` **utilisateur**.
+Dans PowerShell, installez Singular puis vérifiez immédiatement la commande :
 
-1. Ouvrez **Variables d’environnement** (Windows) puis la section des variables
-   utilisateur.
-2. Éditez `PATH` (utilisateur) et ajoutez, par exemple :
-   `C:\Users\Florian\AppData\Roaming\Python\Python313\Scripts`
-3. Fermez puis rouvrez PowerShell pour recharger l’environnement.
-4. Vérifiez ensuite :
+```powershell
+pip install -e .
+singular --help
+```
+
+#### Si `singular` n’est pas reconnu
+
+Si PowerShell affiche que `singular` n’est pas reconnu, vérifiez le dossier
+`Scripts` de votre installation Python utilisateur :
+
+1. Exécutez la commande de diagnostic suivante :
+
+   ```powershell
+   python -m site --user-base
+   ```
+
+2. Prenez le chemin renvoyé et ajoutez `\Scripts` à la fin. Exemple typique :
+   `C:\Users\<VotreNom>\AppData\Roaming\Python\Python313\Scripts`
+3. Ouvrez **Variables d’environnement** → Variables utilisateur → `PATH` →
+   **Modifier** → **Nouveau**, puis collez ce chemin.
+4. Enregistrez, **fermez puis redémarrez PowerShell** (ou votre terminal) pour
+   recharger le `PATH`.
+5. Vérifiez ensuite :
 
    ```powershell
    Get-Command singular
    singular --help
    ```
 
-> Le segment `Python313` dépend de votre version Python (exemples :
-> `Python312`, `Python313`).
+> Le segment `Python313` dépend de votre version Python (par ex. `Python312`,
+> `Python313`, etc.).
+
+#### Vérification rapide post-installation
+
+Après l’installation (et après toute modification du `PATH`), exécutez :
+
+```bash
+singular --help
+```
+
+Si l’aide s’affiche, l’installation CLI est opérationnelle.
 
 ### Configuration
 
