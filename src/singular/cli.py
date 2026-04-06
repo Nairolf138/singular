@@ -5,10 +5,69 @@ from __future__ import annotations
 import argparse
 import os
 import random
+import sys
+import sysconfig
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Callable
 
 __all__ = ["main"]
+
+
+def _in_path(target: Path, env_path: str | None = None) -> bool:
+    """Return True when *target* is present in PATH."""
+
+    path_value = env_path if env_path is not None else os.environ.get("PATH", "")
+    target_norm = os.path.normcase(str(target.resolve()))
+    for entry in path_value.split(os.pathsep):
+        if not entry:
+            continue
+        try:
+            entry_norm = os.path.normcase(str(Path(entry).resolve()))
+        except OSError:
+            entry_norm = os.path.normcase(entry)
+        if entry_norm == target_norm:
+            return True
+    return False
+
+
+def _doctor() -> None:
+    """Display environment diagnostics for CLI installation."""
+
+    python_executable = Path(sys.executable).resolve()
+    scripts_path = Path(sysconfig.get_path("scripts", scheme=f"{os.name}_user")).resolve()
+    scripts_in_path = _in_path(scripts_path)
+
+    try:
+        installed_version = version("singular")
+    except PackageNotFoundError:
+        installed_version = "non installée (package introuvable)"
+
+    print("Diagnostic Singular")
+    print(f"- Python actif           : {python_executable}")
+    print(f"- Scripts utilisateur    : {scripts_path}")
+    print(f"- Scripts dans PATH      : {'oui' if scripts_in_path else 'non'}")
+    print(f"- Version singular       : {installed_version}")
+
+    if scripts_in_path:
+        print("\n✅ PATH semble correctement configuré pour les scripts utilisateur.")
+        return
+
+    escaped_scripts = str(scripts_path).replace("'", "''")
+    print("\n⚠️ Le dossier des scripts utilisateur n'est pas présent dans PATH.")
+    print("Actions PowerShell (copier-coller) :")
+    print(
+        "[Environment]::SetEnvironmentVariable("
+        "'Path', "
+        "$env:Path + ';"
+        f"{escaped_scripts}"
+        "', "
+        "'User'"
+        ")"
+    )
+    print(f"$env:Path = [Environment]::GetEnvironmentVariable('Path', 'User')")
+    print("Get-Command singular")
+    print("singular --help")
 
 
 def _preparse_environment(argv: list[str] | None) -> argparse.Namespace:
@@ -144,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument("--id", required=True, help="Run identifier")
 
     subparsers.add_parser("dashboard", help="Launch web dashboard")
+    subparsers.add_parser("doctor", help="Diagnose CLI installation and PATH")
 
     lives_parser = subparsers.add_parser("lives", help="Manage lives")
     lives_subparsers = lives_parser.add_subparsers(
@@ -233,6 +293,9 @@ def main(argv: list[str] | None = None) -> int:
         from .dashboard import run as dashboard_run
 
         dashboard_run()
+
+    elif args.command == "doctor":
+        _doctor()
 
     elif args.command == "lives":
         if args.lives_command == "list":
