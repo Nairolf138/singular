@@ -166,6 +166,8 @@ Après installation, la commande CLI `singular` est disponible :
 singular --help
 ```
 
+Fallback explicite : **si `singular` échoue, utiliser `python -m singular ...`**.
+
 #### Windows + PowerShell
 
 Dans PowerShell, installez Singular puis vérifiez immédiatement la commande :
