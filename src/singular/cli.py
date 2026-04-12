@@ -7,6 +7,7 @@ import getpass
 import json
 import os
 import random
+import re
 import sys
 import sysconfig
 from importlib.metadata import PackageNotFoundError, version
@@ -14,6 +15,78 @@ from pathlib import Path
 from typing import Any, Callable
 
 __all__ = ["main"]
+
+
+def _extract_talk_life_alias(argv: list[str] | None) -> str | None:
+    """Extract ``talk --life/--live`` value from raw argv when present."""
+
+    if not argv:
+        return None
+
+    try:
+        talk_index = argv.index("talk")
+    except ValueError:
+        return None
+
+    tokens = argv[talk_index + 1 :]
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in {"--life", "--live"} and index + 1 < len(tokens):
+            return tokens[index + 1]
+        if token.startswith("--life="):
+            return token.split("=", 1)[1]
+        if token.startswith("--live="):
+            return token.split("=", 1)[1]
+        index += 1
+    return None
+
+
+def _build_life_suggestion_message(unknown: str) -> str | None:
+    """Return a targeted suggestion when an unknown argument looks like a life slug."""
+
+    if not unknown.startswith("--"):
+        return None
+    candidate = unknown[2:].strip()
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", candidate):
+        return None
+    return (
+        f"Argument inconnu `{unknown}`. "
+        "Si c'est un nom de vie, utilisez explicitement : "
+        "`singular --life <slug> talk` "
+        "ou `singular --root <root> --life <slug> talk`."
+    )
+
+
+def _suggest_life_flag_for_unknown_args(argv: list[str] | None) -> str | None:
+    """Inspect argv and suggest ``--life`` when unknown options look like slugs."""
+
+    if not argv:
+        return None
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--seed")
+    parser.add_argument("--root")
+    parser.add_argument("--home")
+    parser.add_argument("--life")
+    parser.add_argument("--format")
+    subparsers = parser.add_subparsers(dest="command")
+    talk_parser = subparsers.add_parser("talk", add_help=False)
+    talk_parser.add_argument("--provider")
+    talk_parser.add_argument("--prompt")
+    talk_parser.add_argument("--life")
+    talk_parser.add_argument("--live")
+
+    try:
+        _, unknown = parser.parse_known_args(argv)
+    except SystemExit:
+        return None
+
+    for token in unknown:
+        message = _build_life_suggestion_message(token)
+        if message is not None:
+            return message
+    return None
 
 def _looks_like_dev_repo_root(path: Path) -> bool:
     """Heuristic to detect a development repository root."""
@@ -258,7 +331,7 @@ def _preparse_environment(argv: list[str] | None) -> argparse.Namespace:
 
     from . import lives as life_module
 
-    life_name = args.life
+    life_name = _extract_talk_life_alias(argv) or args.life
     needs_resolution = life_name is not None or (
         args.home is None and "SINGULAR_HOME" not in os.environ
     )
@@ -456,6 +529,18 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="If provided, generate a single response to the prompt and exit",
     )
+    talk_parser.add_argument(
+        "--life",
+        dest="talk_life",
+        default=None,
+        help="Life slug/name for `talk` (prioritaire sur l'option globale)",
+    )
+    talk_parser.add_argument(
+        "--live",
+        dest="talk_life_legacy",
+        default=None,
+        help="Alias de compatibilité déprécié pour `talk --life`",
+    )
 
     quest_parser = subparsers.add_parser(
         "quest", help="Generate a skill from a specification"
@@ -596,7 +681,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Allow purge even if root looks like a development repository",
     )
 
-    args = parser.parse_args(argv_list)
+    try:
+        args = parser.parse_args(argv_list)
+    except SystemExit as exc:
+        if exc.code == 2:
+            suggestion = _suggest_life_flag_for_unknown_args(argv_list)
+            if suggestion is not None:
+                print(suggestion, file=sys.stderr)
+        raise
 
     if args.command == "loop":
         if args.budget_seconds is None and args.ticks is not None:
@@ -610,6 +702,17 @@ def main(argv: list[str] | None = None) -> int:
                 "argument requis: --budget-seconds "
                 "(exemple: `singular loop --budget-seconds 10`)."
             )
+
+    if args.command == "talk":
+        selected_life = args.talk_life
+        if args.talk_life_legacy is not None:
+            print(
+                "⚠️ `talk --live` est déprécié. Utilisez `talk --life`.",
+                file=sys.stderr,
+            )
+            if selected_life is None:
+                selected_life = args.talk_life_legacy
+        args.life = selected_life if selected_life is not None else args.life
 
     if args.root:
         os.environ["SINGULAR_ROOT"] = str(args.root)
