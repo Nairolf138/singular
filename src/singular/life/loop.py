@@ -27,6 +27,7 @@ from singular.resource_manager import ResourceManager
 
 from . import sandbox
 from .death import DeathMonitor
+from .health import HealthTracker
 from .reproduction import crossover
 from .map_elites import MapElites
 from .test_coevolution import LivingTestPool, propose_test_candidates
@@ -48,6 +49,8 @@ class Checkpoint:
 
     iteration: int = 0
     stats: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    health_history: list[dict[str, float | int]] = field(default_factory=list)
+    health_counters: dict[str, float | int] = field(default_factory=dict)
 
 
 @dataclass
@@ -201,6 +204,7 @@ def log_mutation(
     mutated_score: float,
     impacted_file: str,
     loop_modifications: dict[str, int],
+    health: dict[str, float | int] | None = None,
 ) -> None:
     """Record mutation outcome and notify observers."""
 
@@ -238,6 +242,7 @@ def log_mutation(
         decision_reason=decision_reason,
         human_summary=human_summary,
         loop_modifications=loop_modifications,
+        health=health,
     )
 
 
@@ -405,6 +410,7 @@ def run(
         test_pool = LivingTestPool()
 
     with RunLogger(run_id, psyche=psyche) as logger:
+        health_tracker = HealthTracker.from_state(state.health_counters)
         delayed: list[tuple[float, str, Path]] = []
         while time.time() - start < budget_seconds:
             if getattr(psyche, "sleeping", False) or (
@@ -580,6 +586,22 @@ def run(
                 other.energy -= 0.05
                 other.resources -= 0.02
 
+            sandbox_failure = (
+                base_score == float("-inf") or mutated_score == float("-inf")
+            )
+            failed = sandbox_failure or (not accepted)
+            health_snapshot = health_tracker.update(
+                iteration=state.iteration,
+                latency_ms=ms_new,
+                accepted=accepted,
+                sandbox_failure=sandbox_failure,
+                energy=org.energy,
+                resources=org.resources,
+                failed=failed,
+            )
+            state.health_history.append(health_snapshot.to_dict())
+            state.health_counters = health_tracker.to_state()
+
             logger.log_interaction(
                 INTERACTION_RESOURCE_COMPETITION,
                 organism=org_name,
@@ -608,6 +630,7 @@ def run(
                 mutated_score,
                 skill_path.name,
                 loop_modifications,
+                health=health_snapshot.to_dict(),
             )
 
             if hasattr(psyche, "consume"):

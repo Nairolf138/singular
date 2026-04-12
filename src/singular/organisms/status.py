@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ..life.health import detect_health_state
 from ..psyche import Psyche
 from ..runs.logger import RUNS_DIR
 
@@ -27,10 +28,23 @@ def status() -> None:
             ms_new = last.get("ms_new")
             ok_count = sum(1 for r in records if r.get("ok"))
             success_rate = ok_count / len(records) * 100
+            mutation_records = [r for r in records if "score_new" in r]
+            health_scores = [
+                float(h["score"])
+                for r in mutation_records
+                for h in [r.get("health", {})]
+                if isinstance(h, dict) and isinstance(h.get("score"), (int, float))
+            ]
+            state = detect_health_state(health_scores, short_window=10, long_window=50)
             print(f"Latest run: {latest.stem}")
             if isinstance(ms_new, (int, float)):
                 print(f"Last execution speed: {ms_new:.2f}ms")
             print(f"Success rate: {success_rate:.0f}%")
+            if health_scores:
+                print(
+                    "Health score: "
+                    f"{health_scores[-1]:.2f}/100 ({state}, fenêtres 10/50)"
+                )
         else:
             print(f"Run log {latest.name} is empty.")
     else:
