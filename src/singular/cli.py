@@ -427,9 +427,37 @@ def _print_table(headers: list[str], rows: list[list[str]]) -> None:
         print(_fmt(row))
 
 
+def _implicit_registry_root_from_env_or_default() -> Path:
+    """Return the implicit registry root used before any ``--root`` override."""
+
+    raw = os.environ.get("SINGULAR_ROOT")
+    if raw:
+        return Path(raw).expanduser()
+    return Path.home() / ".singular"
+
+
+def _print_registry_context_message_if_needed(
+    selected_root: Path | None, *, previous_root: Path
+) -> None:
+    """Inform the user when ``--root`` switches to another registry context."""
+
+    if selected_root is None:
+        return
+
+    active_root = selected_root.expanduser().resolve()
+    if active_root == previous_root:
+        return
+
+    print(
+        "Vous utilisez un autre registre de vies: "
+        f"{active_root} (au lieu de {previous_root})."
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the singular command line interface."""
 
+    implicit_root_before_override = _implicit_registry_root_from_env_or_default().resolve()
     argv_list = list(argv) if argv is not None else None
     _preparse_environment(argv_list)
 
@@ -450,7 +478,10 @@ def main(argv: list[str] | None = None) -> int:
         "--root",
         type=Path,
         default=os.environ.get("SINGULAR_ROOT"),
-        help="Base directory storing lives (env: SINGULAR_ROOT)",
+        help=(
+            "Base directory storing lives (env: SINGULAR_ROOT). "
+            "Un message d'information est affiché si ce root diffère du contexte implicite."
+        ),
     )
     parser.add_argument(
         "--home",
@@ -473,7 +504,10 @@ def main(argv: list[str] | None = None) -> int:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    birth_parser = subparsers.add_parser("birth", help="Birth a new life")
+    birth_parser = subparsers.add_parser(
+        "birth",
+        help="Birth a new life (affiche aussi le root de registre utilisé)",
+    )
     birth_parser.add_argument(
         "--name",
         default="New life",
@@ -714,6 +748,11 @@ def main(argv: list[str] | None = None) -> int:
                 selected_life = args.talk_life_legacy
         args.life = selected_life if selected_life is not None else args.life
 
+    _print_registry_context_message_if_needed(
+        args.root,
+        previous_root=implicit_root_before_override,
+    )
+
     if args.root:
         os.environ["SINGULAR_ROOT"] = str(args.root)
 
@@ -731,8 +770,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "birth":
         name = args.name or "New life"
         metadata = bootstrap_life(name, seed=args.seed)
+        registry_root = get_registry_root()
         os.environ["SINGULAR_HOME"] = str(metadata.path)
         print(f"Vie créée: {metadata.name} ({metadata.slug}) → {metadata.path}")
+        print(f"Registre de vies utilisé: {registry_root}")
 
     elif args.command == "spawn":
         from .organisms.spawn import spawn
