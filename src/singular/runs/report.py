@@ -8,6 +8,7 @@ import json
 from typing import Any
 
 from .logger import RUNS_DIR
+from ..life.health import detect_health_state
 from ..memory import read_skills, get_skills_file
 
 
@@ -77,6 +78,18 @@ def report(
     print(f"Final score: {scores[-1]}")
     # Lower scores indicate better performance.
     print(f"Best score: {min(scores)}")
+    health_scores = [
+        float(h["score"])
+        for r in mutations
+        for h in [r.get("health", {})]
+        if isinstance(h, dict) and isinstance(h.get("score"), (int, float))
+    ]
+    if health_scores:
+        health_state = detect_health_state(health_scores, short_window=10, long_window=50)
+        print(
+            "Health: "
+            f"{health_scores[-1]:.2f}/100 ({health_state}, comparaison fenêtres 10/50)"
+        )
 
     counter = Counter(ops)
     print("Operator histogram:")
