@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import logging
 import multiprocessing
 import os
 import sys
@@ -15,6 +16,9 @@ try:
     import resource as resource_module
 except ImportError:  # pragma: no cover - Windows or unsupported platforms
     resource_module = None
+
+
+logger = logging.getLogger(__name__)
 
 
 ALLOWED_BUILTINS = {
@@ -77,15 +81,22 @@ def _sandbox_worker(
 
     tree = ast.parse(code, mode="exec")
     os.environ.clear()
+    prev_cwd = os.getcwd()
     with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
-        allowed = {name: ALLOWED_BUILTINS[name] for name in ALLOWED_BUILTINS}
-        env: Dict[str, Any] = {"__builtins__": allowed}
         try:
-            exec(compile(tree, "<sandbox>", "exec"), env, env)
-            queue.put(env.get("result"))
-        except Exception as exc:  # pragma: no cover - delivered to parent
-            queue.put(exc)
+            os.chdir(tmpdir)
+            allowed = {name: ALLOWED_BUILTINS[name] for name in ALLOWED_BUILTINS}
+            env: Dict[str, Any] = {"__builtins__": allowed}
+            try:
+                exec(compile(tree, "<sandbox>", "exec"), env, env)
+                queue.put(env.get("result"))
+            except Exception as exc:  # pragma: no cover - delivered to parent
+                queue.put(exc)
+        finally:
+            try:
+                os.chdir(prev_cwd)
+            except OSError as exc:  # pragma: no cover - platform specific cleanup guard
+                logger.warning("failed to restore cwd during sandbox cleanup: %s", exc)
 
 
 def run(code: str, timeout: float = 1.5, memory_limit: int = 256 * 1024 * 1024) -> Any:
