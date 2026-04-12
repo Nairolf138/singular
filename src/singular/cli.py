@@ -237,7 +237,16 @@ def main(argv: list[str] | None = None) -> int:
     loop_parser = subparsers.add_parser("loop", help="Execute evolutionary loop")
     loop_parser.add_argument("--skills-dir", type=Path, default=None)
     loop_parser.add_argument("--checkpoint", type=Path, default=None)
-    loop_parser.add_argument("--budget-seconds", type=float, required=True)
+    loop_parser.add_argument("--budget-seconds", type=float, required=False)
+    loop_parser.add_argument(
+        "--ticks",
+        type=int,
+        default=None,
+        help=(
+            "Legacy alias from older tick-based syntax. "
+            "Use --budget-seconds instead."
+        ),
+    )
     loop_parser.add_argument("--run-id", default="loop", help="Run identifier")
 
     subparsers.add_parser("status", help="Show current status")
@@ -319,6 +328,19 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv_list)
+
+    if args.command == "loop":
+        if args.budget_seconds is None and args.ticks is not None:
+            parser.error(
+                "`--ticks` n'est plus accepté seul. "
+                "Utilisez `singular loop --budget-seconds <secondes>` "
+                "(conversion legacy: 1 tick ≈ 1 seconde)."
+            )
+        if args.budget_seconds is None:
+            parser.error(
+                "argument requis: --budget-seconds "
+                "(exemple: `singular loop --budget-seconds 10`)."
+            )
 
     if args.root:
         os.environ["SINGULAR_ROOT"] = str(args.root)

@@ -50,3 +50,14 @@ def test_lives_management(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
     assert registry["active"] == alpha_meta.slug
     assert not beta_path.exists()
     assert resolve_life(None) == alpha_path
+
+
+def test_loop_ticks_legacy_message(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        main(["loop", "--ticks", "10"])
+
+    assert excinfo.value.code == 2
+    stderr = capsys.readouterr().err
+    assert "--ticks" in stderr
+    assert "singular loop --budget-seconds <secondes>" in stderr
+    assert "1 tick ≈ 1 seconde" in stderr

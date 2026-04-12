@@ -47,6 +47,20 @@ unique et quitter immédiatement :
 singular talk --prompt "Bonjour"
 ```
 
+### CLI `loop` (budget en secondes)
+
+La syntaxe officielle utilise désormais un budget temporel explicite :
+
+```bash
+singular loop --budget-seconds 10
+singular loop --budget-seconds 60 --run-id benchmark
+```
+
+Compatibilité legacy : l’option `--ticks` existe uniquement pour guider les
+anciens usages basés sur des “ticks”. Elle n’est pas exécutable seule et renvoie
+un message explicite avec la commande correcte (`--budget-seconds`). Règle de
+conversion de référence pour migrer vos scripts : `1 tick ≈ 1 seconde`.
+
 ## 🧿 Gérer plusieurs vies
 
 Les organismes peuvent désormais partager un même répertoire racine tout en
