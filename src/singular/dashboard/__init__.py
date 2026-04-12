@@ -11,6 +11,8 @@ import os
 import sys
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+
+from singular.dashboard.actions import DashboardActionService
 from fastapi.responses import HTMLResponse
 
 from singular.schedulers.reevaluation import alerts_from_records
@@ -34,6 +36,7 @@ def create_app(
         else base_dir / "mem" / "psyche.json"
     )
     app = FastAPI()
+    actions = DashboardActionService(home=base_dir)
 
     def _load_run_records() -> list[dict[str, object]]:
         records: list[dict[str, object]] = []
@@ -748,6 +751,28 @@ def create_app(
             "most_frequent": frequent,
         }
 
+    @app.get("/api/actions/{action}")
+    def run_action(action: str, token: str | None = None, payload: str | None = None) -> dict[str, object]:
+        try:
+            actions.validate_token(token)
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+        params: dict[str, object] = {}
+        if payload:
+            try:
+                candidate = json.loads(payload)
+            except json.JSONDecodeError as exc:
+                raise HTTPException(status_code=400, detail="payload must be valid JSON") from exc
+            if not isinstance(candidate, dict):
+                raise HTTPException(status_code=400, detail="payload must be an object")
+            params = candidate
+
+        result = actions.execute(action, params)
+        if not result.get("ok"):
+            raise HTTPException(status_code=400, detail=str(result.get("error") or "action failed"))
+        return result
+
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket) -> None:
         await ws.accept()
@@ -831,7 +856,7 @@ def create_app(
             "<p id='timeline-summary'>Cliquez sur un événement de mutation.</p>"
             "<pre id='timeline-impact'></pre>"
             "<pre id='timeline-diff' style='padding:12px;border:1px solid #ccc;'></pre>"
-            "<h2>Runs</h2><div id='logs'></div>"
+            "<section><h2>Actions rapides</h2><pre id='action-result'>Aucune exécution</pre><div style='display:flex;flex-direction:column;gap:8px;max-width:680px;'><label>Token dashboard <input id='action-token' type='password' placeholder='optionnel'/></label><label>Nom de vie (birth/use) <input id='action-life-name' placeholder='New life'/></label><label>Prompt talk <input id='action-prompt' placeholder='Prompt unique'/></label><label>Budget loop (s) <input id='action-budget' type='number' min='0.1' step='0.1' value='1.0'/></label><div style='display:flex;gap:8px;flex-wrap:wrap;'><button id='act-birth'>Birth</button><button id='act-talk'>Talk</button><button id='act-loop'>Loop</button><button id='act-report'>Report</button><button id='act-lives-list'>Lives list</button><button id='act-lives-use'>Lives use</button></div></div></section><h2>Runs</h2><div id='logs'></div>"
             "<script>const ws=new WebSocket(`ws://${location.host}/ws`);"
             "const loadEco=()=>fetch('/ecosystem').then(r=>r.json()).then(d=>{document.getElementById('ecosystem-summary').textContent=JSON.stringify(d.summary,null,2);document.getElementById('organisms').textContent=JSON.stringify(d.organisms,null,2);});"
             "const loadCockpit=()=>fetch('/api/cockpit').then(r=>r.json()).then(d=>{"
@@ -846,6 +871,13 @@ def create_app(
             "});"
             "const paintDiff=(raw)=>{const escaped=String(raw||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');return escaped.split('\\n').map(line=>{if(line.startsWith('+')){return `<span style=\"color:#0a7f2e;\">${line}</span>`;}if(line.startsWith('-')){return `<span style=\"color:#b42318;\">${line}</span>`;}if(line.startsWith('@@')){return `<span style=\"color:#175cd3;\">${line}</span>`;}return line;}).join('\\n');};"
             "const showMutationDetail=(runId,index)=>fetch(`/api/runs/${runId}/mutations/${index}`).then(r=>r.json()).then(d=>{document.getElementById('timeline-summary').textContent=d.human_summary||d.decision_reason||'Aucun résumé disponible.';document.getElementById('timeline-impact').textContent=JSON.stringify(d.impact,null,2);document.getElementById('timeline-diff').innerHTML=paintDiff(d.diff)||'Aucun diff.';});"
+            "const runAction=(action,payload)=>{const token=document.getElementById('action-token')?.value||'';const q=new URLSearchParams();if(token){q.set('token',token);}if(payload){q.set('payload',JSON.stringify(payload));}return fetch(`/api/actions/${action}?${q.toString()}`).then(async r=>{if(!r.ok){throw new Error(`HTTP ${r.status}`);}return r.json();}).then(data=>{document.getElementById('action-result').textContent=JSON.stringify(data,null,2);loadEco();loadCockpit();loadTimeline();}).catch(err=>{document.getElementById('action-result').textContent=`Erreur action ${action}: ${err.message}`;});};"
+            "document.getElementById('act-birth').onclick=()=>runAction('birth',{name:document.getElementById('action-life-name').value||'New life'});"
+            "document.getElementById('act-talk').onclick=()=>runAction('talk',{prompt:document.getElementById('action-prompt').value||''});"
+            "document.getElementById('act-loop').onclick=()=>runAction('loop',{budget_seconds:Number(document.getElementById('action-budget').value||0)});"
+            "document.getElementById('act-report').onclick=()=>runAction('report',{});"
+            "document.getElementById('act-lives-list').onclick=()=>runAction('lives_list',{});"
+            "document.getElementById('act-lives-use').onclick=()=>runAction('lives_use',{name:document.getElementById('action-life-name').value||''});"
             "const loadTimeline=()=>fetch('/runs/latest').then(r=>r.json()).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}return fetch(`/api/runs/${meta.run}/timeline?page=1&page_size=120`).then(r=>r.json());}).then(data=>{const wrap=document.getElementById('timeline');const summary=document.getElementById('timeline-summary');const impact=document.getElementById('timeline-impact');const diff=document.getElementById('timeline-diff');wrap.innerHTML='';let mutationIndex=0;for(const item of data.items||[]){const row=document.createElement('div');row.style.display='inline-flex';row.style.gap='4px';const btn=document.createElement('button');btn.textContent=`${item.event} · ${item.timestamp||'n/a'}`;btn.style.padding='6px';row.appendChild(btn);if(item.event==='mutation'&&data.run_id){const currentIndex=mutationIndex;mutationIndex+=1;btn.onclick=()=>showMutationDetail(data.run_id,currentIndex);const link=document.createElement('a');link.href=`/runs/${data.run_id}/mutations/${currentIndex}`;link.textContent='Voir détail';link.style.alignSelf='center';row.appendChild(link);}wrap.appendChild(row);}if(!(data.items||[]).length){summary.textContent='Aucun événement de frise disponible.';impact.textContent='';diff.textContent='';}});"
             "loadEco();loadCockpit();loadTimeline();setInterval(()=>{loadEco();loadCockpit();loadTimeline();},500);"
             "ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);}else if(m.type==='logs'){const d=document.getElementById('logs');for(const [n,entries] of Object.entries(m.data)){let pre=document.getElementById(`log-${n}`);if(!pre){pre=document.createElement('pre');pre.id=`log-${n}`;pre.textContent=n+'\n';d.appendChild(pre);}for(const entry of entries){pre.textContent+=entry+'\n';}}}};"
