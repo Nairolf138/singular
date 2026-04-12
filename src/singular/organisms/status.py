@@ -11,9 +11,33 @@ from ..runs.logger import RUNS_DIR
 from ..schedulers.reevaluation import alerts_from_records
 
 
-def status(*, verbose: bool = False) -> None:
+def _print_table(headers: list[str], rows: list[list[str]]) -> None:
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for idx, cell in enumerate(row):
+            widths[idx] = max(widths[idx], len(cell))
+
+    def _fmt(row: list[str]) -> str:
+        return " | ".join(cell.ljust(widths[idx]) for idx, cell in enumerate(row))
+
+    print(_fmt(headers))
+    print("-+-".join("-" * width for width in widths))
+    for row in rows:
+        print(_fmt(row))
+
+
+def status(*, verbose: bool = False, output_format: str = "plain") -> None:
     """Display basic metrics and current psyche state."""
 
+    payload: dict[str, object] = {
+        "latest_run": None,
+        "last_execution_ms": None,
+        "success_rate": None,
+        "health": None,
+        "alerts": [],
+        "mood": None,
+        "traits": {},
+    }
     runs_dir = Path(RUNS_DIR)
     files = sorted(runs_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
     if files:
@@ -37,38 +61,95 @@ def status(*, verbose: bool = False) -> None:
                 if isinstance(h, dict) and isinstance(h.get("score"), (int, float))
             ]
             state = detect_health_state(health_scores, short_window=10, long_window=50)
-            print(f"Latest run: {latest.stem}")
-            if isinstance(ms_new, (int, float)):
-                print(f"Last execution speed: {ms_new:.2f}ms")
-            print(f"Success rate: {success_rate:.0f}%")
+            payload["latest_run"] = latest.stem
+            payload["last_execution_ms"] = (
+                round(float(ms_new), 2) if isinstance(ms_new, (int, float)) else None
+            )
+            payload["success_rate"] = round(success_rate, 2)
             if health_scores:
-                print(
-                    "Health score: "
-                    f"{health_scores[-1]:.2f}/100 ({state}, fenêtres 10/50)"
-                )
+                payload["health"] = {
+                    "score": round(health_scores[-1], 2),
+                    "trend": state,
+                    "window": "10/50",
+                }
             if verbose:
                 alerts = alerts_from_records(records)
-                if alerts:
-                    print("Alerts:")
-                    for alert in alerts:
-                        print(
-                            "  - "
-                            f"[{alert['level']}] {alert['message']} "
-                            f"(action: {alert['action']})"
-                        )
-                else:
-                    print("Alerts: none")
-        else:
-            print(f"Run log {latest.name} is empty.")
-    else:
-        print("No run logs found.")
+                payload["alerts"] = alerts
+    payload.setdefault("alerts", [])
 
     psyche = Psyche.load_state()
     mood = psyche.last_mood.value if psyche.last_mood else "neutral"
-    print(f"Mood: {mood}")
+    payload["mood"] = mood
+    payload["traits"] = {
+        "curiosity": round(psyche.curiosity, 2),
+        "patience": round(psyche.patience, 2),
+        "playfulness": round(psyche.playfulness, 2),
+        "optimism": round(psyche.optimism, 2),
+        "resilience": round(psyche.resilience, 2),
+    }
+
+    if output_format == "json":
+        print(json.dumps(payload, ensure_ascii=False))
+        return
+
+    if output_format == "table":
+        run_rows = [
+            ["Latest run", str(payload.get("latest_run") or "-")],
+            ["Last execution speed", f"{payload['last_execution_ms']}ms" if payload.get("last_execution_ms") is not None else "-"],
+            ["Success rate", f"{payload['success_rate']}%" if payload.get("success_rate") is not None else "-"],
+            [
+                "Health score",
+                (
+                    f"{payload['health']['score']}/100 ({payload['health']['trend']}, fenêtres {payload['health']['window']})"
+                    if isinstance(payload.get("health"), dict)
+                    else "-"
+                ),
+            ],
+            ["Mood", str(payload.get("mood"))],
+        ]
+        _print_table(["Metric", "Value"], run_rows)
+        if verbose:
+            alerts = payload.get("alerts") or []
+            if alerts:
+                alert_rows = [
+                    [str(a.get("level", "?")), str(a.get("message", "")), str(a.get("action", ""))]
+                    for a in alerts
+                ]
+                print("Alerts")
+                _print_table(["Level", "Message", "Action"], alert_rows)
+            else:
+                print("Alerts: none")
+        trait_rows = [[k, f"{v:.2f}"] for k, v in payload["traits"].items()]
+        print("Traits")
+        _print_table(["Trait", "Value"], trait_rows)
+        return
+
+    if payload.get("latest_run") is None:
+        print("No run logs found.")
+    else:
+        print(f"Latest run: {payload['latest_run']}")
+        if payload.get("last_execution_ms") is not None:
+            print(f"Last execution speed: {payload['last_execution_ms']:.2f}ms")
+        print(f"Success rate: {payload['success_rate']:.0f}%")
+        health = payload.get("health")
+        if isinstance(health, dict):
+            print(
+                "Health score: "
+                f"{health['score']:.2f}/100 ({health['trend']}, fenêtres {health['window']})"
+            )
+        if verbose:
+            alerts = payload.get("alerts") or []
+            if alerts:
+                print("Alerts:")
+                for alert in alerts:
+                    print(
+                        f"  - [{alert['level']}] {alert['message']} "
+                        f"(action: {alert['action']})"
+                    )
+            else:
+                print("Alerts: none")
+
+    print(f"Mood: {payload['mood']}")
     print("Traits:")
-    print(f"  curiosity: {psyche.curiosity:.2f}")
-    print(f"  patience: {psyche.patience:.2f}")
-    print(f"  playfulness: {psyche.playfulness:.2f}")
-    print(f"  optimism: {psyche.optimism:.2f}")
-    print(f"  resilience: {psyche.resilience:.2f}")
+    for trait, value in payload["traits"].items():
+        print(f"  {trait}: {value:.2f}")

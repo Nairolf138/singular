@@ -2,6 +2,7 @@ from pathlib import Path
 import types
 
 import singular.cli as cli
+from singular.lives import load_registry
 
 
 def test_doctor_reports_status_and_powershell_fix(monkeypatch, capsys) -> None:
@@ -97,3 +98,37 @@ def test_doctor_fix_windows_user_path_is_idempotent(monkeypatch, capsys) -> None
     assert changed is False
     assert store["Path"] == f"{scripts_dir};C:\\Windows\\System32"
     assert "déjà présent" in out
+
+
+def test_quickstart_creates_life_without_prompt_when_not_tty(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
+
+    exit_code = cli.main(["quickstart", "--name", "Starter"])
+    assert exit_code == 0
+
+    registry = load_registry()
+    assert registry["active"] is not None
+    active = registry["active"]
+    assert registry["lives"][active].name == "Starter"
+
+
+def test_monitor_uses_guided_verbose_prompt(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    cli.main(["lives", "create", "--name", "Alpha"])
+
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
+    answers = iter(["o"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+
+    called: dict[str, object] = {}
+
+    def fake_status(*, verbose: bool = False, output_format: str = "plain") -> None:
+        called["verbose"] = verbose
+        called["output_format"] = output_format
+
+    monkeypatch.setattr("singular.organisms.status.status", fake_status)
+
+    cli.main(["--format", "table", "monitor"])
+    assert called == {"verbose": True, "output_format": "table"}

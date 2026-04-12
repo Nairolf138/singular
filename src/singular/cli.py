@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import json
 import os
 import random
 import sys
@@ -13,7 +14,6 @@ from pathlib import Path
 from typing import Any, Callable
 
 __all__ = ["main"]
-
 
 def _looks_like_dev_repo_root(path: Path) -> bool:
     """Heuristic to detect a development repository root."""
@@ -285,6 +285,46 @@ def _ensure_active_life(
     return life_dir
 
 
+def _can_prompt() -> bool:
+    """Return True when guided prompts can safely run."""
+
+    return bool(getattr(sys.stdin, "isatty", lambda: False)())
+
+
+def _prompt_text(prompt: str, default: str) -> str:
+    """Prompt for text with a default value."""
+
+    answer = input(f"{prompt} [{default}] : ").strip()
+    return answer or default
+
+
+def _prompt_yes_no(prompt: str, *, default: bool = True) -> bool:
+    """Prompt a yes/no question and return the selected boolean."""
+
+    default_hint = "O/n" if default else "o/N"
+    answer = input(f"{prompt} ({default_hint}) : ").strip().lower()
+    if not answer:
+        return default
+    return answer in {"o", "oui", "y", "yes"}
+
+
+def _print_table(headers: list[str], rows: list[list[str]]) -> None:
+    """Render a minimal fixed-width table."""
+
+    if not rows:
+        return
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for idx, cell in enumerate(row):
+            widths[idx] = max(widths[idx], len(cell))
+    def _fmt(row: list[str]) -> str:
+        return " | ".join(cell.ljust(widths[idx]) for idx, cell in enumerate(row))
+    print(_fmt(headers))
+    print("-+-".join("-" * width for width in widths))
+    for row in rows:
+        print(_fmt(row))
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the singular command line interface."""
 
@@ -320,6 +360,13 @@ def main(argv: list[str] | None = None) -> int:
         "--life",
         default=None,
         help="Name or slug of the life to activate",
+    )
+    parser.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("table", "json", "plain"),
+        default="plain",
+        help="Output format for compatible commands",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -388,6 +435,20 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument("--id", required=True, help="Run identifier")
 
     subparsers.add_parser("dashboard", help="Launch web dashboard")
+    quickstart_parser = subparsers.add_parser(
+        "quickstart", help="Guided setup to create and activate a life"
+    )
+    quickstart_parser.add_argument(
+        "--name",
+        default=None,
+        help="Life name (if omitted, a guided prompt is shown)",
+    )
+    monitor_parser = subparsers.add_parser("monitor", help="Guided status monitoring")
+    monitor_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Display detailed alerts and diagnostics",
+    )
     doctor_parser = subparsers.add_parser(
         "doctor", help="Diagnose CLI installation and PATH"
     )
@@ -588,7 +649,7 @@ def main(argv: list[str] | None = None) -> int:
         from .organisms.status import status
 
         _ensure_active_life(resolve_life, args.life)
-        status(verbose=args.verbose)
+        status(verbose=args.verbose, output_format=args.output_format)
 
     elif args.command == "talk":
         from .organisms.talk import talk
@@ -611,13 +672,37 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "report":
         from .runs.report import report
 
-        report(run_id=args.id)
+        report(run_id=args.id, output_format=args.output_format)
 
     elif args.command == "dashboard":
         _ensure_active_life(resolve_life, args.life)
         from .dashboard import run as dashboard_run
 
         dashboard_run()
+
+    elif args.command == "quickstart":
+        if args.name:
+            name = args.name
+        elif _can_prompt():
+            print("🚀 Quickstart Singular")
+            name = _prompt_text("Nom de la vie à créer", "New life")
+        else:
+            name = "New life"
+        metadata = bootstrap_life(name, seed=args.seed)
+        os.environ["SINGULAR_HOME"] = str(metadata.path)
+        print(f"Vie créée: {metadata.name} ({metadata.slug}) → {metadata.path}")
+        if _can_prompt() and _prompt_yes_no("Lancer un diagnostic `doctor` maintenant ?"):
+            _doctor(fix=False)
+
+    elif args.command == "monitor":
+        _ensure_active_life(resolve_life, args.life)
+        verbose = args.verbose
+        if _can_prompt():
+            print("📈 Monitor Singular")
+            verbose = _prompt_yes_no("Afficher les détails étendus", default=True)
+        from .organisms.status import status
+
+        status(verbose=verbose, output_format=args.output_format)
 
     elif args.command == "doctor":
         _doctor(fix=args.fix)
@@ -643,12 +728,37 @@ def main(argv: list[str] | None = None) -> int:
                 print("Aucune vie enregistrée.")
             else:
                 active = registry.get("active")
-                for slug, meta in sorted(lives.items()):
-                    marker = "*" if slug == active else " "
-                    print(
-                        f"{marker} {meta.name} [{slug}] - {meta.path}"
-                        f" (créée le {meta.created_at})"
-                    )
+                items = [
+                    {
+                        "active": slug == active,
+                        "name": meta.name,
+                        "slug": slug,
+                        "path": str(meta.path),
+                        "created_at": meta.created_at,
+                    }
+                    for slug, meta in sorted(lives.items())
+                ]
+                if args.output_format == "json":
+                    print(json.dumps({"active": active, "lives": items}, ensure_ascii=False))
+                elif args.output_format == "table":
+                    rows = [
+                        [
+                            "*" if item["active"] else "",
+                            item["name"],
+                            item["slug"],
+                            item["path"],
+                            item["created_at"],
+                        ]
+                        for item in items
+                    ]
+                    _print_table(["Active", "Name", "Slug", "Path", "Created"], rows)
+                else:
+                    for item in items:
+                        marker = "*" if item["active"] else " "
+                        print(
+                            f"{marker} {item['name']} [{item['slug']}] - {item['path']}"
+                            f" (créée le {item['created_at']})"
+                        )
         elif args.lives_command == "create":
             name = args.name or "New life"
             metadata = bootstrap_life(name, seed=args.seed)
