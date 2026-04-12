@@ -19,7 +19,7 @@ jobs:
       - name: Ruff
         run: ruff check .
       - name: Black
-        run: black --check --target-version py311 .
+        run: black --check --target-version py311 --fast .
       - name: Mypy
         run: mypy src
       - name: Pytest
