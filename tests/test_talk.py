@@ -1,8 +1,13 @@
 import random
 
 from singular.cli import main
-from singular.organisms.talk import talk, _default_reply
 from singular.memory import read_episodes
+from singular.organisms.talk import _default_reply, talk
+from singular.providers import (
+    LLMProviderClient,
+    ProviderQuotaExceededError,
+    ProviderTimeoutError,
+)
 
 
 def test_talk_loop(monkeypatch, tmp_path):
@@ -10,7 +15,7 @@ def test_talk_loop(monkeypatch, tmp_path):
     monkeypatch.delenv("SINGULAR_HOME", raising=False)
     inputs = iter(["hello", "next", "quit"])
     monkeypatch.setenv("LLM_PROVIDER", "idontexist")
-    monkeypatch.setattr("singular.organisms.talk.load_llm_provider", lambda _name: None)
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", lambda _name: None)
     monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
     outputs = []
     monkeypatch.setattr("builtins.print", lambda msg: outputs.append(msg))
@@ -24,7 +29,7 @@ def test_talk_loop(monkeypatch, tmp_path):
     assert episodes[1]["raw_reply"]
     assert "Mood: neutral" in episodes[1]["text"]
     assert outputs[0] == "Provider: idontexist"
-    assert any("provider 'idontexist' not found" in out for out in outputs)
+    assert any("not found" in out for out in outputs)
     assert any("Reminder:" in out for out in outputs)
 
 
@@ -38,9 +43,9 @@ def test_cli_provider_precedence(monkeypatch, tmp_path):
 
     def fake_load(name: str | None):
         captured["provider"] = name or ""
-        return lambda _: "ok"
+        return LLMProviderClient(name="cli", generate=lambda _prompt, timeout=8.0: "ok")
 
-    monkeypatch.setattr("singular.organisms.talk.load_llm_provider", fake_load)
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", fake_load)
     inputs = iter(["quit"])
     monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
     monkeypatch.setattr("builtins.print", lambda _msg: None)
@@ -54,7 +59,7 @@ def test_cli_provider_precedence(monkeypatch, tmp_path):
 def test_talk_handles_keyboard_interrupt(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("SINGULAR_HOME", raising=False)
-    monkeypatch.setattr("singular.organisms.talk.load_llm_provider", lambda _name: None)
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", lambda _name: None)
 
     def raise_interrupt(_=""):
         raise KeyboardInterrupt
@@ -74,7 +79,7 @@ def test_talk_single_prompt(monkeypatch, tmp_path):
     root = tmp_path / "world"
     monkeypatch.delenv("SINGULAR_HOME", raising=False)
     monkeypatch.delenv("SINGULAR_ROOT", raising=False)
-    monkeypatch.setattr("singular.organisms.talk.load_llm_provider", lambda _name: None)
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", lambda _name: None)
     outputs: list[str] = []
     monkeypatch.setattr("builtins.print", lambda msg: outputs.append(msg))
 
@@ -97,7 +102,7 @@ def _run_talk(monkeypatch, tmp_path, seed, run):
     monkeypatch.chdir(subdir)
     monkeypatch.delenv("SINGULAR_HOME", raising=False)
     inputs = iter(["hello", "quit"])
-    monkeypatch.setattr("singular.organisms.talk.load_llm_provider", lambda _name: None)
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", lambda _name: None)
     monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
     outputs = []
     monkeypatch.setattr("builtins.print", lambda msg: outputs.append(msg))
@@ -125,7 +130,7 @@ def test_talk_does_not_accumulate_reminder_or_mood(monkeypatch, tmp_path):
     monkeypatch.delenv("SINGULAR_HOME", raising=False)
     inputs = iter(["hello", "next", "again", "quit"])
     monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
-    monkeypatch.setattr("singular.organisms.talk.load_llm_provider", lambda _name: None)
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", lambda _name: None)
     outputs: list[str] = []
     monkeypatch.setattr("builtins.print", lambda msg: outputs.append(msg))
 
@@ -138,18 +143,68 @@ def test_talk_does_not_accumulate_reminder_or_mood(monkeypatch, tmp_path):
         assert reply.count("Mood:") == 1
 
 
-def test_talk_openai_without_api_key_warns(monkeypatch, tmp_path):
+def test_talk_provider_timeout_message_and_fallback(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("SINGULAR_HOME", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setattr("singular.organisms.talk.load_llm_provider", lambda _name: None)
-    inputs = iter(["quit"])
+    inputs = iter(["hello", "quit"])
+
+    def raise_timeout(_prompt: str, *, timeout: float = 8.0) -> str:
+        del timeout
+        raise ProviderTimeoutError("slow")
+
+    client = LLMProviderClient(name="openai", generate=raise_timeout)
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", lambda _name: client)
     monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
     outputs: list[str] = []
     monkeypatch.setattr("builtins.print", lambda msg: outputs.append(msg))
 
-    talk(provider="openai")
+    talk(provider="openai", seed=10)
 
     assert outputs[0] == "Provider: openai"
-    assert any("OPENAI_API_KEY is required" in out for out in outputs)
-    assert any("falling back to _default_reply" in out for out in outputs)
+    assert any("retries exhausted" in out for out in outputs)
+    assert any("Using local fallback replies" in out for out in outputs)
+
+
+def test_talk_provider_quota_message(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    inputs = iter(["hello", "quit"])
+
+    def raise_quota(_prompt: str, *, timeout: float = 8.0) -> str:
+        del timeout
+        raise ProviderQuotaExceededError("quota")
+
+    client = LLMProviderClient(name="openai", generate=raise_quota)
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", lambda _name: client)
+    monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
+    outputs: list[str] = []
+    monkeypatch.setattr("builtins.print", lambda msg: outputs.append(msg))
+
+    talk(provider="openai", seed=11)
+
+    assert any("quota is exceeded" in out for out in outputs)
+
+
+def test_talk_logs_provider_events(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    inputs = iter(["hello", "quit"])
+    events = []
+
+    client = LLMProviderClient(
+        name="openai", generate=lambda _prompt, timeout=8.0: "hello"
+    )
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", lambda _name: client)
+    monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
+    monkeypatch.setattr("builtins.print", lambda _msg: None)
+    monkeypatch.setattr(
+        "singular.organisms.talk.log_provider_event",
+        lambda **kwargs: events.append(kwargs),
+    )
+
+    talk(provider="openai")
+
+    assert events
+    assert events[0]["provider"] == "openai"
+    assert events[0]["fallback"] is False
+    assert events[0]["error_category"] is None

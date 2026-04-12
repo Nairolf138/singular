@@ -4,20 +4,25 @@ from __future__ import annotations
 
 import os
 import random
-from typing import Callable
+import time
 
 from ..memory import add_episode, ensure_memory_structure, read_episodes
 from ..perception import capture_signals
-from ..psyche import Psyche, Mood
-from ..providers import load_llm_provider
+from ..psyche import Mood, Psyche
+from ..providers import (
+    LLMProviderError,
+    ProviderMisconfiguredError,
+    ProviderQuotaExceededError,
+    ProviderRetryExhaustedError,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+    load_llm_client,
+)
+from ..runs.logger import log_provider_event
 
 
 def _default_reply(prompt: str, rng: random.Random) -> str:
-    """Fallback reply generation when no provider is available.
-
-    The ``seed`` passed to :func:`talk` is used to seed ``rng`` so that stub
-    responses become deterministic when desired.
-    """
+    """Fallback reply generation when no provider is available."""
 
     options = [
         "I heard you say",
@@ -27,23 +32,32 @@ def _default_reply(prompt: str, rng: random.Random) -> str:
     return f"{rng.choice(options)}: {prompt}"
 
 
+def _user_message_for_error(provider: str, err: LLMProviderError) -> str:
+    if isinstance(err, ProviderMisconfiguredError):
+        return (
+            f"Provider '{provider}' is misconfigured (missing or invalid credentials). "
+            "Using local fallback replies."
+        )
+    if isinstance(err, ProviderQuotaExceededError):
+        return (
+            f"Provider '{provider}' quota is exceeded (or rate-limited). "
+            "Using local fallback replies."
+        )
+    if isinstance(err, ProviderTimeoutError):
+        return f"Provider '{provider}' timed out. Using local fallback replies."
+    if isinstance(err, ProviderUnavailableError):
+        return f"Provider '{provider}' is unavailable. Using local fallback replies."
+    if isinstance(err, ProviderRetryExhaustedError):
+        return f"Provider '{provider}' retries exhausted. Using local fallback replies."
+    return f"Provider '{provider}' failed unexpectedly. Using local fallback replies."
+
+
 def talk(
     provider: str | None = None,
     seed: int | None = None,
     prompt: str | None = None,
 ) -> None:
-    """Handle the ``talk`` subcommand.
-
-    Parameters
-    ----------
-    provider:
-        Optional name of the LLM provider. Overrides environment variables.
-    seed:
-        Optional random seed for reproducibility. It affects stub replies when
-        no provider is available.
-    prompt:
-        Optional user prompt. If provided, generate a single response and exit.
-    """
+    """Handle the ``talk`` subcommand."""
 
     ensure_memory_structure()
 
@@ -54,23 +68,12 @@ def talk(
         provider_name = "openai" if os.getenv("OPENAI_API_KEY") else "stub"
     print(f"Provider: {provider_name}")
 
-    if provider_name == "openai":
-        api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
-        if not api_key:
-            print(
-                "OPENAI_API_KEY is required when provider is 'openai'. "
-                "Falling back to local default replies if unavailable."
-            )
-
-    generate_reply: Callable[[str], str] | None = load_llm_provider(provider_name)
-    if generate_reply is None:
+    client = load_llm_client(provider_name)
+    if client is None:
         print(
-            f"Warning: provider '{provider_name}' not found; "
-            "falling back to _default_reply."
+            f"Provider '{provider_name}' not found. "
+            "Using local fallback replies."
         )
-
-        def generate_reply(prompt: str) -> str:
-            return _default_reply(prompt, rng)
 
     psyche = Psyche.load_state()
 
@@ -140,7 +143,29 @@ def talk(
         add_episode({"role": "user", "text": user_input})
         mood = psyche.feel(Mood.NEUTRAL)
         mood_report = mood_event or mood.value
-        reply = generate_reply(user_input)
+
+        start = time.perf_counter()
+        fallback_used = client is None
+        error_category: str | None = "provider_missing" if client is None else None
+
+        if client is None:
+            reply = _default_reply(user_input, rng)
+        else:
+            try:
+                reply = client.generate_reply(user_input)
+            except LLMProviderError as err:
+                fallback_used = True
+                error_category = getattr(err, "category", "provider_error")
+                print(_user_message_for_error(provider_name, err))
+                reply = _default_reply(user_input, rng)
+
+        latency_ms = (time.perf_counter() - start) * 1000
+        log_provider_event(
+            provider=provider_name,
+            latency_ms=latency_ms,
+            fallback=fallback_used,
+            error_category=error_category,
+        )
 
         parts = [reply]
         should_add_reminder = bool(last_event) and (

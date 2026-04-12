@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 import json
+import logging
 import os
 from typing import Any
 
@@ -50,6 +51,27 @@ mood_styles: Dict[str | None, Callable[[str], str]] = {
     "neutre": _style_neutre,
     None: _style_neutre,
 }
+
+_provider_logger = logging.getLogger("singular.provider")
+
+
+def log_provider_event(
+    *,
+    provider: str,
+    latency_ms: float,
+    fallback: bool,
+    error_category: str | None,
+) -> None:
+    """Emit a structured provider log entry."""
+
+    payload = {
+        "event": "provider_call",
+        "provider": provider,
+        "latency_ms": round(latency_ms, 2),
+        "fallback": fallback,
+        "error_category": error_category,
+    }
+    _provider_logger.info("provider_call", extra={"payload": payload})
 
 
 def _ensure_dir(path: Path) -> None:
