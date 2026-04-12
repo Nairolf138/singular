@@ -33,6 +33,8 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         "latest_run": None,
         "last_execution_ms": None,
         "success_rate": None,
+        "mutation_success_rate": None,
+        "mutation_count": 0,
         "health": None,
         "alerts": [],
         "mood": None,
@@ -51,9 +53,17 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         if records:
             last = records[-1]
             ms_new = last.get("ms_new")
-            ok_count = sum(1 for r in records if r.get("ok"))
-            success_rate = ok_count / len(records) * 100
             mutation_records = [r for r in records if "score_new" in r]
+            mutation_count = len(mutation_records)
+            success_records = [
+                r
+                for r in records
+                if "score_new" in r or isinstance(r.get("ok"), bool)
+            ]
+            ok_count = sum(1 for r in success_records if r.get("ok") is True)
+            success_rate = (
+                ok_count / len(success_records) * 100 if success_records else None
+            )
             health_scores = [
                 float(h["score"])
                 for r in mutation_records
@@ -65,7 +75,13 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             payload["last_execution_ms"] = (
                 round(float(ms_new), 2) if isinstance(ms_new, (int, float)) else None
             )
-            payload["success_rate"] = round(success_rate, 2)
+            payload["success_rate"] = (
+                round(success_rate, 2) if success_rate is not None else None
+            )
+            payload["mutation_success_rate"] = (
+                round(success_rate, 2) if success_rate is not None else None
+            )
+            payload["mutation_count"] = mutation_count
             if health_scores:
                 payload["health"] = {
                     "score": round(health_scores[-1], 2),
@@ -97,6 +113,15 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             ["Latest run", str(payload.get("latest_run") or "-")],
             ["Last execution speed", f"{payload['last_execution_ms']}ms" if payload.get("last_execution_ms") is not None else "-"],
             ["Success rate", f"{payload['success_rate']}%" if payload.get("success_rate") is not None else "-"],
+            [
+                "Mutation success rate",
+                (
+                    f"{payload['mutation_success_rate']}%"
+                    if payload.get("mutation_success_rate") is not None
+                    else "-"
+                ),
+            ],
+            ["Mutation count", str(payload.get("mutation_count") or 0)],
             [
                 "Health score",
                 (
@@ -130,7 +155,11 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         print(f"Latest run: {payload['latest_run']}")
         if payload.get("last_execution_ms") is not None:
             print(f"Last execution speed: {payload['last_execution_ms']:.2f}ms")
-        print(f"Success rate: {payload['success_rate']:.0f}%")
+        if payload.get("success_rate") is not None:
+            print(f"Success rate: {payload['success_rate']:.0f}%")
+        if payload.get("mutation_success_rate") is not None:
+            print(f"Mutation success rate: {payload['mutation_success_rate']:.0f}%")
+        print(f"Mutation count: {payload['mutation_count']}")
         health = payload.get("health")
         if isinstance(health, dict):
             print(
