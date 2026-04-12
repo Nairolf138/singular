@@ -1,6 +1,10 @@
 import random
+import os
+
+import pytest
 
 from singular.cli import main
+from singular.lives import load_registry
 from singular.memory import read_episodes
 from singular.organisms.talk import _default_reply, talk
 from singular.providers import (
@@ -208,3 +212,68 @@ def test_talk_logs_provider_events(monkeypatch, tmp_path):
     assert events[0]["provider"] == "openai"
     assert events[0]["fallback"] is False
     assert events[0]["error_category"] is None
+
+
+def test_talk_subcommand_life_argument_has_priority(monkeypatch, tmp_path):
+    root = tmp_path / "world"
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+
+    main(["--root", str(root), "lives", "create", "--name", "Alpha"])
+    alpha_slug = load_registry()["active"]
+    assert isinstance(alpha_slug, str)
+    main(["--root", str(root), "lives", "create", "--name", "Beta"])
+
+    captured: dict[str, str] = {}
+
+    def fake_talk(*, provider=None, seed=None, prompt=None):
+        del provider, seed, prompt
+        captured["home"] = os.environ.get("SINGULAR_HOME", "")
+
+    monkeypatch.setattr("singular.organisms.talk.talk", fake_talk)
+    main(
+        [
+            "--root",
+            str(root),
+            "--life",
+            "beta",
+            "talk",
+            "--life",
+            alpha_slug,
+            "--prompt",
+            "bonjour",
+        ]
+    )
+
+    assert captured["home"].endswith(alpha_slug)
+
+
+def test_talk_live_alias_prints_deprecation_warning(
+    monkeypatch, tmp_path, capsys: pytest.CaptureFixture[str]
+):
+    root = tmp_path / "world"
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    main(["--root", str(root), "lives", "create", "--name", "Alpha"])
+
+    monkeypatch.setattr(
+        "singular.organisms.talk.talk",
+        lambda *, provider=None, seed=None, prompt=None: None,
+    )
+    main(["--root", str(root), "talk", "--live", "alpha", "--prompt", "bonjour"])
+
+    stderr = capsys.readouterr().err
+    assert "déprécié" in stderr
+    assert "talk --life" in stderr
+
+
+def test_unknown_argument_that_looks_like_life_suggests_life_flag(
+    capsys: pytest.CaptureFixture[str],
+):
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--lumen", "talk"])
+
+    assert excinfo.value.code == 2
+    stderr = capsys.readouterr().err
+    assert "singular --life <slug> talk" in stderr
+    assert "singular --root <root> --life <slug> talk" in stderr
