@@ -773,6 +773,7 @@ def create_app(
         sort_order: str = "desc",
         active_only: bool = False,
         degrading_only: bool = False,
+        dead_only: bool = False,
     ) -> dict[str, object]:
         comparison = _aggregate_lives()
         lives_rows = [{"life": name, **payload} for name, payload in comparison.items()]
@@ -781,6 +782,8 @@ def create_app(
             lives_rows = [row for row in lives_rows if row.get("active") is True]
         if degrading_only:
             lives_rows = [row for row in lives_rows if row.get("trend") == "dégradation"]
+        if dead_only:
+            lives_rows = [row for row in lives_rows if row.get("alive") is False]
 
         sort_key_map: dict[str, str] = {
             "life": "life",
@@ -809,6 +812,7 @@ def create_app(
                 "sort_order": "desc" if reverse else "asc",
                 "active_only": active_only,
                 "degrading_only": degrading_only,
+                "dead_only": dead_only,
             },
         }
 

@@ -568,6 +568,9 @@ def test_lives_comparison_table_aggregation_filters_and_sorting(
     degrading_only = route(degrading_only=True)["table"]
     assert [row["life"] for row in degrading_only] == ["life-a"]
 
+    dead_only = route(dead_only=True)["table"]
+    assert [row["life"] for row in dead_only] == ["life-b"]
+
     by_life_asc = route(sort_by="life", sort_order="asc")["table"]
     assert [row["life"] for row in by_life_asc] == ["life-a", "life-b", "life-c"]
 
