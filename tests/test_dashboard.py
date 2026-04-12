@@ -504,3 +504,41 @@ def test_run_requires_uvicorn(
 
     captured = capsys.readouterr()
     assert "pip install uvicorn" in captured.err
+
+
+def test_dashboard_actions_endpoint_and_ui_panel(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SINGULAR_DASHBOARD_ACTION_TOKEN", "secret")
+    app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
+    client = TestClient(app)
+
+    body = client.get("/").json()
+    assert "Actions rapides" in body
+    assert "action-result" in body
+
+    ok = app._routes["/api/actions/{action}"]("lives_list", token="secret", payload="{}")
+    assert ok["ok"] is True
+    assert ok["action"] == "lives_list"
+
+    with pytest.raises(Exception):
+        app._routes["/api/actions/{action}"]("lives_list", token="wrong", payload="{}")
+
+
+def test_dashboard_actions_validation_robustness(tmp_path: Path) -> None:
+    app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
+
+    route = app._routes["/api/actions/{action}"]
+
+    with pytest.raises(Exception):
+        route("unknown", payload="{}")
+
+    with pytest.raises(Exception):
+        route("lives_list", payload="[]")
+
+    with pytest.raises(Exception):
+        route("talk", payload=json.dumps({"prompt": "   "}))
+
+    with pytest.raises(Exception):
+        route("loop", payload=json.dumps({"budget_seconds": -1}))
+
+    with pytest.raises(Exception):
+        route("lives_use", payload=json.dumps({"name": ""}))
