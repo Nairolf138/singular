@@ -6,6 +6,7 @@ import difflib
 import importlib
 import json
 import logging
+import math
 import random
 import time
 import heapq
@@ -201,7 +202,10 @@ def score_code(code: str) -> float:
         result = sandbox.run(code)
     except Exception:
         return float("-inf")
-    return float(result) if isinstance(result, (int, float)) else float("-inf")
+    if not isinstance(result, (int, float)):
+        return float("-inf")
+    score = float(result)
+    return score if math.isfinite(score) else float("-inf")
 
 
 def manage_resources(
@@ -605,7 +609,9 @@ def run(
                 org.energy -= 0.1
 
             stats[op_name]["count"] += 1
-            stats[op_name]["reward"] += base_score - mutated_score
+            reward_delta = base_score - mutated_score
+            if math.isfinite(reward_delta):
+                stats[op_name]["reward"] += reward_delta
             state.stats = stats
 
             # Resource accounting
