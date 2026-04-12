@@ -355,7 +355,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     loop_parser.add_argument("--run-id", default="loop", help="Run identifier")
 
-    subparsers.add_parser("status", help="Show current status")
+    status_parser = subparsers.add_parser("status", help="Show current status")
+    status_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Display detailed alerts and diagnostics",
+    )
 
     talk_parser = subparsers.add_parser("talk", help="Talk with the system")
     talk_parser.add_argument(
@@ -583,7 +588,7 @@ def main(argv: list[str] | None = None) -> int:
         from .organisms.status import status
 
         _ensure_active_life(resolve_life, args.life)
-        status()
+        status(verbose=args.verbose)
 
     elif args.command == "talk":
         from .organisms.talk import talk

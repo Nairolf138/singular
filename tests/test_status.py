@@ -34,3 +34,38 @@ def test_status_displays_health_trend(tmp_path, monkeypatch, capsys) -> None:
     out = capsys.readouterr().out
     assert "Health score:" in out
     assert "fenêtres 10/50" in out
+
+
+def test_status_verbose_displays_alerts(tmp_path, monkeypatch, capsys) -> None:
+    run_file = tmp_path / "demo.jsonl"
+    with run_file.open("w", encoding="utf-8") as fh:
+        for i in range(12):
+            record = {
+                "ok": False,
+                "accepted": False,
+                "ms_new": 10.0,
+                "score_new": 1.0,
+                "health": {
+                    "score": 70.0 - i,
+                    "sandbox_stability": 0.95 - (i * 0.05),
+                },
+            }
+            fh.write(json.dumps(record) + "\n")
+
+    class DummyPsyche:
+        last_mood = None
+        curiosity = 0.5
+        patience = 0.5
+        playfulness = 0.5
+        optimism = 0.5
+        resilience = 0.5
+
+    monkeypatch.setattr(status_mod, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(
+        status_mod.Psyche, "load_state", staticmethod(lambda: DummyPsyche())
+    )
+
+    status_mod.status(verbose=True)
+    out = capsys.readouterr().out
+    assert "Alerts:" in out
+    assert "baisse continue du health score" in out

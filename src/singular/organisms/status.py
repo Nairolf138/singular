@@ -8,9 +8,10 @@ from pathlib import Path
 from ..life.health import detect_health_state
 from ..psyche import Psyche
 from ..runs.logger import RUNS_DIR
+from ..schedulers.reevaluation import alerts_from_records
 
 
-def status() -> None:
+def status(*, verbose: bool = False) -> None:
     """Display basic metrics and current psyche state."""
 
     runs_dir = Path(RUNS_DIR)
@@ -45,6 +46,18 @@ def status() -> None:
                     "Health score: "
                     f"{health_scores[-1]:.2f}/100 ({state}, fenêtres 10/50)"
                 )
+            if verbose:
+                alerts = alerts_from_records(records)
+                if alerts:
+                    print("Alerts:")
+                    for alert in alerts:
+                        print(
+                            "  - "
+                            f"[{alert['level']}] {alert['message']} "
+                            f"(action: {alert['action']})"
+                        )
+                else:
+                    print("Alerts: none")
         else:
             print(f"Run log {latest.name} is empty.")
     else:
