@@ -16,6 +16,7 @@ from typing import Callable, Dict, Iterable, Mapping
 from singular.memory import add_episode, update_score
 from singular.psyche import Psyche, Mood
 from singular.runs.logger import RunLogger
+from singular.runs.explain import summarize_mutation
 from singular.organisms.spawn import mutation_absurde
 from singular.perception import capture_signals, get_temperature
 from graine.evolver.generate import propose_mutations
@@ -198,11 +199,31 @@ def log_mutation(
     ms_new: float,
     base_score: float,
     mutated_score: float,
+    impacted_file: str,
 ) -> None:
     """Record mutation outcome and notify observers."""
 
     env_notifications.notify(f"iteration {iteration}: {op_name}", channel=log.info)
     _ = env_files.list_files()
+    if accepted:
+        decision_reason = (
+            "accepted: score improved or stayed equal"
+            if mutated_score <= base_score
+            else "accepted: non-score policy override"
+        )
+    else:
+        decision_reason = "rejected: score regression or no measurable gain"
+
+    human_summary = summarize_mutation(
+        operator=op_name,
+        impacted_file=impacted_file,
+        accepted=accepted,
+        diff=diff,
+        ms_base=ms_base,
+        ms_new=ms_new,
+        score_base=base_score,
+        score_new=mutated_score,
+    )
     logger.log(
         key,
         op_name,
@@ -212,6 +233,9 @@ def log_mutation(
         ms_new,
         base_score,
         mutated_score,
+        impacted_file=impacted_file,
+        decision_reason=decision_reason,
+        human_summary=human_summary,
     )
 
 
@@ -511,6 +535,7 @@ def run(
                 ms_new,
                 base_score,
                 mutated_score,
+                skill_path.name,
             )
 
             if hasattr(psyche, "consume"):

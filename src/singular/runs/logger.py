@@ -20,6 +20,7 @@ _BASE_DIR = Path(os.environ.get("SINGULAR_HOME", "."))
 RUNS_DIR = _BASE_DIR / "runs"
 # Number of run logs to retain
 MAX_RUN_LOGS = int(os.environ.get("SINGULAR_RUNS_KEEP", "20"))
+EVENT_SCHEMA_VERSION = 1
 
 # ---------------------------------------------------------------------------
 # Mood style helpers
@@ -124,6 +125,12 @@ class RunLogger:
         self.root = Path(self.root)
         self.root.mkdir(parents=True, exist_ok=True)
         _enforce_retention(self.root)
+
+        self.run_dir = self.root / self.run_id
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.events_path = self.run_dir / "events.jsonl"
+        self._events_file = self.events_path.open("a", encoding="utf-8")
+
         # Resume from existing temporary file if present
         tmp_pattern = f"{self.run_id}-*.jsonl.tmp"
         existing = sorted(self.root.glob(tmp_pattern))
@@ -142,6 +149,22 @@ class RunLogger:
             _ensure_dir(self.tmp_path)
             self._file = self.tmp_path.open("a", encoding="utf-8")
 
+    def _write_record(self, record: dict[str, Any]) -> None:
+        self._file.write(json.dumps(record) + "\n")
+        self._file.flush()
+        os.fsync(self._file.fileno())
+
+    def _write_event(self, event_type: str, payload: dict[str, Any], ts: str) -> None:
+        event = {
+            "version": EVENT_SCHEMA_VERSION,
+            "event_type": event_type,
+            "ts": ts,
+            "payload": payload,
+        }
+        self._events_file.write(json.dumps(event) + "\n")
+        self._events_file.flush()
+        os.fsync(self._events_file.fileno())
+
     def log(
         self,
         skill: str,
@@ -152,14 +175,16 @@ class RunLogger:
         ms_new: float,
         score_base: float,
         score_new: float,
+        *,
+        impacted_file: str | None = None,
+        decision_reason: str | None = None,
+        human_summary: str | None = None,
     ) -> None:
-        """Append a record to the log file.
+        """Append a mutation record to the log file."""
 
-        The line is flushed and fsynced to guarantee durability.
-        """
-
+        ts = datetime.utcnow().isoformat(timespec="seconds")
         record: dict[str, Any] = {
-            "ts": datetime.utcnow().isoformat(timespec="seconds"),
+            "ts": ts,
             "skill": skill,
             "op": op,
             "diff": diff,
@@ -168,13 +193,14 @@ class RunLogger:
             "ms_new": ms_new,
             "score_base": score_base,
             "score_new": score_new,
-            # ``improved`` is ``True`` when the new score is lower than the
-            # baseline score.  Lower values indicate better performance.
             "improved": score_new < score_base,
+            "impacted_file": impacted_file,
+            "decision_reason": decision_reason,
+            "human_summary": human_summary,
         }
-        self._file.write(json.dumps(record) + "\n")
-        self._file.flush()
-        os.fsync(self._file.fileno())
+        self._write_record(record)
+        self._write_event("mutation", record, ts)
+
         self.psyche.process_run_record(record)
         mood = getattr(self.psyche, "last_mood", None)
         mood_val = getattr(mood, "value", mood)
@@ -191,9 +217,8 @@ class RunLogger:
             "reason": reason,
             **info,
         }
-        self._file.write(json.dumps(record) + "\n")
-        self._file.flush()
-        os.fsync(self._file.fileno())
+        self._write_record(record)
+        self._write_event("death", record, record["ts"])
         add_episode(record)
 
     def log_refusal(self, skill: str) -> None:
@@ -204,9 +229,8 @@ class RunLogger:
             "event": "refuse",
             "skill": skill,
         }
-        self._file.write(json.dumps(record) + "\n")
-        self._file.flush()
-        os.fsync(self._file.fileno())
+        self._write_record(record)
+        self._write_event("refuse", record, record["ts"])
         add_episode(record)
 
     def log_delay(self, skill: str, resume_at: float) -> None:
@@ -218,9 +242,8 @@ class RunLogger:
             "skill": skill,
             "resume_at": resume_at,
         }
-        self._file.write(json.dumps(record) + "\n")
-        self._file.flush()
-        os.fsync(self._file.fileno())
+        self._write_record(record)
+        self._write_event("delay", record, record["ts"])
         add_episode(record)
 
     def log_absurde(self, skill: str, diff: str) -> None:
@@ -232,9 +255,8 @@ class RunLogger:
             "skill": skill,
             "diff": diff,
         }
-        self._file.write(json.dumps(record) + "\n")
-        self._file.flush()
-        os.fsync(self._file.fileno())
+        self._write_record(record)
+        self._write_event("absurde", record, record["ts"])
         add_episode(record)
 
     def log_interaction(self, event: str, **info: Any) -> None:
@@ -246,9 +268,8 @@ class RunLogger:
             "interaction": event,
             **info,
         }
-        self._file.write(json.dumps(record) + "\n")
-        self._file.flush()
-        os.fsync(self._file.fileno())
+        self._write_record(record)
+        self._write_event("interaction", record, record["ts"])
         add_episode(record)
 
     def log_test_coevolution(
@@ -281,13 +302,16 @@ class RunLogger:
             "score_combined_base": score_combined_base,
             "score_combined_new": score_combined_new,
         }
-        self._file.write(json.dumps(record) + "\n")
-        self._file.flush()
-        os.fsync(self._file.fileno())
+        self._write_record(record)
+        self._write_event("test_coevolution", record, record["ts"])
         add_episode(record)
 
     def close(self) -> None:
-        """Flush and finalize the log file atomically."""
+        """Flush and finalize the log files atomically."""
+        if not self._events_file.closed:
+            self._events_file.flush()
+            os.fsync(self._events_file.fileno())
+            self._events_file.close()
         if not self._file.closed:
             self._file.flush()
             os.fsync(self._file.fileno())
