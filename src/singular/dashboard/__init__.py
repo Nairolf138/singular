@@ -10,6 +10,8 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
+from singular.schedulers.reevaluation import alerts_from_records
+
 
 def create_app(
     runs_dir: Path | str | None = None, psyche_file: Path | str | None = None
@@ -110,6 +112,36 @@ def create_app(
     @app.get("/ecosystem")
     def read_ecosystem() -> dict:
         return _compute_ecosystem()
+
+    @app.get("/alerts")
+    def read_alerts() -> dict[str, object]:
+        if not runs_path.exists():
+            return {"run": None, "alerts": []}
+
+        files = sorted(
+            [
+                path
+                for path in runs_path.iterdir()
+                if path.is_file() and path.suffix == ".jsonl"
+            ],
+            key=lambda path: path.stat().st_mtime,
+        )
+        if not files:
+            return {"run": None, "alerts": []}
+
+        latest = files[-1]
+        records: list[dict[str, object]] = []
+        for line in latest.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                records.append(payload)
+        return {"run": latest.stem, "alerts": alerts_from_records(records)}
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket) -> None:

@@ -20,6 +20,42 @@ def test_dashboard_endpoints(tmp_path: Path) -> None:
 
     assert client.get("/logs").json() == {"log.txt": "hello"}
     assert client.get("/psyche").json() == data
+    assert client.get("/alerts").json() == {"run": None, "alerts": []}
+
+
+def test_dashboard_alerts_endpoint(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run_file = runs_dir / "loop.jsonl"
+    lines = []
+    for i in range(12):
+        lines.append(
+            json.dumps(
+                {
+                    "accepted": False,
+                    "health": {
+                        "score": 80.0 - i,
+                        "sandbox_stability": 0.95 - (i * 0.05),
+                    },
+                }
+            )
+        )
+    run_file.write_text("\n".join(lines) + "\n")
+    psyche_file = tmp_path / "psyche.json"
+    psyche_file.write_text(json.dumps({"mood": "focused"}))
+
+    app = create_app(runs_dir=runs_dir, psyche_file=psyche_file)
+    client = TestClient(app)
+
+    response = client.get("/alerts")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"] == "loop"
+    assert {item["kind"] for item in payload["alerts"]} == {
+        "health_decline",
+        "sandbox_failures_rising",
+        "prolonged_stagnation",
+    }
 
 
 def test_psyche_missing_returns_404(tmp_path: Path) -> None:
