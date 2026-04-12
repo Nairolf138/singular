@@ -336,9 +336,33 @@ def _normalize_organism_inputs(skills_dirs: OrganismInputs) -> Dict[str, Path]:
     if isinstance(skills_dirs, Path):
         return {skills_dirs.name: skills_dirs}
     if isinstance(skills_dirs, Mapping):
-        return {str(name): Path(path) for name, path in skills_dirs.items()}
+        normalized: Dict[str, Path] = {}
+        for raw_name, raw_path in skills_dirs.items():
+            name = str(raw_name)
+            path = Path(raw_path)
+            if name in normalized and normalized[name] != path:
+                raise ValueError(
+                    "organism key collision for "
+                    f"'{name}': {normalized[name]} conflicts with {path}"
+                )
+            normalized[name] = path
+        return normalized
+
     paths = [Path(path) for path in skills_dirs]
-    return {path.name: path for path in paths}
+    normalized_paths: Dict[str, Path] = {}
+    name_counts: Dict[str, int] = {}
+
+    for path in paths:
+        base_name = path.name
+        next_index = name_counts.get(base_name, 1)
+        unique_name = base_name if next_index == 1 else f"{base_name}#{next_index}"
+        while unique_name in normalized_paths:
+            next_index += 1
+            unique_name = f"{base_name}#{next_index}"
+        normalized_paths[unique_name] = path
+        name_counts[base_name] = next_index + 1
+
+    return normalized_paths
 
 
 def run(

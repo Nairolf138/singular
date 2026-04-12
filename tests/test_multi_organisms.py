@@ -111,3 +111,39 @@ def test_multi_organism_events_and_dashboard(tmp_path: Path, monkeypatch) -> Non
     ecosystem = client.get("/ecosystem").json()
     assert "org1" in ecosystem["organisms"]
     assert ecosystem["summary"]["total_organisms"] >= 1
+
+
+def test_normalize_organism_inputs_iterable_auto_renames_collisions(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "set_a" / "skills"
+    second = tmp_path / "set_b" / "skills"
+    third = tmp_path / "set_c" / "skills"
+
+    normalized = life_loop._normalize_organism_inputs([first, second, third])
+
+    assert list(normalized.keys()) == ["skills", "skills#2", "skills#3"]
+    assert normalized["skills"] == first
+    assert normalized["skills#2"] == second
+    assert normalized["skills#3"] == third
+
+
+def test_normalize_organism_inputs_mapping_collision_raises_clear_error(
+    tmp_path: Path,
+) -> None:
+    one = tmp_path / "org_one"
+    two = tmp_path / "org_two"
+
+    # str(1) and "1" normalize to the same organism key.
+    mapping = {1: one, "1": two}
+
+    try:
+        life_loop._normalize_organism_inputs(mapping)
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Expected ValueError for key collision")
+
+    assert "organism key collision for '1'" in message
+    assert str(one) in message
+    assert str(two) in message
