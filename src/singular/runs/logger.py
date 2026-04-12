@@ -229,6 +229,41 @@ class RunLogger:
         os.fsync(self._file.fileno())
         add_episode(record)
 
+    def log_test_coevolution(
+        self,
+        *,
+        skill: str,
+        accepted: bool,
+        pool_size: int,
+        added: int,
+        removed: int,
+        detection_rate: float,
+        score_base: float,
+        score_new: float,
+        score_combined_base: float,
+        score_combined_new: float,
+    ) -> None:
+        """Record co-evolution decisions for the living test pool."""
+
+        record: dict[str, Any] = {
+            "ts": datetime.utcnow().isoformat(timespec="seconds"),
+            "event": "test_coevolution",
+            "skill": skill,
+            "accepted": accepted,
+            "pool_size": pool_size,
+            "tests_added": added,
+            "tests_removed": removed,
+            "regression_detection_rate": detection_rate,
+            "score_base": score_base,
+            "score_new": score_new,
+            "score_combined_base": score_combined_base,
+            "score_combined_new": score_combined_new,
+        }
+        self._file.write(json.dumps(record) + "\n")
+        self._file.flush()
+        os.fsync(self._file.fileno())
+        add_episode(record)
+
     def close(self) -> None:
         """Flush and finalize the log file atomically."""
         if not self._file.closed:
