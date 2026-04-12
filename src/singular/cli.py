@@ -187,14 +187,6 @@ def main(argv: list[str] | None = None) -> int:
         resolve_life,
         uninstall_singular,
     )
-    from .organisms.quest import quest
-    from .organisms.spawn import spawn
-    from .organisms.status import status
-    from .organisms.talk import talk
-    from .runs.loop import loop as loop_run
-    from .runs.report import report
-    from .runs.run import run as run_run
-    from .runs.synthesize import synthesize
 
     parser = argparse.ArgumentParser(prog="singular")
     parser.add_argument(
@@ -338,6 +330,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Vie créée: {metadata.name} ({metadata.slug}) → {metadata.path}")
 
     elif args.command == "spawn":
+        from .organisms.spawn import spawn
+
         spawn(
             parent_a=args.parent_a,
             parent_b=args.parent_b,
@@ -346,10 +340,14 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     elif args.command == "run":
+        from .runs.run import run as run_run
+
         _ensure_active_life(resolve_life, args.life)
         run_run(seed=args.seed)
 
     elif args.command == "loop":
+        from .runs.loop import loop as loop_run
+
         life_dir = _ensure_active_life(resolve_life, args.life)
         skills_dir = args.skills_dir or life_dir / "skills"
         checkpoint = args.checkpoint or life_dir / "life_checkpoint.json"
@@ -362,22 +360,32 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     elif args.command == "status":
+        from .organisms.status import status
+
         _ensure_active_life(resolve_life, args.life)
         status()
 
     elif args.command == "talk":
+        from .organisms.talk import talk
+
         _ensure_active_life(resolve_life, args.life)
         talk(provider=args.provider, seed=args.seed, prompt=args.prompt)
 
     elif args.command == "quest":
+        from .organisms.quest import quest
+
         _ensure_active_life(resolve_life, args.life)
         quest(spec=args.spec)
 
     elif args.command == "synthesize":
+        from .runs.synthesize import synthesize
+
         _ensure_active_life(resolve_life, args.life)
         synthesize(args.code)
 
     elif args.command == "report":
+        from .runs.report import report
+
         report(run_id=args.id)
 
     elif args.command == "dashboard":
