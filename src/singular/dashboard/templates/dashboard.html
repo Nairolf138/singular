@@ -1,0 +1,124 @@
+<html>
+<head><title>Tableau de bord Singular</title></head>
+<body>
+<h1>Tableau de bord Singular</h1>
+<nav>
+  <strong>Navigation :</strong>
+  <a href="#cockpit">Cockpit</a> ·
+  <a href="#timeline-section">Timeline</a> ·
+  <a href="#vies">Vies</a> ·
+  <a href="#logs-live">Logs</a> ·
+  <a href="#parametres">Paramètres</a>
+</nav>
+
+<section id="cockpit"><h2>Cockpit</h2>
+  <div id='cockpit-status'></div>
+  <p><strong>Qu’est-ce que ce score ?</strong> Le score de santé agrège stabilité sandbox, tendance récente et signal d’acceptation des mutations.</p>
+  <div style='display:grid;grid-template-columns:repeat(2,minmax(240px,1fr));gap:12px;'>
+    <div><h3>Score de santé</h3><pre id='kpi-health'></pre></div>
+    <div><h3>Tendance</h3><pre id='kpi-trend'></pre></div>
+    <div><h3>Taux de mutations acceptées</h3><pre id='kpi-accepted'></pre></div>
+    <div><h3>Alertes critiques</h3><pre id='kpi-alerts'></pre></div>
+  </div>
+  <h3>Dernière mutation notable</h3><pre id='kpi-notable'></pre>
+  <h3>Prochaine action recommandée</h3><pre id='kpi-next-action'></pre>
+  <h3>Actions suggérées</h3><pre id='kpi-actions'></pre>
+  <p><strong>Pourquoi cette alerte ?</strong> Une alerte critique apparaît si la santé chute fortement, si la stabilité de sandbox baisse, ou si trop de mutations sont refusées.</p>
+</section>
+
+<section id="parametres">
+  <h2>Paramètres</h2>
+  <h3>État psychique</h3><pre id='psyche'></pre>
+  <h3>Résumé écosystème</h3><pre id='ecosystem-summary'></pre>
+  <h3>Organismes</h3><pre id='organisms'></pre>
+</section>
+
+<section id="timeline-section">
+  <h2>Timeline des événements</h2>
+  <div id='timeline' style='display:flex;gap:8px;overflow:auto;white-space:nowrap;'></div>
+  <h3>Détail mutation</h3>
+  <p id='timeline-summary'>Cliquez sur un événement de mutation.</p>
+  <pre id='timeline-impact'></pre>
+  <pre id='timeline-diff' style='padding:12px;border:1px solid #ccc;'></pre>
+</section>
+
+<section id="vies"><h2>Vies · Tableau comparatif</h2>
+  <div style='display:flex;gap:12px;align-items:center;flex-wrap:wrap;'>
+    <label><input id='filter-active' type='checkbox'/> Actives seulement</label>
+    <label><input id='filter-degrading' type='checkbox'/> Seulement en dégradation</label>
+  </div>
+  <table id='lives-table' border='1' cellspacing='0' cellpadding='6' style='margin-top:8px;border-collapse:collapse;width:100%;'>
+    <thead><tr>
+      <th><button data-sort='score'>Score</button></th>
+      <th><button data-sort='trend'>Tendance</button></th>
+      <th><button data-sort='stability'>Stabilité</button></th>
+      <th><button data-sort='last_activity'>Dernière activité</button></th>
+      <th><button data-sort='iterations'>Itérations</button></th>
+      <th>Badges</th>
+    </tr></thead><tbody id='lives-table-body'></tbody>
+  </table>
+</section>
+
+<section id="actions"><h2>Actions rapides</h2><pre id='action-result'>Aucune exécution</pre>
+  <div style='display:flex;flex-direction:column;gap:8px;max-width:680px;'>
+    <label>Jeton dashboard <input id='action-token' type='password' placeholder='optionnel'/></label>
+    <label>Nom de vie (créer/utiliser) <input id='action-life-name' placeholder='Nouvelle vie'/></label>
+    <label>Prompt de discussion <input id='action-prompt' placeholder='Prompt unique'/></label>
+    <label>Budget boucle (s) <input id='action-budget' type='number' min='0.1' step='0.1' value='1.0'/></label>
+    <div style='display:flex;gap:8px;flex-wrap:wrap;'>
+      <button id='act-birth'>Créer vie</button><button id='act-talk'>Discuter</button><button id='act-loop'>Boucle</button>
+      <button id='act-report'>Rapport</button><button id='act-lives-list'>Lister vies</button><button id='act-lives-use'>Utiliser vie</button>
+    </div>
+  </div>
+</section>
+
+<section id="logs-live"><h2>Logs en direct</h2>
+  <div style='display:flex;gap:8px;align-items:center;flex-wrap:wrap;'>
+    <button id='live-toggle'>Pause</button>
+    <label><input id='live-autoscroll' type='checkbox' checked/> Défilement automatique</label>
+    <span id='live-status'>Lecture en direct</span>
+  </div>
+  <pre id='live-events' style='max-height:240px;overflow:auto;border:1px solid #ccc;padding:8px;'></pre>
+</section>
+
+<script>
+const ws=new WebSocket(`ws://${location.host}/ws`);
+const livesTableState={sortBy:'score',sortOrder:'desc'};
+const liveState={paused:false,autoScroll:true,events:[]};
+const loadEco=()=>fetch('/ecosystem').then(r=>r.json()).then(d=>{document.getElementById('ecosystem-summary').textContent=JSON.stringify(d.summary,null,2);document.getElementById('organisms').textContent=JSON.stringify(d.organisms,null,2);});
+const loadCockpit=()=>fetch('/api/cockpit').then(r=>r.json()).then(d=>{
+document.getElementById('cockpit-status').textContent=`Statut global: ${d.global_status}`;
+document.getElementById('kpi-health').textContent=d.health_score===null?'n/a':String(d.health_score);
+document.getElementById('kpi-trend').textContent=d.trend;
+document.getElementById('kpi-accepted').textContent=d.accepted_mutation_rate===null?'n/a':`${(d.accepted_mutation_rate*100).toFixed(1)}%`;
+document.getElementById('kpi-alerts').textContent=d.critical_alerts.length?JSON.stringify(d.critical_alerts,null,2):'Aucune alerte critique';
+document.getElementById('kpi-notable').textContent=d.last_notable_mutation?JSON.stringify(d.last_notable_mutation,null,2):'Aucune mutation notable';
+document.getElementById('kpi-next-action').textContent=d.next_action;
+document.getElementById('kpi-actions').textContent=JSON.stringify(d.suggested_actions,null,2);
+});
+const paintDiff=(raw)=>{const escaped=String(raw||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');return escaped.split('\n').map(line=>{if(line.startsWith('+')){return `<span style="color:#0a7f2e;">${line}</span>`;}if(line.startsWith('-')){return `<span style="color:#b42318;">${line}</span>`;}if(line.startsWith('@@')){return `<span style="color:#175cd3;">${line}</span>`;}return line;}).join('\n');};
+const showMutationDetail=(runId,index)=>fetch(`/api/runs/${runId}/mutations/${index}`).then(r=>r.json()).then(d=>{document.getElementById('timeline-summary').textContent=d.human_summary||d.decision_reason||'Aucun résumé disponible.';document.getElementById('timeline-impact').textContent=JSON.stringify(d.impact,null,2);document.getElementById('timeline-diff').innerHTML=paintDiff(d.diff)||'Aucun diff.';});
+const runAction=(action,payload)=>{const token=document.getElementById('action-token')?.value||'';const q=new URLSearchParams();if(token){q.set('token',token);}if(payload){q.set('payload',JSON.stringify(payload));}return fetch(`/api/actions/${action}?${q.toString()}`).then(async r=>{if(!r.ok){throw new Error(`HTTP ${r.status}`);}return r.json();}).then(data=>{document.getElementById('action-result').textContent=JSON.stringify(data,null,2);loadEco();loadCockpit();loadTimeline();}).catch(err=>{document.getElementById('action-result').textContent=`Erreur action ${action}: ${err.message}`;});};
+document.getElementById('act-birth').onclick=()=>runAction('birth',{name:document.getElementById('action-life-name').value||'Nouvelle vie'});
+document.getElementById('act-talk').onclick=()=>runAction('talk',{prompt:document.getElementById('action-prompt').value||''});
+document.getElementById('act-loop').onclick=()=>runAction('loop',{budget_seconds:Number(document.getElementById('action-budget').value||0)});
+document.getElementById('act-report').onclick=()=>runAction('report',{});
+document.getElementById('act-lives-list').onclick=()=>runAction('lives_list',{});
+document.getElementById('act-lives-use').onclick=()=>runAction('lives_use',{name:document.getElementById('action-life-name').value||''});
+const badge=(label,bg)=>`<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:${bg};margin-right:4px;">${label}</span>`;
+const renderLivesTable=(rows)=>{const body=document.getElementById('lives-table-body');body.innerHTML='';for(const row of rows||[]){const tr=document.createElement('tr');const score=row.current_health_score===null||row.current_health_score===undefined?'n/a':Number(row.current_health_score).toFixed(1);const stability=row.stability===null||row.stability===undefined?'n/a':`${(Number(row.stability)*100).toFixed(1)}%`;const lastActivity=row.last_activity||'n/a';let badges='';if(row.active){badges+=badge('active','#d1fadf');}else{badges+=badge('inactive','#fde2e1');}if(row.trend==='dégradation'){badges+=badge('dégradation','#ffe7c2');}if((row.alerts_count||0)>0){badges+=badge(`${row.alerts_count} alertes`,'#fecdca');}tr.innerHTML=`<td>${score}</td><td>${row.trend||'n/a'}</td><td>${stability}</td><td>${lastActivity}</td><td>${row.iterations??0}</td><td>${badges}</td>`;body.appendChild(tr);}if(!(rows||[]).length){const tr=document.createElement('tr');tr.innerHTML="<td colspan='6'>Aucune vie ne correspond aux filtres.</td>";body.appendChild(tr);}};
+const loadLivesBoard=()=>{const q=new URLSearchParams();q.set('sort_by',livesTableState.sortBy);q.set('sort_order',livesTableState.sortOrder);if(document.getElementById('filter-active').checked){q.set('active_only','true');}if(document.getElementById('filter-degrading').checked){q.set('degrading_only','true');}return fetch(`/lives/comparison?${q.toString()}`).then(r=>r.json()).then(d=>renderLivesTable(d.table||[]));};
+for(const button of document.querySelectorAll('#lives-table [data-sort]')){button.onclick=()=>{const next=button.getAttribute('data-sort');if(livesTableState.sortBy===next){livesTableState.sortOrder=livesTableState.sortOrder==='desc'?'asc':'desc';}else{livesTableState.sortBy=next;livesTableState.sortOrder='desc';}loadLivesBoard();};}
+document.getElementById('filter-active').onchange=()=>loadLivesBoard();
+document.getElementById('filter-degrading').onchange=()=>loadLivesBoard();
+const renderLiveEvents=()=>{const pre=document.getElementById('live-events');const rows=liveState.events.map(item=>`${item.ts||'n/a'} | ${item.run_id||'n/a'} | ${item.event||'unknown'}`);pre.textContent=rows.join('\n');if(liveState.autoScroll){pre.scrollTop=pre.scrollHeight;}};
+const updateLiveStatus=()=>{document.getElementById('live-status').textContent=liveState.paused?'Pause activée':'Lecture en direct';document.getElementById('live-toggle').textContent=liveState.paused?'Reprendre':'Pause';};
+document.getElementById('live-toggle').onclick=()=>{liveState.paused=!liveState.paused;updateLiveStatus();if(!liveState.paused){renderLiveEvents();}};
+document.getElementById('live-autoscroll').onchange=e=>{liveState.autoScroll=Boolean(e.target.checked);if(liveState.autoScroll){renderLiveEvents();}};
+const loadTimeline=()=>fetch('/runs/latest').then(r=>r.json()).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}return fetch(`/api/runs/${meta.run}/timeline?page=1&page_size=120`).then(r=>r.json());}).then(data=>{const wrap=document.getElementById('timeline');const summary=document.getElementById('timeline-summary');const impact=document.getElementById('timeline-impact');const diff=document.getElementById('timeline-diff');wrap.innerHTML='';let mutationIndex=0;for(const item of data.items||[]){const row=document.createElement('div');row.style.display='inline-flex';row.style.gap='4px';const btn=document.createElement('button');btn.textContent=`${item.event} · ${item.timestamp||'n/a'}`;btn.style.padding='6px';row.appendChild(btn);if(item.event==='mutation'&&data.run_id){const currentIndex=mutationIndex;mutationIndex+=1;btn.onclick=()=>showMutationDetail(data.run_id,currentIndex);const link=document.createElement('a');link.href=`/runs/${data.run_id}/mutations/${currentIndex}`;link.textContent='Voir détail';link.style.alignSelf='center';row.appendChild(link);}wrap.appendChild(row);}if(!(data.items||[]).length){summary.textContent='Aucun événement de frise disponible.';impact.textContent='';diff.textContent='';}});
+loadEco();loadCockpit();loadTimeline();loadLivesBoard();setInterval(()=>{loadEco();loadCockpit();loadTimeline();loadLivesBoard();},500);
+updateLiveStatus();
+ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);return;}if(typeof m.run_id==='string'&&typeof m.event==='string'){liveState.events.push({type:m.type,run_id:m.run_id,event:m.event,ts:m.ts||null});if(!liveState.paused){renderLiveEvents();}}};
+</script>
+</body>
+</html>

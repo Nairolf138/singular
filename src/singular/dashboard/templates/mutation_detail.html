@@ -1,0 +1,23 @@
+<html><head><title>Détail mutation</title></head><body>
+<h1>Détail mutation · run __RUN_ID__ · index __INDEX__</h1>
+<p><a href='/'>← Retour tableau de bord</a></p>
+<h2>Résumé naturel</h2><pre id='summary'>Chargement...</pre>
+<h2>Impact mesuré (score/perf/santé)</h2><pre id='impact'></pre>
+<h2>Diff coloré</h2><pre id='diff' style='padding:12px;border:1px solid #ccc;'></pre>
+<h2>Métriques et AST</h2><pre id='metrics'></pre>
+<script>
+fetch('__MUTATION_API_URL__').then(r=>r.json()).then(d=>{
+document.getElementById('summary').textContent=d.human_summary||d.decision_reason||'Aucun résumé disponible.';
+document.getElementById('impact').textContent=JSON.stringify(d.impact,null,2);
+document.getElementById('metrics').textContent=JSON.stringify(d.metrics,null,2);
+const raw=String(d.diff||'');
+const escaped=raw.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+const html=escaped.split('\n').map(line=>{
+if(line.startsWith('+')){return `<span style="color:#0a7f2e;">${line}</span>`;}
+if(line.startsWith('-')){return `<span style="color:#b42318;">${line}</span>`;}
+if(line.startsWith('@@')){return `<span style="color:#175cd3;">${line}</span>`;}
+return line;
+}).join('\n');
+document.getElementById('diff').innerHTML=html||'Aucun diff.';
+});
+</script></body></html>

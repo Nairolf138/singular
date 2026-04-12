@@ -176,15 +176,34 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "Cockpit" in body
     assert "Prochaine action recommandée" in body
     assert "/api/cockpit" in body
-    assert "Frise des événements" in body
+    assert "Timeline des événements" in body
     assert "timeline-diff" in body
     assert "Voir détail" in body
     assert "Vies · Tableau comparatif" in body
     assert "Actives seulement" in body
     assert "Seulement en dégradation" in body
-    assert "Événements live" in body
+    assert "Logs en direct" in body
     assert "live-autoscroll" in body
     assert "live-toggle" in body
+    assert "Qu’est-ce que ce score ?" in body
+    assert "Pourquoi cette alerte ?" in body
+    assert "Navigation" in body
+    assert "#cockpit" in body
+    assert "#timeline-section" in body
+    assert "#vies" in body
+    assert "#logs-live" in body
+    assert "#parametres" in body
+
+
+def test_dashboard_index_renders_main_sections(tmp_path: Path) -> None:
+    app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
+    body = TestClient(app).get("/").json()
+
+    assert "<section id=\"cockpit\">" in body
+    assert "<section id=\"timeline-section\">" in body
+    assert "<section id=\"vies\">" in body
+    assert "<section id=\"logs-live\">" in body
+    assert "<section id=\"parametres\">" in body
 
 
 def test_dashboard_timeline_comparison_and_top_mutations(tmp_path: Path) -> None:
@@ -640,6 +659,8 @@ def test_dashboard_actions_endpoint_and_ui_panel(tmp_path: Path, monkeypatch: py
     body = client.get("/").json()
     assert "Actions rapides" in body
     assert "action-result" in body
+    assert "Créer vie" in body
+    assert "Discuter" in body
 
     ok = app._routes["/api/actions/{action}"]("lives_list", token="secret", payload="{}")
     assert ok["ok"] is True
