@@ -185,7 +185,7 @@ Si PowerShell affiche que `singular` n’est pas reconnu, vérifiez le dossier
 1. Exécutez le diagnostic intégré :
 
    ```powershell
-   singular doctor
+   python -m singular doctor
    ```
 
    Cette commande affiche :
@@ -193,9 +193,11 @@ Si PowerShell affiche que `singular` n’est pas reconnu, vérifiez le dossier
    - le dossier `Scripts` utilisateur détecté ;
    - si ce dossier est présent dans `PATH` ;
    - la version installée de `singular`.
+   Tant que l’entrypoint `singular` n’est pas résolu dans `PATH`, utilisez
+   `python -m singular ...`.
 
 2. Si le diagnostic indique que `Scripts` n’est pas dans `PATH`, copiez-collez
-   les commandes proposées par `singular doctor` dans PowerShell.
+   les commandes proposées par `python -m singular doctor` dans PowerShell.
 
 3. Alternative manuelle (si `singular` est indisponible), récupérez d’abord la
    base utilisateur Python :
@@ -210,11 +212,13 @@ Si PowerShell affiche que `singular` n’est pas reconnu, vérifiez le dossier
    **Modifier** → **Nouveau**, puis collez ce chemin.
 6. Enregistrez, **fermez puis redémarrez PowerShell** (ou votre terminal) pour
    recharger le `PATH`.
-7. Vérifiez ensuite :
+7. Vérifiez ensuite (puis, une fois le `PATH` corrigé, confirmez la résolution
+   de l’entrypoint) :
 
    ```powershell
+   python -m singular --help
+   python -m singular doctor
    Get-Command singular
-   singular --help
    ```
 
 > Le segment `Python313` dépend de votre version Python (par ex. `Python312`,
