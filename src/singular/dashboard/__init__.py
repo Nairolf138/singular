@@ -171,6 +171,117 @@ def create_app(
         files = _iter_run_files()
         return files[-1] if files else None
 
+    def _summarize_cockpit() -> dict[str, object]:
+        latest = _latest_run_file()
+        if latest is None:
+            empty = {
+                "run": None,
+                "health_score": None,
+                "trend": "plateau",
+                "accepted_mutation_rate": None,
+                "critical_alerts": [],
+                "last_notable_mutation": None,
+                "next_action": "Aucune donnée: démarrer un run pour remplir le cockpit.",
+                "suggested_actions": [
+                    "Lancer un run de base",
+                    "Vérifier la collecte des métriques",
+                ],
+                "global_status": "unknown",
+            }
+            return empty
+
+        records = _read_jsonl_records(latest)
+        mutations = [record for record in records if _is_mutation_record(record)]
+
+        accepted_values: list[bool] = []
+        for record in mutations:
+            accepted = record.get("accepted")
+            if not isinstance(accepted, bool):
+                accepted = record.get("ok")
+            if isinstance(accepted, bool):
+                accepted_values.append(accepted)
+
+        accepted_rate = None
+        if accepted_values:
+            accepted_rate = sum(1 for value in accepted_values if value) / len(accepted_values)
+
+        health_scores: list[float] = []
+        for record in records:
+            health = record.get("health")
+            if isinstance(health, dict):
+                score = _as_float(health.get("score"))
+                if score is not None:
+                    health_scores.append(score)
+        health_score = health_scores[-1] if health_scores else None
+
+        trend = "plateau"
+        if len(health_scores) >= 2:
+            window = health_scores[-5:]
+            first = window[0]
+            last = window[-1]
+            if last > first + 1.0:
+                trend = "amélioration"
+            elif last < first - 1.0:
+                trend = "dégradation"
+
+        alerts = alerts_from_records(records)
+        critical_alerts = [
+            alert
+            for alert in alerts
+            if str(alert.get("severity", "")).lower() in {"critical", "high"}
+        ]
+
+        last_notable_mutation = None
+        for record in reversed(mutations):
+            score_base = _as_float(record.get("score_base"))
+            score_new = _as_float(record.get("score_new"))
+            delta = None
+            if score_base is not None and score_new is not None:
+                delta = score_base - score_new
+            if isinstance(delta, (int, float)) and abs(delta) >= 1.0:
+                accepted = record.get("accepted")
+                if not isinstance(accepted, bool):
+                    accepted = record.get("ok")
+                last_notable_mutation = {
+                    "timestamp": record.get("ts"),
+                    "operator": record.get("operator", record.get("op")),
+                    "accepted": accepted,
+                    "impact_delta": delta,
+                    "life": _record_life(record),
+                }
+                break
+
+        suggested_actions: list[str] = []
+        alert_kinds = {str(alert.get("kind", "")) for alert in critical_alerts}
+        if "sandbox_failures_rising" in alert_kinds:
+            suggested_actions.append("Vérifier provider et sandbox (timeouts, quotas, erreurs IO)")
+        if "prolonged_stagnation" in alert_kinds:
+            suggested_actions.append("Changer run-id et réduire l'exploration agressive")
+        if "health_decline" in alert_kinds:
+            suggested_actions.append("Ralentir l'exploration et privilégier les mutations sûres")
+        if not suggested_actions:
+            suggested_actions.append("Continuer avec les paramètres actuels et surveiller les alertes")
+
+        next_action = suggested_actions[0]
+        if critical_alerts:
+            global_status = "critical"
+        elif trend == "dégradation":
+            global_status = "warning"
+        else:
+            global_status = "stable"
+
+        return {
+            "run": latest.stem,
+            "health_score": health_score,
+            "trend": trend,
+            "accepted_mutation_rate": accepted_rate,
+            "critical_alerts": critical_alerts,
+            "last_notable_mutation": last_notable_mutation,
+            "next_action": next_action,
+            "suggested_actions": suggested_actions,
+            "global_status": global_status,
+        }
+
 
     @app.get("/logs")
     def read_logs() -> dict[str, str]:
@@ -246,6 +357,10 @@ def create_app(
                 "last_timestamp": last_timestamp,
             },
         }
+
+    @app.get("/api/cockpit")
+    def read_cockpit() -> dict[str, object]:
+        return _summarize_cockpit()
 
     @app.get("/timeline")
     def read_timeline(
@@ -494,13 +609,35 @@ def create_app(
         return (
             "<html><head><title>Singular Dashboard</title></head><body>"
             "<h1>Singular Dashboard</h1>"
+            "<section><h2>Cockpit</h2>"
+            "<div id='cockpit-status'></div>"
+            "<div style='display:grid;grid-template-columns:repeat(2,minmax(240px,1fr));gap:12px;'>"
+            "<div><h3>Score santé</h3><pre id='kpi-health'></pre></div>"
+            "<div><h3>Tendance</h3><pre id='kpi-trend'></pre></div>"
+            "<div><h3>Taux mutations acceptées</h3><pre id='kpi-accepted'></pre></div>"
+            "<div><h3>Alertes critiques</h3><pre id='kpi-alerts'></pre></div>"
+            "</div>"
+            "<h3>Dernière mutation notable</h3><pre id='kpi-notable'></pre>"
+            "<h3>Prochaine action recommandée</h3><pre id='kpi-next-action'></pre>"
+            "<h3>Actions suggérées</h3><pre id='kpi-actions'></pre>"
+            "</section>"
             "<h2>Psyche</h2><pre id='psyche'></pre>"
             "<h2>Ecosystem Summary</h2><pre id='ecosystem-summary'></pre>"
             "<h2>Organisms</h2><pre id='organisms'></pre>"
             "<h2>Runs</h2><div id='logs'></div>"
             "<script>const ws=new WebSocket(`ws://${location.host}/ws`);"
             "const loadEco=()=>fetch('/ecosystem').then(r=>r.json()).then(d=>{document.getElementById('ecosystem-summary').textContent=JSON.stringify(d.summary,null,2);document.getElementById('organisms').textContent=JSON.stringify(d.organisms,null,2);});"
-            "loadEco();setInterval(loadEco,500);"
+            "const loadCockpit=()=>fetch('/api/cockpit').then(r=>r.json()).then(d=>{"
+            "document.getElementById('cockpit-status').textContent=`Statut global: ${d.global_status}`;"
+            "document.getElementById('kpi-health').textContent=d.health_score===null?'n/a':String(d.health_score);"
+            "document.getElementById('kpi-trend').textContent=d.trend;"
+            "document.getElementById('kpi-accepted').textContent=d.accepted_mutation_rate===null?'n/a':`${(d.accepted_mutation_rate*100).toFixed(1)}%`;"
+            "document.getElementById('kpi-alerts').textContent=d.critical_alerts.length?JSON.stringify(d.critical_alerts,null,2):'Aucune alerte critique';"
+            "document.getElementById('kpi-notable').textContent=d.last_notable_mutation?JSON.stringify(d.last_notable_mutation,null,2):'Aucune mutation notable';"
+            "document.getElementById('kpi-next-action').textContent=d.next_action;"
+            "document.getElementById('kpi-actions').textContent=JSON.stringify(d.suggested_actions,null,2);"
+            "});"
+            "loadEco();loadCockpit();setInterval(()=>{loadEco();loadCockpit();},500);"
             "ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);}else if(m.type==='logs'){const d=document.getElementById('logs');for(const [n,entries] of Object.entries(m.data)){let pre=document.getElementById(`log-${n}`);if(!pre){pre=document.createElement('pre');pre.id=`log-${n}`;pre.textContent=n+'\n';d.appendChild(pre);}for(const entry of entries){pre.textContent+=entry+'\n';}}}};"
             "</script></body></html>"
         )
