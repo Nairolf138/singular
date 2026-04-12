@@ -471,7 +471,9 @@ def test_run_mutation_detail_endpoint_returns_diff_metrics_and_ast(tmp_path: Pat
     }
 
 
-def test_lives_comparison_table_aggregation_filters_and_sorting(tmp_path: Path) -> None:
+def test_lives_comparison_table_aggregation_filters_and_sorting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
     (runs_dir / "multi.jsonl").write_text(
@@ -531,16 +533,33 @@ def test_lives_comparison_table_aggregation_filters_and_sorting(tmp_path: Path) 
     )
 
     app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    monkeypatch.setattr(
+        "singular.dashboard.load_registry",
+        lambda: {
+            "active": "life-c",
+            "lives": {
+                "life-a": {"slug": "life-a", "name": "Life A"},
+                "life-b": {"slug": "life-b", "name": "Life B"},
+                "life-c": {"slug": "life-c", "name": "Life C"},
+            },
+        },
+    )
     route = app._routes["/lives/comparison"]
 
     payload = route(sort_by="score", sort_order="desc")
     table = payload["table"]
     assert [row["life"] for row in table] == ["life-c", "life-a", "life-b"]
     assert payload["lives"]["life-a"]["trend"] == "dégradation"
+    assert payload["lives"]["life-a"]["selected"] is False
+    assert payload["lives"]["life-a"]["alive"] is True
     assert payload["lives"]["life-a"]["active"] is True
     assert payload["lives"]["life-a"]["iterations"] == 2
     assert isinstance(payload["lives"]["life-a"]["alerts_count"], int)
+    assert payload["lives"]["life-b"]["selected"] is False
+    assert payload["lives"]["life-b"]["alive"] is False
     assert payload["lives"]["life-b"]["active"] is False
+    assert payload["lives"]["life-c"]["selected"] is True
+    assert payload["lives"]["life-c"]["alive"] is True
     assert payload["lives"]["life-c"]["stability"] == 0.99
 
     active_only = route(active_only=True)["table"]
