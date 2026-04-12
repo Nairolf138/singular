@@ -94,7 +94,7 @@ def crossover(
     if needs_return and not has_return:
         raise ValueError("hybrid function missing required return statement")
 
-    new_func = ast.FunctionDef(
+    new_func = ast.FunctionDef(  # type: ignore[call-overload]
         name=f"hybrid_{func_a.name}_{func_b.name}",
         args=func_a.args,
         body=new_body,

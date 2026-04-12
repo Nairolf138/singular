@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, TypeAlias
 
 from .interpreter import ALLOWED_OPS
 
@@ -118,8 +118,11 @@ OPERATOR_SCHEMA: Dict[str, Any] = {
 }
 
 
+TypeSpec: TypeAlias = type[Any] | tuple[type[Any], ...]
+
+
 def _check_type(value: Any, expected: str, location: str) -> None:
-    type_map = {
+    type_map: Dict[str, TypeSpec] = {
         "object": dict,
         "array": list,
         "string": str,
@@ -127,7 +130,12 @@ def _check_type(value: Any, expected: str, location: str) -> None:
         "number": (int, float),
         "boolean": bool,
     }
-    if expected and not isinstance(value, type_map.get(expected, object)):
+    if not expected:
+        return
+    expected_type = type_map.get(expected)
+    if expected_type is None:
+        return
+    if not isinstance(value, expected_type):
         raise VerificationError(f"{location} must be of type {expected}")
 
 
