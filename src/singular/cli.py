@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import os
 import random
 import sys
@@ -134,6 +135,111 @@ def _doctor(*, fix: bool = False) -> None:
     if fix:
         print("\nApplication du correctif automatique (`--fix`)…")
         _doctor_fix_windows_user_path(scripts_path)
+
+
+def _mask_api_key(api_key: str) -> str:
+    """Return a masked API key string safe for display."""
+
+    if not api_key:
+        return "(vide)"
+    if len(api_key) <= 7:
+        return "sk-****..."
+    return f"{api_key[:3]}****...{api_key[-4:]}"
+
+
+def _validate_openai_api_key(api_key: str) -> list[str]:
+    """Return non-blocking validation warnings for an OpenAI API key."""
+
+    warnings: list[str] = []
+    if not api_key.strip():
+        warnings.append("clé vide")
+        return warnings
+    if not api_key.startswith("sk-"):
+        warnings.append("préfixe inattendu (attendu: sk-)")
+    if len(api_key) < 12:
+        warnings.append("longueur inhabituelle (très courte)")
+    return warnings
+
+
+def _set_windows_user_env_var(name: str, value: str) -> None:
+    """Persist an environment variable in HKCU\\Environment on Windows."""
+
+    import winreg as _winreg
+
+    winreg: Any = _winreg
+    with winreg.OpenKey(
+        winreg.HKEY_CURRENT_USER,
+        "Environment",
+        0,
+        winreg.KEY_READ | winreg.KEY_SET_VALUE,
+    ) as key:
+        winreg.SetValueEx(key, name, 0, winreg.REG_EXPAND_SZ, value)
+
+
+def _append_export_to_shell_profile(profile_path: Path, api_key: str) -> bool:
+    """Append OPENAI_API_KEY export line to a shell profile (idempotent)."""
+
+    profile = profile_path.expanduser()
+    profile.parent.mkdir(parents=True, exist_ok=True)
+    export_line = f"export OPENAI_API_KEY='{api_key}'"
+    existing = profile.read_text(encoding="utf-8") if profile.exists() else ""
+    if export_line in existing:
+        print(f"✅ La configuration existe déjà dans {profile}.")
+        return False
+    with profile.open("a", encoding="utf-8") as handle:
+        if existing and not existing.endswith("\n"):
+            handle.write("\n")
+        handle.write(f"{export_line}\n")
+    print(f"✅ Variable OPENAI_API_KEY ajoutée à {profile}.")
+    return True
+
+
+def _configure_openai(api_key: str, *, shell_profile: str | None, test: bool) -> int:
+    """Configure OPENAI_API_KEY for current platform and optionally test it."""
+
+    warnings = _validate_openai_api_key(api_key)
+    if "clé vide" in warnings:
+        print("❌ Clé API vide: configuration annulée.", file=sys.stderr)
+        return 1
+    for warning in warnings:
+        print(f"⚠️ Validation clé API: {warning}.")
+
+    os.environ["OPENAI_API_KEY"] = api_key
+    masked_key = _mask_api_key(api_key)
+    print(f"✅ Clé OpenAI chargée (masquée): {masked_key}")
+
+    if os.name == "nt":
+        _set_windows_user_env_var("OPENAI_API_KEY", api_key)
+        print("✅ OPENAI_API_KEY enregistrée dans HKCU\\Environment.")
+        print("➡️ Veuillez redémarrer PowerShell pour recharger l'environnement.")
+    else:
+        if shell_profile:
+            profile_path = Path(shell_profile)
+            answer = input(
+                f"Confirmer l'écriture dans {profile_path.expanduser()} ? "
+                "Tapez OUI pour confirmer: "
+            )
+            if answer.strip() == "OUI":
+                _append_export_to_shell_profile(profile_path, api_key)
+                print("➡️ Ouvrez un nouveau shell (ou `source` le profil) pour appliquer.")
+            else:
+                print("Écriture annulée. Aucune persistance shell effectuée.")
+        else:
+            print("Pour persister la clé sur Linux/macOS, ajoutez à votre profil shell:")
+            print("export OPENAI_API_KEY='sk-...'")
+
+    if test:
+        from .providers import llm_openai
+
+        reply = llm_openai.generate_reply("Reply with: ok")
+        if reply in {
+            "OpenAI API key not configured.",
+            "Error communicating with OpenAI.",
+        }:
+            print(f"❌ Test OpenAI échoué: {reply}")
+            return 1
+        print("✅ Test OpenAI réussi (provider joignable).")
+    return 0
 
 
 def _preparse_environment(argv: list[str] | None) -> argparse.Namespace:
@@ -285,6 +391,28 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Try to add user Scripts directory to user Path on Windows",
     )
+    config_parser = subparsers.add_parser("config", help="Configure providers and env")
+    config_subparsers = config_parser.add_subparsers(
+        dest="config_command", required=True
+    )
+    config_openai_parser = config_subparsers.add_parser(
+        "openai", help="Configure OPENAI_API_KEY"
+    )
+    config_openai_parser.add_argument(
+        "--api-key",
+        default=None,
+        help="OpenAI API key (non-interactive mode, useful in CI)",
+    )
+    config_openai_parser.add_argument(
+        "--shell-profile",
+        default=None,
+        help="Shell profile path to append export (e.g. ~/.bashrc or ~/.zshrc)",
+    )
+    config_openai_parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Run a short provider ping after configuration",
+    )
 
     lives_parser = subparsers.add_parser("lives", help="Manage lives")
     lives_subparsers = lives_parser.add_subparsers(dest="lives_command", required=True)
@@ -429,6 +557,19 @@ def main(argv: list[str] | None = None) -> int:
 
     elif args.command == "doctor":
         _doctor(fix=args.fix)
+
+    elif args.command == "config":
+        if args.config_command == "openai":
+            api_key = (
+                args.api_key
+                if args.api_key is not None
+                else getpass.getpass("OpenAI API key (input hidden): ").strip()
+            )
+            return _configure_openai(
+                api_key,
+                shell_profile=args.shell_profile,
+                test=args.test,
+            )
 
     elif args.command == "lives":
         if args.lives_command == "list":

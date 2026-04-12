@@ -245,6 +245,16 @@ Les variables d'environnement suivantes contrôlent le comportement :
 - `SINGULAR_RUNS_KEEP` : nombre de journaux `runs/` conservés (20 par défaut).
 - `OPENAI_API_KEY` : clé API requise si l'option OpenAI est activée.
 
+Vous pouvez configurer la clé OpenAI directement via la CLI :
+
+```bash
+# mode interactif (saisie masquée)
+singular config openai
+
+# mode non interactif (CI) + test rapide provider
+singular config openai --api-key sk-... --test
+```
+
 Exemples :
 
 ```bash
