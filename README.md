@@ -66,6 +66,27 @@ Les sous-commandes qui consultent la mémoire (``talk``, ``run``, ``loop``,
 sélectionnée. Utilisez ``singular lives delete <nom>`` pour supprimer une vie et
 libérer son espace disque.
 
+## 🧹 Désinstallation
+
+Singular propose une sous-commande pour nettoyer les données stockées dans
+``SINGULAR_ROOT`` (ou via ``--root``). Deux modes explicites existent :
+
+- conserver les vies et supprimer uniquement les artefacts globaux techniques
+  (``mem/`` et ``runs/`` à la racine) ;
+- purger toutes les données Singular (``lives/``, ``mem/``, ``runs/``).
+
+```bash
+python -m singular uninstall --keep-lives --yes
+python -m singular uninstall --purge-lives --yes
+```
+
+> Cette commande nettoie les données, mais ne désinstalle pas le package
+> Python. Pour retirer le package, utilisez :
+>
+> ```bash
+> pip uninstall singular
+> ```
+
 ## 🧬 Reproduction
 
 ```bash
