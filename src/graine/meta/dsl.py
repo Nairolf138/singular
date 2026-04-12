@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Any
+from typing import Dict, List, Any, cast
 
 from graine.evolver.dsl import OPERATOR_NAMES
 from graine.kernel.verifier import DIFF_LIMIT
@@ -43,13 +43,39 @@ class MetaSpec:
 
     @classmethod
     def from_dict(cls, data: Dict[str, object]) -> "MetaSpec":
+        weights_raw = data.get("weights", {})
+        operator_mix_raw = data.get("operator_mix", {})
+        forbidden_raw = data.get("forbidden", [])
+
+        weights = cast(
+            Dict[str, float], weights_raw if isinstance(weights_raw, dict) else {}
+        )
+        operator_mix = cast(
+            Dict[str, float],
+            operator_mix_raw if isinstance(operator_mix_raw, dict) else {},
+        )
+        forbidden = cast(
+            List[str], forbidden_raw if isinstance(forbidden_raw, list) else []
+        )
+
+        population_cap_raw = data.get("population_cap", 0)
+        diff_max_raw = data.get("diff_max", DIFF_LIMIT)
+
         return cls(
-            weights=dict(data.get("weights", {})),
-            operator_mix=dict(data.get("operator_mix", {})),
-            population_cap=int(data.get("population_cap", 0)),
+            weights=weights,
+            operator_mix=operator_mix,
+            population_cap=(
+                int(population_cap_raw)
+                if isinstance(population_cap_raw, (int, str))
+                else 0
+            ),
             selection_strategy=str(data.get("selection_strategy", "elitism")),
-            diff_max=int(data.get("diff_max", DIFF_LIMIT)),
-            forbidden=list(data.get("forbidden", [])),
+            diff_max=(
+                int(diff_max_raw)
+                if isinstance(diff_max_raw, (int, str))
+                else DIFF_LIMIT
+            ),
+            forbidden=forbidden,
         )
 
     def validate(self) -> bool:

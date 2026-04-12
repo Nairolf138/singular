@@ -7,7 +7,13 @@ import os
 import random
 import statistics
 import time
-from typing import Callable, Dict, Iterable, List, Tuple
+from typing import Callable, Dict, Iterable, List, TypedDict
+
+
+class BenchmarkResult(TypedDict):
+    median: float
+    iqr: float
+    ic95: tuple[float, float]
 
 
 def benchmark(
@@ -17,7 +23,7 @@ def benchmark(
     warmups: int = 5,
     bootstrap_samples: int = 1000,
     cpu: int | None = 0,
-) -> Dict[str, Tuple[float, float]]:
+) -> BenchmarkResult:
     """Return benchmark statistics for ``func``.
 
     The function performs a configurable number of warm-up runs before

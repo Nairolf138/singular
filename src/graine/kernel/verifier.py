@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, TypeAlias
 
 from .interpreter import ALLOWED_OPS
 
@@ -118,8 +118,11 @@ OPERATOR_SCHEMA: Dict[str, Any] = {
 }
 
 
+TypeSpec: TypeAlias = type[Any] | tuple[type[Any], ...]
+
+
 def _check_type(value: Any, expected: str, location: str) -> None:
-    type_map = {
+    type_map: Dict[str, TypeSpec] = {
         "object": dict,
         "array": list,
         "string": str,
@@ -127,7 +130,12 @@ def _check_type(value: Any, expected: str, location: str) -> None:
         "number": (int, float),
         "boolean": bool,
     }
-    if expected and not isinstance(value, type_map.get(expected, object)):
+    if not expected:
+        return
+    expected_type = type_map.get(expected)
+    if expected_type is None:
+        return
+    if not isinstance(value, expected_type):
         raise VerificationError(f"{location} must be of type {expected}")
 
 
@@ -222,10 +230,17 @@ def _parse_simple_yaml(file_path: str) -> Dict[str, Any]:
     return data
 
 
+def _resolve_graine_path(path: str) -> str:
+    if os.path.isabs(path):
+        return path
+    package_root = os.path.dirname(os.path.dirname(__file__))
+    return os.path.join(package_root, path)
+
+
 def load_objectives(path: str = "configs/objectives.yaml") -> Dict[str, Any]:
     """Load and validate objective configuration."""
 
-    file_path = path if os.path.isabs(path) else f"graine/{path}"
+    file_path = _resolve_graine_path(path)
     data = _parse_simple_yaml(file_path)
     verify_objectives(data)
     return data
@@ -238,7 +253,7 @@ def verify_objectives(obj: Dict[str, Any]) -> None:
 def load_operators(path: str = "configs/operators.yaml") -> Dict[str, Any]:
     """Load and validate operator configuration."""
 
-    file_path = path if os.path.isabs(path) else f"graine/{path}"
+    file_path = _resolve_graine_path(path)
     data = _parse_simple_yaml(file_path)
     verify_operators(data)
     return data
@@ -254,7 +269,7 @@ def verify_operators(ops: Dict[str, Any]) -> None:
 def load_zones(path: str = "configs/zones.yaml") -> Dict[str, Any]:
     """Load zone configuration without external YAML dependencies."""
 
-    file_path = path if os.path.isabs(path) else f"graine/{path}"
+    file_path = _resolve_graine_path(path)
     zones: List[Dict[str, Any]] = []
     zone: Dict[str, Any] | None = None
     in_ops = False

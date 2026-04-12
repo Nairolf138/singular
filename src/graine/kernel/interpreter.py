@@ -8,7 +8,7 @@ import time
 from typing import Any, Dict, Callable, Optional, Set
 
 try:  # pragma: no cover - psutil is optional
-    import psutil
+    import psutil  # type: ignore[import-untyped]
 except Exception:  # pragma: no cover - fallback if psutil missing
     psutil = None  # type: ignore[assignment]
 
@@ -130,6 +130,8 @@ def execute(op: Dict[str, Any]) -> None:
     """
 
     name = op.get("op")
+    if not isinstance(name, str):
+        raise RuntimeError("Operation name must be a string")
     func = OPERATIONS.get(name)
     if func is None:
         raise RuntimeError(f"Forbidden operation: {name}")

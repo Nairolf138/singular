@@ -39,7 +39,7 @@ def _delta_perf(history: List[Dict[str, float]]) -> List[float]:
 
 
 def _acceptance_rates(operations: Iterable[Dict[str, Any]] | None) -> Dict[str, float]:
-    counts: Dict[str, Tuple[int, int]] = defaultdict(lambda: [0, 0])
+    counts: Dict[str, Tuple[int, int]] = defaultdict(lambda: (0, 0))
     if operations is None:
         return {}
     for op in operations:
