@@ -28,6 +28,7 @@ from . import sandbox
 from .death import DeathMonitor
 from .reproduction import crossover
 from .map_elites import MapElites
+from .test_coevolution import LivingTestPool, propose_test_candidates
 
 # mypy: ignore-errors
 
@@ -253,6 +254,10 @@ def run(
     map_elites: MapElites | None = None,
     resource_manager: ResourceManager | None = None,
     test_runner: Callable[[], int] | None = None,
+    coevolve_tests: bool = False,
+    test_pool: LivingTestPool | None = None,
+    robustness_weight: float = 1.0,
+    max_test_candidates: int = 3,
 ) -> Checkpoint:
     """Run the evolutionary loop for at most ``budget_seconds`` seconds.
 
@@ -302,6 +307,8 @@ def run(
     mortality = mortality or DeathMonitor()
     seen_diffs: set[str] = set()
     sleep_ticks_remaining = 0
+    if coevolve_tests and test_pool is None:
+        test_pool = LivingTestPool()
 
     with RunLogger(run_id, psyche=psyche) as logger:
         delayed: list[tuple[float, str, Path]] = []
@@ -402,6 +409,28 @@ def run(
                 if map_elites
                 else mutated_score <= base_score
             )
+            detection_rate = 0.0
+            test_delta = {"added": 0, "removed": 0}
+            if coevolve_tests and test_pool is not None:
+                detection_rate = test_pool.regression_detection_rate(original, mutated)
+                combined_mutated = mutated_score + (robustness_weight * detection_rate)
+                combined_base = base_score
+                accepted = combined_mutated <= combined_base
+                if accepted:
+                    candidates = propose_test_candidates(mutated, rng, max_test_candidates)
+                    test_delta = test_pool.evolve(mutated, candidates, rng)
+                logger.log_test_coevolution(
+                    skill=skill_path.stem,
+                    accepted=accepted,
+                    pool_size=len(test_pool.tests),
+                    added=test_delta["added"],
+                    removed=test_delta["removed"],
+                    detection_rate=detection_rate,
+                    score_base=base_score,
+                    score_new=mutated_score,
+                    score_combined_base=combined_base,
+                    score_combined_new=combined_mutated,
+                )
             if accepted:
                 skill_path.write_text(mutated, encoding="utf-8")
                 key = (
