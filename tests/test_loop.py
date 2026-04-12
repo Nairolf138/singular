@@ -13,7 +13,7 @@ sys.path.append(str(root_dir))
 sys.path.append(str(root_dir / "src"))
 
 import singular.life.loop as life_loop  # noqa: E402
-from singular.life.loop import run, load_checkpoint, log_mutation, manage_resources  # noqa: E402
+from singular.life.loop import run, load_checkpoint  # noqa: E402
 from singular.resource_manager import ResourceManager  # noqa: E402
 from singular.psyche import Psyche, Mood  # noqa: E402
 
@@ -502,7 +502,7 @@ def test_irrational_curiosity(tmp_path: Path, monkeypatch):
     assert "mutation absurde" in content
     logs = list((tmp_path / "logs").glob("loop-*.jsonl"))
     assert logs, "log file not created"
-    records = [json.loads(l) for l in logs[0].read_text().splitlines()]
+    records = [json.loads(line) for line in logs[0].read_text().splitlines()]
     assert any(rec.get("event") == "absurde" for rec in records)
     assert any(ep.get("event") == "absurde" for ep in episodes)
 

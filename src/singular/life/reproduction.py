@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Utilities for reproducing organisms by combining skills.
 
 Limitations
@@ -19,6 +17,8 @@ with a few constraints:
 The algorithm performs no semantic analysis beyond these checks; generated code
 may still be meaningless even though it is syntactically valid.
 """
+
+from __future__ import annotations
 
 import ast
 import random

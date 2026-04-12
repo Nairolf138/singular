@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Perception utilities.
 
 This module provides a :func:`capture_signals` function that gathers basic
@@ -9,11 +7,13 @@ supply real-world data by reading from a file or querying a weather API.  Any
 failures in these connectors are ignored so that perception always succeeds.
 """
 
-from pathlib import Path
+from __future__ import annotations
+
 import os
 import random
 import time
 from typing import Any, Dict
+from pathlib import Path
 
 
 def _read_optional_file() -> Dict[str, Any]:

@@ -117,7 +117,7 @@ def _doctor(*, fix: bool = False) -> None:
         "'User'"
         ")"
     )
-    print(f"$env:Path = [Environment]::GetEnvironmentVariable('Path', 'User')")
+    print("$env:Path = [Environment]::GetEnvironmentVariable('Path', 'User')")
     print("Get-Command singular")
     print("singular --help")
 

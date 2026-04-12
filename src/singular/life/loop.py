@@ -305,13 +305,6 @@ def run(
                     psyche.save_state()
                 continue
 
-            freq = max(
-                1,
-                int(
-                    getattr(psyche, "mutation_rate", 1.0)
-                    * (getattr(psyche, "energy", 100.0) / 100)
-                ),
-            )
             resource_manager.metabolize()
             signals = capture_signals()
             temp = get_temperature()

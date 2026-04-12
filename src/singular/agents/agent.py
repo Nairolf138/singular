@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Core agent implementation handling motivations and goals."""
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from random import choice, random

@@ -1,8 +1,8 @@
-from __future__ import annotations
-
 """Utility functions to evaluate the moral value of actions."""
 
-from typing import Dict, Any
+from __future__ import annotations
+
+from typing import Any, Dict
 
 
 def score_action(action: str, context: Dict[str, Any] | None = None) -> float:

@@ -1,8 +1,8 @@
-from __future__ import annotations
-
 """Reputation tracking based on moral evaluation of actions."""
 
-from typing import Dict, Any
+from __future__ import annotations
+
+from typing import Any, Dict
 
 from singular.morals.moral_rules import score_action
 

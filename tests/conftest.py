@@ -14,9 +14,9 @@ if str(tests_path) not in sys.path:
 
 os.environ["PYTHONPATH"] = f"{tests_path}{os.pathsep}" + os.environ.get("PYTHONPATH", "")
 
-import fastapi_stub
-import fastapi_stub.responses  # noqa: F401 - imported for side effect
-import fastapi_stub.testclient  # noqa: F401 - imported for side effect
+import fastapi_stub  # noqa: E402
+import fastapi_stub.responses  # noqa: E402,F401 - imported for side effect
+import fastapi_stub.testclient  # noqa: E402,F401 - imported for side effect
 
 sys.modules.setdefault("fastapi", fastapi_stub)
 sys.modules.setdefault("fastapi.responses", fastapi_stub.responses)

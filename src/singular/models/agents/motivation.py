@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Motivation data structure for agent needs."""
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Dict
