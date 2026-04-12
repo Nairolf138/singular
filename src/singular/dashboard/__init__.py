@@ -240,6 +240,51 @@ def create_app(
             "resume_at": record.get("resume_at"),
         }
 
+    def _normalize_mutation_metrics(record: dict[str, object]) -> dict[str, object]:
+        metrics = record.get("mutation_metrics")
+        if not isinstance(metrics, dict):
+            metrics = {}
+
+        lines_added = metrics.get("lines_added", record.get("lines_added"))
+        lines_removed = metrics.get("lines_removed", record.get("lines_removed"))
+        functions_modified = metrics.get(
+            "functions_modified", record.get("functions_modified")
+        )
+
+        return {
+            "lines_added": lines_added if isinstance(lines_added, int) else 0,
+            "lines_removed": lines_removed if isinstance(lines_removed, int) else 0,
+            "functions_modified": (
+                functions_modified if isinstance(functions_modified, list) else []
+            ),
+        }
+
+    def _mutation_detail(record: dict[str, object], run_id: str, index: int) -> dict[str, object]:
+        metrics = _normalize_mutation_metrics(record)
+        return {
+            "run_id": run_id,
+            "index": index,
+            "timestamp": record.get("ts"),
+            "operator": record.get("operator", record.get("op")),
+            "organism": _record_organism(record),
+            "human_summary": record.get("human_summary"),
+            "decision_reason": record.get("decision_reason", record.get("reason")),
+            "diff": record.get("diff"),
+            "metrics": {
+                **metrics,
+                "ast_before": record.get("ast_before"),
+                "ast_after": record.get("ast_after"),
+            },
+            "impact": {
+                "score_before": _as_float(record.get("score_base")),
+                "score_after": _as_float(record.get("score_new")),
+                "perf_ms_before": _as_float(record.get("ms_base")),
+                "perf_ms_after": _as_float(record.get("ms_new")),
+                "health_before": _as_float(record.get("health_base")),
+                "health_after": _as_float(record.get("health_new")),
+            },
+        }
+
     def _summarize_cockpit() -> dict[str, object]:
         latest = _latest_run_file()
         if latest is None:
@@ -458,6 +503,20 @@ def create_app(
             },
             "items": items,
         }
+
+    @app.get("/api/runs/{run_id}/mutations/{index}")
+    def read_run_mutation(run_id: str, index: int) -> dict[str, object]:
+        run_file = runs_path / f"{run_id}.jsonl"
+        if not run_file.exists():
+            raise HTTPException(status_code=404, detail=f"run '{run_id}' not found")
+
+        mutations = [record for record in _read_jsonl_records(run_file) if _is_mutation_record(record)]
+        if index < 0 or index >= len(mutations):
+            raise HTTPException(
+                status_code=404,
+                detail=f"mutation index {index} out of bounds for run '{run_id}'",
+            )
+        return _mutation_detail(mutations[index], run_id=run_id, index=index)
 
     @app.get("/runs/latest/summary")
     def read_latest_run_summary() -> dict[str, object]:
@@ -768,7 +827,10 @@ def create_app(
             "<h2>Organisms</h2><pre id='organisms'></pre>"
             "<h2>Frise des événements</h2>"
             "<div id='timeline' style='display:flex;gap:8px;overflow:auto;white-space:nowrap;'></div>"
-            "<h3>Détail événement</h3><pre id='timeline-detail'>Cliquez sur un événement.</pre>"
+            "<h3>Détail mutation</h3>"
+            "<p id='timeline-summary'>Cliquez sur un événement de mutation.</p>"
+            "<pre id='timeline-impact'></pre>"
+            "<pre id='timeline-diff' style='padding:12px;border:1px solid #ccc;'></pre>"
             "<h2>Runs</h2><div id='logs'></div>"
             "<script>const ws=new WebSocket(`ws://${location.host}/ws`);"
             "const loadEco=()=>fetch('/ecosystem').then(r=>r.json()).then(d=>{document.getElementById('ecosystem-summary').textContent=JSON.stringify(d.summary,null,2);document.getElementById('organisms').textContent=JSON.stringify(d.organisms,null,2);});"
@@ -782,9 +844,39 @@ def create_app(
             "document.getElementById('kpi-next-action').textContent=d.next_action;"
             "document.getElementById('kpi-actions').textContent=JSON.stringify(d.suggested_actions,null,2);"
             "});"
-            "const loadTimeline=()=>fetch('/runs/latest').then(r=>r.json()).then(meta=>{if(!meta.run){return {items:[]};}return fetch(`/api/runs/${meta.run}/timeline?page=1&page_size=120`).then(r=>r.json());}).then(data=>{const wrap=document.getElementById('timeline');const detail=document.getElementById('timeline-detail');wrap.innerHTML='';for(const item of data.items||[]){const btn=document.createElement('button');btn.textContent=`${item.event} · ${item.timestamp||'n/a'}`;btn.style.padding='6px';btn.onclick=()=>{detail.textContent=JSON.stringify({event:item.event,timestamp:item.timestamp,summary:item.human_summary,decision_reason:item.decision_reason,score_before:item.score_before,score_after:item.score_after,diff:item.diff,loop_modifications:item.loop_modifications},null,2);};wrap.appendChild(btn);}if(!(data.items||[]).length){detail.textContent='Aucun événement de frise disponible.';}});"
+            "const paintDiff=(raw)=>{const escaped=String(raw||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');return escaped.split('\\n').map(line=>{if(line.startsWith('+')){return `<span style=\"color:#0a7f2e;\">${line}</span>`;}if(line.startsWith('-')){return `<span style=\"color:#b42318;\">${line}</span>`;}if(line.startsWith('@@')){return `<span style=\"color:#175cd3;\">${line}</span>`;}return line;}).join('\\n');};"
+            "const showMutationDetail=(runId,index)=>fetch(`/api/runs/${runId}/mutations/${index}`).then(r=>r.json()).then(d=>{document.getElementById('timeline-summary').textContent=d.human_summary||d.decision_reason||'Aucun résumé disponible.';document.getElementById('timeline-impact').textContent=JSON.stringify(d.impact,null,2);document.getElementById('timeline-diff').innerHTML=paintDiff(d.diff)||'Aucun diff.';});"
+            "const loadTimeline=()=>fetch('/runs/latest').then(r=>r.json()).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}return fetch(`/api/runs/${meta.run}/timeline?page=1&page_size=120`).then(r=>r.json());}).then(data=>{const wrap=document.getElementById('timeline');const summary=document.getElementById('timeline-summary');const impact=document.getElementById('timeline-impact');const diff=document.getElementById('timeline-diff');wrap.innerHTML='';let mutationIndex=0;for(const item of data.items||[]){const row=document.createElement('div');row.style.display='inline-flex';row.style.gap='4px';const btn=document.createElement('button');btn.textContent=`${item.event} · ${item.timestamp||'n/a'}`;btn.style.padding='6px';row.appendChild(btn);if(item.event==='mutation'&&data.run_id){const currentIndex=mutationIndex;mutationIndex+=1;btn.onclick=()=>showMutationDetail(data.run_id,currentIndex);const link=document.createElement('a');link.href=`/runs/${data.run_id}/mutations/${currentIndex}`;link.textContent='Voir détail';link.style.alignSelf='center';row.appendChild(link);}wrap.appendChild(row);}if(!(data.items||[]).length){summary.textContent='Aucun événement de frise disponible.';impact.textContent='';diff.textContent='';}});"
             "loadEco();loadCockpit();loadTimeline();setInterval(()=>{loadEco();loadCockpit();loadTimeline();},500);"
             "ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);}else if(m.type==='logs'){const d=document.getElementById('logs');for(const [n,entries] of Object.entries(m.data)){let pre=document.getElementById(`log-${n}`);if(!pre){pre=document.createElement('pre');pre.id=`log-${n}`;pre.textContent=n+'\n';d.appendChild(pre);}for(const entry of entries){pre.textContent+=entry+'\n';}}}};"
+            "</script></body></html>"
+        )
+
+    @app.get("/runs/{run_id}/mutations/{index}", response_class=HTMLResponse)
+    def mutation_detail_page(run_id: str, index: int) -> str:
+        return (
+            "<html><head><title>Détail mutation</title></head><body>"
+            f"<h1>Détail mutation · run {run_id} · index {index}</h1>"
+            "<p><a href='/'>← Retour dashboard</a></p>"
+            "<h2>Résumé naturel</h2><pre id='summary'>Chargement...</pre>"
+            "<h2>Impact mesuré (score/perf/santé)</h2><pre id='impact'></pre>"
+            "<h2>Diff coloré</h2><pre id='diff' style='padding:12px;border:1px solid #ccc;'></pre>"
+            "<h2>Métriques et AST</h2><pre id='metrics'></pre>"
+            "<script>"
+            f"fetch('/api/runs/{run_id}/mutations/{index}').then(r=>r.json()).then(d=>{{"
+            "document.getElementById('summary').textContent=d.human_summary||d.decision_reason||'Aucun résumé disponible.';"
+            "document.getElementById('impact').textContent=JSON.stringify(d.impact,null,2);"
+            "document.getElementById('metrics').textContent=JSON.stringify(d.metrics,null,2);"
+            "const raw=String(d.diff||'');"
+            "const escaped=raw.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');"
+            "const html=escaped.split('\\n').map(line=>{"
+            "if(line.startsWith('+')){return `<span style=\"color:#0a7f2e;\">${line}</span>`;}"
+            "if(line.startsWith('-')){return `<span style=\"color:#b42318;\">${line}</span>`;}"
+            "if(line.startsWith('@@')){return `<span style=\"color:#175cd3;\">${line}</span>`;}"
+            "return line;"
+            "}).join('\\n');"
+            "document.getElementById('diff').innerHTML=html||'Aucun diff.';"
+            "});"
             "</script></body></html>"
         )
 
