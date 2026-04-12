@@ -63,6 +63,31 @@ def _validate_ast(tree: ast.AST) -> None:
             raise SandboxError(f"use of '{node.id}' is forbidden")
 
 
+def _sandbox_worker(
+    code: str,
+    timeout: float,
+    memory_limit: int,
+    queue: multiprocessing.Queue[Any],
+) -> None:
+    """Execute sandboxed code in a child process and return output through *queue*."""
+    if resource_module is not None and sys.platform != "win32":
+        resource_module.setrlimit(resource_module.RLIMIT_AS, (memory_limit, memory_limit))
+        cpu_seconds = max(1, int(timeout))
+        resource_module.setrlimit(resource_module.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
+
+    tree = ast.parse(code, mode="exec")
+    os.environ.clear()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.chdir(tmpdir)
+        allowed = {name: ALLOWED_BUILTINS[name] for name in ALLOWED_BUILTINS}
+        env: Dict[str, Any] = {"__builtins__": allowed}
+        try:
+            exec(compile(tree, "<sandbox>", "exec"), env, env)
+            queue.put(env.get("result"))
+        except Exception as exc:  # pragma: no cover - delivered to parent
+            queue.put(exc)
+
+
 def run(code: str, timeout: float = 1.5, memory_limit: int = 256 * 1024 * 1024) -> Any:
     """Execute *code* in a restricted environment and return the value of `result`.
 
@@ -76,29 +101,9 @@ def run(code: str, timeout: float = 1.5, memory_limit: int = 256 * 1024 * 1024) 
     tree = ast.parse(code, mode="exec")
     _validate_ast(tree)
 
-    queue: multiprocessing.Queue[Any] = multiprocessing.Queue()
-
-    def target(q: multiprocessing.Queue[Any]) -> None:
-        if resource_module is not None and sys.platform != "win32":
-            resource_module.setrlimit(
-                resource_module.RLIMIT_AS, (memory_limit, memory_limit)
-            )
-            cpu_seconds = max(1, int(timeout))
-            resource_module.setrlimit(
-                resource_module.RLIMIT_CPU, (cpu_seconds, cpu_seconds)
-            )
-        os.environ.clear()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            os.chdir(tmpdir)
-            allowed = {name: ALLOWED_BUILTINS[name] for name in ALLOWED_BUILTINS}
-            env: Dict[str, Any] = {"__builtins__": allowed}
-            try:
-                exec(compile(tree, "<sandbox>", "exec"), env, env)
-                q.put(env.get("result"))
-            except Exception as exc:  # pragma: no cover - delivered to parent
-                q.put(exc)
-
-    proc = multiprocessing.Process(target=target, args=(queue,))
+    ctx = multiprocessing.get_context("spawn")
+    queue: multiprocessing.Queue[Any] = ctx.Queue()
+    proc = ctx.Process(target=_sandbox_worker, args=(code, timeout, memory_limit, queue))
     proc.start()
     proc.join(timeout)
     if proc.is_alive():
