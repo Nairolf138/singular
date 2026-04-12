@@ -1,4 +1,5 @@
 from pathlib import Path
+import types
 
 import singular.cli as cli
 
@@ -41,3 +42,66 @@ def test_doctor_confirms_when_scripts_are_in_path(
     out = capsys.readouterr().out
     assert "- Scripts dans PATH      : oui" in out
     assert "PATH semble correctement configuré" in out
+
+
+def test_doctor_fix_calls_windows_path_update_when_missing(
+    monkeypatch, capsys
+) -> None:
+    scripts_dir = Path("/tmp/singular-user-scripts")
+    monkeypatch.setattr(cli.sys, "executable", "/tmp/python/bin/python")
+    monkeypatch.setattr(
+        cli.sysconfig,
+        "get_path",
+        lambda *_args, **_kwargs: str(scripts_dir),
+    )
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+
+    called: list[Path] = []
+
+    def fake_fix(path: Path) -> bool:
+        called.append(path)
+        return True
+
+    monkeypatch.setattr(cli, "_doctor_fix_windows_user_path", fake_fix)
+
+    cli.main(["doctor", "--fix"])
+
+    out = capsys.readouterr().out
+    assert "Application du correctif automatique (`--fix`)…" in out
+    assert called == [scripts_dir.resolve()]
+
+
+def test_doctor_fix_windows_user_path_is_idempotent(
+    monkeypatch, capsys
+) -> None:
+    scripts_dir = Path(r"C:\Users\Ada\AppData\Roaming\Python\Python313\Scripts")
+    monkeypatch.setattr(cli.os, "name", "nt")
+
+    store: dict[str, str] = {"Path": f"{scripts_dir};C:\\Windows\\System32"}
+
+    class _FakeKey:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    fake_winreg = types.SimpleNamespace(
+        HKEY_CURRENT_USER=1,
+        KEY_READ=0x20019,
+        KEY_SET_VALUE=0x0002,
+        REG_EXPAND_SZ=2,
+        OpenKey=lambda *_args, **_kwargs: _FakeKey(),
+        QueryValueEx=lambda _key, value_name: (store[value_name], 1),
+        SetValueEx=lambda _key, value_name, *_args: store.__setitem__(
+            value_name, _args[-1]
+        ),
+    )
+    monkeypatch.setitem(cli.sys.modules, "winreg", fake_winreg)
+
+    changed = cli._doctor_fix_windows_user_path(scripts_dir)
+    out = capsys.readouterr().out
+
+    assert changed is False
+    assert store["Path"] == f"{scripts_dir};C:\\Windows\\System32"
+    assert "déjà présent" in out

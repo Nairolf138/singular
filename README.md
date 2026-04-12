@@ -196,8 +196,15 @@ Si PowerShell affiche que `singular` n’est pas reconnu, vérifiez le dossier
    Tant que l’entrypoint `singular` n’est pas résolu dans `PATH`, utilisez
    `python -m singular ...`.
 
-2. Si le diagnostic indique que `Scripts` n’est pas dans `PATH`, copiez-collez
-   les commandes proposées par `python -m singular doctor` dans PowerShell.
+2. Si le diagnostic indique que `Scripts` n’est pas dans `PATH`, appliquez le
+   correctif automatique :
+
+   ```powershell
+   python -m singular doctor --fix
+   ```
+
+   Puis redémarrez PowerShell. Vous pouvez aussi copier-coller les commandes
+   proposées par `python -m singular doctor`.
 
 3. Alternative manuelle (si `singular` est indisponible), récupérez d’abord la
    base utilisateur Python :
