@@ -177,7 +177,8 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "Prochaine action recommandée" in body
     assert "/api/cockpit" in body
     assert "Frise des événements" in body
-    assert "timeline-detail" in body
+    assert "timeline-diff" in body
+    assert "Voir détail" in body
 
 
 def test_dashboard_timeline_comparison_and_top_mutations(tmp_path: Path) -> None:
@@ -369,6 +370,75 @@ def test_run_timeline_endpoint_filters_pagination_and_event_coherence(tmp_path: 
 
     event_types = {entry["event"] for entry in route(run_id="run-42")["items"]}
     assert {"mutation", "delay", "refuse", "death", "interaction"}.issubset(event_types)
+
+
+def test_run_mutation_detail_endpoint_returns_diff_metrics_and_ast(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run_file = runs_dir / "run-mut.jsonl"
+    run_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "ts": "2026-04-12T09:00:00",
+                        "skill": "orga:skills/a.py",
+                        "op": "flip",
+                        "accepted": True,
+                        "score_base": 10.0,
+                        "score_new": 8.0,
+                        "ms_base": 120.0,
+                        "ms_new": 95.0,
+                        "health_base": 71.0,
+                        "health_new": 78.0,
+                        "human_summary": "La mutation simplifie la boucle.",
+                        "diff": "@@ -1,3 +1,3 @@\n-def old():\n+def new():",
+                        "lines_added": 1,
+                        "lines_removed": 1,
+                        "functions_modified": ["old", "new"],
+                        "ast_before": {"type": "Module", "body": ["FunctionDef old"]},
+                        "ast_after": {"type": "Module", "body": ["FunctionDef new"]},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-04-12T09:05:00",
+                        "skill": "orga:skills/a.py",
+                        "op": "swap",
+                        "ok": False,
+                        "score_base": 8.0,
+                        "score_new": 9.0,
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    route = app._routes["/api/runs/{run_id}/mutations/{index}"]
+
+    payload = route(run_id="run-mut", index=0)
+    assert payload["run_id"] == "run-mut"
+    assert payload["index"] == 0
+    assert payload["diff"] == "@@ -1,3 +1,3 @@\n-def old():\n+def new():"
+    assert payload["human_summary"] == "La mutation simplifie la boucle."
+    assert payload["metrics"] == {
+        "lines_added": 1,
+        "lines_removed": 1,
+        "functions_modified": ["old", "new"],
+        "ast_before": {"type": "Module", "body": ["FunctionDef old"]},
+        "ast_after": {"type": "Module", "body": ["FunctionDef new"]},
+    }
+    assert payload["impact"] == {
+        "score_before": 10.0,
+        "score_after": 8.0,
+        "perf_ms_before": 120.0,
+        "perf_ms_after": 95.0,
+        "health_before": 71.0,
+        "health_after": 78.0,
+    }
 
 
 def test_psyche_missing_returns_404(tmp_path: Path) -> None:
