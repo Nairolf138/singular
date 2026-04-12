@@ -67,7 +67,15 @@ def talk(
         add_episode({"event": "perception", **signals})
         psyche.consume()
         episodes = read_episodes()
-        last_event = next((e["text"] for e in reversed(episodes) if "text" in e), None)
+        episodes_by_role = {
+            "user": [e for e in episodes if e.get("role") == "user"],
+            "assistant": [e for e in episodes if e.get("role") == "assistant"],
+        }
+        user_episodes = episodes_by_role["user"]
+        last_event = next(
+            (e.get("text") for e in reversed(user_episodes) if e.get("text")),
+            None,
+        )
         latest_mutation = next(
             (e for e in reversed(episodes) if e.get("event") == "mutation"),
             None,
@@ -121,7 +129,10 @@ def talk(
         reply = generate_reply(user_input)
 
         parts = [reply]
-        if last_event:
+        should_add_reminder = bool(last_event) and (
+            "Reminder:" not in reply and last_event not in reply
+        )
+        if should_add_reminder:
             parts.append(f"Reminder: {last_event}")
         if last_success:
             parts.append(f"Last success: {last_success.get('op')}")
@@ -133,7 +144,14 @@ def talk(
         response = " | ".join(parts)
 
         print(response)
-        add_episode({"role": "assistant", "text": response, "mood": mood.value})
+        add_episode(
+            {
+                "role": "assistant",
+                "text": response,
+                "raw_reply": reply,
+                "mood": mood.value,
+            }
+        )
         psyche.gain()
         psyche.save_state()
 
