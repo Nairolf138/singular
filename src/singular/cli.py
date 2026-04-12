@@ -14,6 +14,12 @@ from typing import Any, Callable
 __all__ = ["main"]
 
 
+def _looks_like_dev_repo_root(path: Path) -> bool:
+    """Heuristic to detect a development repository root."""
+
+    return (path / "pyproject.toml").exists() and (path / "src" / "singular").is_dir()
+
+
 def _in_path(target: Path, env_path: str | None = None) -> bool:
     """Return True when *target* is present in PATH."""
 
@@ -306,6 +312,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip confirmation prompt",
     )
+    uninstall_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Allow purge even if root looks like a development repository",
+    )
 
     args = parser.parse_args(argv_list)
 
@@ -437,13 +448,22 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "uninstall":
         purge_lives = bool(args.purge_lives)
         root = get_registry_root()
+        if purge_lives and _looks_like_dev_repo_root(root) and not args.force:
+            print(
+                "Refus de purge: le root cible ressemble au repo de développement "
+                f"('{root}'). Utilisez --force pour confirmer explicitement.",
+                file=sys.stderr,
+            )
+            return 1
+
         if purge_lives and not args.yes:
             confirmation = input(
-                "ATTENTION: cette commande supprimera toutes les vies et "
-                "artefacts Singular sous "
-                f"'{root}' (lives/, mem/, runs/). Continuer ? [y/N] "
+                "⚠️ PURGE COMPLÈTE demandée.\n"
+                f"Chemin cible : {root}\n"
+                "Cette action supprimera définitivement lives/, mem/ et runs/.\n"
+                "Tapez 'PURGE' pour confirmer: "
             )
-            if confirmation.strip().lower() not in {"y", "yes", "o", "oui"}:
+            if confirmation.strip() != "PURGE":
                 print("Désinstallation annulée.")
                 return 0
         try:

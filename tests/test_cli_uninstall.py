@@ -64,10 +64,47 @@ def test_uninstall_purge_requires_confirmation_without_yes(
     _mkdir(mem_dir)
     _mkdir(runs_dir)
 
-    monkeypatch.setattr("builtins.input", lambda _prompt: "n")
+    monkeypatch.setattr("builtins.input", lambda _prompt: "nope")
     exit_code = cli.main(["--root", str(root), "uninstall", "--purge-lives"])
 
     assert exit_code == 0
     assert lives_dir.exists()
     assert mem_dir.exists()
     assert runs_dir.exists()
+
+
+def test_uninstall_purge_detects_dev_repo_root_without_force(
+    tmp_path: Path, capsys
+) -> None:
+    root = tmp_path / "devrepo"
+    _mkdir(root / "lives" / "alpha")
+    _mkdir(root / "mem")
+    _mkdir(root / "runs")
+    (root / "pyproject.toml").write_text("[project]\nname='singular'\n", encoding="utf-8")
+    (root / "src" / "singular").mkdir(parents=True, exist_ok=True)
+
+    exit_code = cli.main(["--root", str(root), "uninstall", "--purge-lives", "--yes"])
+
+    assert exit_code == 1
+    assert "Refus de purge" in capsys.readouterr().err
+    assert (root / "lives").exists()
+    assert (root / "mem").exists()
+    assert (root / "runs").exists()
+
+
+def test_uninstall_purge_accepts_dev_repo_root_with_force(tmp_path: Path) -> None:
+    root = tmp_path / "devrepo"
+    _mkdir(root / "lives" / "alpha")
+    _mkdir(root / "mem")
+    _mkdir(root / "runs")
+    (root / "pyproject.toml").write_text("[project]\nname='singular'\n", encoding="utf-8")
+    (root / "src" / "singular").mkdir(parents=True, exist_ok=True)
+
+    exit_code = cli.main(
+        ["--root", str(root), "uninstall", "--purge-lives", "--yes", "--force"]
+    )
+
+    assert exit_code == 0
+    assert not (root / "lives").exists()
+    assert not (root / "mem").exists()
+    assert not (root / "runs").exists()
