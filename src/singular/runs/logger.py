@@ -215,6 +215,20 @@ class RunLogger:
         os.fsync(self._file.fileno())
         add_episode(record)
 
+    def log_interaction(self, event: str, **info: Any) -> None:
+        """Record an explicit ecosystem interaction event."""
+
+        record: dict[str, Any] = {
+            "ts": datetime.utcnow().isoformat(timespec="seconds"),
+            "event": "interaction",
+            "interaction": event,
+            **info,
+        }
+        self._file.write(json.dumps(record) + "\n")
+        self._file.flush()
+        os.fsync(self._file.fileno())
+        add_episode(record)
+
     def close(self) -> None:
         """Flush and finalize the log file atomically."""
         if not self._file.closed:

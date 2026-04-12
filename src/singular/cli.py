@@ -430,6 +430,33 @@ def main(argv: list[str] | None = None) -> int:
     )
     lives_delete.add_argument("name", help="Slug or name of the life to delete")
 
+    ecosystem_parser = subparsers.add_parser(
+        "ecosystem", help="Run multiple lives in a shared ecosystem"
+    )
+    ecosystem_subparsers = ecosystem_parser.add_subparsers(
+        dest="ecosystem_command", required=True
+    )
+    ecosystem_run = ecosystem_subparsers.add_parser(
+        "run", help="Execute an ecosystem loop across multiple lives"
+    )
+    ecosystem_run.add_argument(
+        "--life",
+        dest="ecosystem_lives",
+        action="append",
+        default=[],
+        help="Life slug/name to include (repeatable)",
+    )
+    ecosystem_run.add_argument(
+        "--life-group",
+        dest="ecosystem_groups",
+        action="append",
+        default=[],
+        help="Comma-separated list of life slugs/names",
+    )
+    ecosystem_run.add_argument("--checkpoint", type=Path, default=None)
+    ecosystem_run.add_argument("--budget-seconds", type=float, required=True)
+    ecosystem_run.add_argument("--run-id", default="ecosystem", help="Run identifier")
+
     uninstall_parser = subparsers.add_parser(
         "uninstall", help="Remove Singular data from SINGULAR_ROOT"
     )
@@ -514,6 +541,38 @@ def main(argv: list[str] | None = None) -> int:
         checkpoint = args.checkpoint or life_dir / "life_checkpoint.json"
         loop_run(
             skills_dir=skills_dir,
+            checkpoint=checkpoint,
+            budget_seconds=args.budget_seconds,
+            run_id=args.run_id,
+            seed=args.seed,
+        )
+
+    elif args.command == "ecosystem":
+        from .runs.loop import loop as loop_run
+
+        if args.ecosystem_command != "run":
+            raise SystemExit(f"Sous-commande ecosystem inconnue: {args.ecosystem_command}")
+
+        names = list(args.ecosystem_lives)
+        for group in args.ecosystem_groups:
+            names.extend(part.strip() for part in group.split(",") if part.strip())
+
+        if not names:
+            raise SystemExit(
+                "Aucune vie fournie. Utilisez --life (multiple) ou --life-group."
+            )
+
+        organisms: dict[str, Path] = {}
+        for life_name in names:
+            life_dir = resolve_life(life_name)
+            if life_dir is None:
+                raise SystemExit(f"Vie introuvable: {life_name}")
+            organisms[life_name] = life_dir / "skills"
+
+        root = get_registry_root()
+        checkpoint = args.checkpoint or (root / "runs" / "ecosystem_checkpoint.json")
+        loop_run(
+            skills_dirs=organisms,
             checkpoint=checkpoint,
             budget_seconds=args.budget_seconds,
             run_id=args.run_id,
