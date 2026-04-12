@@ -58,6 +58,94 @@ def test_dashboard_alerts_endpoint(tmp_path: Path) -> None:
     }
 
 
+def test_dashboard_timeline_comparison_and_top_mutations(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run_file = runs_dir / "mutations.jsonl"
+    run_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "ts": "2026-04-10T10:00:00",
+                        "skill": "life-a:skills/foo.py",
+                        "op": "flip",
+                        "accepted": True,
+                        "score_base": 10.0,
+                        "score_new": 7.0,
+                        "ms_new": 40.0,
+                        "health": {"score": 92.0},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-04-10T12:00:00",
+                        "skill": "life-a:skills/foo.py",
+                        "op": "flip",
+                        "accepted": False,
+                        "score_base": 7.0,
+                        "score_new": 8.0,
+                        "ms_new": 60.0,
+                        "health": {"score": 88.0},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-04-11T09:00:00",
+                        "skill": "life-b:skills/bar.py",
+                        "op": "swap",
+                        "accepted": True,
+                        "score_base": 20.0,
+                        "score_new": 16.0,
+                        "ms_new": 30.0,
+                        "health": {"score": 70.0},
+                    }
+                ),
+            ]
+        )
+        + "\n"
+    )
+    psyche_file = tmp_path / "psyche.json"
+    psyche_file.write_text(json.dumps({"mood": "focused"}))
+
+    app = create_app(runs_dir=runs_dir, psyche_file=psyche_file)
+
+    timeline_payload = app._routes["/timeline"](
+        life="life-a",
+        period="2026-04-10",
+        operator="flip",
+        decision="accepted",
+        impact="beneficial",
+    )
+    assert timeline_payload["count"] == 1
+    assert timeline_payload["filters"] == {
+        "life": "life-a",
+        "period": "2026-04-10",
+        "operator": "flip",
+        "decision": "accepted",
+        "impact": "beneficial",
+    }
+    assert timeline_payload["items"][0]["life"] == "life-a"
+    assert timeline_payload["items"][0]["impact"] == "beneficial"
+    assert timeline_payload["items"][0]["impact_delta"] == 3.0
+
+    comparison_payload = app._routes["/lives/comparison"]()["lives"]
+    assert set(comparison_payload) == {"life-a", "life-b"}
+    assert comparison_payload["life-a"]["health_score"] == 90.0
+    assert comparison_payload["life-a"]["progression_slope"] == 2.0
+    assert comparison_payload["life-a"]["failure_rate"] == 0.5
+    assert comparison_payload["life-a"]["evolution_speed"] == 50.0
+    assert comparison_payload["life-b"]["failure_rate"] == 0.0
+
+    top_payload = app._routes["/mutations/top"](limit=1)
+    assert set(top_payload) == {"most_beneficial", "most_risky", "most_frequent"}
+    assert top_payload["most_beneficial"][0]["life"] == "life-b"
+    assert top_payload["most_beneficial"][0]["impact_delta"] == 4.0
+    assert top_payload["most_risky"][0]["life"] == "life-a"
+    assert top_payload["most_risky"][0]["impact_delta"] == -1.0
+    assert top_payload["most_frequent"][0] == {"operator": "flip", "count": 2}
+
+
 def test_psyche_missing_returns_404(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
