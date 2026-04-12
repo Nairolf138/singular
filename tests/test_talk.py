@@ -21,6 +21,7 @@ def test_talk_loop(monkeypatch, tmp_path):
     assert len(episodes) == 4
     assert episodes[0]["role"] == "user"
     assert episodes[1]["role"] == "assistant"
+    assert episodes[1]["raw_reply"]
     assert "Mood: neutral" in episodes[1]["text"]
     assert any("Reminder:" in out for out in outputs)
 
@@ -111,3 +112,21 @@ def test_talk_seed_controls_stub(monkeypatch, tmp_path):
     assert second == expected_first
     assert third == expected_third
     assert first != third
+
+
+def test_talk_does_not_accumulate_reminder_or_mood(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    inputs = iter(["hello", "next", "again", "quit"])
+    monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
+    monkeypatch.setattr("singular.organisms.talk.load_llm_provider", lambda _name: None)
+    outputs: list[str] = []
+    monkeypatch.setattr("builtins.print", lambda msg: outputs.append(msg))
+
+    talk(seed=7)
+
+    replies = [out for out in outputs if "Mood:" in out]
+    assert len(replies) == 3
+    for reply in replies:
+        assert reply.count("Reminder:") <= 1
+        assert reply.count("Mood:") == 1
