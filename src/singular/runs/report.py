@@ -27,7 +27,7 @@ def load_run_records(
                 event = json.loads(line)
                 payload = event.get("payload", {})
                 if isinstance(payload, dict):
-                    records.append(payload)
+                    records.append({**payload, "_event_type": event.get("event_type")})
         return records
 
     pattern = f"{run_id}-*.jsonl"
@@ -62,8 +62,15 @@ def report(
         print(f"No records for id {run_id}")
         return
 
-    scores = [r.get("score_new", 0.0) for r in records]
-    ops = [r.get("op", "?") for r in records]
+    mutations = [
+        r for r in records if r.get("_event_type") == "mutation" or "op" in r
+    ]
+    if not mutations:
+        print(f"No mutation records for id {run_id}")
+        return
+
+    scores = [r.get("score_new", 0.0) for r in mutations]
+    ops = [r.get("op", "?") for r in mutations]
 
     print(f"Run {run_id}")
     print(f"Generations: {len(scores)}")
@@ -75,6 +82,7 @@ def report(
     print("Operator histogram:")
     for op, count in counter.items():
         print(f"  {op}: {count}")
+    _print_loop_modifications(mutations)
 
     if skills_path is None:
         skills_path = get_skills_file()
@@ -94,3 +102,66 @@ def report(
             print(line)
     else:
         print("No skills recorded.")
+
+
+def _print_loop_modifications(mutations: list[dict[str, Any]]) -> None:
+    """Print ranked mutation-impact metrics for the loop."""
+
+    entries: list[dict[str, Any]] = []
+    for idx, mutation in enumerate(mutations, start=1):
+        metrics = mutation.get("loop_modifications")
+        if not isinstance(metrics, dict) or not metrics:
+            continue
+        lines_added = int(metrics.get("lines_added", 0))
+        lines_removed = int(metrics.get("lines_removed", 0))
+        functions_modified = int(metrics.get("functions_modified", 0))
+        ast_before = int(metrics.get("ast_nodes_before", 0))
+        ast_after = int(metrics.get("ast_nodes_after", 0))
+        entries.append(
+            {
+                "index": idx,
+                "op": mutation.get("op", "?"),
+                "lines_added": lines_added,
+                "lines_removed": lines_removed,
+                "functions_modified": functions_modified,
+                "ast_before": ast_before,
+                "ast_after": ast_after,
+                "line_change": lines_added + lines_removed,
+                "ast_delta": abs(ast_after - ast_before),
+                "profit": float(mutation.get("score_base", 0.0))
+                - float(mutation.get("score_new", 0.0)),
+            }
+        )
+
+    if not entries:
+        return
+
+    print("Modifications de boucle:")
+
+    biggest = sorted(
+        entries,
+        key=lambda e: (e["line_change"], e["ast_delta"], e["functions_modified"]),
+        reverse=True,
+    )
+    print("  Plus gros changement:")
+    for entry in biggest[:3]:
+        print(
+            f"    #{entry['index']} {entry['op']} "
+            f"(lignes +{entry['lines_added']}/-{entry['lines_removed']}, "
+            f"fonctions={entry['functions_modified']}, "
+            f"AST {entry['ast_before']}→{entry['ast_after']})"
+        )
+
+    frequency = Counter(entry["op"] for entry in entries)
+    print("  Plus fréquent:")
+    for op, count in sorted(frequency.items(), key=lambda item: (-item[1], item[0]))[:3]:
+        print(f"    {op}: {count}")
+
+    profitable = sorted(entries, key=lambda e: e["profit"], reverse=True)
+    print("  Plus rentable:")
+    for entry in profitable[:3]:
+        print(
+            f"    #{entry['index']} {entry['op']} "
+            f"(gain={entry['profit']:.4f}, "
+            f"lignes={entry['line_change']}, ASTΔ={entry['ast_delta']})"
+        )

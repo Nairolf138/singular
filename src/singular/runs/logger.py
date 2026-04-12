@@ -179,6 +179,7 @@ class RunLogger:
         impacted_file: str | None = None,
         decision_reason: str | None = None,
         human_summary: str | None = None,
+        loop_modifications: dict[str, int] | None = None,
     ) -> None:
         """Append a mutation record to the log file."""
 
@@ -197,6 +198,7 @@ class RunLogger:
             "impacted_file": impacted_file,
             "decision_reason": decision_reason,
             "human_summary": human_summary,
+            "loop_modifications": loop_modifications or {},
         }
         self._write_record(record)
         self._write_event("mutation", record, ts)
