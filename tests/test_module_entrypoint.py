@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import runpy
+import sys
 import tomllib
 from pathlib import Path
 
@@ -94,3 +95,16 @@ def test_module_entrypoint_accepts_cli_arguments(
     assert excinfo.value.code == 0
     # __main__.py delegates to cli.main() without passing argv explicitly.
     assert captured["argv"] is None
+
+
+def test_module_entrypoint_parses_global_format_flag(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["python", "--format", "json", "doctor"])
+    monkeypatch.setattr("singular.cli._doctor", lambda *, fix=False: print("ok"))
+
+    with pytest.raises(SystemExit) as excinfo:
+        runpy.run_module("singular", run_name="__main__")
+
+    assert excinfo.value.code == 0
+    assert "ok" in capsys.readouterr().out

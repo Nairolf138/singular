@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 import pytest
 
@@ -12,7 +13,9 @@ def test_lives_management(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
     monkeypatch.delenv("SINGULAR_ROOT", raising=False)
     monkeypatch.delenv("SINGULAR_HOME", raising=False)
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
-    monkeypatch.setattr("singular.organisms.talk.load_llm_provider", lambda _name: None)
+    monkeypatch.setattr(
+        "singular.organisms.talk.load_llm_provider", lambda _name: None, raising=False
+    )
 
     main(["--root", str(root), "lives", "create", "--name", "Alpha"])
     registry = load_registry()
@@ -103,3 +106,22 @@ def test_ecosystem_run_accepts_multiple_lives(
     assert alpha_slug in skills_dirs
     assert beta_slug in skills_dirs
     assert Path(skills_dirs[alpha_slug]).name == "skills"
+
+
+def test_lives_list_supports_json_format(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path / "universe"
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    main(["--root", str(root), "lives", "create", "--name", "Alpha"])
+    main(["--root", str(root), "lives", "create", "--name", "Beta"])
+    capsys.readouterr()
+
+    main(["--root", str(root), "--format", "json", "lives", "list"])
+    out = capsys.readouterr().out.strip()
+    payload = json.loads(out)
+    assert payload["active"]
+    assert len(payload["lives"]) == 2
+    assert {"Alpha", "Beta"} == {item["name"] for item in payload["lives"]}

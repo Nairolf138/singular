@@ -50,6 +50,7 @@ def report(
     *,
     runs_dir: Path | str = RUNS_DIR,
     skills_path: Path | str | None = None,
+    output_format: str = "plain",
 ) -> None:
     """Summarize performance for a given run."""
 
@@ -72,29 +73,56 @@ def report(
 
     scores = [r.get("score_new", 0.0) for r in mutations]
     ops = [r.get("op", "?") for r in mutations]
+    counter = Counter(ops)
 
-    print(f"Run {run_id}")
-    print(f"Generations: {len(scores)}")
-    print(f"Final score: {scores[-1]}")
-    # Lower scores indicate better performance.
-    print(f"Best score: {min(scores)}")
     health_scores = [
         float(h["score"])
         for r in mutations
         for h in [r.get("health", {})]
         if isinstance(h, dict) and isinstance(h.get("score"), (int, float))
     ]
+    payload: dict[str, Any] = {
+        "run_id": run_id,
+        "generations": len(scores),
+        "final_score": scores[-1],
+        "best_score": min(scores),  # Lower score is better.
+        "health": None,
+        "operator_histogram": dict(counter),
+    }
     if health_scores:
         health_state = detect_health_state(health_scores, short_window=10, long_window=50)
+        payload["health"] = {
+            "score": round(health_scores[-1], 2),
+            "trend": health_state,
+            "window": "10/50",
+        }
+
+    if output_format == "json":
+        if skills_path is None:
+            skills_path = get_skills_file()
+        payload["skills"] = read_skills(path=skills_path)
+        print(json.dumps(payload, ensure_ascii=False))
+        return
+
+    print(f"Run {run_id}")
+    print(f"Generations: {len(scores)}")
+    print(f"Final score: {scores[-1]}")
+    print(f"Best score: {min(scores)}")
+    if payload["health"]:
         print(
             "Health: "
-            f"{health_scores[-1]:.2f}/100 ({health_state}, comparaison fenêtres 10/50)"
+            f"{payload['health']['score']:.2f}/100 "
+            f"({payload['health']['trend']}, comparaison fenêtres {payload['health']['window']})"
         )
+    if output_format == "table":
+        print("Operator histogram:")
+        for op, count in sorted(counter.items()):
+            print(f"{op:<24} {count:>4}")
+    else:
+        print("Operator histogram:")
+        for op, count in counter.items():
+            print(f"  {op}: {count}")
 
-    counter = Counter(ops)
-    print("Operator histogram:")
-    for op, count in counter.items():
-        print(f"  {op}: {count}")
     _print_loop_modifications(mutations)
 
     if skills_path is None:
