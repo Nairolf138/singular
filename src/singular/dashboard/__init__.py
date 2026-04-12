@@ -3,6 +3,7 @@ from __future__ import annotations
 # mypy: ignore-errors
 
 import asyncio
+from collections import Counter
 import json
 import os
 import sys
@@ -25,6 +26,49 @@ def create_app(
         else base_dir / "mem" / "psyche.json"
     )
     app = FastAPI()
+
+    def _load_run_records() -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
+        if not runs_path.exists():
+            return records
+
+        for file in runs_path.iterdir():
+            if not file.is_file() or file.suffix != ".jsonl":
+                continue
+            for line in file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                if "_run_file" not in payload:
+                    payload["_run_file"] = file.stem
+                records.append(payload)
+        return records
+
+    def _is_mutation_record(record: dict[str, object]) -> bool:
+        return any(
+            field in record
+            for field in ("score_base", "score_new", "ok", "accepted", "op", "operator")
+        )
+
+    def _as_float(value: object) -> float | None:
+        if isinstance(value, (int, float)):
+            return float(value)
+        return None
+
+    def _record_life(record: dict[str, object]) -> str:
+        skill = record.get("skill")
+        if isinstance(skill, str) and ":" in skill:
+            return skill.split(":", 1)[0]
+        if isinstance(record.get("life"), str):
+            return str(record["life"])
+        run = record.get("_run_file")
+        return str(run) if isinstance(run, str) else "default"
 
     def _compute_ecosystem() -> dict:
         organisms: dict[str, dict[str, object]] = {}
@@ -142,6 +186,191 @@ def create_app(
             if isinstance(payload, dict):
                 records.append(payload)
         return {"run": latest.stem, "alerts": alerts_from_records(records)}
+
+    @app.get("/timeline")
+    def read_timeline(
+        life: str | None = None,
+        period: str | None = None,
+        operator: str | None = None,
+        decision: str | None = None,
+        impact: str | None = None,
+    ) -> dict[str, object]:
+        records = _load_run_records()
+        items: list[dict[str, object]] = []
+
+        for record in records:
+            if not _is_mutation_record(record):
+                continue
+            rec_life = _record_life(record)
+            rec_ts = record.get("ts")
+            rec_operator = record.get("operator", record.get("op"))
+            score_base = _as_float(record.get("score_base"))
+            score_new = _as_float(record.get("score_new"))
+            accepted = record.get("accepted")
+            if not isinstance(accepted, bool):
+                accepted = record.get("ok")
+            if not isinstance(accepted, bool):
+                accepted = None
+            delta = None
+            if score_base is not None and score_new is not None:
+                delta = score_base - score_new
+            rec_impact = "neutral"
+            if delta is not None:
+                if delta > 0:
+                    rec_impact = "beneficial"
+                elif delta < 0:
+                    rec_impact = "risky"
+
+            if life and rec_life != life:
+                continue
+            if operator and rec_operator != operator:
+                continue
+            if period and (not isinstance(rec_ts, str) or not rec_ts.startswith(period)):
+                continue
+            if decision == "accepted" and accepted is not True:
+                continue
+            if decision == "rejected" and accepted is not False:
+                continue
+            if impact and rec_impact != impact:
+                continue
+
+            items.append(
+                {
+                    "timestamp": rec_ts,
+                    "life": rec_life,
+                    "operator": rec_operator,
+                    "accepted": accepted,
+                    "impact": rec_impact,
+                    "impact_delta": delta,
+                    "score_base": score_base,
+                    "score_new": score_new,
+                    "run": record.get("_run_file"),
+                }
+            )
+
+        items.sort(key=lambda item: str(item.get("timestamp", "")))
+        return {
+            "filters": {
+                "life": life,
+                "period": period,
+                "operator": operator,
+                "decision": decision,
+                "impact": impact,
+            },
+            "count": len(items),
+            "items": items,
+        }
+
+    @app.get("/lives/comparison")
+    def read_lives_comparison() -> dict[str, object]:
+        by_life: dict[str, list[dict[str, object]]] = {}
+        for record in _load_run_records():
+            if _is_mutation_record(record):
+                by_life.setdefault(_record_life(record), []).append(record)
+
+        comparison: dict[str, dict[str, float | int | None]] = {}
+        for life_name, records in by_life.items():
+            records = sorted(records, key=lambda rec: str(rec.get("ts", "")))
+            score_points = [
+                (
+                    _as_float(rec.get("score_base")),
+                    _as_float(rec.get("score_new")),
+                )
+                for rec in records
+            ]
+            health_values = []
+            for rec in records:
+                health = rec.get("health")
+                if isinstance(health, dict):
+                    health_values.append(_as_float(health.get("score")))
+            health_values = [value for value in health_values if value is not None]
+            ms_points = [_as_float(rec.get("ms_new")) for rec in records]
+            ms_points = [value for value in ms_points if value is not None]
+            accepted_values: list[bool] = []
+            for rec in records:
+                accepted = rec.get("accepted")
+                if not isinstance(accepted, bool):
+                    accepted = rec.get("ok")
+                if isinstance(accepted, bool):
+                    accepted_values.append(accepted)
+
+            first_base = next((base for base, _ in score_points if base is not None), None)
+            last_new = next(
+                (new for _, new in reversed(score_points) if new is not None), None
+            )
+            progression_slope = None
+            if first_base is not None and last_new is not None and len(records) > 1:
+                progression_slope = (first_base - last_new) / (len(records) - 1)
+
+            failure_rate = None
+            if accepted_values:
+                failures = sum(1 for value in accepted_values if not value)
+                failure_rate = failures / len(accepted_values)
+
+            evolution_speed = None
+            if ms_points:
+                evolution_speed = sum(ms_points) / len(ms_points)
+
+            comparison[life_name] = {
+                "health_score": (
+                    sum(health_values) / len(health_values) if health_values else None
+                ),
+                "progression_slope": progression_slope,
+                "failure_rate": failure_rate,
+                "evolution_speed": evolution_speed,
+                "mutations": len(records),
+            }
+
+        return {"lives": comparison}
+
+    @app.get("/mutations/top")
+    def read_top_mutations(limit: int = 3) -> dict[str, object]:
+        mutations: list[dict[str, object]] = []
+        operator_counts: Counter[str] = Counter()
+        for record in _load_run_records():
+            if not _is_mutation_record(record):
+                continue
+            operator = record.get("operator", record.get("op"))
+            if isinstance(operator, str):
+                operator_counts[operator] += 1
+            score_base = _as_float(record.get("score_base"))
+            score_new = _as_float(record.get("score_new"))
+            delta = None
+            if score_base is not None and score_new is not None:
+                delta = score_base - score_new
+            mutations.append(
+                {
+                    "timestamp": record.get("ts"),
+                    "life": _record_life(record),
+                    "operator": operator,
+                    "accepted": record.get("accepted", record.get("ok")),
+                    "impact_delta": delta,
+                    "run": record.get("_run_file"),
+                }
+            )
+
+        beneficial = sorted(
+            mutations,
+            key=lambda item: item["impact_delta"]
+            if isinstance(item["impact_delta"], (int, float))
+            else float("-inf"),
+            reverse=True,
+        )[:limit]
+        risky = sorted(
+            mutations,
+            key=lambda item: item["impact_delta"]
+            if isinstance(item["impact_delta"], (int, float))
+            else float("inf"),
+        )[:limit]
+        frequent = [
+            {"operator": operator, "count": count}
+            for operator, count in operator_counts.most_common(limit)
+        ]
+        return {
+            "most_beneficial": beneficial,
+            "most_risky": risky,
+            "most_frequent": frequent,
+        }
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket) -> None:
