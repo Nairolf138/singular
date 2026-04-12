@@ -7,12 +7,14 @@ import multiprocessing
 import os
 import sys
 import tempfile
+from types import ModuleType
 from typing import Any, Dict
 
+resource_module: ModuleType | None
 try:
-    import resource
+    import resource as resource_module
 except ImportError:  # pragma: no cover - Windows or unsupported platforms
-    resource = None
+    resource_module = None
 
 
 ALLOWED_BUILTINS = {
@@ -77,10 +79,14 @@ def run(code: str, timeout: float = 1.5, memory_limit: int = 256 * 1024 * 1024) 
     queue: multiprocessing.Queue[Any] = multiprocessing.Queue()
 
     def target(q: multiprocessing.Queue[Any]) -> None:
-        if resource is not None and sys.platform != "win32":
-            resource.setrlimit(resource.RLIMIT_AS, (memory_limit, memory_limit))
+        if resource_module is not None and sys.platform != "win32":
+            resource_module.setrlimit(
+                resource_module.RLIMIT_AS, (memory_limit, memory_limit)
+            )
             cpu_seconds = max(1, int(timeout))
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
+            resource_module.setrlimit(
+                resource_module.RLIMIT_CPU, (cpu_seconds, cpu_seconds)
+            )
         os.environ.clear()
         with tempfile.TemporaryDirectory() as tmpdir:
             os.chdir(tmpdir)

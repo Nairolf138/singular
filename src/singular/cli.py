@@ -9,7 +9,7 @@ import sys
 import sysconfig
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 __all__ = ["main"]
 
@@ -44,7 +44,9 @@ def _doctor_fix_windows_user_path(scripts_path: Path) -> bool:
         print("⚠️ `doctor --fix` non supporté sur cette plateforme.")
         return False
 
-    import winreg
+    import winreg as _winreg
+
+    winreg: Any = _winreg
 
     target = str(scripts_path)
     target_norm = _normalize_windows_path_entry(target)

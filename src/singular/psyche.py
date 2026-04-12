@@ -242,7 +242,8 @@ class Psyche:
         irrationality probability while ``ACCEPT`` represents the normal path.
         """
 
-        rng = rng or random
+        if rng is None:
+            rng = random.Random()
         mood = self.last_mood or Mood.NEUTRAL
         base = {
             Mood.PROUD: 0.05,

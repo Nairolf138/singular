@@ -33,7 +33,7 @@ def _query_optional_weather_api() -> Dict[str, Any]:
     if not url:
         return {}
     try:  # pragma: no cover - network failures are expected
-        import requests
+        import requests  # type: ignore[import-untyped]
 
         timeout_str = os.getenv("SINGULAR_HTTP_TIMEOUT", "5")
         try:
