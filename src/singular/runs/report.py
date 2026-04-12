@@ -16,12 +16,25 @@ def load_run_records(
 ) -> list[dict[str, Any]]:
     """Load run records for ``run_id`` from JSONL log file."""
     runs_dir = Path(runs_dir)
+    event_path = runs_dir / run_id / "events.jsonl"
+    records: list[dict[str, Any]] = []
+    if event_path.exists():
+        with event_path.open(encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                event = json.loads(line)
+                payload = event.get("payload", {})
+                if isinstance(payload, dict):
+                    records.append(payload)
+        return records
+
     pattern = f"{run_id}-*.jsonl"
     files = sorted(runs_dir.glob(pattern))
     if not files:
         raise FileNotFoundError(f"No log file found for id {run_id}")
     path = files[-1]
-    records: list[dict[str, Any]] = []
     with path.open(encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
