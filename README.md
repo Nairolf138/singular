@@ -81,6 +81,29 @@ Les sous-commandes qui consultent la mémoire (``talk``, ``run``, ``loop``,
 sélectionnée. Utilisez ``singular lives delete <nom>`` pour supprimer une vie et
 libérer son espace disque.
 
+### Piège courant : changer de root sans le voir
+
+Un cas classique : créer une vie dans le registre implicite, puis lister avec un
+autre root explicite.
+
+```bash
+# Crée la vie dans le root implicite (SINGULAR_ROOT ou ~/.singular)
+singular birth --name "Lumen"
+
+# Liste un autre registre : ici ./lab
+singular lives list --root ./lab
+```
+
+Depuis cette version, Singular affiche un message de contexte quand ``--root``
+diffère du registre implicite précédent :
+
+```text
+Vous utilisez un autre registre de vies: ... (au lieu de ...).
+```
+
+De plus, ``birth`` affiche explicitement le root de registre utilisé pour éviter
+toute ambiguïté.
+
 ## 🧹 Désinstallation
 
 Singular propose une sous-commande pour nettoyer les données stockées dans

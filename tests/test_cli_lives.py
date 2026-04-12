@@ -147,3 +147,40 @@ def test_status_supports_subcommand_format_and_verbose(
 
     assert captured["verbose"] is True
     assert captured["output_format"] == "table"
+
+
+def test_cli_root_context_message_when_switching_registry_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root_a = tmp_path / "root-a"
+    root_b = tmp_path / "root-b"
+
+    monkeypatch.setenv("SINGULAR_ROOT", str(root_a))
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    main(["--root", str(root_a), "lives", "list"])
+    first_out = capsys.readouterr().out
+    assert "Vous utilisez un autre registre de vies" not in first_out
+
+    main(["--root", str(root_b), "lives", "list"])
+    second_out = capsys.readouterr().out
+    assert "Vous utilisez un autre registre de vies" in second_out
+    assert str(root_b.resolve()) in second_out
+    assert str(root_a.resolve()) in second_out
+
+
+def test_birth_prints_registry_root_used(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "registry-root"
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    main(["--root", str(root), "birth", "--name", "Gamma"])
+    out = capsys.readouterr().out
+    assert "Registre de vies utilisé:" in out
+    assert str(root.resolve()) in out
