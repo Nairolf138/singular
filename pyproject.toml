@@ -32,8 +32,8 @@ where = ["src"]
 target-version = ["py311"]
 extend-exclude = '''
 (
-  ^/graine/target/tests/test_evaluate\.py
-| ^/graine/target/tests/test_reduce_sum\.py
+  ^/src/graine/target/tests/test_evaluate\.py
+| ^/src/graine/target/tests/test_reduce_sum\.py
 | ^/src/singular/__main__\.py
 | ^/src/singular/life/reproduction\.py
 | ^/tests/test_mutation_absurde\.py
