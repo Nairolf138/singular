@@ -46,6 +46,17 @@
   <div style='display:flex;gap:12px;align-items:center;flex-wrap:wrap;'>
     <label><input id='filter-active' type='checkbox'/> Actives seulement</label>
     <label><input id='filter-degrading' type='checkbox'/> Seulement en dégradation</label>
+    <label><input id='filter-dead' type='checkbox'/> Morts seulement</label>
+  </div>
+  <div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:8px;'>
+    <div style='border:1px solid #ddd;border-radius:8px;padding:8px;'>
+      <strong>Vies vivantes (<span id='alive-count'>0</span>)</strong>
+      <ul id='alive-lives' style='margin:8px 0 0 18px;padding:0;'></ul>
+    </div>
+    <div style='border:1px solid #ddd;border-radius:8px;padding:8px;'>
+      <strong>Vies mortes (<span id='dead-count'>0</span>)</strong>
+      <ul id='dead-lives' style='margin:8px 0 0 18px;padding:0;'></ul>
+    </div>
   </div>
   <table id='lives-table' border='1' cellspacing='0' cellpadding='6' style='margin-top:8px;border-collapse:collapse;width:100%;'>
     <thead><tr>
@@ -107,11 +118,13 @@ document.getElementById('act-report').onclick=()=>runAction('report',{});
 document.getElementById('act-lives-list').onclick=()=>runAction('lives_list',{});
 document.getElementById('act-lives-use').onclick=()=>runAction('lives_use',{name:document.getElementById('action-life-name').value||''});
 const badge=(label,bg)=>`<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:${bg};margin-right:4px;">${label}</span>`;
+const renderLivesBuckets=(rows)=>{const alive=(rows||[]).filter(row=>row.alive===true);const dead=(rows||[]).filter(row=>row.alive===false);const aliveList=document.getElementById('alive-lives');const deadList=document.getElementById('dead-lives');document.getElementById('alive-count').textContent=String(alive.length);document.getElementById('dead-count').textContent=String(dead.length);aliveList.innerHTML='';deadList.innerHTML='';for(const row of alive){const li=document.createElement('li');li.textContent=row.life||'n/a';aliveList.appendChild(li);}for(const row of dead){const li=document.createElement('li');li.textContent=row.life||'n/a';deadList.appendChild(li);}if(!alive.length){const li=document.createElement('li');li.textContent='Aucune';aliveList.appendChild(li);}if(!dead.length){const li=document.createElement('li');li.textContent='Aucune';deadList.appendChild(li);}};
 const renderLivesTable=(rows)=>{const body=document.getElementById('lives-table-body');body.innerHTML='';for(const row of rows||[]){const tr=document.createElement('tr');const score=row.current_health_score===null||row.current_health_score===undefined?'n/a':Number(row.current_health_score).toFixed(1);const stability=row.stability===null||row.stability===undefined?'n/a':`${(Number(row.stability)*100).toFixed(1)}%`;const lastActivity=row.last_activity||'n/a';let badges='';if(row.selected){badges+=badge('Sélectionnée','#d1fadf');}else{badges+=badge('Non sélectionnée','#fde2e1');}if(row.alive){badges+=badge('Vivante','#d1fadf');}else{badges+=badge('Morte','#fde2e1');}if(row.trend==='dégradation'){badges+=badge('dégradation','#ffe7c2');}if((row.alerts_count||0)>0){badges+=badge(`${row.alerts_count} alertes`,'#fecdca');}tr.innerHTML=`<td>${row.life||'n/a'}</td><td>${score}</td><td>${row.trend||'n/a'}</td><td>${stability}</td><td>${lastActivity}</td><td>${row.iterations??0}</td><td>${badges}</td>`;body.appendChild(tr);}if(!(rows||[]).length){const tr=document.createElement('tr');tr.innerHTML="<td colspan='7'>Aucune vie ne correspond aux filtres.</td>";body.appendChild(tr);}};
-const loadLivesBoard=()=>{const q=new URLSearchParams();q.set('sort_by',livesTableState.sortBy);q.set('sort_order',livesTableState.sortOrder);if(document.getElementById('filter-active').checked){q.set('active_only','true');}if(document.getElementById('filter-degrading').checked){q.set('degrading_only','true');}return fetch(`/lives/comparison?${q.toString()}`).then(r=>r.json()).then(d=>renderLivesTable(d.table||[]));};
+const loadLivesBoard=()=>{const q=new URLSearchParams();q.set('sort_by',livesTableState.sortBy);q.set('sort_order',livesTableState.sortOrder);if(document.getElementById('filter-active').checked){q.set('active_only','true');}if(document.getElementById('filter-degrading').checked){q.set('degrading_only','true');}if(document.getElementById('filter-dead').checked){q.set('dead_only','true');}return fetch(`/lives/comparison?${q.toString()}`).then(r=>r.json()).then(d=>{renderLivesBuckets(Object.entries(d.lives||{}).map(([life,payload])=>({life,...payload})));renderLivesTable(d.table||[]);});};
 for(const button of document.querySelectorAll('#lives-table [data-sort]')){button.onclick=()=>{const next=button.getAttribute('data-sort');if(livesTableState.sortBy===next){livesTableState.sortOrder=livesTableState.sortOrder==='desc'?'asc':'desc';}else{livesTableState.sortBy=next;livesTableState.sortOrder='desc';}loadLivesBoard();};}
 document.getElementById('filter-active').onchange=()=>loadLivesBoard();
 document.getElementById('filter-degrading').onchange=()=>loadLivesBoard();
+document.getElementById('filter-dead').onchange=()=>loadLivesBoard();
 const renderLiveEvents=()=>{const pre=document.getElementById('live-events');const rows=liveState.events.map(item=>`${item.ts||'n/a'} | ${item.run_id||'n/a'} | ${item.event||'unknown'}`);pre.textContent=rows.join('\n');if(liveState.autoScroll){pre.scrollTop=pre.scrollHeight;}};
 const updateLiveStatus=()=>{document.getElementById('live-status').textContent=liveState.paused?'Pause activée':'Lecture en direct';document.getElementById('live-toggle').textContent=liveState.paused?'Reprendre':'Pause';};
 document.getElementById('live-toggle').onclick=()=>{liveState.paused=!liveState.paused;updateLiveStatus();if(!liveState.paused){renderLiveEvents();}};
