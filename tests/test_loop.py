@@ -161,6 +161,64 @@ def test_corrupted_checkpoint(tmp_path: Path, caplog):
     )
 
 
+def test_load_checkpoint_migrates_old_schema(tmp_path: Path):
+    ckpt = tmp_path / "ckpt.json"
+    ckpt.write_text(json.dumps({"iteration": 7}), encoding="utf-8")
+
+    state = load_checkpoint(ckpt)
+
+    assert state.version == life_loop.CHECKPOINT_VERSION
+    assert state.iteration == 7
+    assert state.stats == {}
+    assert state.health_history == []
+    assert state.health_counters == {}
+
+
+def test_load_checkpoint_ignores_extra_keys(tmp_path: Path):
+    ckpt = tmp_path / "ckpt.json"
+    ckpt.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "iteration": 3,
+                "stats": {},
+                "health_history": [],
+                "health_counters": {},
+                "unexpected": "drop-me",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    state = load_checkpoint(ckpt)
+
+    assert state.version == life_loop.CHECKPOINT_VERSION
+    assert state.iteration == 3
+    assert not hasattr(state, "unexpected")
+
+
+def test_run_with_legacy_checkpoint_continues_without_crash(tmp_path: Path):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    skill = skills_dir / "foo.py"
+    skill.write_text("result = 1", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+    checkpoint.write_text(json.dumps({"iteration": 2}), encoding="utf-8")
+
+    state = run(
+        skills_dir,
+        checkpoint,
+        budget_seconds=0.05,
+        rng=random.Random(0),
+        operators={"dec": _dec_operator},
+    )
+
+    saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+    assert state.version == life_loop.CHECKPOINT_VERSION
+    assert saved["version"] == life_loop.CHECKPOINT_VERSION
+    assert saved["iteration"] >= 2
+
+
 def _inc2_operator(tree: ast.AST, rng=None) -> ast.AST:
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, int):
