@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import HTTPException, WebSocket, WebSocketDisconnect
+import asyncio
+import inspect
 import threading
+
+from . import HTTPException, WebSocket, WebSocketDisconnect
 
 
 class Response:
@@ -44,7 +47,9 @@ class TestClient:
 
         def _run(self) -> None:
             try:
-                self._handler(self.ws)
+                result = self._handler(self.ws)
+                if inspect.iscoroutine(result):
+                    asyncio.run(result)
             except WebSocketDisconnect:
                 pass
 

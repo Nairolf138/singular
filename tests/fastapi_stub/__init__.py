@@ -30,10 +30,10 @@ class WebSocket:
     _queue: Queue[Any] = field(default_factory=Queue)
     closed: bool = False
 
-    def accept(self) -> None:  # pragma: no cover - no logic
+    async def accept(self) -> None:  # pragma: no cover - no logic
         return None
 
-    def send_json(self, data: Any) -> None:
+    async def send_json(self, data: Any) -> None:
         if self.closed:
             raise WebSocketDisconnect()
         self._queue.put(data)

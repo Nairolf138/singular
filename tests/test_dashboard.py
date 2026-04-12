@@ -1,10 +1,18 @@
 import json
 from pathlib import Path
+from queue import Empty
 
 import pytest
 from fastapi_stub import TestClient
 
 from singular.dashboard import create_app, run
+
+
+def _receive_with_timeout(ws: TestClient._WSConnection, timeout: float = 2.0) -> dict[str, object]:
+    try:
+        return ws.ws._queue.get(timeout=timeout)
+    except Empty as exc:  # pragma: no cover - defensive for slow CI
+        raise AssertionError("timed out waiting for websocket message") from exc
 
 
 def test_dashboard_endpoints(tmp_path: Path) -> None:
@@ -56,6 +64,57 @@ def test_dashboard_alerts_endpoint(tmp_path: Path) -> None:
         "sandbox_failures_rising",
         "prolonged_stagnation",
     }
+
+
+
+
+def test_dashboard_latest_run_summary_endpoint(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "older.jsonl").write_text(json.dumps({"event": "old"}) + "\n")
+    latest = runs_dir / "latest.jsonl"
+    latest.write_text(
+        "\n".join(
+            [
+                json.dumps({"event": "start", "ts": "2026-04-12T10:00:00"}),
+                json.dumps(
+                    {
+                        "ts": "2026-04-12T10:01:00",
+                        "op": "flip",
+                        "accepted": True,
+                        "score_base": 10.0,
+                        "score_new": 8.0,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-04-12T10:02:00",
+                        "operator": "swap",
+                        "ok": False,
+                        "score_base": 8.0,
+                        "score_new": 9.0,
+                    }
+                ),
+            ]
+        )
+        + "\n"
+    )
+
+    app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    summary = app._routes["/runs/latest/summary"]()
+    assert summary["run"] == "latest"
+    assert summary["summary"] == {
+        "entries": 3,
+        "mutations": 2,
+        "accepted": 1,
+        "rejected": 1,
+        "last_event": "start",
+        "last_timestamp": "2026-04-12T10:02:00",
+    }
+
+    latest_payload = app._routes["/runs/latest"]()
+    assert latest_payload["run"] == "latest"
+    assert len(latest_payload["records"]) == 3
 
 
 def test_dashboard_timeline_comparison_and_top_mutations(tmp_path: Path) -> None:
@@ -157,32 +216,37 @@ def test_psyche_missing_returns_404(tmp_path: Path) -> None:
     assert response.status_code == 404
 
 
-def test_websocket_stream(tmp_path: Path) -> None:
+def test_websocket_stream_incremental_logs_and_growth_stability(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
     log_file = runs_dir / "log.txt"
-    log_file.write_text("hello")
+    log_file.write_text("first\n", encoding="utf-8")
     psyche_file = tmp_path / "psyche.json"
-    psyche_file.write_text(json.dumps({"mood": "happy"}))
+    psyche_file.write_text(json.dumps({"mood": "happy"}), encoding="utf-8")
 
     app = create_app(runs_dir=runs_dir, psyche_file=psyche_file)
     client = TestClient(app)
 
     with client.websocket_connect("/ws") as ws:
-        first = ws.receive_json()
-        second = ws.receive_json()
+        first = _receive_with_timeout(ws)
+        second = _receive_with_timeout(ws)
         received = {first["type"]: first["data"], second["type"]: second["data"]}
         assert received["psyche"] == {"mood": "happy"}
-        assert received["logs"] == {"log.txt": "hello"}
+        assert received["logs"] == {"log.txt": ["first"]}
 
-        log_file.write_text("bye")
-        psyche_file.write_text(json.dumps({"mood": "sad"}))
+        with log_file.open("a", encoding="utf-8") as handle:
+            handle.write("second\n")
+        log_update = _receive_with_timeout(ws)
+        assert log_update["type"] == "logs"
+        assert log_update["data"] == {"log.txt": ["second"]}
 
-        msg_a = ws.receive_json()
-        msg_b = ws.receive_json()
-        updates = {msg_a["type"]: msg_a["data"], msg_b["type"]: msg_b["data"]}
-        assert updates["logs"] == {"log.txt": "bye"}
-        assert updates["psyche"] == {"mood": "sad"}
+        with log_file.open("a", encoding="utf-8") as handle:
+            handle.write("third\n")
+            handle.write("fourth\n")
+        growth_update = _receive_with_timeout(ws)
+        assert growth_update["type"] == "logs"
+        assert growth_update["data"] == {"log.txt": ["third", "fourth"]}
+
 
 
 def test_run_requires_uvicorn(
