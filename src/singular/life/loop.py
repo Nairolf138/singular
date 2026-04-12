@@ -82,6 +82,52 @@ INTERACTION_EXTINCTION = "extinction"
 
 
 CHECKPOINT_VERSION = 1
+HEALTH_HISTORY_FINE_WINDOW = 500
+HEALTH_HISTORY_AGGREGATE_EVERY = 10
+
+
+def _aggregate_health_bucket(
+    bucket: list[dict[str, float | int]],
+) -> dict[str, float | int]:
+    """Aggregate a bucket of health snapshots into one representative point."""
+
+    if not bucket:
+        return {}
+
+    keys = bucket[0].keys()
+    aggregated: dict[str, float | int] = {}
+    for key in keys:
+        if key == "iteration":
+            aggregated[key] = int(bucket[-1].get("iteration", 0))
+            continue
+        values = [float(point.get(key, 0.0)) for point in bucket]
+        aggregated[key] = sum(values) / len(values)
+    return aggregated
+
+
+def _retain_health_history(
+    history: list[dict[str, float | int]],
+    *,
+    fine_window: int = HEALTH_HISTORY_FINE_WINDOW,
+    aggregate_every: int = HEALTH_HISTORY_AGGREGATE_EVERY,
+) -> list[dict[str, float | int]]:
+    """Retain recent detailed points and periodically aggregate older samples."""
+
+    if fine_window <= 0:
+        fine_window = 1
+    if aggregate_every <= 1:
+        aggregate_every = 1
+    if len(history) <= fine_window:
+        return list(history)
+
+    older = history[:-fine_window]
+    recent = history[-fine_window:]
+    retained: list[dict[str, float | int]] = []
+    for start in range(0, len(older), aggregate_every):
+        bucket = older[start : start + aggregate_every]
+        retained.append(_aggregate_health_bucket(bucket))
+    retained.extend(recent)
+    return retained
 
 
 def _migrate_checkpoint_data(data: Mapping[str, object]) -> dict[str, object]:
@@ -437,6 +483,7 @@ def run(
 
     rng = rng or random.Random()
     state = load_checkpoint(checkpoint_path)
+    state.health_history = _retain_health_history(state.health_history)
 
     organisms_input = _normalize_organism_inputs(skills_dirs)
 
@@ -664,6 +711,7 @@ def run(
                 failed=failed,
             )
             state.health_history.append(health_snapshot.to_dict())
+            state.health_history = _retain_health_history(state.health_history)
             state.health_counters = health_tracker.to_state()
 
             logger.log_interaction(
