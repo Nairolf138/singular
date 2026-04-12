@@ -1,4 +1,5 @@
 import json
+import os
 
 from singular.cli import main
 
@@ -330,3 +331,79 @@ def test_report_export_markdown_stdout(monkeypatch, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "# Run report `run6`" in out
     assert "## Timeline des mutations" in out
+
+
+def test_report_defaults_to_latest_run_when_id_missing(monkeypatch, tmp_path, capsys):
+    monkeypatch.chdir(tmp_path)
+    runs = tmp_path / "runs"
+    runs.mkdir()
+
+    run_old = runs / "run-old"
+    run_old.mkdir()
+    old_log = run_old / "events.jsonl"
+    old_log.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "event_type": "mutation",
+                "ts": "2026-01-01T00:00:00",
+                "payload": {"op": "mutate", "score_base": 2.0, "score_new": 1.8},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    run_new = runs / "run-new"
+    run_new.mkdir()
+    new_log = run_new / "events.jsonl"
+    new_log.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "event_type": "mutation",
+                "ts": "2026-01-01T00:00:01",
+                "payload": {"op": "splice", "score_base": 1.8, "score_new": 1.2},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    os.utime(old_log, (1, 1))
+    os.utime(new_log, (2, 2))
+
+    mem = tmp_path / "mem"
+    mem.mkdir()
+    (mem / "skills.json").write_text("{}", encoding="utf-8")
+
+    main(["report"])
+    out = capsys.readouterr().out
+    assert "Run run-new" in out
+
+
+def test_report_supports_subcommand_format_option(monkeypatch, tmp_path, capsys):
+    monkeypatch.chdir(tmp_path)
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    run_dir = runs / "run-json"
+    run_dir.mkdir()
+    (run_dir / "events.jsonl").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "event_type": "mutation",
+                "ts": "2026-01-01T00:00:00",
+                "payload": {"op": "mutate", "score_base": 1.0, "score_new": 0.5},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    mem = tmp_path / "mem"
+    mem.mkdir()
+    (mem / "skills.json").write_text("{}", encoding="utf-8")
+
+    main(["report", "--id", "run-json", "--format", "json"])
+    out = capsys.readouterr().out.strip()
+    payload = json.loads(out)
+    assert payload["context"]["run_id"] == "run-json"

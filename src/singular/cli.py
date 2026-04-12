@@ -285,6 +285,35 @@ def _ensure_active_life(
     return life_dir
 
 
+def _resolve_latest_run_id(runs_root: Path | None = None) -> str | None:
+    """Return the most recent run identifier from ``runs/``."""
+
+    base = Path(runs_root or Path(os.environ.get("SINGULAR_HOME", ".")) / "runs")
+    if not base.exists():
+        return None
+
+    latest: tuple[float, str] | None = None
+
+    for run_dir in base.iterdir():
+        if not run_dir.is_dir():
+            continue
+        events_path = run_dir / "events.jsonl"
+        if not events_path.exists():
+            continue
+        candidate = (events_path.stat().st_mtime, run_dir.name)
+        if latest is None or candidate[0] > latest[0]:
+            latest = candidate
+
+    for legacy_log in base.glob("*.jsonl"):
+        stem = legacy_log.stem
+        run_id = stem.rsplit("-", 1)[0] if "-" in stem else stem
+        candidate = (legacy_log.stat().st_mtime, run_id)
+        if latest is None or candidate[0] > latest[0]:
+            latest = candidate
+
+    return latest[1] if latest is not None else None
+
+
 def _can_prompt() -> bool:
     """Return True when guided prompts can safely run."""
 
@@ -408,6 +437,13 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Display detailed alerts and diagnostics",
     )
+    status_parser.add_argument(
+        "--format",
+        dest="status_output_format",
+        choices=("table", "json", "plain"),
+        default=None,
+        help="Output format for the status command",
+    )
 
     talk_parser = subparsers.add_parser("talk", help="Talk with the system")
     talk_parser.add_argument(
@@ -432,7 +468,14 @@ def main(argv: list[str] | None = None) -> int:
     report_parser = subparsers.add_parser(
         "report", help="Summarize performance from a run"
     )
-    report_parser.add_argument("--id", required=True, help="Run identifier")
+    report_parser.add_argument("--id", required=False, default=None, help="Run identifier")
+    report_parser.add_argument(
+        "--format",
+        dest="report_output_format",
+        choices=("table", "json", "plain"),
+        default=None,
+        help="Output format for the report command",
+    )
     report_parser.add_argument(
         "--export",
         default=None,
@@ -654,7 +697,8 @@ def main(argv: list[str] | None = None) -> int:
         from .organisms.status import status
 
         _ensure_active_life(resolve_life, args.life)
-        status(verbose=args.verbose, output_format=args.output_format)
+        status_format = args.status_output_format or args.output_format
+        status(verbose=args.verbose, output_format=status_format)
 
     elif args.command == "talk":
         from .organisms.talk import talk
@@ -677,7 +721,12 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "report":
         from .runs.report import report
 
-        report(run_id=args.id, output_format=args.output_format, export=args.export)
+        run_id = args.id or _resolve_latest_run_id()
+        if run_id is None:
+            print("No run log found. Use `singular report --id <run_id>`.")
+            return 1
+        report_format = args.report_output_format or args.output_format
+        report(run_id=run_id, output_format=report_format, export=args.export)
 
     elif args.command == "dashboard":
         _ensure_active_life(resolve_life, args.life)

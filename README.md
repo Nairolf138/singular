@@ -36,7 +36,8 @@ pip install -e .[yaml,dashboard,viz]
 singular birth --name Lumen
 singular talk
 singular loop --budget-seconds 10
-singular report
+singular status --format table
+singular report --format plain
 singular dashboard
 ```
 
@@ -264,7 +265,7 @@ SINGULAR_HOME=/chemin/personnel singular birth
 singular --home /chemin/personnel birth
 
 # Ajuster la rétention des journaux
-SINGULAR_RUNS_KEEP=50 singular report
+SINGULAR_RUNS_KEEP=50 singular report --format json
 
 # Utiliser l'API OpenAI
 OPENAI_API_KEY=sk-... singular talk --prompt "Salut"
@@ -272,11 +273,20 @@ OPENAI_API_KEY=sk-... singular talk --prompt "Salut"
 
 ### Audit et export
 
-La commande `report` peut produire un export structuré pour archivage ou intégration CI :
+La commande `report` peut produire un export structuré pour archivage ou intégration CI.
+Règle de sélection du run :
+
+- si `--id` est fourni, ce run exact est utilisé ;
+- si `--id` est absent, `report` prend automatiquement le run le plus récent.
+
+Exemples :
 
 ```bash
 singular report --id run1 --export evolution.json
 singular report --id run1 --export markdown
+singular report --format table
+singular report --format json
+singular status --verbose --format json
 ```
 
 - `--export evolution.json` écrit un JSON stable (clés triées) sur disque.
