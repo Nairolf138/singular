@@ -182,6 +182,9 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "Vies · Tableau comparatif" in body
     assert "Actives seulement" in body
     assert "Seulement en dégradation" in body
+    assert "Événements live" in body
+    assert "live-autoscroll" in body
+    assert "live-toggle" in body
 
 
 def test_dashboard_timeline_comparison_and_top_mutations(tmp_path: Path) -> None:
@@ -537,11 +540,14 @@ def test_psyche_missing_returns_404(tmp_path: Path) -> None:
     assert response.status_code == 404
 
 
-def test_websocket_stream_incremental_logs_and_growth_stability(tmp_path: Path) -> None:
+def test_websocket_stream_incremental_events_and_growth_stability(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
-    log_file = runs_dir / "log.txt"
-    log_file.write_text("first\n", encoding="utf-8")
+    run_file = runs_dir / "run-live.jsonl"
+    run_file.write_text(
+        json.dumps({"ts": "2026-04-12T10:00:00", "event": "interaction"}) + "\n",
+        encoding="utf-8",
+    )
     psyche_file = tmp_path / "psyche.json"
     psyche_file.write_text(json.dumps({"mood": "happy"}), encoding="utf-8")
 
@@ -551,22 +557,57 @@ def test_websocket_stream_incremental_logs_and_growth_stability(tmp_path: Path) 
     with client.websocket_connect("/ws") as ws:
         first = _receive_with_timeout(ws)
         second = _receive_with_timeout(ws)
-        received = {first["type"]: first["data"], second["type"]: second["data"]}
-        assert received["psyche"] == {"mood": "happy"}
-        assert received["logs"] == {"log.txt": ["first"]}
+        assert first == {"type": "psyche", "data": {"mood": "happy"}} or second == {
+            "type": "psyche",
+            "data": {"mood": "happy"},
+        }
+        first_event = first if "run_id" in first else second
+        assert first_event == {
+            "type": "run_event",
+            "run_id": "run-live",
+            "event": "interaction",
+            "ts": "2026-04-12T10:00:00",
+        }
 
-        with log_file.open("a", encoding="utf-8") as handle:
-            handle.write("second\n")
-        log_update = _receive_with_timeout(ws)
-        assert log_update["type"] == "logs"
-        assert log_update["data"] == {"log.txt": ["second"]}
+        with run_file.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"ts": "2026-04-12T10:00:01", "event": "delay"}) + "\n")
+        update = _receive_with_timeout(ws)
+        assert update == {
+            "type": "run_event",
+            "run_id": "run-live",
+            "event": "delay",
+            "ts": "2026-04-12T10:00:01",
+        }
 
-        with log_file.open("a", encoding="utf-8") as handle:
-            handle.write("third\n")
-            handle.write("fourth\n")
-        growth_update = _receive_with_timeout(ws)
-        assert growth_update["type"] == "logs"
-        assert growth_update["data"] == {"log.txt": ["third", "fourth"]}
+        with run_file.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"ts": "2026-04-12T10:00:02", "event": "refuse"}) + "\n")
+            handle.write(
+                json.dumps(
+                    {
+                        "ts": "2026-04-12T10:00:03",
+                        "score_base": 10.0,
+                        "score_new": 9.0,
+                        "accepted": True,
+                    }
+                )
+                + "\n"
+            )
+        growth_first = _receive_with_timeout(ws)
+        growth_second = _receive_with_timeout(ws)
+        assert [growth_first, growth_second] == [
+            {
+                "type": "run_event",
+                "run_id": "run-live",
+                "event": "refuse",
+                "ts": "2026-04-12T10:00:02",
+            },
+            {
+                "type": "run_event",
+                "run_id": "run-live",
+                "event": "mutation",
+                "ts": "2026-04-12T10:00:03",
+            },
+        ]
 
 
 
