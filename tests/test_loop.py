@@ -414,12 +414,16 @@ def _setup_dummy_psyche(monkeypatch, tmp_path, decisions):
             return Psyche.Decision.ACCEPT
 
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
-    monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: DummyPsyche()))
+    monkeypatch.setattr(
+        life_loop.Psyche, "load_state", staticmethod(lambda: DummyPsyche())
+    )
 
     from singular.runs import logger as run_logger
 
     monkeypatch.setattr(
-        life_loop, "RunLogger", functools.partial(run_logger.RunLogger, root=tmp_path / "logs")
+        life_loop,
+        "RunLogger",
+        functools.partial(run_logger.RunLogger, root=tmp_path / "logs"),
     )
     monkeypatch.setattr(life_loop, "update_score", lambda *a, **k: None)
 
@@ -544,7 +548,9 @@ def test_energy_debit_and_food_credit(tmp_path: Path, monkeypatch):
     psyche = _dummy_psyche(events)
     monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: psyche))
 
-    rm = ResourceManager(energy=50.0, food=30.0, warmth=50.0, path=tmp_path / "res.json")
+    rm = ResourceManager(
+        energy=50.0, food=30.0, warmth=50.0, path=tmp_path / "res.json"
+    )
 
     calls = {"n": 0}
     original = life_loop.manage_resources
@@ -634,6 +640,7 @@ def test_artifact_creation_persistence(tmp_path: Path, monkeypatch):
 
     import importlib
     from singular.environment import artifacts as env_artifacts
+
     importlib.reload(env_artifacts)
 
     from singular.environment.artifacts import (

@@ -5,6 +5,7 @@ def test_singular_home_override(tmp_path, monkeypatch):
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
     import singular.memory as memory
     import singular.runs.logger as logger
+
     importlib.reload(memory)
     importlib.reload(logger)
     assert memory.get_mem_dir() == tmp_path / "mem"

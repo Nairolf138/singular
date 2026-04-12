@@ -13,7 +13,9 @@ class ReputationSystem:
     def __init__(self) -> None:
         self.reputations: Dict[str, float] = {}
 
-    def update(self, agent_id: str, action: str, context: Dict[str, Any] | None = None) -> float:
+    def update(
+        self, agent_id: str, action: str, context: Dict[str, Any] | None = None
+    ) -> float:
         """Update the reputation of ``agent_id`` after performing ``action``.
 
         The adjustment is based on the moral score of ``action``. Returns the

@@ -60,7 +60,9 @@ def talk(
 
     psyche = Psyche.load_state()
 
-    def gather_context() -> tuple[str | None, dict | None, dict | None, str | None, str | None]:
+    def gather_context() -> (
+        tuple[str | None, dict | None, dict | None, str | None, str | None]
+    ):
         signals = capture_signals()
         add_episode({"event": "perception", **signals})
         psyche.consume()

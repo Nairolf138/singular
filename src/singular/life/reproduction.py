@@ -29,7 +29,9 @@ from typing import Tuple
 __all__ = ["crossover"]
 
 
-def crossover(parent_a: Path, parent_b: Path, rng: random.Random | None = None) -> Tuple[str, str]:
+def crossover(
+    parent_a: Path, parent_b: Path, rng: random.Random | None = None
+) -> Tuple[str, str]:
     """Create a hybrid skill from two parent skill directories.
 
     Parameters

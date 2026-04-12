@@ -232,7 +232,9 @@ class Psyche:
         ACCEPT = "ACCEPT"
         CURIOUS = "CURIOUS"
 
-    def irrational_decision(self, rng: random.Random | None = None) -> "Psyche.Decision":
+    def irrational_decision(
+        self, rng: random.Random | None = None
+    ) -> "Psyche.Decision":
         """Return the outcome of a potentially irrational choice.
 
         Depending on the current mood the psyche may decide to refuse the

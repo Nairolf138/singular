@@ -12,4 +12,3 @@ def test_choose_action_with_noise_selects_non_optimal():
     actions = {"a": 0.1, "b": 0.5}
     # With decision_noise=1.0 the agent should always explore a non-optimal action
     assert agent.choose_action(actions) == "a"
-

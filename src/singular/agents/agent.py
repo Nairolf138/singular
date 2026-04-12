@@ -28,9 +28,7 @@ class Agent:
         """
 
         for need, delta in context.items():
-            self.motivations.needs[need] = (
-                self.motivations.needs.get(need, 0.0) + delta
-            )
+            self.motivations.needs[need] = self.motivations.needs.get(need, 0.0) + delta
 
     def choose_goal(self) -> Optional[str]:
         """Return the need with the highest motivation.

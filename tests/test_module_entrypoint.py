@@ -12,12 +12,16 @@ def _read_project_script_target() -> str:
 
 
 def test_package_has_module_entrypoint() -> None:
-    module_path = Path(__file__).resolve().parents[1] / "src" / "singular" / "__main__.py"
+    module_path = (
+        Path(__file__).resolve().parents[1] / "src" / "singular" / "__main__.py"
+    )
     assert module_path.exists(), "Le package doit exposer un point d'entrée module"
 
 
 def test_module_entrypoint_matches_console_script_target() -> None:
-    module_path = Path(__file__).resolve().parents[1] / "src" / "singular" / "__main__.py"
+    module_path = (
+        Path(__file__).resolve().parents[1] / "src" / "singular" / "__main__.py"
+    )
     module_tree = ast.parse(module_path.read_text(encoding="utf-8"))
 
     entry_target = _read_project_script_target()
@@ -28,7 +32,10 @@ def test_module_entrypoint_matches_console_script_target() -> None:
     calls_expected_function = False
 
     for node in module_tree.body:
-        if isinstance(node, ast.ImportFrom) and node.module in {module_name, expected_import_module}:
+        if isinstance(node, ast.ImportFrom) and node.module in {
+            module_name,
+            expected_import_module,
+        }:
             imported_names = {alias.name for alias in node.names}
             if function_name in imported_names:
                 imported_main = True

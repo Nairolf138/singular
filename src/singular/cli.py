@@ -87,7 +87,9 @@ def _doctor(*, fix: bool = False) -> None:
     """Display environment diagnostics for CLI installation."""
 
     python_executable = Path(sys.executable).resolve()
-    scripts_path = Path(sysconfig.get_path("scripts", scheme=f"{os.name}_user")).resolve()
+    scripts_path = Path(
+        sysconfig.get_path("scripts", scheme=f"{os.name}_user")
+    ).resolve()
     scripts_in_path = _in_path(scripts_path)
 
     try:
@@ -276,9 +278,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     lives_parser = subparsers.add_parser("lives", help="Manage lives")
-    lives_subparsers = lives_parser.add_subparsers(
-        dest="lives_command", required=True
-    )
+    lives_subparsers = lives_parser.add_subparsers(dest="lives_command", required=True)
     lives_subparsers.add_parser("list", help="List registered lives")
     lives_create = lives_subparsers.add_parser("create", help="Create a new life")
     lives_create.add_argument(
@@ -405,9 +405,7 @@ def main(argv: list[str] | None = None) -> int:
             name = args.name or "New life"
             metadata = bootstrap_life(name, seed=args.seed)
             os.environ["SINGULAR_HOME"] = str(metadata.path)
-            print(
-                f"Vie créée: {metadata.name} ({metadata.slug}) → {metadata.path}"
-            )
+            print(f"Vie créée: {metadata.name} ({metadata.slug}) → {metadata.path}")
         elif args.lives_command == "use":
             life_dir = resolve_life(args.name)
             if life_dir is None:
@@ -419,9 +417,7 @@ def main(argv: list[str] | None = None) -> int:
                 metadata = delete_life(args.name)
             except KeyError as exc:
                 raise SystemExit(f"Vie introuvable: {args.name}") from exc
-            print(
-                f"Vie supprimée: {metadata.name} ({metadata.slug})"
-            )
+            print(f"Vie supprimée: {metadata.name} ({metadata.slug})")
             next_life = resolve_life(None)
             if next_life is not None:
                 os.environ["SINGULAR_HOME"] = str(next_life)

@@ -4,9 +4,7 @@ import types
 import singular.cli as cli
 
 
-def test_doctor_reports_status_and_powershell_fix(
-    monkeypatch, capsys
-) -> None:
+def test_doctor_reports_status_and_powershell_fix(monkeypatch, capsys) -> None:
     scripts_dir = Path("/tmp/singular-user-scripts")
     monkeypatch.setattr(cli.sys, "executable", "/tmp/python/bin/python")
     monkeypatch.setattr(
@@ -25,9 +23,7 @@ def test_doctor_reports_status_and_powershell_fix(
     assert "Get-Command singular" in out
 
 
-def test_doctor_confirms_when_scripts_are_in_path(
-    monkeypatch, capsys
-) -> None:
+def test_doctor_confirms_when_scripts_are_in_path(monkeypatch, capsys) -> None:
     scripts_dir = Path("/tmp/singular-user-scripts")
     monkeypatch.setattr(cli.sys, "executable", "/tmp/python/bin/python")
     monkeypatch.setattr(
@@ -44,9 +40,7 @@ def test_doctor_confirms_when_scripts_are_in_path(
     assert "PATH semble correctement configuré" in out
 
 
-def test_doctor_fix_calls_windows_path_update_when_missing(
-    monkeypatch, capsys
-) -> None:
+def test_doctor_fix_calls_windows_path_update_when_missing(monkeypatch, capsys) -> None:
     scripts_dir = Path("/tmp/singular-user-scripts")
     monkeypatch.setattr(cli.sys, "executable", "/tmp/python/bin/python")
     monkeypatch.setattr(
@@ -71,9 +65,7 @@ def test_doctor_fix_calls_windows_path_update_when_missing(
     assert called == [scripts_dir.resolve()]
 
 
-def test_doctor_fix_windows_user_path_is_idempotent(
-    monkeypatch, capsys
-) -> None:
+def test_doctor_fix_windows_user_path_is_idempotent(monkeypatch, capsys) -> None:
     scripts_dir = Path(r"C:\Users\Ada\AppData\Roaming\Python\Python313\Scripts")
     monkeypatch.setattr(cli.os, "name", "nt")
 
