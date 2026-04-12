@@ -6,6 +6,7 @@ import asyncio
 from collections import Counter
 import json
 from dataclasses import dataclass
+from datetime import datetime
 import os
 import sys
 from pathlib import Path
@@ -150,7 +151,7 @@ def create_app(
             return []
         return sorted(
             [path for path in runs_path.iterdir() if path.is_file() and path.suffix == ".jsonl"],
-            key=lambda path: path.stat().st_mtime,
+            key=lambda path: (path.stat().st_mtime_ns, path.name),
         )
 
     def _read_jsonl_records(file: Path) -> list[dict[str, object]]:
@@ -169,7 +170,75 @@ def create_app(
 
     def _latest_run_file() -> Path | None:
         files = _iter_run_files()
-        return files[-1] if files else None
+        if not files:
+            return None
+
+        def _latest_ts_in_file(path: Path) -> str:
+            latest_ts = ""
+            for record in _read_jsonl_records(path):
+                ts = record.get("ts")
+                if isinstance(ts, str) and ts > latest_ts:
+                    latest_ts = ts
+            return latest_ts
+
+        return max(
+            files,
+            key=lambda path: (path.stat().st_mtime_ns, _latest_ts_in_file(path), path.name),
+        )
+
+    def _parse_ts(value: object) -> datetime | None:
+        if not isinstance(value, str):
+            return None
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+    def _event_type(record: dict[str, object]) -> str | None:
+        event = record.get("event")
+        if isinstance(event, str):
+            return event
+        if _is_mutation_record(record):
+            return "mutation"
+        return None
+
+    def _record_organism(record: dict[str, object]) -> str | None:
+        organism = record.get("organism")
+        if isinstance(organism, str):
+            return organism
+        return _record_life(record)
+
+    def _timeline_entry(record: dict[str, object], run_id: str) -> dict[str, object] | None:
+        event = _event_type(record)
+        if event not in {"mutation", "delay", "refuse", "death", "interaction"}:
+            return None
+
+        accepted: bool | None = None
+        accepted_value = record.get("accepted")
+        if isinstance(accepted_value, bool):
+            accepted = accepted_value
+        elif isinstance(record.get("ok"), bool):
+            accepted = bool(record.get("ok"))
+
+        score_before = _as_float(record.get("score_base"))
+        score_after = _as_float(record.get("score_new"))
+
+        return {
+            "run_id": run_id,
+            "timestamp": record.get("ts"),
+            "event": event,
+            "organism": _record_organism(record),
+            "operator": record.get("operator", record.get("op")),
+            "accepted": accepted,
+            "human_summary": record.get("human_summary"),
+            "decision_reason": record.get("decision_reason", record.get("reason")),
+            "diff": record.get("diff"),
+            "loop_modifications": record.get("loop_modifications", {}),
+            "score_before": score_before,
+            "score_after": score_after,
+            "interaction": record.get("interaction"),
+            "resume_at": record.get("resume_at"),
+        }
 
     def _summarize_cockpit() -> dict[str, object]:
         latest = _latest_run_file()
@@ -316,6 +385,79 @@ def create_app(
         if latest is None:
             return {"run": None, "records": []}
         return {"run": latest.stem, "records": _read_jsonl_records(latest)}
+
+    @app.get("/api/runs/{run_id}/timeline")
+    def read_run_timeline(
+        run_id: str,
+        page: int = 1,
+        page_size: int = 25,
+        operator: str | None = None,
+        decision: str | None = None,
+        period_start: str | None = None,
+        period_end: str | None = None,
+        organism: str | None = None,
+    ) -> dict[str, object]:
+        run_file = runs_path / f"{run_id}.jsonl"
+        if not run_file.exists():
+            raise HTTPException(status_code=404, detail=f"run '{run_id}' not found")
+
+        all_items: list[dict[str, object]] = []
+        for record in _read_jsonl_records(run_file):
+            item = _timeline_entry(record, run_id)
+            if item is None:
+                continue
+
+            if operator and item.get("operator") != operator:
+                continue
+            if organism and item.get("organism") != organism:
+                continue
+
+            accepted = item.get("accepted")
+            if decision == "accepted" and accepted is not True:
+                continue
+            if decision == "rejected" and accepted is not False:
+                continue
+
+            ts = _parse_ts(item.get("timestamp"))
+            if (period_start or period_end) and ts is None:
+                continue
+            if period_start and ts is not None:
+                start = _parse_ts(period_start)
+                if start is not None and ts < start:
+                    continue
+            if period_end and ts is not None:
+                end = _parse_ts(period_end)
+                if end is not None and ts > end:
+                    continue
+
+            all_items.append(item)
+
+        all_items.sort(key=lambda entry: str(entry.get("timestamp", "")))
+
+        page = max(page, 1)
+        page_size = min(max(page_size, 1), 200)
+        total = len(all_items)
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        items = all_items[start_idx:end_idx]
+
+        return {
+            "run_id": run_id,
+            "filters": {
+                "operator": operator,
+                "decision": decision,
+                "period_start": period_start,
+                "period_end": period_end,
+                "organism": organism,
+            },
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "total_pages": (total + page_size - 1) // page_size if total else 0,
+            },
+            "items": items,
+        }
 
     @app.get("/runs/latest/summary")
     def read_latest_run_summary() -> dict[str, object]:
@@ -624,6 +766,9 @@ def create_app(
             "<h2>Psyche</h2><pre id='psyche'></pre>"
             "<h2>Ecosystem Summary</h2><pre id='ecosystem-summary'></pre>"
             "<h2>Organisms</h2><pre id='organisms'></pre>"
+            "<h2>Frise des événements</h2>"
+            "<div id='timeline' style='display:flex;gap:8px;overflow:auto;white-space:nowrap;'></div>"
+            "<h3>Détail événement</h3><pre id='timeline-detail'>Cliquez sur un événement.</pre>"
             "<h2>Runs</h2><div id='logs'></div>"
             "<script>const ws=new WebSocket(`ws://${location.host}/ws`);"
             "const loadEco=()=>fetch('/ecosystem').then(r=>r.json()).then(d=>{document.getElementById('ecosystem-summary').textContent=JSON.stringify(d.summary,null,2);document.getElementById('organisms').textContent=JSON.stringify(d.organisms,null,2);});"
@@ -637,7 +782,8 @@ def create_app(
             "document.getElementById('kpi-next-action').textContent=d.next_action;"
             "document.getElementById('kpi-actions').textContent=JSON.stringify(d.suggested_actions,null,2);"
             "});"
-            "loadEco();loadCockpit();setInterval(()=>{loadEco();loadCockpit();},500);"
+            "const loadTimeline=()=>fetch('/runs/latest').then(r=>r.json()).then(meta=>{if(!meta.run){return {items:[]};}return fetch(`/api/runs/${meta.run}/timeline?page=1&page_size=120`).then(r=>r.json());}).then(data=>{const wrap=document.getElementById('timeline');const detail=document.getElementById('timeline-detail');wrap.innerHTML='';for(const item of data.items||[]){const btn=document.createElement('button');btn.textContent=`${item.event} · ${item.timestamp||'n/a'}`;btn.style.padding='6px';btn.onclick=()=>{detail.textContent=JSON.stringify({event:item.event,timestamp:item.timestamp,summary:item.human_summary,decision_reason:item.decision_reason,score_before:item.score_before,score_after:item.score_after,diff:item.diff,loop_modifications:item.loop_modifications},null,2);};wrap.appendChild(btn);}if(!(data.items||[]).length){detail.textContent='Aucun événement de frise disponible.';}});"
+            "loadEco();loadCockpit();loadTimeline();setInterval(()=>{loadEco();loadCockpit();loadTimeline();},500);"
             "ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);}else if(m.type==='logs'){const d=document.getElementById('logs');for(const [n,entries] of Object.entries(m.data)){let pre=document.getElementById(`log-${n}`);if(!pre){pre=document.createElement('pre');pre.id=`log-${n}`;pre.textContent=n+'\n';d.appendChild(pre);}for(const entry of entries){pre.textContent+=entry+'\n';}}}};"
             "</script></body></html>"
         )
