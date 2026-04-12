@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -44,9 +43,7 @@ def test_resource_manager_save_atomic(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = tmp_path / "resources.json"
-    path.write_text(
-        json.dumps({"energy": 1, "food": 2, "warmth": 3}), encoding="utf-8"
-    )
+    path.write_text(json.dumps({"energy": 1, "food": 2, "warmth": 3}), encoding="utf-8")
     rm = ResourceManager(path=path)
 
     monkeypatch.setattr(memory.os, "replace", failing_replace)

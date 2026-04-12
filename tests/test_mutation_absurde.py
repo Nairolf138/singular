@@ -2,10 +2,13 @@ from singular.organisms.spawn import mutation_absurde
 
 
 def test_mutation_absurde(tmp_path):
-    code = """\
+    code = (
+        """\
         def add(a, b):
             return a + b
-    """.strip() + "\n"
+    """.strip()
+        + "\n"
+    )
 
     # Execute original code and record result
     original_ns = {}

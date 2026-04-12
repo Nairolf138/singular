@@ -34,4 +34,3 @@ def start(interval: float, agent: Agent) -> threading.Event:
 
 
 __all__ = ["reevaluate_goals", "start"]
-

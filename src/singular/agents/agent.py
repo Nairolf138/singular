@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Core agent implementation handling motivations and goals."""
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from random import choice, random
@@ -28,9 +28,7 @@ class Agent:
         """
 
         for need, delta in context.items():
-            self.motivations.needs[need] = (
-                self.motivations.needs.get(need, 0.0) + delta
-            )
+            self.motivations.needs[need] = self.motivations.needs.get(need, 0.0) + delta
 
     def choose_goal(self) -> Optional[str]:
         """Return the need with the highest motivation.
@@ -40,7 +38,9 @@ class Agent:
 
         if not self.motivations.needs:
             return None
-        return max(self.motivations.needs, key=self.motivations.needs.get)
+        return max(
+            self.motivations.needs, key=lambda need: self.motivations.needs[need]
+        )
 
     def choose_action(
         self, actions: Dict[str, float], context: Optional[Dict] = None
@@ -68,7 +68,7 @@ class Agent:
         if not allowed_actions:
             return None
 
-        best_action = max(allowed_actions, key=allowed_actions.get)
+        best_action = max(allowed_actions, key=lambda action: allowed_actions[action])
         # Explore a non-optimal action with probability ``decision_noise``
         if len(allowed_actions) > 1 and random() < self.decision_noise:
             alternatives = [act for act in allowed_actions if act != best_action]

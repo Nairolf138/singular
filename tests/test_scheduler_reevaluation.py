@@ -19,4 +19,3 @@ def test_scheduler_triggers_goal_reevaluation():
     stop_event.set()
 
     assert calls["count"] > 0
-

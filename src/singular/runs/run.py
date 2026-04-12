@@ -32,7 +32,13 @@ def run(seed: int | None = None) -> str:
     base = "total = 0\n" "for i in range(1000):\n" "    total += i\n" "result = total\n"
 
     psyche = Psyche.load_state()
-    freq = max(1, int(getattr(psyche, "mutation_rate", 1.0) * (getattr(psyche, "energy", 100.0) / 100)))
+    freq = max(
+        1,
+        int(
+            getattr(psyche, "mutation_rate", 1.0)
+            * (getattr(psyche, "energy", 100.0) / 100)
+        ),
+    )
     for _ in range(freq):
         propose_mutations([])
     policy = psyche.mutation_policy()

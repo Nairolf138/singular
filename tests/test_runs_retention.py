@@ -4,6 +4,7 @@ import importlib
 def test_log_rotation(tmp_path, monkeypatch):
     monkeypatch.setenv("SINGULAR_RUNS_KEEP", "2")
     import singular.runs.logger as logger
+
     importlib.reload(logger)
     for i in range(3):
         rl = logger.RunLogger(f"r{i}", root=tmp_path)

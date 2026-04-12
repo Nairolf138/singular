@@ -193,9 +193,7 @@ def log_mutation(
 ) -> None:
     """Record mutation outcome and notify observers."""
 
-    env_notifications.notify(
-        f"iteration {iteration}: {op_name}", channel=log.info
-    )
+    env_notifications.notify(f"iteration {iteration}: {op_name}", channel=log.info)
     _ = env_files.list_files()
     logger.log(
         key,
@@ -265,9 +263,7 @@ def run(
         skills_dir.mkdir(parents=True, exist_ok=True)
         if skills_dir.name not in world.organisms:
             prototype = mortality or DeathMonitor()
-            world.organisms[skills_dir.name] = Organism(
-                skills_dir, monitor=prototype
-            )
+            world.organisms[skills_dir.name] = Organism(skills_dir, monitor=prototype)
 
     operators = operators or _load_default_operators()
     stats: Dict[str, Dict[str, float]] = state.stats
@@ -279,7 +275,11 @@ def run(
     start = time.time()
     last_post = 0.0
     initial_freq = max(
-        1, int(getattr(psyche, "mutation_rate", 1.0) * (getattr(psyche, "energy", 100.0) / 100))
+        1,
+        int(
+            getattr(psyche, "mutation_rate", 1.0)
+            * (getattr(psyche, "energy", 100.0) / 100)
+        ),
     )
     for _ in range(initial_freq):
         propose_mutations([])
@@ -291,7 +291,8 @@ def run(
         delayed: list[tuple[float, str, Path]] = []
         while time.time() - start < budget_seconds:
             if getattr(psyche, "sleeping", False) or (
-                hasattr(psyche, "energy") and getattr(psyche, "energy") < SLEEP_THRESHOLD
+                hasattr(psyche, "energy")
+                and getattr(psyche, "energy") < SLEEP_THRESHOLD
             ):
                 if not getattr(psyche, "sleeping", False):
                     setattr(psyche, "sleeping", True)
@@ -305,13 +306,6 @@ def run(
                     psyche.save_state()
                 continue
 
-            freq = max(
-                1,
-                int(
-                    getattr(psyche, "mutation_rate", 1.0)
-                    * (getattr(psyche, "energy", 100.0) / 100)
-                ),
-            )
             resource_manager.metabolize()
             signals = capture_signals()
             temp = get_temperature()
@@ -402,9 +396,7 @@ def run(
                 update_score(key, mutated_score)
                 org.last_score = mutated_score
                 org.energy += 0.2
-                env_artifacts.save_text(
-                    f"mutation_{state.iteration}", diff
-                )
+                env_artifacts.save_text(f"mutation_{state.iteration}", diff)
             else:
                 org.energy -= 0.1
 

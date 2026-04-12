@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Perception utilities.
 
 This module provides a :func:`capture_signals` function that gathers basic
@@ -9,11 +7,13 @@ supply real-world data by reading from a file or querying a weather API.  Any
 failures in these connectors are ignored so that perception always succeeds.
 """
 
-from pathlib import Path
+from __future__ import annotations
+
 import os
 import random
 import time
 from typing import Any, Dict
+from pathlib import Path
 
 
 def _read_optional_file() -> Dict[str, Any]:
@@ -33,7 +33,7 @@ def _query_optional_weather_api() -> Dict[str, Any]:
     if not url:
         return {}
     try:  # pragma: no cover - network failures are expected
-        import requests
+        import requests  # type: ignore[import-untyped]
 
         timeout_str = os.getenv("SINGULAR_HTTP_TIMEOUT", "5")
         try:

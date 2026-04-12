@@ -22,9 +22,7 @@ def test_uninstall_keep_lives_preserves_lives_tree(tmp_path: Path) -> None:
     _mkdir(mem_dir)
     _mkdir(runs_dir)
 
-    exit_code = cli.main(
-        ["--root", str(root), "uninstall", "--keep-lives", "--yes"]
-    )
+    exit_code = cli.main(["--root", str(root), "uninstall", "--keep-lives", "--yes"])
 
     assert exit_code == 0
     assert lives_dir.exists()
@@ -45,9 +43,7 @@ def test_uninstall_purge_lives_removes_all_data(tmp_path: Path) -> None:
     _mkdir(mem_dir)
     _mkdir(runs_dir)
 
-    exit_code = cli.main(
-        ["--root", str(root), "uninstall", "--purge-lives", "--yes"]
-    )
+    exit_code = cli.main(["--root", str(root), "uninstall", "--purge-lives", "--yes"])
 
     assert exit_code == 0
     assert not lives_dir.exists()

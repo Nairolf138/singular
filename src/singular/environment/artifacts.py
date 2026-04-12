@@ -1,4 +1,5 @@
 """Utilities to generate and persist simple artifacts."""
+
 from __future__ import annotations
 
 import os
