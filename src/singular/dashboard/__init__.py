@@ -776,6 +776,7 @@ def create_app(
             lives_rows = [row for row in lives_rows if row.get("trend") == "dégradation"]
 
         sort_key_map: dict[str, str] = {
+            "life": "life",
             "score": "current_health_score",
             "trend": "trend_rank",
             "stability": "stability",
