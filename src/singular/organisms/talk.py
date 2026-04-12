@@ -52,8 +52,22 @@ def talk(
     provider_name = provider or os.getenv("LLM_PROVIDER")
     if not provider_name:
         provider_name = "openai" if os.getenv("OPENAI_API_KEY") else "stub"
+    print(f"Provider: {provider_name}")
+
+    if provider_name == "openai":
+        api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        if not api_key:
+            print(
+                "OPENAI_API_KEY is required when provider is 'openai'. "
+                "Falling back to local default replies if unavailable."
+            )
+
     generate_reply: Callable[[str], str] | None = load_llm_provider(provider_name)
     if generate_reply is None:
+        print(
+            f"Warning: provider '{provider_name}' not found; "
+            "falling back to _default_reply."
+        )
 
         def generate_reply(prompt: str) -> str:
             return _default_reply(prompt, rng)

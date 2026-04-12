@@ -23,6 +23,8 @@ def test_talk_loop(monkeypatch, tmp_path):
     assert episodes[1]["role"] == "assistant"
     assert episodes[1]["raw_reply"]
     assert "Mood: neutral" in episodes[1]["text"]
+    assert outputs[0] == "Provider: idontexist"
+    assert any("provider 'idontexist' not found" in out for out in outputs)
     assert any("Reminder:" in out for out in outputs)
 
 
@@ -85,7 +87,8 @@ def test_talk_single_prompt(monkeypatch, tmp_path):
     assert episodes[0]["role"] == "user"
     assert episodes[0]["text"] == "hello"
     expected = _default_reply("hello", random.Random(123)) + " | Mood: neutral"
-    assert outputs[0] == expected
+    assert outputs[0] == "Provider: stub"
+    assert outputs[-1] == expected
 
 
 def _run_talk(monkeypatch, tmp_path, seed, run):
@@ -99,7 +102,7 @@ def _run_talk(monkeypatch, tmp_path, seed, run):
     outputs = []
     monkeypatch.setattr("builtins.print", lambda msg: outputs.append(msg))
     talk(seed=seed)
-    return outputs[0]
+    return outputs
 
 
 def test_talk_seed_controls_stub(monkeypatch, tmp_path):
@@ -108,10 +111,13 @@ def test_talk_seed_controls_stub(monkeypatch, tmp_path):
     third = _run_talk(monkeypatch, tmp_path, 321, 3)
     expected_first = _default_reply("hello", random.Random(123)) + " | Mood: neutral"
     expected_third = _default_reply("hello", random.Random(321)) + " | Mood: neutral"
-    assert first == expected_first
-    assert second == expected_first
-    assert third == expected_third
-    assert first != third
+    assert first[0] == "Provider: stub"
+    assert second[0] == "Provider: stub"
+    assert third[0] == "Provider: stub"
+    assert first[-1] == expected_first
+    assert second[-1] == expected_first
+    assert third[-1] == expected_third
+    assert first[-1] != third[-1]
 
 
 def test_talk_does_not_accumulate_reminder_or_mood(monkeypatch, tmp_path):
@@ -130,3 +136,20 @@ def test_talk_does_not_accumulate_reminder_or_mood(monkeypatch, tmp_path):
     for reply in replies:
         assert reply.count("Reminder:") <= 1
         assert reply.count("Mood:") == 1
+
+
+def test_talk_openai_without_api_key_warns(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("singular.organisms.talk.load_llm_provider", lambda _name: None)
+    inputs = iter(["quit"])
+    monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
+    outputs: list[str] = []
+    monkeypatch.setattr("builtins.print", lambda msg: outputs.append(msg))
+
+    talk(provider="openai")
+
+    assert outputs[0] == "Provider: openai"
+    assert any("OPENAI_API_KEY is required" in out for out in outputs)
+    assert any("falling back to _default_reply" in out for out in outputs)
