@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from singular.lives import bootstrap_life, get_registry_root, load_registry, resolve_life
+from singular.lives import (
+    bootstrap_life,
+    get_registry_root,
+    load_registry,
+    resolve_life,
+)
 from singular.organisms.birth import birth
 
 

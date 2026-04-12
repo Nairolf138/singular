@@ -80,7 +80,9 @@ def test_uninstall_purge_detects_dev_repo_root_without_force(
     _mkdir(root / "lives" / "alpha")
     _mkdir(root / "mem")
     _mkdir(root / "runs")
-    (root / "pyproject.toml").write_text("[project]\nname='singular'\n", encoding="utf-8")
+    (root / "pyproject.toml").write_text(
+        "[project]\nname='singular'\n", encoding="utf-8"
+    )
     (root / "src" / "singular").mkdir(parents=True, exist_ok=True)
 
     exit_code = cli.main(["--root", str(root), "uninstall", "--purge-lives", "--yes"])
@@ -97,7 +99,9 @@ def test_uninstall_purge_accepts_dev_repo_root_with_force(tmp_path: Path) -> Non
     _mkdir(root / "lives" / "alpha")
     _mkdir(root / "mem")
     _mkdir(root / "runs")
-    (root / "pyproject.toml").write_text("[project]\nname='singular'\n", encoding="utf-8")
+    (root / "pyproject.toml").write_text(
+        "[project]\nname='singular'\n", encoding="utf-8"
+    )
     (root / "src" / "singular").mkdir(parents=True, exist_ok=True)
 
     exit_code = cli.main(
