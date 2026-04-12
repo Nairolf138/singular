@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import Counter
 import json
+from dataclasses import dataclass
 import os
 import sys
 from pathlib import Path
@@ -12,6 +13,12 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
 from singular.schedulers.reevaluation import alerts_from_records
+
+
+@dataclass
+class _LogCursor:
+    inode: int | None
+    offset: int
 
 
 def create_app(
@@ -138,6 +145,33 @@ def create_app(
             },
         }
 
+    def _iter_run_files() -> list[Path]:
+        if not runs_path.exists():
+            return []
+        return sorted(
+            [path for path in runs_path.iterdir() if path.is_file() and path.suffix == ".jsonl"],
+            key=lambda path: path.stat().st_mtime,
+        )
+
+    def _read_jsonl_records(file: Path) -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
+        for line in file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                records.append(payload)
+        return records
+
+    def _latest_run_file() -> Path | None:
+        files = _iter_run_files()
+        return files[-1] if files else None
+
+
     @app.get("/logs")
     def read_logs() -> dict[str, str]:
         logs: dict[str, str] = {}
@@ -159,33 +193,59 @@ def create_app(
 
     @app.get("/alerts")
     def read_alerts() -> dict[str, object]:
-        if not runs_path.exists():
+        latest = _latest_run_file()
+        if latest is None:
             return {"run": None, "alerts": []}
-
-        files = sorted(
-            [
-                path
-                for path in runs_path.iterdir()
-                if path.is_file() and path.suffix == ".jsonl"
-            ],
-            key=lambda path: path.stat().st_mtime,
-        )
-        if not files:
-            return {"run": None, "alerts": []}
-
-        latest = files[-1]
-        records: list[dict[str, object]] = []
-        for line in latest.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict):
-                records.append(payload)
+        records = _read_jsonl_records(latest)
         return {"run": latest.stem, "alerts": alerts_from_records(records)}
+
+    @app.get("/runs/latest")
+    def read_latest_run() -> dict[str, object]:
+        latest = _latest_run_file()
+        if latest is None:
+            return {"run": None, "records": []}
+        return {"run": latest.stem, "records": _read_jsonl_records(latest)}
+
+    @app.get("/runs/latest/summary")
+    def read_latest_run_summary() -> dict[str, object]:
+        latest = _latest_run_file()
+        if latest is None:
+            return {"run": None, "summary": None}
+
+        records = _read_jsonl_records(latest)
+        accepted = 0
+        rejected = 0
+        mutation_count = 0
+        last_event: str | None = None
+        last_timestamp: str | None = None
+        for record in records:
+            if _is_mutation_record(record):
+                mutation_count += 1
+            accepted_value = record.get("accepted")
+            if not isinstance(accepted_value, bool):
+                accepted_value = record.get("ok")
+            if accepted_value is True:
+                accepted += 1
+            elif accepted_value is False:
+                rejected += 1
+            event = record.get("event")
+            if isinstance(event, str):
+                last_event = event
+            ts = record.get("ts")
+            if isinstance(ts, str):
+                last_timestamp = ts
+
+        return {
+            "run": latest.stem,
+            "summary": {
+                "entries": len(records),
+                "mutations": mutation_count,
+                "accepted": accepted,
+                "rejected": rejected,
+                "last_event": last_event,
+                "last_timestamp": last_timestamp,
+            },
+        }
 
     @app.get("/timeline")
     def read_timeline(
@@ -375,38 +435,56 @@ def create_app(
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket) -> None:
         await ws.accept()
-        last_psyche_mtime: float | None = None
-        log_cache: dict[str, tuple[float, str]] = {}
-        last_logs: dict[str, str] = {}
+        last_psyche_mtime_ns: int | None = None
+        log_cursors: dict[str, _LogCursor] = {}
+
+        def _read_new_entries(file: Path, cursor: _LogCursor | None) -> tuple[list[str], _LogCursor]:
+            stat = file.stat()
+            inode = stat.st_ino
+            next_cursor = cursor or _LogCursor(inode=inode, offset=0)
+            if next_cursor.inode != inode or stat.st_size < next_cursor.offset:
+                next_cursor = _LogCursor(inode=inode, offset=0)
+
+            if stat.st_size <= next_cursor.offset:
+                return [], next_cursor
+
+            with file.open("r", encoding="utf-8") as handle:
+                handle.seek(next_cursor.offset)
+                chunk = handle.read()
+                next_cursor.offset = handle.tell()
+            entries = [line for line in chunk.splitlines() if line.strip()]
+            return entries, next_cursor
+
         try:
             while True:
                 if psyche_path.exists():
-                    mtime = psyche_path.stat().st_mtime
-                    if mtime != last_psyche_mtime:
-                        last_psyche_mtime = mtime
+                    mtime_ns = psyche_path.stat().st_mtime_ns
+                    if mtime_ns != last_psyche_mtime_ns:
+                        last_psyche_mtime_ns = mtime_ns
                         data = json.loads(psyche_path.read_text())
                         await ws.send_json({"type": "psyche", "data": data})
-                logs: dict[str, str] = {}
+
+                incremental_logs: dict[str, list[str]] = {}
                 if runs_path.exists():
                     current_files: set[str] = set()
                     for file in runs_path.iterdir():
-                        if file.is_file():
-                            current_files.add(file.name)
-                            mtime = file.stat().st_mtime
-                            cached = log_cache.get(file.name)
-                            if not cached or cached[0] != mtime:
-                                content = await asyncio.to_thread(file.read_text)
-                                log_cache[file.name] = (mtime, content)
-                            logs[file.name] = log_cache[file.name][1]
-                    # Remove cache entries for files that no longer exist
-                    for name in set(log_cache) - current_files:
-                        del log_cache[name]
+                        if not file.is_file():
+                            continue
+                        current_files.add(file.name)
+                        entries, next_cursor = await asyncio.to_thread(
+                            _read_new_entries, file, log_cursors.get(file.name)
+                        )
+                        log_cursors[file.name] = next_cursor
+                        if entries:
+                            incremental_logs[file.name] = entries
+
+                    for name in set(log_cursors) - current_files:
+                        del log_cursors[name]
                 else:
-                    if log_cache:
-                        log_cache.clear()
-                if logs != last_logs:
-                    last_logs = dict(logs)
-                    await ws.send_json({"type": "logs", "data": logs})
+                    log_cursors.clear()
+
+                if incremental_logs:
+                    await ws.send_json({"type": "logs", "data": incremental_logs})
                 await asyncio.sleep(0.1)
         except WebSocketDisconnect:
             pass
@@ -423,7 +501,7 @@ def create_app(
             "<script>const ws=new WebSocket(`ws://${location.host}/ws`);"
             "const loadEco=()=>fetch('/ecosystem').then(r=>r.json()).then(d=>{document.getElementById('ecosystem-summary').textContent=JSON.stringify(d.summary,null,2);document.getElementById('organisms').textContent=JSON.stringify(d.organisms,null,2);});"
             "loadEco();setInterval(loadEco,500);"
-            "ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);}else if(m.type==='logs'){const d=document.getElementById('logs');d.innerHTML='';for(const [n,c] of Object.entries(m.data)){const pre=document.createElement('pre');pre.textContent=n+'\n'+c;d.appendChild(pre);}}};"
+            "ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);}else if(m.type==='logs'){const d=document.getElementById('logs');for(const [n,entries] of Object.entries(m.data)){let pre=document.getElementById(`log-${n}`);if(!pre){pre=document.createElement('pre');pre.id=`log-${n}`;pre.textContent=n+'\n';d.appendChild(pre);}for(const entry of entries){pre.textContent+=entry+'\n';}}}};"
             "</script></body></html>"
         )
 
