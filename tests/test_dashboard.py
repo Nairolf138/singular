@@ -117,6 +117,67 @@ def test_dashboard_latest_run_summary_endpoint(tmp_path: Path) -> None:
     assert len(latest_payload["records"]) == 3
 
 
+def test_dashboard_cockpit_endpoint_schema(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "cockpit.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "ts": "2026-04-12T10:00:00",
+                        "accepted": False,
+                        "op": "flip",
+                        "score_base": 10.0,
+                        "score_new": 12.0,
+                        "health": {"score": 85.0, "sandbox_stability": 0.85},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-04-12T10:05:00",
+                        "accepted": False,
+                        "operator": "swap",
+                        "score_base": 12.0,
+                        "score_new": 14.0,
+                        "health": {"score": 80.0, "sandbox_stability": 0.70},
+                    }
+                ),
+            ]
+        )
+        + "\n"
+    )
+
+    app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    client = TestClient(app)
+
+    response = client.get("/api/cockpit")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["run"] == "cockpit"
+    assert payload["trend"] in {"amélioration", "plateau", "dégradation"}
+    assert isinstance(payload["critical_alerts"], list)
+    assert isinstance(payload["suggested_actions"], list)
+    assert isinstance(payload["next_action"], str)
+    assert payload["global_status"] in {"critical", "warning", "stable", "unknown"}
+    assert "health_score" in payload
+    assert "accepted_mutation_rate" in payload
+    assert "last_notable_mutation" in payload
+
+
+def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
+    app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
+    client = TestClient(app)
+
+    response = client.get("/")
+    assert response.status_code == 200
+    body = response.json()
+    assert "Cockpit" in body
+    assert "Prochaine action recommandée" in body
+    assert "/api/cockpit" in body
+
+
 def test_dashboard_timeline_comparison_and_top_mutations(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
