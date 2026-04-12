@@ -14,6 +14,7 @@ sys.path.append(str(root_dir / "src"))
 
 import singular.life.loop as life_loop  # noqa: E402
 from singular.life.loop import run, load_checkpoint  # noqa: E402
+from singular.life.health import detect_health_state  # noqa: E402
 from singular.life.test_coevolution import LivingTestPool, TestCandidate  # noqa: E402
 from singular.resource_manager import ResourceManager  # noqa: E402
 from singular.psyche import Psyche, Mood  # noqa: E402
@@ -217,6 +218,61 @@ def test_run_with_legacy_checkpoint_continues_without_crash(tmp_path: Path):
     assert state.version == life_loop.CHECKPOINT_VERSION
     assert saved["version"] == life_loop.CHECKPOINT_VERSION
     assert saved["iteration"] >= 2
+
+
+def test_health_history_retention_bounds_size() -> None:
+    history = [
+        {
+            "iteration": i,
+            "score": float(i),
+            "performance": float(i) / 10.0,
+            "acceptance_rate": 0.5,
+            "sandbox_stability": 1.0,
+            "energy_resources": 0.7,
+            "failure_frequency": 0.1,
+        }
+        for i in range(1, 1001)
+    ]
+
+    retained = life_loop._retain_health_history(
+        history,
+        fine_window=50,
+        aggregate_every=10,
+    )
+
+    expected_older = (1000 - 50) // 10
+    assert len(retained) == expected_older + 50
+    assert [point["iteration"] for point in retained[-50:]] == list(range(951, 1001))
+
+
+def test_health_history_retention_preserves_trend_signal() -> None:
+    history = [
+        {
+            "iteration": i,
+            "score": float(i) / 2.0,
+            "performance": 0.8,
+            "acceptance_rate": 0.8,
+            "sandbox_stability": 1.0,
+            "energy_resources": 0.9,
+            "failure_frequency": 0.0,
+        }
+        for i in range(1, 1201)
+    ]
+    original_scores = [point["score"] for point in history]
+
+    retained = life_loop._retain_health_history(
+        history,
+        fine_window=200,
+        aggregate_every=10,
+    )
+    retained_scores = [point["score"] for point in retained]
+
+    assert detect_health_state(original_scores, short_window=20, long_window=100) == (
+        "amélioration"
+    )
+    assert detect_health_state(retained_scores, short_window=20, long_window=100) == (
+        "amélioration"
+    )
 
 
 def _inc2_operator(tree: ast.AST, rng=None) -> ast.AST:
