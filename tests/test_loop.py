@@ -235,6 +235,48 @@ def _dec_operator(tree: ast.AST, rng=None) -> ast.AST:
     return tree
 
 
+def _noop_operator(tree: ast.AST, rng=None) -> ast.AST:
+    return tree
+
+
+def test_run_nan_score_does_not_contaminate_stats(tmp_path: Path):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    skill = skills_dir / "foo.py"
+    skill.write_text("result = float('nan')", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+
+    state = run(
+        skills_dir,
+        checkpoint,
+        budget_seconds=0.05,
+        rng=random.Random(0),
+        operators={"noop": _noop_operator},
+    )
+
+    assert state.stats["noop"]["count"] >= 1
+    assert state.stats["noop"]["reward"] == 0.0
+
+
+def test_run_inf_score_does_not_contaminate_stats(tmp_path: Path):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    skill = skills_dir / "foo.py"
+    skill.write_text("result = float('inf')", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+
+    state = run(
+        skills_dir,
+        checkpoint,
+        budget_seconds=0.05,
+        rng=random.Random(0),
+        operators={"noop": _noop_operator},
+    )
+
+    assert state.stats["noop"]["count"] >= 1
+    assert state.stats["noop"]["reward"] == 0.0
+
+
 def test_multi_operator_selection(tmp_path: Path, monkeypatch):
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
