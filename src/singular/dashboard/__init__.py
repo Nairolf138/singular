@@ -11,6 +11,7 @@ import os
 import sys
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from singular.lives import load_registry
 
 from singular.dashboard.actions import DashboardActionService
 from fastapi.responses import HTMLResponse
@@ -669,6 +670,8 @@ def create_app(
         return -1
 
     def _aggregate_lives() -> dict[str, dict[str, object]]:
+        registry = load_registry()
+        active_life = registry.get("active")
         by_life: dict[str, list[dict[str, object]]] = {}
         for record in _load_run_records():
             by_life.setdefault(_record_life(record), []).append(record)
@@ -731,6 +734,8 @@ def create_app(
                 None,
             )
             is_extinct = any(rec.get("event") == "death" for rec in all_records)
+            is_selected = isinstance(active_life, str) and life_name == active_life
+            is_alive = not is_extinct
             trend = _life_trend_label(health_score_points)
             alerts = alerts_from_records(mutation_records) if mutation_records else []
             current_health_score = health_score_points[-1] if health_score_points else None
@@ -756,7 +761,9 @@ def create_app(
                 "alerts": alerts,
                 "alerts_count": len(alerts),
                 "iterations": len(mutation_records),
-                "active": not is_extinct,
+                "selected": is_selected,
+                "alive": is_alive,
+                "active": is_alive,
             }
         return comparison
 
