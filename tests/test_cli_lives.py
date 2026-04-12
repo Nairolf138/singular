@@ -125,3 +125,25 @@ def test_lives_list_supports_json_format(
     assert payload["active"]
     assert len(payload["lives"]) == 2
     assert {"Alpha", "Beta"} == {item["name"] for item in payload["lives"]}
+
+
+def test_status_supports_subcommand_format_and_verbose(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "status-root"
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    main(["--root", str(root), "lives", "create", "--name", "Alpha"])
+
+    captured: dict[str, object] = {}
+
+    def fake_status(*, verbose: bool = False, output_format: str = "plain") -> None:
+        captured["verbose"] = verbose
+        captured["output_format"] = output_format
+
+    monkeypatch.setattr("singular.organisms.status.status", fake_status)
+    main(["--root", str(root), "status", "--verbose", "--format", "table"])
+
+    assert captured["verbose"] is True
+    assert captured["output_format"] == "table"
