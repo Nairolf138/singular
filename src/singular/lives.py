@@ -232,3 +232,41 @@ def delete_life(name: str) -> LifeMetadata:
     save_registry(registry)
 
     return metadata
+
+
+def _remove_tree(path: Path) -> None:
+    """Remove a directory tree if it exists."""
+
+    try:
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        return
+
+
+def uninstall_singular(purge_lives: bool) -> None:
+    """Uninstall Singular data from ``SINGULAR_ROOT``.
+
+    Cleanup targets are intentionally explicit:
+
+    - ``--keep-lives`` mode removes only legacy/global technical artefacts
+      at the root level: ``mem/`` and ``runs/``.
+    - ``--purge-lives`` mode removes all Singular data trees under the root:
+      ``lives/``, ``mem/`` and ``runs/``.
+    """
+
+    root = get_registry_root()
+    if not root.exists():
+        return
+
+    targets = ["lives", "mem", "runs"] if purge_lives else ["mem", "runs"]
+    for target in targets:
+        _remove_tree(root / target)
+
+    if purge_lives:
+        try:
+            root.rmdir()
+        except FileNotFoundError:
+            return
+        except OSError:
+            # Root is kept when not empty (e.g. user-managed files).
+            return

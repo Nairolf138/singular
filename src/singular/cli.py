@@ -175,7 +175,14 @@ def main(argv: list[str] | None = None) -> int:
     argv_list = list(argv) if argv is not None else None
     _preparse_environment(argv_list)
 
-    from .lives import bootstrap_life, delete_life, load_registry, resolve_life
+    from .lives import (
+        bootstrap_life,
+        delete_life,
+        get_registry_root,
+        load_registry,
+        resolve_life,
+        uninstall_singular,
+    )
     from .organisms.quest import quest
     from .organisms.spawn import spawn
     from .organisms.status import status
@@ -285,6 +292,26 @@ def main(argv: list[str] | None = None) -> int:
         "delete", help="Delete a life and its data"
     )
     lives_delete.add_argument("name", help="Slug or name of the life to delete")
+
+    uninstall_parser = subparsers.add_parser(
+        "uninstall", help="Remove Singular data from SINGULAR_ROOT"
+    )
+    uninstall_mode_group = uninstall_parser.add_mutually_exclusive_group(required=True)
+    uninstall_mode_group.add_argument(
+        "--keep-lives",
+        action="store_true",
+        help="Remove only global technical artefacts (mem/, runs/)",
+    )
+    uninstall_mode_group.add_argument(
+        "--purge-lives",
+        action="store_true",
+        help="Remove all Singular data (lives/, mem/, runs/)",
+    )
+    uninstall_parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip confirmation prompt",
+    )
 
     args = parser.parse_args(argv_list)
 
@@ -400,6 +427,38 @@ def main(argv: list[str] | None = None) -> int:
                 os.environ["SINGULAR_HOME"] = str(next_life)
             else:
                 os.environ.pop("SINGULAR_HOME", None)
+
+    elif args.command == "uninstall":
+        purge_lives = bool(args.purge_lives)
+        root = get_registry_root()
+        if purge_lives and not args.yes:
+            confirmation = input(
+                "ATTENTION: cette commande supprimera toutes les vies et "
+                "artefacts Singular sous "
+                f"'{root}' (lives/, mem/, runs/). Continuer ? [y/N] "
+            )
+            if confirmation.strip().lower() not in {"y", "yes", "o", "oui"}:
+                print("Désinstallation annulée.")
+                return 0
+        try:
+            uninstall_singular(purge_lives=purge_lives)
+        except PermissionError as exc:
+            print(
+                f"Erreur: permissions insuffisantes pour supprimer '{exc.filename or root}'.",
+                file=sys.stderr,
+            )
+            return 1
+        except OSError as exc:
+            print(
+                f"Erreur lors de la désinstallation: {exc}",
+                file=sys.stderr,
+            )
+            return 1
+
+        if purge_lives:
+            print(f"Données Singular supprimées sous: {root}")
+        else:
+            print(f"Artefacts globaux supprimés sous: {root} (mem/, runs/)")
 
     else:  # pragma: no cover - defensive programming
         raise SystemExit(f"Commande inconnue: {args.command}")
