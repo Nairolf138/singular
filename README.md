@@ -270,6 +270,67 @@ SINGULAR_RUNS_KEEP=50 singular report
 OPENAI_API_KEY=sk-... singular talk --prompt "Salut"
 ```
 
+### Audit et export
+
+La commande `report` peut produire un export structuré pour archivage ou intégration CI :
+
+```bash
+singular report --id run1 --export evolution.json
+singular report --id run1 --export markdown
+```
+
+- `--export evolution.json` écrit un JSON stable (clés triées) sur disque.
+- `--export markdown` imprime un rapport Markdown sur la sortie standard.
+
+Schéma JSON (`schema_version: 1`) :
+
+- `context` : métadonnées d'exécution (`run_id`, bornes temporelles, volumes).
+- `summary` : métriques globales (`best_score`, `final_score`, histogramme opérateurs, compteurs amélioration/dégradation).
+- `timeline` : séquence des mutations (`index`, `timestamp`, `operator`, `score_base`, `score_new`, `delta`, `verdict`, `decision_reason`).
+- `health` : score de santé final + tendance (ou `null` si indisponible).
+- `alerts` : liste d'alertes synthétiques (ex. `regressions_majoritaires`).
+- `verdict` : verdict final (`improvement`, `degradation` ou `stable`).
+- `skills` : instantané des skills mémorisées au moment du rapport.
+
+Exemple minimal :
+
+```json
+{
+  "schema_version": 1,
+  "context": {
+    "run_id": "run1",
+    "started_at": "2026-01-01T00:00:00",
+    "ended_at": "2026-01-01T00:00:01",
+    "events_count": 2,
+    "mutations_count": 2
+  },
+  "summary": {
+    "best_score": 1.0,
+    "final_score": 1.5,
+    "generations": 2,
+    "operator_histogram": {"crossover": 1, "mutate": 1},
+    "improvements": 1,
+    "degradations": 1
+  },
+  "timeline": [
+    {
+      "index": 1,
+      "timestamp": "2026-01-01T00:00:00",
+      "operator": "mutate",
+      "score_base": 2.0,
+      "score_new": 1.0,
+      "delta": -1.0,
+      "verdict": "improvement",
+      "decision_reason": "accepted: score improved"
+    }
+  ],
+  "health": null,
+  "alerts": [],
+  "verdict": "improvement",
+  "skills": {}
+}
+```
+
 #### Capteur météo
 
 Pour tenter de récupérer la météo réelle :

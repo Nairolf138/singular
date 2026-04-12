@@ -433,6 +433,11 @@ def main(argv: list[str] | None = None) -> int:
         "report", help="Summarize performance from a run"
     )
     report_parser.add_argument("--id", required=True, help="Run identifier")
+    report_parser.add_argument(
+        "--export",
+        default=None,
+        help="Export report to file (.json/.md) or use `markdown` for stdout",
+    )
 
     subparsers.add_parser("dashboard", help="Launch web dashboard")
     quickstart_parser = subparsers.add_parser(
@@ -672,7 +677,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "report":
         from .runs.report import report
 
-        report(run_id=args.id, output_format=args.output_format)
+        report(run_id=args.id, output_format=args.output_format, export=args.export)
 
     elif args.command == "dashboard":
         _ensure_active_life(resolve_life, args.life)

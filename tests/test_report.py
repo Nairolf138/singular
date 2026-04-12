@@ -191,3 +191,142 @@ def test_report_loop_modifications_ranking(monkeypatch, tmp_path, capsys):
 
     profitable_section = out.split("Plus rentable:")[1]
     assert "#2 mutate" in profitable_section.splitlines()[1]
+
+
+def test_report_export_json_schema(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    run_dir = runs / "run4"
+    run_dir.mkdir()
+    log = run_dir / "events.jsonl"
+    records = [
+        {
+            "version": 1,
+            "event_type": "mutation",
+            "ts": "2026-01-01T00:00:00",
+            "payload": {
+                "op": "mutate",
+                "score_base": 2.0,
+                "score_new": 1.4,
+                "decision_reason": "accepted",
+            },
+        },
+        {
+            "version": 1,
+            "event_type": "mutation",
+            "ts": "2026-01-01T00:00:01",
+            "payload": {
+                "op": "splice",
+                "score_base": 1.4,
+                "score_new": 1.2,
+                "decision_reason": "accepted",
+            },
+        },
+    ]
+    with log.open("w", encoding="utf-8") as fh:
+        for rec in records:
+            fh.write(json.dumps(rec) + "\n")
+
+    mem = tmp_path / "mem"
+    mem.mkdir()
+    (mem / "skills.json").write_text(json.dumps({"alpha": 1.0}), encoding="utf-8")
+
+    export_path = tmp_path / "evolution.json"
+    main(["report", "--id", "run4", "--export", str(export_path)])
+
+    payload = json.loads(export_path.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == 1
+    assert payload["context"]["run_id"] == "run4"
+    assert payload["summary"]["generations"] == 2
+    assert payload["timeline"][0]["operator"] == "mutate"
+    assert payload["timeline"][0]["verdict"] == "improvement"
+    assert payload["verdict"] == "improvement"
+    assert isinstance(payload["alerts"], list)
+
+
+def test_report_export_json_is_stable(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    run_dir = runs / "run5"
+    run_dir.mkdir()
+    log = run_dir / "events.jsonl"
+    log.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "version": 1,
+                        "event_type": "mutation",
+                        "ts": "2026-01-01T00:00:00",
+                        "payload": {
+                            "op": "mutate",
+                            "score_base": 1.0,
+                            "score_new": 0.9,
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "version": 1,
+                        "event_type": "mutation",
+                        "ts": "2026-01-01T00:00:01",
+                        "payload": {
+                            "op": "mutate",
+                            "score_base": 0.9,
+                            "score_new": 0.95,
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    mem = tmp_path / "mem"
+    mem.mkdir()
+    (mem / "skills.json").write_text(json.dumps({}), encoding="utf-8")
+
+    export_path = tmp_path / "stable.json"
+    main(["report", "--id", "run5", "--export", str(export_path)])
+    content1 = export_path.read_text(encoding="utf-8")
+
+    main(["report", "--id", "run5", "--export", str(export_path)])
+    content2 = export_path.read_text(encoding="utf-8")
+
+    assert content1 == content2
+
+
+def test_report_export_markdown_stdout(monkeypatch, tmp_path, capsys):
+    monkeypatch.chdir(tmp_path)
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    run_dir = runs / "run6"
+    run_dir.mkdir()
+    log = run_dir / "events.jsonl"
+    log.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "event_type": "mutation",
+                "ts": "2026-01-01T00:00:00",
+                "payload": {
+                    "op": "mutate",
+                    "score_base": 1.0,
+                    "score_new": 0.8,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    mem = tmp_path / "mem"
+    mem.mkdir()
+    (mem / "skills.json").write_text("{}", encoding="utf-8")
+
+    main(["report", "--id", "run6", "--export", "markdown"])
+    out = capsys.readouterr().out
+    assert "# Run report `run6`" in out
+    assert "## Timeline des mutations" in out
