@@ -31,7 +31,59 @@ def _in_path(target: Path, env_path: str | None = None) -> bool:
     return False
 
 
-def _doctor() -> None:
+def _normalize_windows_path_entry(entry: str) -> str:
+    """Normalize a PATH entry for case-insensitive Windows comparisons."""
+
+    return os.path.normcase(os.path.normpath(entry.strip().strip('"')))
+
+
+def _doctor_fix_windows_user_path(scripts_path: Path) -> bool:
+    """Add scripts_path to the Windows user Path variable when missing."""
+
+    if os.name != "nt":
+        print("⚠️ `doctor --fix` non supporté sur cette plateforme.")
+        return False
+
+    import winreg
+
+    target = str(scripts_path)
+    target_norm = _normalize_windows_path_entry(target)
+
+    with winreg.OpenKey(
+        winreg.HKEY_CURRENT_USER,
+        "Environment",
+        0,
+        winreg.KEY_READ | winreg.KEY_SET_VALUE,
+    ) as key:
+        try:
+            raw_user_path, _ = winreg.QueryValueEx(key, "Path")
+        except FileNotFoundError:
+            raw_user_path = ""
+
+        entries = [entry for entry in raw_user_path.split(";") if entry.strip()]
+        deduped_entries: list[str] = []
+        seen: set[str] = set()
+        for entry in [*entries, target]:
+            normalized = _normalize_windows_path_entry(entry)
+            if not normalized or normalized in seen:
+                continue
+            deduped_entries.append(entry.strip())
+            seen.add(normalized)
+
+        if target_norm in {_normalize_windows_path_entry(entry) for entry in entries}:
+            print("✅ Le dossier Scripts est déjà présent dans le Path utilisateur.")
+            print("➡️ Pensez à redémarrer PowerShell pour recharger l'environnement.")
+            return False
+
+        new_user_path = ";".join(deduped_entries)
+        winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, new_user_path)
+
+    print("✅ Le dossier Scripts a été ajouté au Path utilisateur Windows.")
+    print("➡️ Veuillez redémarrer PowerShell pour appliquer ce changement.")
+    return True
+
+
+def _doctor(*, fix: bool = False) -> None:
     """Display environment diagnostics for CLI installation."""
 
     python_executable = Path(sys.executable).resolve()
@@ -68,6 +120,10 @@ def _doctor() -> None:
     print(f"$env:Path = [Environment]::GetEnvironmentVariable('Path', 'User')")
     print("Get-Command singular")
     print("singular --help")
+
+    if fix:
+        print("\nApplication du correctif automatique (`--fix`)…")
+        _doctor_fix_windows_user_path(scripts_path)
 
 
 def _preparse_environment(argv: list[str] | None) -> argparse.Namespace:
@@ -203,7 +259,14 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument("--id", required=True, help="Run identifier")
 
     subparsers.add_parser("dashboard", help="Launch web dashboard")
-    subparsers.add_parser("doctor", help="Diagnose CLI installation and PATH")
+    doctor_parser = subparsers.add_parser(
+        "doctor", help="Diagnose CLI installation and PATH"
+    )
+    doctor_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="Try to add user Scripts directory to user Path on Windows",
+    )
 
     lives_parser = subparsers.add_parser("lives", help="Manage lives")
     lives_subparsers = lives_parser.add_subparsers(
@@ -295,7 +358,7 @@ def main(argv: list[str] | None = None) -> int:
         dashboard_run()
 
     elif args.command == "doctor":
-        _doctor()
+        _doctor(fix=args.fix)
 
     elif args.command == "lives":
         if args.lives_command == "list":
