@@ -11,7 +11,7 @@ import time
 import heapq
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, Iterable
+from typing import Callable, Dict, Iterable, Mapping
 
 from singular.memory import add_episode, update_score
 from singular.psyche import Psyche, Mood
@@ -65,6 +65,13 @@ class WorldState:
 
     organisms: Dict[str, Organism] = field(default_factory=dict)
     resource_pool: float = 100.0
+
+
+OrganismInputs = Mapping[str, Path] | Iterable[Path] | Path
+
+INTERACTION_RESOURCE_COMPETITION = "resource_competition"
+INTERACTION_CROSSOVER = "crossover"
+INTERACTION_EXTINCTION = "extinction"
 
 
 def load_checkpoint(path: Path) -> Checkpoint:
@@ -223,8 +230,19 @@ def _choose_skill(
     return org_name, rng.choice(available)
 
 
+def _normalize_organism_inputs(skills_dirs: OrganismInputs) -> Dict[str, Path]:
+    """Normalize organism inputs into a ``name -> skills_dir`` mapping."""
+
+    if isinstance(skills_dirs, Path):
+        return {skills_dirs.name: skills_dirs}
+    if isinstance(skills_dirs, Mapping):
+        return {str(name): Path(path) for name, path in skills_dirs.items()}
+    paths = [Path(path) for path in skills_dirs]
+    return {path.name: path for path in paths}
+
+
 def run(
-    skills_dirs: Iterable[Path] | Path,
+    skills_dirs: OrganismInputs,
     checkpoint_path: Path,
     budget_seconds: float,
     rng: random.Random | None = None,
@@ -241,9 +259,10 @@ def run(
     Parameters
     ----------
     skills_dirs:
-        A collection of directories, each representing an organism and
-        containing its skill files. A single :class:`~pathlib.Path` is accepted
-        for backward compatibility.
+        Organism inputs accepted as:
+        - ``Path``: single organism.
+        - ``Iterable[Path]``: multiple organisms (name inferred from folder).
+        - ``Mapping[str, Path]``: explicit ``organism_name -> skills_dir`` contract.
     map_elites:
         Optional :class:`MapElites` instance. When provided, mutations are
         inserted into the MAP-Elites grid and only persisted if they improve
@@ -253,17 +272,14 @@ def run(
     rng = rng or random.Random()
     state = load_checkpoint(checkpoint_path)
 
-    if isinstance(skills_dirs, Path):
-        skills_dirs = [skills_dirs]
-    else:
-        skills_dirs = list(skills_dirs)
+    organisms_input = _normalize_organism_inputs(skills_dirs)
 
     world = world or WorldState()
-    for skills_dir in skills_dirs:
+    for org_name, skills_dir in organisms_input.items():
         skills_dir.mkdir(parents=True, exist_ok=True)
-        if skills_dir.name not in world.organisms:
+        if org_name not in world.organisms:
             prototype = mortality or DeathMonitor()
-            world.organisms[skills_dir.name] = Organism(skills_dir, monitor=prototype)
+            world.organisms[org_name] = Organism(skills_dir, monitor=prototype)
 
     operators = operators or _load_default_operators()
     stats: Dict[str, Dict[str, float]] = state.stats
@@ -440,6 +456,16 @@ def run(
                 other.energy -= 0.05
                 other.resources -= 0.02
 
+            logger.log_interaction(
+                INTERACTION_RESOURCE_COMPETITION,
+                organism=org_name,
+                resource_pool=world.resource_pool,
+                energy=org.energy,
+                resources=org.resources,
+                score=org.last_score,
+                alive=True,
+            )
+
             key = (
                 f"{org_name}:{skill_path.stem}"
                 if len(world.organisms) > 1
@@ -470,6 +496,12 @@ def run(
             )
             if dead:
                 logger.log_death(reason or "unknown", age=state.iteration)
+                logger.log_interaction(
+                    INTERACTION_EXTINCTION,
+                    organism=org_name,
+                    reason=reason or "unknown",
+                    alive=False,
+                )
                 del world.organisms[org_name]
                 if not world.organisms:
                     break
@@ -482,6 +514,12 @@ def run(
                 if o.energy <= 0 or o.resources <= 0
             ]
             for name in to_remove:
+                logger.log_interaction(
+                    INTERACTION_EXTINCTION,
+                    organism=name,
+                    reason="depleted_stores",
+                    alive=False,
+                )
                 del world.organisms[name]
 
             # Periodic crossover
@@ -494,6 +532,13 @@ def run(
                 fname, code = crossover(pa, pb, rng)
                 (child_dir / fname).write_text(code, encoding="utf-8")
                 world.organisms[child_dir.name] = Organism(child_dir)
+                logger.log_interaction(
+                    INTERACTION_CROSSOVER,
+                    parents=parent_names,
+                    child=child_dir.name,
+                    child_skills_dir=str(child_dir),
+                    alive=True,
+                )
 
     return state
 

@@ -6,6 +6,8 @@ import random
 
 import singular.life.loop as life_loop
 from singular.life.loop import WorldState
+from singular.dashboard import create_app
+from fastapi_stub import TestClient
 
 
 def _dec_operator(tree: ast.AST, rng=None) -> ast.AST:
@@ -69,3 +71,43 @@ def test_multi_organisms_independent(tmp_path: Path, monkeypatch):
 
     assert world.organisms["org1"].last_score == val1
     assert world.organisms["org2"].last_score == val2
+
+
+def test_multi_organism_events_and_dashboard(tmp_path: Path, monkeypatch) -> None:
+    org1 = tmp_path / "org1"
+    org2 = tmp_path / "org2"
+    org1.mkdir()
+    org2.mkdir()
+    (org1 / "foo.py").write_text("result = 1", encoding="utf-8")
+    (org2 / "foo.py").write_text("result = 1", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+    runs_dir = tmp_path / "runs"
+
+    from singular.runs.logger import RunLogger as RL
+
+    monkeypatch.setattr(
+        life_loop, "RunLogger", lambda *a, **k: RL(*a, root=runs_dir, **k)
+    )
+    world = WorldState(resource_pool=0.0)
+    life_loop.run(
+        {"org1": org1, "org2": org2},
+        checkpoint,
+        budget_seconds=0.2,
+        rng=random.Random(2),
+        operators={"dec": _dec_operator},
+        world=world,
+    )
+
+    log_file = next(runs_dir.glob("loop-*.jsonl"))
+    rows = [json.loads(line) for line in log_file.read_text(encoding="utf-8").splitlines()]
+    interactions = [row for row in rows if row.get("event") == "interaction"]
+    assert any(
+        row.get("interaction") == life_loop.INTERACTION_RESOURCE_COMPETITION
+        for row in interactions
+    )
+
+    app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "missing_psyche.json")
+    client = TestClient(app)
+    ecosystem = client.get("/ecosystem").json()
+    assert "org1" in ecosystem["organisms"]
+    assert ecosystem["summary"]["total_organisms"] >= 1

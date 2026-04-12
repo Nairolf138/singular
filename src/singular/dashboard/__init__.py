@@ -24,6 +24,74 @@ def create_app(
     )
     app = FastAPI()
 
+    def _compute_ecosystem() -> dict:
+        organisms: dict[str, dict[str, object]] = {}
+        if runs_path.exists():
+            for file in runs_path.iterdir():
+                if not file.is_file() or file.suffix != ".jsonl":
+                    continue
+                for line in file.read_text(encoding="utf-8").splitlines():
+                    if not line.strip():
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    event = record.get("event")
+                    interaction = record.get("interaction")
+
+                    if event == "interaction" and isinstance(
+                        record.get("organism"), str
+                    ):
+                        name = str(record["organism"])
+                        state = organisms.setdefault(name, {"status": "alive"})
+                        if "energy" in record:
+                            state["energy"] = record["energy"]
+                        if "resources" in record:
+                            state["resources"] = record["resources"]
+                        if "score" in record:
+                            state["score"] = record["score"]
+                        if "alive" in record:
+                            state["status"] = (
+                                "alive" if bool(record["alive"]) else "extinct"
+                            )
+                        if interaction:
+                            state["last_interaction"] = interaction
+                    elif event == "death":
+                        skill = str(record.get("skill", ""))
+                        if ":" in skill:
+                            name, _ = skill.split(":", 1)
+                            state = organisms.setdefault(name, {})
+                            state["status"] = "extinct"
+                    elif event is None and isinstance(record.get("skill"), str):
+                        skill = record["skill"]
+                        if ":" in skill:
+                            name, _ = skill.split(":", 1)
+                            state = organisms.setdefault(name, {"status": "alive"})
+                            state["score"] = record.get("score_new")
+
+        alive = sum(1 for state in organisms.values() if state.get("status") != "extinct")
+        total_energy = sum(
+            float(state.get("energy", 0.0))
+            for state in organisms.values()
+            if isinstance(state.get("energy"), (int, float))
+        )
+        total_resources = sum(
+            float(state.get("resources", 0.0))
+            for state in organisms.values()
+            if isinstance(state.get("resources"), (int, float))
+        )
+        return {
+            "organisms": organisms,
+            "summary": {
+                "total_organisms": len(organisms),
+                "alive_organisms": alive,
+                "total_energy": total_energy,
+                "total_resources": total_resources,
+            },
+        }
+
     @app.get("/logs")
     def read_logs() -> dict[str, str]:
         logs: dict[str, str] = {}
@@ -38,6 +106,10 @@ def create_app(
         if not psyche_path.exists():
             raise HTTPException(status_code=404, detail="psyche.json not found")
         return json.loads(psyche_path.read_text())
+
+    @app.get("/ecosystem")
+    def read_ecosystem() -> dict:
+        return _compute_ecosystem()
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket) -> None:
@@ -84,8 +156,12 @@ def create_app(
             "<html><head><title>Singular Dashboard</title></head><body>"
             "<h1>Singular Dashboard</h1>"
             "<h2>Psyche</h2><pre id='psyche'></pre>"
+            "<h2>Ecosystem Summary</h2><pre id='ecosystem-summary'></pre>"
+            "<h2>Organisms</h2><pre id='organisms'></pre>"
             "<h2>Runs</h2><div id='logs'></div>"
             "<script>const ws=new WebSocket(`ws://${location.host}/ws`);"
+            "const loadEco=()=>fetch('/ecosystem').then(r=>r.json()).then(d=>{document.getElementById('ecosystem-summary').textContent=JSON.stringify(d.summary,null,2);document.getElementById('organisms').textContent=JSON.stringify(d.organisms,null,2);});"
+            "loadEco();setInterval(loadEco,500);"
             "ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);}else if(m.type==='logs'){const d=document.getElementById('logs');d.innerHTML='';for(const [n,c] of Object.entries(m.data)){const pre=document.createElement('pre');pre.textContent=n+'\n'+c;d.appendChild(pre);}}};"
             "</script></body></html>"
         )

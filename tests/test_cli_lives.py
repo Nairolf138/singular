@@ -61,3 +61,45 @@ def test_loop_ticks_legacy_message(capsys: pytest.CaptureFixture[str]) -> None:
     assert "--ticks" in stderr
     assert "singular loop --budget-seconds <secondes>" in stderr
     assert "1 tick ≈ 1 seconde" in stderr
+
+
+def test_ecosystem_run_accepts_multiple_lives(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "ecosystem"
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    main(["--root", str(root), "lives", "create", "--name", "Alpha"])
+    alpha_slug = load_registry()["active"]
+    assert isinstance(alpha_slug, str)
+    main(["--root", str(root), "lives", "create", "--name", "Beta"])
+    beta_slug = load_registry()["active"]
+    assert isinstance(beta_slug, str)
+
+    called: dict[str, object] = {}
+
+    def fake_loop_run(**kwargs):
+        called.update(kwargs)
+
+    monkeypatch.setattr("singular.runs.loop.loop", fake_loop_run)
+    main(
+        [
+            "--root",
+            str(root),
+            "ecosystem",
+            "run",
+            "--life",
+            alpha_slug,
+            "--life-group",
+            beta_slug,
+            "--budget-seconds",
+            "0.1",
+        ]
+    )
+
+    skills_dirs = called["skills_dirs"]
+    assert isinstance(skills_dirs, dict)
+    assert alpha_slug in skills_dirs
+    assert beta_slug in skills_dirs
+    assert Path(skills_dirs[alpha_slug]).name == "skills"
