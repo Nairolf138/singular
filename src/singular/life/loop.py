@@ -200,6 +200,7 @@ def log_mutation(
     base_score: float,
     mutated_score: float,
     impacted_file: str,
+    loop_modifications: dict[str, int],
 ) -> None:
     """Record mutation outcome and notify observers."""
 
@@ -236,7 +237,76 @@ def log_mutation(
         impacted_file=impacted_file,
         decision_reason=decision_reason,
         human_summary=human_summary,
+        loop_modifications=loop_modifications,
     )
+
+
+def _ast_node_count(tree: ast.AST) -> int:
+    """Return the total number of nodes in ``tree``."""
+
+    return sum(1 for _ in ast.walk(tree))
+
+
+def _function_fingerprints(tree: ast.AST) -> dict[str, str]:
+    """Build stable fingerprints for functions in ``tree``."""
+
+    fingerprints: dict[str, str] = {}
+
+    def visit(node: ast.AST, parents: tuple[str, ...]) -> None:
+        if isinstance(node, ast.ClassDef):
+            next_parents = parents + (node.name,)
+        else:
+            next_parents = parents
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            key = ".".join((*parents, node.name))
+            fingerprints[key] = ast.dump(node, include_attributes=False)
+            next_parents = (*parents, node.name)
+        for child in ast.iter_child_nodes(node):
+            visit(child, next_parents)
+
+    visit(tree, ())
+    return fingerprints
+
+
+def _compute_loop_modifications(original: str, mutated: str) -> dict[str, int]:
+    """Compute mutation diff metrics for loop reporting."""
+
+    diff_lines = list(
+        difflib.unified_diff(
+            original.splitlines(),
+            mutated.splitlines(),
+            fromfile="original",
+            tofile="mutated",
+            lineterm="",
+        )
+    )
+    added = sum(
+        1 for line in diff_lines if line.startswith("+") and not line.startswith("+++")
+    )
+    removed = sum(
+        1 for line in diff_lines if line.startswith("-") and not line.startswith("---")
+    )
+
+    before_tree = ast.parse(original)
+    after_tree = ast.parse(mutated)
+    before_functions = _function_fingerprints(before_tree)
+    after_functions = _function_fingerprints(after_tree)
+
+    changed = {
+        name
+        for name in (before_functions.keys() & after_functions.keys())
+        if before_functions[name] != after_functions[name]
+    }
+    added_functions = after_functions.keys() - before_functions.keys()
+    removed_functions = before_functions.keys() - after_functions.keys()
+
+    return {
+        "lines_added": added,
+        "lines_removed": removed,
+        "functions_modified": len(changed | added_functions | removed_functions),
+        "ast_nodes_before": _ast_node_count(before_tree),
+        "ast_nodes_after": _ast_node_count(after_tree),
+    }
 
 
 def _choose_skill(
@@ -422,6 +492,7 @@ def run(
                     tofile="mutated",
                 )
             )
+            loop_modifications = _compute_loop_modifications(original, mutated)
 
             if diff not in seen_diffs:
                 if hasattr(psyche, "feel"):
@@ -536,6 +607,7 @@ def run(
                 base_score,
                 mutated_score,
                 skill_path.name,
+                loop_modifications,
             )
 
             if hasattr(psyche, "consume"):
