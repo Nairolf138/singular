@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import ast
+import runpy
 import tomllib
 from pathlib import Path
+
+import pytest
 
 
 def _read_project_script_target() -> str:
@@ -63,3 +66,31 @@ def test_module_entrypoint_matches_console_script_target() -> None:
         "Le point d'entrée module doit exécuter la même fonction que "
         "l'entrypoint console script"
     )
+
+
+def test_module_entrypoint_forwards_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("singular.cli.main", lambda: 7)
+
+    with pytest.raises(SystemExit) as excinfo:
+        runpy.run_module("singular", run_name="__main__")
+
+    assert excinfo.value.code == 7
+
+
+def test_module_entrypoint_accepts_cli_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, list[str] | None] = {}
+
+    def fake_main(argv: list[str] | None = None) -> int:
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("singular.cli.main", fake_main)
+
+    with pytest.raises(SystemExit) as excinfo:
+        runpy.run_module("singular", run_name="__main__")
+
+    assert excinfo.value.code == 0
+    # __main__.py delegates to cli.main() without passing argv explicitly.
+    assert captured["argv"] is None

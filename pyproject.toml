@@ -5,15 +5,22 @@ description = "Singular project"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
-authors = [{name = "Singular Contributors"}]
+authors = [{ name = "Singular Contributors" }]
 dependencies = [
-    "requests",
+    # Runtime policy: explicit lower bounds + conservative upper bounds.
+    "requests>=2.31,<3",
 ]
 
 [project.optional-dependencies]
-yaml = ["pyyaml"]
-dashboard = ["fastapi", "uvicorn"]
-viz = ["matplotlib"]
+# Optional dependency policy mirrors runtime constraints:
+# - pin minimum known-compatible versions
+# - keep major-version upper caps for safer updates
+yaml = ["pyyaml>=6.0,<7"]
+dashboard = [
+    "fastapi>=0.110,<1",
+    "uvicorn>=0.29,<1",
+]
+viz = ["matplotlib>=3.8,<4"]
 
 [project.scripts]
 singular = "singular.cli:main"
@@ -23,13 +30,13 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.black]
-target-version = ["py311"]
+target-version = ["py310"]
 extend-exclude = '''
 (
   ^/src/graine/target/tests/test_evaluate\.py
