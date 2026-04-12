@@ -891,6 +891,18 @@ def create_app(
             entries = [line for line in chunk.splitlines() if line.strip()]
             return entries, next_cursor
 
+        def _normalize_stream_event(file: Path, payload: dict[str, object]) -> dict[str, object] | None:
+            event = _event_type(payload)
+            if event is None:
+                return None
+            ts = payload.get("ts")
+            return {
+                "type": "run_event",
+                "run_id": file.stem,
+                "event": event,
+                "ts": ts if isinstance(ts, str) else None,
+            }
+
         try:
             while True:
                 if psyche_path.exists():
@@ -900,27 +912,35 @@ def create_app(
                         data = json.loads(psyche_path.read_text())
                         await ws.send_json({"type": "psyche", "data": data})
 
-                incremental_logs: dict[str, list[str]] = {}
+                incremental_events: list[dict[str, object]] = []
                 if runs_path.exists():
                     current_files: set[str] = set()
                     for file in runs_path.iterdir():
-                        if not file.is_file():
+                        if not file.is_file() or file.suffix != ".jsonl":
                             continue
                         current_files.add(file.name)
                         entries, next_cursor = await asyncio.to_thread(
                             _read_new_entries, file, log_cursors.get(file.name)
                         )
                         log_cursors[file.name] = next_cursor
-                        if entries:
-                            incremental_logs[file.name] = entries
+                        for line in entries:
+                            try:
+                                payload = json.loads(line)
+                            except json.JSONDecodeError:
+                                continue
+                            if not isinstance(payload, dict):
+                                continue
+                            event = _normalize_stream_event(file, payload)
+                            if event is not None:
+                                incremental_events.append(event)
 
                     for name in set(log_cursors) - current_files:
                         del log_cursors[name]
                 else:
                     log_cursors.clear()
 
-                if incremental_logs:
-                    await ws.send_json({"type": "logs", "data": incremental_logs})
+                for event in incremental_events:
+                    await ws.send_json(event)
                 await asyncio.sleep(0.1)
         except WebSocketDisconnect:
             pass
@@ -965,9 +985,18 @@ def create_app(
             "<th><button data-sort='iterations'>Itérations</button></th>"
             "<th>Badges</th>"
             "</tr></thead><tbody id='lives-table-body'></tbody></table></section>"
-            "<section><h2>Actions rapides</h2><pre id='action-result'>Aucune exécution</pre><div style='display:flex;flex-direction:column;gap:8px;max-width:680px;'><label>Token dashboard <input id='action-token' type='password' placeholder='optionnel'/></label><label>Nom de vie (birth/use) <input id='action-life-name' placeholder='New life'/></label><label>Prompt talk <input id='action-prompt' placeholder='Prompt unique'/></label><label>Budget loop (s) <input id='action-budget' type='number' min='0.1' step='0.1' value='1.0'/></label><div style='display:flex;gap:8px;flex-wrap:wrap;'><button id='act-birth'>Birth</button><button id='act-talk'>Talk</button><button id='act-loop'>Loop</button><button id='act-report'>Report</button><button id='act-lives-list'>Lives list</button><button id='act-lives-use'>Lives use</button></div></div></section><h2>Runs</h2><div id='logs'></div>"
+            "<section><h2>Actions rapides</h2><pre id='action-result'>Aucune exécution</pre><div style='display:flex;flex-direction:column;gap:8px;max-width:680px;'><label>Token dashboard <input id='action-token' type='password' placeholder='optionnel'/></label><label>Nom de vie (birth/use) <input id='action-life-name' placeholder='New life'/></label><label>Prompt talk <input id='action-prompt' placeholder='Prompt unique'/></label><label>Budget loop (s) <input id='action-budget' type='number' min='0.1' step='0.1' value='1.0'/></label><div style='display:flex;gap:8px;flex-wrap:wrap;'><button id='act-birth'>Birth</button><button id='act-talk'>Talk</button><button id='act-loop'>Loop</button><button id='act-report'>Report</button><button id='act-lives-list'>Lives list</button><button id='act-lives-use'>Lives use</button></div></div></section>"
+            "<section><h2>Événements live</h2>"
+            "<div style='display:flex;gap:8px;align-items:center;flex-wrap:wrap;'>"
+            "<button id='live-toggle'>Pause</button>"
+            "<label><input id='live-autoscroll' type='checkbox' checked/> Auto-scroll</label>"
+            "<span id='live-status'>Lecture en direct</span>"
+            "</div>"
+            "<pre id='live-events' style='max-height:240px;overflow:auto;border:1px solid #ccc;padding:8px;'></pre>"
+            "</section>"
             "<script>const ws=new WebSocket(`ws://${location.host}/ws`);"
             "const livesTableState={sortBy:'score',sortOrder:'desc'};"
+            "const liveState={paused:false,autoScroll:true,events:[]};"
             "const loadEco=()=>fetch('/ecosystem').then(r=>r.json()).then(d=>{document.getElementById('ecosystem-summary').textContent=JSON.stringify(d.summary,null,2);document.getElementById('organisms').textContent=JSON.stringify(d.organisms,null,2);});"
             "const loadCockpit=()=>fetch('/api/cockpit').then(r=>r.json()).then(d=>{"
             "document.getElementById('cockpit-status').textContent=`Statut global: ${d.global_status}`;"
@@ -994,9 +1023,14 @@ def create_app(
             "for(const button of document.querySelectorAll('#lives-table [data-sort]')){button.onclick=()=>{const next=button.getAttribute('data-sort');if(livesTableState.sortBy===next){livesTableState.sortOrder=livesTableState.sortOrder==='desc'?'asc':'desc';}else{livesTableState.sortBy=next;livesTableState.sortOrder='desc';}loadLivesBoard();};}"
             "document.getElementById('filter-active').onchange=()=>loadLivesBoard();"
             "document.getElementById('filter-degrading').onchange=()=>loadLivesBoard();"
+            "const renderLiveEvents=()=>{const pre=document.getElementById('live-events');const rows=liveState.events.map(item=>`${item.ts||'n/a'} | ${item.run_id||'n/a'} | ${item.event||'unknown'}`);pre.textContent=rows.join('\\n');if(liveState.autoScroll){pre.scrollTop=pre.scrollHeight;}};"
+            "const updateLiveStatus=()=>{document.getElementById('live-status').textContent=liveState.paused?'Pause activée':'Lecture en direct';document.getElementById('live-toggle').textContent=liveState.paused?'Reprendre':'Pause';};"
+            "document.getElementById('live-toggle').onclick=()=>{liveState.paused=!liveState.paused;updateLiveStatus();if(!liveState.paused){renderLiveEvents();}};"
+            "document.getElementById('live-autoscroll').onchange=e=>{liveState.autoScroll=Boolean(e.target.checked);if(liveState.autoScroll){renderLiveEvents();}};"
             "const loadTimeline=()=>fetch('/runs/latest').then(r=>r.json()).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}return fetch(`/api/runs/${meta.run}/timeline?page=1&page_size=120`).then(r=>r.json());}).then(data=>{const wrap=document.getElementById('timeline');const summary=document.getElementById('timeline-summary');const impact=document.getElementById('timeline-impact');const diff=document.getElementById('timeline-diff');wrap.innerHTML='';let mutationIndex=0;for(const item of data.items||[]){const row=document.createElement('div');row.style.display='inline-flex';row.style.gap='4px';const btn=document.createElement('button');btn.textContent=`${item.event} · ${item.timestamp||'n/a'}`;btn.style.padding='6px';row.appendChild(btn);if(item.event==='mutation'&&data.run_id){const currentIndex=mutationIndex;mutationIndex+=1;btn.onclick=()=>showMutationDetail(data.run_id,currentIndex);const link=document.createElement('a');link.href=`/runs/${data.run_id}/mutations/${currentIndex}`;link.textContent='Voir détail';link.style.alignSelf='center';row.appendChild(link);}wrap.appendChild(row);}if(!(data.items||[]).length){summary.textContent='Aucun événement de frise disponible.';impact.textContent='';diff.textContent='';}});"
             "loadEco();loadCockpit();loadTimeline();loadLivesBoard();setInterval(()=>{loadEco();loadCockpit();loadTimeline();loadLivesBoard();},500);"
-            "ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);}else if(m.type==='logs'){const d=document.getElementById('logs');for(const [n,entries] of Object.entries(m.data)){let pre=document.getElementById(`log-${n}`);if(!pre){pre=document.createElement('pre');pre.id=`log-${n}`;pre.textContent=n+'\n';d.appendChild(pre);}for(const entry of entries){pre.textContent+=entry+'\n';}}}};"
+            "updateLiveStatus();"
+            "ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);return;}if(typeof m.run_id==='string'&&typeof m.event==='string'){liveState.events.push({type:m.type,run_id:m.run_id,event:m.event,ts:m.ts||null});if(!liveState.paused){renderLiveEvents();}}};"
             "</script></body></html>"
         )
 
