@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from singular.lives import bootstrap_life, load_registry, resolve_life
+from singular.lives import (
+    bootstrap_life,
+    get_registry_root,
+    load_registry,
+    resolve_life,
+)
 from singular.organisms.birth import birth
 
 
@@ -51,3 +56,32 @@ def test_registry_tracks_multiple_lives(
     registry_path = tmp_path / "lives" / "registry.json"
     assert registry_path.exists()
     assert registry_path.read_text(encoding="utf-8")
+
+
+def test_registry_root_defaults_to_home_without_explicit_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    (workspace / "mem").mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(workspace)
+
+    assert get_registry_root() == tmp_path / "home" / ".singular"
+
+
+def test_registry_root_uses_cwd_with_valid_registry_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    workspace = tmp_path / "workspace"
+    (workspace / "lives").mkdir(parents=True, exist_ok=True)
+    (workspace / "lives" / "registry.json").write_text(
+        '{"active": null, "lives": {}}',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(workspace)
+
+    assert get_registry_root() == workspace

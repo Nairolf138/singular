@@ -54,17 +54,24 @@ def get_registry_root() -> Path:
 
     raw = os.environ.get("SINGULAR_ROOT")
     if raw:
-        root = Path(raw).expanduser()
-    else:
-        cwd = Path.cwd()
-        default_home = Path.home() / ".singular"
-        # Prefer the current working directory when it already contains
-        # Singular artefacts. Otherwise fall back to ``~/.singular``.
-        if (cwd / _REGISTRY_DIRNAME).exists() or (cwd / "mem").exists():
-            root = cwd
-        else:
-            root = default_home
-    return root
+        return Path(raw).expanduser()
+
+    default_home = Path.home() / ".singular"
+    cwd = Path.cwd()
+    registry_path = cwd / _REGISTRY_DIRNAME / _REGISTRY_FILENAME
+
+    # CWD fallback is allowed only when an explicit, valid registry marker
+    # exists. This avoids accidental detection based on unrelated directories
+    # such as a plain ``mem/`` folder.
+    if registry_path.exists():
+        try:
+            payload = json.loads(registry_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return default_home
+        if isinstance(payload, dict) and isinstance(payload.get("lives"), dict):
+            return cwd
+
+    return default_home
 
 
 def load_registry() -> dict[str, Any]:
