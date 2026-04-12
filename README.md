@@ -35,7 +35,7 @@ Contrairement aux chatbots classiques (qui ne changent pas leur cœur) ou aux si
 pip install -e .[yaml,dashboard,viz]
 singular birth --name Lumen
 singular talk
-singular loop --ticks 10
+singular loop --budget-seconds 10
 singular report
 singular dashboard
 ```
@@ -191,66 +191,26 @@ Fallback explicite : **si `singular` échoue, utiliser `python -m singular ...`
 
 #### Windows + PowerShell
 
-Dans PowerShell, installez Singular puis vérifiez immédiatement la commande :
+Dans PowerShell, installez Singular puis utilisez ce mini arbre de décision :
 
 ```powershell
 pip install -e .
-singular --help
+Get-Command singular
 ```
 
-#### Si `singular` n’est pas reconnu
+- `Get-Command singular` échoue → problème de `PATH` :
 
-Si PowerShell affiche que `singular` n’est pas reconnu, vérifiez le dossier
-`Scripts` de votre installation Python utilisateur :
+  ```powershell
+  python -m singular doctor --fix
+  ```
 
-1. Exécutez le diagnostic intégré :
+  Puis redémarrez PowerShell.
 
-   ```powershell
-   python -m singular doctor
-   ```
-
-   Cette commande affiche :
-   - le chemin de l’exécutable Python actif ;
-   - le dossier `Scripts` utilisateur détecté ;
-   - si ce dossier est présent dans `PATH` ;
-   - la version installée de `singular`.
-   Tant que l’entrypoint `singular` n’est pas résolu dans `PATH`, utilisez
-   `python -m singular ...`.
-
-2. Si le diagnostic indique que `Scripts` n’est pas dans `PATH`, appliquez le
-   correctif automatique :
-
-   ```powershell
-   python -m singular doctor --fix
-   ```
-
-   Puis redémarrez PowerShell. Vous pouvez aussi copier-coller les commandes
-   proposées par `python -m singular doctor`.
-
-3. Alternative manuelle (si `singular` est indisponible), récupérez d’abord la
-   base utilisateur Python :
-
-   ```powershell
-   python -m site --user-base
-   ```
-
-4. Prenez le chemin renvoyé et ajoutez `\Scripts` à la fin. Exemple typique :
-   `C:\Users\<VotreNom>\AppData\Roaming\Python\Python313\Scripts`
-5. Ouvrez **Variables d’environnement** → Variables utilisateur → `PATH` →
-   **Modifier** → **Nouveau**, puis collez ce chemin.
-6. Enregistrez, **fermez puis redémarrez PowerShell** (ou votre terminal) pour
-   recharger le `PATH`.
-7. Vérifiez ensuite (puis, une fois le `PATH` corrigé, confirmez la résolution
-   de l’entrypoint) :
-
-   ```powershell
-   python -m singular --help
-   python -m singular doctor
-   Get-Command singular
-   ```
-
-> Le segment `Python313` dépend de votre version Python (par ex. `Python312`,
-> `Python313`, etc.).
+- `Get-Command singular` réussit mais `singular --help` déclenche
+  `ModuleNotFoundError` → problème de packaging / dépendances :
+  - utilisez temporairement `python -m singular doctor` ;
+  - corrigez l’installation du package (réinstallation des dépendances et du
+    paquet `singular`).
 
 #### Vérification rapide post-installation
 
@@ -258,6 +218,7 @@ Après l’installation (et après toute modification du `PATH`), exécutez :
 
 ```bash
 singular --help
+python -c "import singular; import graine; print('ok')"
 ```
 
 Si l’aide s’affiche, l’installation CLI est opérationnelle.
