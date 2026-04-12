@@ -640,33 +640,62 @@ def create_app(
             "items": items,
         }
 
-    @app.get("/lives/comparison")
-    def read_lives_comparison() -> dict[str, object]:
+    def _life_trend_label(points: list[float]) -> str:
+        if len(points) < 2:
+            return "plateau"
+        window = points[-5:]
+        first = window[0]
+        last = window[-1]
+        if last > first + 1.0:
+            return "amélioration"
+        if last < first - 1.0:
+            return "dégradation"
+        return "plateau"
+
+    def _life_trend_rank(trend: str) -> int:
+        if trend == "dégradation":
+            return 0
+        if trend == "plateau":
+            return 1
+        if trend == "amélioration":
+            return 2
+        return -1
+
+    def _aggregate_lives() -> dict[str, dict[str, object]]:
         by_life: dict[str, list[dict[str, object]]] = {}
         for record in _load_run_records():
-            if _is_mutation_record(record):
-                by_life.setdefault(_record_life(record), []).append(record)
+            by_life.setdefault(_record_life(record), []).append(record)
 
-        comparison: dict[str, dict[str, float | int | None]] = {}
-        for life_name, records in by_life.items():
-            records = sorted(records, key=lambda rec: str(rec.get("ts", "")))
+        comparison: dict[str, dict[str, object]] = {}
+        for life_name, all_records in by_life.items():
+            all_records = sorted(all_records, key=lambda rec: str(rec.get("ts", "")))
+            mutation_records = [rec for rec in all_records if _is_mutation_record(rec)]
+
             score_points = [
                 (
                     _as_float(rec.get("score_base")),
                     _as_float(rec.get("score_new")),
                 )
-                for rec in records
+                for rec in mutation_records
             ]
-            health_values = []
-            for rec in records:
+            health_values: list[float] = []
+            health_score_points: list[float] = []
+            sandbox_stability_points: list[float] = []
+            for rec in mutation_records:
                 health = rec.get("health")
                 if isinstance(health, dict):
-                    health_values.append(_as_float(health.get("score")))
-            health_values = [value for value in health_values if value is not None]
-            ms_points = [_as_float(rec.get("ms_new")) for rec in records]
+                    score = _as_float(health.get("score"))
+                    if score is not None:
+                        health_values.append(score)
+                        health_score_points.append(score)
+                    stability = _as_float(health.get("sandbox_stability"))
+                    if stability is not None:
+                        sandbox_stability_points.append(stability)
+
+            ms_points = [_as_float(rec.get("ms_new")) for rec in mutation_records]
             ms_points = [value for value in ms_points if value is not None]
             accepted_values: list[bool] = []
-            for rec in records:
+            for rec in mutation_records:
                 accepted = rec.get("accepted")
                 if not isinstance(accepted, bool):
                     accepted = rec.get("ok")
@@ -678,8 +707,8 @@ def create_app(
                 (new for _, new in reversed(score_points) if new is not None), None
             )
             progression_slope = None
-            if first_base is not None and last_new is not None and len(records) > 1:
-                progression_slope = (first_base - last_new) / (len(records) - 1)
+            if first_base is not None and last_new is not None and len(mutation_records) > 1:
+                progression_slope = (first_base - last_new) / (len(mutation_records) - 1)
 
             failure_rate = None
             if accepted_values:
@@ -690,6 +719,20 @@ def create_app(
             if ms_points:
                 evolution_speed = sum(ms_points) / len(ms_points)
 
+            last_timestamp = next(
+                (str(rec.get("ts")) for rec in reversed(all_records) if isinstance(rec.get("ts"), str)),
+                None,
+            )
+            is_extinct = any(rec.get("event") == "death" for rec in all_records)
+            trend = _life_trend_label(health_score_points)
+            alerts = alerts_from_records(mutation_records) if mutation_records else []
+            current_health_score = health_score_points[-1] if health_score_points else None
+            stability_score = (
+                sum(sandbox_stability_points) / len(sandbox_stability_points)
+                if sandbox_stability_points
+                else None
+            )
+
             comparison[life_name] = {
                 "health_score": (
                     sum(health_values) / len(health_values) if health_values else None
@@ -697,10 +740,62 @@ def create_app(
                 "progression_slope": progression_slope,
                 "failure_rate": failure_rate,
                 "evolution_speed": evolution_speed,
-                "mutations": len(records),
+                "mutations": len(mutation_records),
+                "current_health_score": current_health_score,
+                "trend": trend,
+                "trend_rank": _life_trend_rank(trend),
+                "stability": stability_score,
+                "last_activity": last_timestamp,
+                "alerts": alerts,
+                "alerts_count": len(alerts),
+                "iterations": len(mutation_records),
+                "active": not is_extinct,
             }
+        return comparison
 
-        return {"lives": comparison}
+    @app.get("/lives/comparison")
+    def read_lives_comparison(
+        sort_by: str = "score",
+        sort_order: str = "desc",
+        active_only: bool = False,
+        degrading_only: bool = False,
+    ) -> dict[str, object]:
+        comparison = _aggregate_lives()
+        lives_rows = [{"life": name, **payload} for name, payload in comparison.items()]
+
+        if active_only:
+            lives_rows = [row for row in lives_rows if row.get("active") is True]
+        if degrading_only:
+            lives_rows = [row for row in lives_rows if row.get("trend") == "dégradation"]
+
+        sort_key_map: dict[str, str] = {
+            "score": "current_health_score",
+            "trend": "trend_rank",
+            "stability": "stability",
+            "last_activity": "last_activity",
+            "iterations": "iterations",
+        }
+        key_name = sort_key_map.get(sort_by, "current_health_score")
+        reverse = sort_order != "asc"
+        lives_rows.sort(
+            key=lambda row: (
+                row.get(key_name) is None,
+                row.get(key_name),
+                str(row.get("life", "")),
+            ),
+            reverse=reverse,
+        )
+
+        return {
+            "lives": comparison,
+            "table": lives_rows,
+            "filters": {
+                "sort_by": sort_by,
+                "sort_order": "desc" if reverse else "asc",
+                "active_only": active_only,
+                "degrading_only": degrading_only,
+            },
+        }
 
     @app.get("/mutations/top")
     def read_top_mutations(limit: int = 3) -> dict[str, object]:
@@ -856,8 +951,23 @@ def create_app(
             "<p id='timeline-summary'>Cliquez sur un événement de mutation.</p>"
             "<pre id='timeline-impact'></pre>"
             "<pre id='timeline-diff' style='padding:12px;border:1px solid #ccc;'></pre>"
+            "<section><h2>Vies · Tableau comparatif</h2>"
+            "<div style='display:flex;gap:12px;align-items:center;flex-wrap:wrap;'>"
+            "<label><input id='filter-active' type='checkbox'/> Actives seulement</label>"
+            "<label><input id='filter-degrading' type='checkbox'/> Seulement en dégradation</label>"
+            "</div>"
+            "<table id='lives-table' border='1' cellspacing='0' cellpadding='6' style='margin-top:8px;border-collapse:collapse;width:100%;'>"
+            "<thead><tr>"
+            "<th><button data-sort='score'>Score</button></th>"
+            "<th><button data-sort='trend'>Tendance</button></th>"
+            "<th><button data-sort='stability'>Stabilité</button></th>"
+            "<th><button data-sort='last_activity'>Dernière activité</button></th>"
+            "<th><button data-sort='iterations'>Itérations</button></th>"
+            "<th>Badges</th>"
+            "</tr></thead><tbody id='lives-table-body'></tbody></table></section>"
             "<section><h2>Actions rapides</h2><pre id='action-result'>Aucune exécution</pre><div style='display:flex;flex-direction:column;gap:8px;max-width:680px;'><label>Token dashboard <input id='action-token' type='password' placeholder='optionnel'/></label><label>Nom de vie (birth/use) <input id='action-life-name' placeholder='New life'/></label><label>Prompt talk <input id='action-prompt' placeholder='Prompt unique'/></label><label>Budget loop (s) <input id='action-budget' type='number' min='0.1' step='0.1' value='1.0'/></label><div style='display:flex;gap:8px;flex-wrap:wrap;'><button id='act-birth'>Birth</button><button id='act-talk'>Talk</button><button id='act-loop'>Loop</button><button id='act-report'>Report</button><button id='act-lives-list'>Lives list</button><button id='act-lives-use'>Lives use</button></div></div></section><h2>Runs</h2><div id='logs'></div>"
             "<script>const ws=new WebSocket(`ws://${location.host}/ws`);"
+            "const livesTableState={sortBy:'score',sortOrder:'desc'};"
             "const loadEco=()=>fetch('/ecosystem').then(r=>r.json()).then(d=>{document.getElementById('ecosystem-summary').textContent=JSON.stringify(d.summary,null,2);document.getElementById('organisms').textContent=JSON.stringify(d.organisms,null,2);});"
             "const loadCockpit=()=>fetch('/api/cockpit').then(r=>r.json()).then(d=>{"
             "document.getElementById('cockpit-status').textContent=`Statut global: ${d.global_status}`;"
@@ -878,8 +988,14 @@ def create_app(
             "document.getElementById('act-report').onclick=()=>runAction('report',{});"
             "document.getElementById('act-lives-list').onclick=()=>runAction('lives_list',{});"
             "document.getElementById('act-lives-use').onclick=()=>runAction('lives_use',{name:document.getElementById('action-life-name').value||''});"
+            "const badge=(label,bg)=>`<span style=\"display:inline-block;padding:2px 8px;border-radius:999px;background:${bg};margin-right:4px;\">${label}</span>`;"
+            "const renderLivesTable=(rows)=>{const body=document.getElementById('lives-table-body');body.innerHTML='';for(const row of rows||[]){const tr=document.createElement('tr');const score=row.current_health_score===null||row.current_health_score===undefined?'n/a':Number(row.current_health_score).toFixed(1);const stability=row.stability===null||row.stability===undefined?'n/a':`${(Number(row.stability)*100).toFixed(1)}%`;const lastActivity=row.last_activity||'n/a';let badges='';if(row.active){badges+=badge('active','#d1fadf');}else{badges+=badge('inactive','#fde2e1');}if(row.trend==='dégradation'){badges+=badge('dégradation','#ffe7c2');}if((row.alerts_count||0)>0){badges+=badge(`${row.alerts_count} alertes`,'#fecdca');}tr.innerHTML=`<td>${score}</td><td>${row.trend||'n/a'}</td><td>${stability}</td><td>${lastActivity}</td><td>${row.iterations??0}</td><td>${badges}</td>`;body.appendChild(tr);}if(!(rows||[]).length){const tr=document.createElement('tr');tr.innerHTML=\"<td colspan='6'>Aucune vie ne correspond aux filtres.</td>\";body.appendChild(tr);}};"
+            "const loadLivesBoard=()=>{const q=new URLSearchParams();q.set('sort_by',livesTableState.sortBy);q.set('sort_order',livesTableState.sortOrder);if(document.getElementById('filter-active').checked){q.set('active_only','true');}if(document.getElementById('filter-degrading').checked){q.set('degrading_only','true');}return fetch(`/lives/comparison?${q.toString()}`).then(r=>r.json()).then(d=>renderLivesTable(d.table||[]));};"
+            "for(const button of document.querySelectorAll('#lives-table [data-sort]')){button.onclick=()=>{const next=button.getAttribute('data-sort');if(livesTableState.sortBy===next){livesTableState.sortOrder=livesTableState.sortOrder==='desc'?'asc':'desc';}else{livesTableState.sortBy=next;livesTableState.sortOrder='desc';}loadLivesBoard();};}"
+            "document.getElementById('filter-active').onchange=()=>loadLivesBoard();"
+            "document.getElementById('filter-degrading').onchange=()=>loadLivesBoard();"
             "const loadTimeline=()=>fetch('/runs/latest').then(r=>r.json()).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}return fetch(`/api/runs/${meta.run}/timeline?page=1&page_size=120`).then(r=>r.json());}).then(data=>{const wrap=document.getElementById('timeline');const summary=document.getElementById('timeline-summary');const impact=document.getElementById('timeline-impact');const diff=document.getElementById('timeline-diff');wrap.innerHTML='';let mutationIndex=0;for(const item of data.items||[]){const row=document.createElement('div');row.style.display='inline-flex';row.style.gap='4px';const btn=document.createElement('button');btn.textContent=`${item.event} · ${item.timestamp||'n/a'}`;btn.style.padding='6px';row.appendChild(btn);if(item.event==='mutation'&&data.run_id){const currentIndex=mutationIndex;mutationIndex+=1;btn.onclick=()=>showMutationDetail(data.run_id,currentIndex);const link=document.createElement('a');link.href=`/runs/${data.run_id}/mutations/${currentIndex}`;link.textContent='Voir détail';link.style.alignSelf='center';row.appendChild(link);}wrap.appendChild(row);}if(!(data.items||[]).length){summary.textContent='Aucun événement de frise disponible.';impact.textContent='';diff.textContent='';}});"
-            "loadEco();loadCockpit();loadTimeline();setInterval(()=>{loadEco();loadCockpit();loadTimeline();},500);"
+            "loadEco();loadCockpit();loadTimeline();loadLivesBoard();setInterval(()=>{loadEco();loadCockpit();loadTimeline();loadLivesBoard();},500);"
             "ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);}else if(m.type==='logs'){const d=document.getElementById('logs');for(const [n,entries] of Object.entries(m.data)){let pre=document.getElementById(`log-${n}`);if(!pre){pre=document.createElement('pre');pre.id=`log-${n}`;pre.textContent=n+'\n';d.appendChild(pre);}for(const entry of entries){pre.textContent+=entry+'\n';}}}};"
             "</script></body></html>"
         )
