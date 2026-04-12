@@ -19,9 +19,8 @@ jobs:
       - name: Ruff
         run: ruff check .
       - name: Black
-        run: black --check .
+        run: black --check --target-version py311 .
       - name: Mypy
         run: mypy src
       - name: Pytest
         run: pytest --cov=src/singular --cov-report=term-missing
-
