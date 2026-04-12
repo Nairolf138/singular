@@ -180,6 +180,8 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "timeline-diff" in body
     assert "Voir détail" in body
     assert "Vies · Tableau comparatif" in body
+    assert "data-sort='life'" in body
+    assert "<td colspan='7'>Aucune vie ne correspond aux filtres.</td>" in body
     assert "Actives seulement" in body
     assert "Seulement en dégradation" in body
     assert "Logs en direct" in body
@@ -546,6 +548,9 @@ def test_lives_comparison_table_aggregation_filters_and_sorting(tmp_path: Path) 
 
     degrading_only = route(degrading_only=True)["table"]
     assert [row["life"] for row in degrading_only] == ["life-a"]
+
+    by_life_asc = route(sort_by="life", sort_order="asc")["table"]
+    assert [row["life"] for row in by_life_asc] == ["life-a", "life-b", "life-c"]
 
 
 def test_psyche_missing_returns_404(tmp_path: Path) -> None:
