@@ -52,3 +52,18 @@ jobs:
           pip install . pytest pytest-cov
       - name: Pytest
         run: pytest --cov=src/singular --cov-report=term-missing
+
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, tests]
+    if: ${{ always() }}
+    steps:
+      - name: Fail when dependencies failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          echo "Upstream CI job failed or was cancelled."
+          exit 1
+      - name: CI summary
+        run: echo "lint/typecheck/tests completed successfully."
