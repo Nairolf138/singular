@@ -26,6 +26,7 @@ from graine.evolver.generate import propose_mutations
 from singular.environment import artifacts as env_artifacts
 from singular.environment import files as env_files
 from singular.environment import notifications as env_notifications
+from singular.goals import IntrinsicGoals
 from singular.resource_manager import ResourceManager
 
 from . import sandbox
@@ -219,6 +220,7 @@ def select_operator(
     stats: Dict[str, Dict[str, float]],
     policy: str,
     rng: random.Random,
+    objective_bias: Mapping[str, float] | None = None,
 ) -> str:
     """Choose an operator name using an epsilon-greedy bandit policy."""
 
@@ -235,7 +237,8 @@ def select_operator(
 
     def expected(name: str) -> float:
         s = stats[name]
-        return s["reward"] / s["count"] if s["count"] else 0.0
+        exploitation = s["reward"] / s["count"] if s["count"] else 0.0
+        return exploitation + float((objective_bias or {}).get(name, 0.0))
 
     return max(names, key=expected)
 
@@ -524,6 +527,7 @@ def run(
     mortality = mortality or DeathMonitor()
     seen_diffs: set[str] = set()
     sleep_ticks_remaining = 0
+    intrinsic_goals = IntrinsicGoals()
     if coevolve_tests and test_pool is None:
         test_pool = LivingTestPool()
 
@@ -589,6 +593,21 @@ def run(
                 continue
 
             policy = psyche.mutation_policy()
+            last_health = (
+                float(state.health_history[-1].get("score", 50.0))
+                if state.health_history
+                else 50.0
+            )
+            goal_weights = intrinsic_goals.update_tick(
+                tick=state.iteration,
+                psyche=psyche,
+                health_score=last_health,
+                resources={
+                    "energy": resource_manager.energy,
+                    "food": resource_manager.food,
+                    "warmth": resource_manager.warmth,
+                },
+            )
             baseline_failure_risk = (
                 float(state.health_counters.get("sandbox_failures", 0))
                 / max(float(state.health_counters.get("total", 0)), 1.0)
@@ -617,12 +636,32 @@ def run(
                         resource_cost=resource_cost,
                     )
                 )
+            adjusted_hypotheses = intrinsic_goals.influence_action_hypotheses(hypotheses)
+            weighted_hypotheses = [
+                ActionHypothesis(
+                    action=entry["action"],
+                    long_term=entry["long_term"],
+                    sandbox_risk=entry["sandbox_risk"],
+                    resource_cost=entry["resource_cost"],
+                    metadata={"goal_weights": asdict(goal_weights)},
+                )
+                for entry in adjusted_hypotheses
+            ]
             reflection = reflect_action(
-                hypotheses,
+                weighted_hypotheses,
                 bus=event_bus,
                 event_context={"iteration": state.iteration, "organism": org_name},
+                long_term_weight=goal_weights.coherence,
+                sandbox_weight=goal_weights.robustesse,
+                resource_weight=goal_weights.efficacite,
             )
-            op_name = reflection.action or select_operator(operators, stats, policy, rng)
+            op_name = reflection.action or select_operator(
+                operators,
+                stats,
+                policy,
+                rng,
+                objective_bias=intrinsic_goals.influence_operator_scores(stats),
+            )
             mutated = apply_mutation(original, operators[op_name], rng)
             org = world.organisms[org_name]
 
