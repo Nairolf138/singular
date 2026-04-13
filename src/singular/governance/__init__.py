@@ -7,6 +7,13 @@ from .policy import (
     GovernanceDecision,
     MutationGovernancePolicy,
 )
+from .values import (
+    VALUE_KEYS,
+    ValueWeights,
+    ValuesSchemaError,
+    load_value_weights,
+    validate_values_payload,
+)
 
 __all__ = [
     "AUTH_AUTO",
@@ -14,4 +21,9 @@ __all__ = [
     "AUTH_REVIEW_REQUIRED",
     "GovernanceDecision",
     "MutationGovernancePolicy",
+    "VALUE_KEYS",
+    "ValueWeights",
+    "ValuesSchemaError",
+    "load_value_weights",
+    "validate_values_payload",
 ]

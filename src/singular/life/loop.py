@@ -39,6 +39,7 @@ from . import sandbox
 from .death import DeathMonitor
 from .health import HealthTracker
 from singular.governance.policy import MutationGovernancePolicy
+from singular.governance.values import load_value_weights
 
 from .reproduction import authorize_reproduction_write, crossover
 from .map_elites import MapElites
@@ -523,7 +524,8 @@ def run(
     belief_store = BeliefStore()
     resource_manager = resource_manager or ResourceManager()
     event_bus = event_bus or get_global_event_bus()
-    governance_policy = governance_policy or MutationGovernancePolicy()
+    value_weights = load_value_weights()
+    governance_policy = governance_policy or MutationGovernancePolicy(value_weights=value_weights)
     register_memory_event_handlers(event_bus)
     start = time.time()
     last_post = 0.0
@@ -539,7 +541,7 @@ def run(
     mortality = mortality or DeathMonitor()
     seen_diffs: set[str] = set()
     sleep_ticks_remaining = 0
-    intrinsic_goals = IntrinsicGoals()
+    intrinsic_goals = IntrinsicGoals(value_weights=value_weights)
     if coevolve_tests and test_pool is None:
         test_pool = LivingTestPool()
 

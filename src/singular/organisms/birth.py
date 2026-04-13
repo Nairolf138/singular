@@ -7,6 +7,7 @@ import random
 import string
 from pathlib import Path
 
+from ..governance.values import ValueWeights
 from ..identity import create_identity
 from ..memory import ensure_memory_structure, update_score, write_profile
 from ..psyche import Psyche
@@ -30,6 +31,19 @@ def birth(seed: int | None = None, home: Path | None = None) -> None:
 
     home.mkdir(parents=True, exist_ok=True)
     ensure_memory_structure(home / "mem")
+    values_path = home / "mem" / "values.yaml"
+    if values_path.stat().st_size == 0:
+        defaults = ValueWeights().to_dict()
+        values_path.write_text(
+            (
+                "values:\n"
+                f"  securite: {defaults['securite']}\n"
+                f"  utilite_utilisateur: {defaults['utilite_utilisateur']}\n"
+                f"  preservation_memoire: {defaults['preservation_memoire']}\n"
+                f"  curiosite_bornee: {defaults['curiosite_bornee']}\n"
+            ),
+            encoding="utf-8",
+        )
 
     skills_dir = home / "skills"
     if not skills_dir.exists() or not any(skills_dir.iterdir()):

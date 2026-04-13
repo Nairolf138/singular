@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import logging
 from pathlib import Path
 
+from .values import ValueWeights
 
 log = logging.getLogger(__name__)
 
@@ -40,10 +41,12 @@ class MutationGovernancePolicy:
             "runs",
             "tests",
         ),
+        value_weights: ValueWeights | None = None,
     ) -> None:
         self.modifiable_paths = tuple(p.strip("/") for p in modifiable_paths)
         self.review_required_paths = tuple(p.strip("/") for p in review_required_paths)
         self.forbidden_paths = tuple(p.strip("/") for p in forbidden_paths)
+        self.value_weights = (value_weights or ValueWeights()).normalized()
 
     def _relative(self, target: Path, root: Path) -> Path:
         target_resolved = target.resolve()
@@ -82,6 +85,16 @@ class MutationGovernancePolicy:
             )
 
         if self._matches(rel, self.review_required_paths):
+            if self.value_weights.securite >= self.value_weights.utilite_utilisateur:
+                return GovernanceDecision(
+                    level=AUTH_BLOCKED,
+                    allowed=False,
+                    reason=(
+                        f"path '{rel.as_posix()}' escalated to blocked zone "
+                        "by value weights (security-first)"
+                    ),
+                    corrective_action="request explicit human review before mutating this zone",
+                )
             return GovernanceDecision(
                 level=AUTH_REVIEW_REQUIRED,
                 allowed=False,
@@ -117,6 +130,19 @@ class MutationGovernancePolicy:
                 decision.corrective_action,
             )
             return decision
+
+        if target.exists() and self.value_weights.preservation_memoire >= 0.6:
+            previous = target.read_text(encoding="utf-8")
+            if len(content.strip()) < len(previous.strip()) * 0.2:
+                return GovernanceDecision(
+                    level=AUTH_BLOCKED,
+                    allowed=False,
+                    reason=(
+                        "write blocked by memory-preservation guard: "
+                        "new content appears to truncate existing knowledge"
+                    ),
+                    corrective_action="retry with a non-destructive mutation or request manual review",
+                )
 
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")

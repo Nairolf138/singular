@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Mapping
 import json
 
+from singular.governance.values import ValueWeights
 from singular.memory import _atomic_write_text, get_mem_dir
 
 
@@ -71,9 +72,16 @@ class GoalState:
 class IntrinsicGoals:
     """Manage intrinsic goals and influence multi-objective arbitration."""
 
-    def __init__(self, *, path: Path | None = None, history_limit: int = 2000) -> None:
+    def __init__(
+        self,
+        *,
+        path: Path | None = None,
+        history_limit: int = 2000,
+        value_weights: ValueWeights | None = None,
+    ) -> None:
         self.path = path or (get_mem_dir() / "goals.json")
         self.history_limit = max(10, int(history_limit))
+        self.value_weights = (value_weights or ValueWeights()).normalized()
         self.state = self._load_state()
 
     def _load_state(self) -> GoalState:
@@ -155,16 +163,20 @@ class IntrinsicGoals:
         """Compute one arbitration score across all objective axes."""
 
         w = self.state.weights
+        v = self.value_weights
         coherence_score = 1.0 - abs(_clamp(expected_gain + 0.5, 0.0, 1.0) - 0.5) * 2.0
-        robustesse_score = 1.0 - _clamp(sandbox_risk)
-        efficacite_score = 1.0 - _clamp(resource_cost)
-        exploration_score = _clamp(novelty)
-        return (
+        robustesse_score = 1.0 - _clamp(sandbox_risk * (1.0 + v.securite * 0.5))
+        efficacite_score = (1.0 - _clamp(resource_cost)) * (0.7 + 0.3 * v.utilite_utilisateur)
+        exploration_score = _clamp(novelty) * (0.3 + 0.7 * v.curiosite_bornee)
+        arbitration = (
             w.coherence * coherence_score
             + w.robustesse * robustesse_score
             + w.efficacite * efficacite_score
             + w.exploration * exploration_score
         )
+        preservation_bonus = v.preservation_memoire * (1.0 - _clamp(resource_cost))
+        utility_bonus = v.utilite_utilisateur * _clamp(expected_gain + 0.5, 0.0, 1.0)
+        return arbitration + 0.15 * preservation_bonus + 0.1 * utility_bonus
 
     def influence_action_hypotheses(self, hypotheses: list[Any]) -> list[dict[str, Any]]:
         """Apply intrinsic-goal influence and return adjusted hypothesis payloads."""
