@@ -12,6 +12,7 @@ import json
 import os
 import tempfile
 
+from .events import Event, EventBus
 from .memory_layers import MemoryLayerService, build_backend
 
 _MEMORY_LAYER_SERVICE: MemoryLayerService | None = None
@@ -335,3 +336,52 @@ def write_psyche(state: dict[str, Any], path: Path | str | None = None) -> None:
         path = get_psyche_file()
     path = Path(path)
     _atomic_write_text(path, json.dumps(state))
+
+
+_REGISTERED_MEMORY_BUS_IDS: set[int] = set()
+
+
+def _consolidate_signal_event(event: Event) -> None:
+    payload = event.payload
+    signals = payload.get("signals", {})
+    if isinstance(signals, dict):
+        add_episode({"event": "perception", **signals})
+
+
+def _consolidate_decision_event(event: Event) -> None:
+    payload = event.payload
+    decision = payload.get("decision", {})
+    context = payload.get("context", {})
+    if isinstance(decision, dict):
+        episode = {"event": "decision", **decision}
+        if isinstance(context, dict):
+            episode.update({"context": context})
+        add_episode(episode)
+
+
+def _consolidate_applied_mutation(event: Event) -> None:
+    payload = event.payload
+    key = payload.get("skill")
+    score_new = payload.get("score_new")
+    if isinstance(key, str) and isinstance(score_new, (int, float)):
+        update_score(key, float(score_new))
+    add_procedural_memory({"event": "loop_mutation", **payload, "accepted": True})
+
+
+def _consolidate_rejected_mutation(event: Event) -> None:
+    payload = event.payload
+    add_procedural_memory({"event": "loop_mutation", **payload, "accepted": False})
+
+
+def register_memory_event_handlers(bus: EventBus) -> None:
+    """Subscribe memory consolidation handlers once for the given bus."""
+
+    identity = id(bus)
+    if identity in _REGISTERED_MEMORY_BUS_IDS:
+        return
+
+    bus.subscribe("signal.captured", _consolidate_signal_event)
+    bus.subscribe("decision.made", _consolidate_decision_event)
+    bus.subscribe("mutation.applied", _consolidate_applied_mutation)
+    bus.subscribe("mutation.rejected", _consolidate_rejected_mutation)
+    _REGISTERED_MEMORY_BUS_IDS.add(identity)

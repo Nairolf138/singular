@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import Callable, Dict, Iterable, Mapping
 
 from singular.cognition.reflect import ActionHypothesis, reflect_action
-from singular.memory import add_episode, add_procedural_memory, update_score
+from singular.events import EventBus, get_global_event_bus
+from singular.memory import register_memory_event_handlers
 from singular.psyche import Psyche, Mood
 from singular.runs.logger import RunLogger
 from singular.runs.explain import summarize_mutation
@@ -332,21 +333,7 @@ def log_mutation(
         loop_modifications=loop_modifications,
         health=health,
     )
-    add_procedural_memory(
-        {
-            "event": "loop_mutation",
-            "iteration": iteration,
-            "skill": key,
-            "op": op_name,
-            "accepted": accepted,
-            "score_base": base_score,
-            "score_new": mutated_score,
-            "loop_modifications": loop_modifications,
-            "decision_reason": decision_reason,
-            "alternative_scores": alternative_scores or {},
-            "health": health or {},
-        }
-    )
+
 
 
 def _ast_node_count(tree: ast.AST) -> int:
@@ -484,6 +471,7 @@ def run(
     test_pool: LivingTestPool | None = None,
     robustness_weight: float = 1.0,
     max_test_candidates: int = 3,
+    event_bus: EventBus | None = None,
 ) -> Checkpoint:
     """Run the evolutionary loop for at most ``budget_seconds`` seconds.
 
@@ -520,6 +508,8 @@ def run(
 
     psyche = Psyche.load_state()
     resource_manager = resource_manager or ResourceManager()
+    event_bus = event_bus or get_global_event_bus()
+    register_memory_event_handlers(event_bus)
     start = time.time()
     last_post = 0.0
     initial_freq = max(
@@ -558,11 +548,10 @@ def run(
                 continue
 
             resource_manager.metabolize()
-            signals = capture_signals()
+            signals = capture_signals(bus=event_bus)
             temp = get_temperature()
             signals["temperature"] = temp
             resource_manager.update_from_environment(temp)
-            add_episode({"event": "perception", **signals})
             state.iteration += 1
 
             now = time.time()
@@ -628,7 +617,11 @@ def run(
                         resource_cost=resource_cost,
                     )
                 )
-            reflection = reflect_action(hypotheses)
+            reflection = reflect_action(
+                hypotheses,
+                bus=event_bus,
+                event_context={"iteration": state.iteration, "organism": org_name},
+            )
             op_name = reflection.action or select_operator(operators, stats, policy, rng)
             mutated = apply_mutation(original, operators[op_name], rng)
             org = world.organisms[org_name]
@@ -691,12 +684,6 @@ def run(
                 )
             if accepted:
                 skill_path.write_text(mutated, encoding="utf-8")
-                key = (
-                    f"{org_name}:{skill_path.stem}"
-                    if len(world.organisms) > 1
-                    else skill_path.stem
-                )
-                update_score(key, mutated_score)
                 org.last_score = mutated_score
                 org.energy += 0.2
                 env_artifacts.save_text(f"mutation_{state.iteration}", diff)
@@ -776,6 +763,26 @@ def run(
                 f"{org_name}:{skill_path.stem}"
                 if len(world.organisms) > 1
                 else skill_path.stem
+            )
+            mutation_payload = {
+                "iteration": state.iteration,
+                "skill": key,
+                "op": op_name,
+                "accepted": accepted,
+                "score_base": base_score,
+                "score_new": mutated_score,
+                "loop_modifications": loop_modifications,
+                "decision_reason": reflection.decision_reason,
+                "alternative_scores": reflection.alternative_scores,
+                "health": health_snapshot.to_dict(),
+                "diff": diff,
+                "impacted_file": skill_path.name,
+                "timing_ms": {"base": ms_base, "new": ms_new},
+            }
+            event_bus.publish(
+                "mutation.applied" if accepted else "mutation.rejected",
+                mutation_payload,
+                payload_version=1,
             )
             log_mutation(
                 logger,
