@@ -655,6 +655,29 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Détecte et émet les événements sans persister l'inbox",
     )
+    orchestrate_parser = subparsers.add_parser(
+        "orchestrate",
+        help="Pilote un cycle structuré (veille/action/introspection/sommeil)",
+    )
+    orchestrate_subparsers = orchestrate_parser.add_subparsers(
+        dest="orchestrate_command",
+        required=True,
+    )
+    orchestrate_run = orchestrate_subparsers.add_parser(
+        "run",
+        help="Lance le daemon d'orchestration structuré",
+    )
+    orchestrate_run.add_argument("--veille-seconds", type=float, default=2.0)
+    orchestrate_run.add_argument("--action-seconds", type=float, default=1.0)
+    orchestrate_run.add_argument("--introspection-seconds", type=float, default=1.0)
+    orchestrate_run.add_argument("--sommeil-seconds", type=float, default=3.0)
+    orchestrate_run.add_argument("--poll-interval", type=float, default=0.3)
+    orchestrate_run.add_argument("--tick-budget", type=float, default=0.2)
+    orchestrate_run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Active les phases sans exécuter la mutation",
+    )
     doctor_parser = subparsers.add_parser(
         "doctor", help="Diagnose CLI installation and PATH"
     )
@@ -978,6 +1001,20 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             watch_dir=args.watch_dir,
         )
+    elif args.command == "orchestrate":
+        _ensure_active_life(resolve_life, args.life)
+        if args.orchestrate_command == "run":
+            from .orchestrator import run_orchestrator_daemon
+
+            return run_orchestrator_daemon(
+                veille_seconds=args.veille_seconds,
+                action_seconds=args.action_seconds,
+                introspection_seconds=args.introspection_seconds,
+                sommeil_seconds=args.sommeil_seconds,
+                poll_interval_seconds=args.poll_interval,
+                tick_budget_seconds=args.tick_budget,
+                dry_run=args.dry_run,
+            )
 
     elif args.command == "doctor":
         _doctor(fix=args.fix)
