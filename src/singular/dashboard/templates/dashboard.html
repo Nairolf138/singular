@@ -94,6 +94,27 @@
     </div>
   </div>
 
+
+  <div class='panel'>
+    <h3 style='margin-top:0;'>Cycle circadien & objectifs actifs</h3>
+    <div class='cards-grid'>
+      <div class='card'><div class='card-label'>Phase circadienne</div><div id='kpi-circadian-phase' class='card-value'>n/a</div></div>
+      <div class='card'><div class='card-label'>Objectifs actifs</div><div id='kpi-active-objectives-count' class='card-value'>0</div></div>
+      <div class='card'><div class='card-label'>Progression quêtes</div><div id='kpi-quests-progress' class='card-value'>n/a</div></div>
+    </div>
+    <ul id='kpi-active-objectives-list' style='margin-top:6px;'></ul>
+  </div>
+
+  <div class='panel'>
+    <h3 style='margin-top:0;'>Énergie / ressources & génération de code</h3>
+    <div class='cards-grid'>
+      <div class='card'><div class='card-label'>Énergie totale</div><div id='kpi-energy-total' class='card-value'>0</div></div>
+      <div class='card'><div class='card-label'>Ressources totales</div><div id='kpi-resources-total' class='card-value'>0</div></div>
+      <div class='card'><div class='card-label'>Progression génération code</div><div id='kpi-code-progression' class='card-value'>n/a</div></div>
+      <div class='card'><div class='card-label'>Risques</div><div id='kpi-code-risks' class='card-value'>n/a</div></div>
+    </div>
+  </div>
+
   <div class='panel'>
     <h3 style='margin-top:0;'>Dernière mutation notable</h3>
     <div id='kpi-notable-summary'>Aucune mutation notable</div>
@@ -167,6 +188,15 @@
     <label><input id='filter-active' type='checkbox'/> Statut registre: active</label>
     <label><input id='filter-degrading' type='checkbox'/> Seulement en dégradation</label>
     <label><input id='filter-dead' type='checkbox'/> Extinction détectée</label>
+    <label>Fenêtre temporelle
+      <select id='filter-time-window'>
+        <option value='all'>Toutes</option>
+        <option value='24h'>24h</option>
+        <option value='7d'>7 jours</option>
+        <option value='30d'>30 jours</option>
+      </select>
+    </label>
+    <label>Comparer vies (CSV) <input id='filter-compare-lives' placeholder='life-a,life-b'/></label>
   </div>
   <div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:8px;'>
     <div style='border:1px solid #ddd;border-radius:8px;padding:8px;'>
@@ -304,10 +334,30 @@ const loadCockpit=()=>fetch(withScope('/api/cockpit')).then(r=>r.json()).then(d=
   document.getElementById('kpi-autonomy-latency').textContent=fmtNum(autonomy.perception_to_action_latency_ms,' ms');
   document.getElementById('kpi-autonomy-cost').textContent=fmtNum(autonomy.resource_cost_per_gain);
   const vital=d.vital_timeline||{};
+  const vitalMetrics=d.vital_metrics||{};
+  const objectives=vitalMetrics.active_objectives||{};
+  const energyResources=vitalMetrics.energy_resources||{};
+  const codeGeneration=vitalMetrics.code_generation||{};
+  const risks=vitalMetrics.risks||[];
   document.getElementById('kpi-vital-age').textContent=String(vital.age??0);
   document.getElementById('kpi-vital-risk').textContent=String(vital.risk_level||'n/a');
   document.getElementById('kpi-vital-terminal').textContent=vital.terminal===true?'oui':'non';
   document.getElementById('kpi-vital-causes').textContent=(vital.causes||[]).join(', ')||'n/a';
+  document.getElementById('kpi-circadian-phase').textContent=String((vitalMetrics.circadian_cycle||{}).phase||'n/a');
+  document.getElementById('kpi-active-objectives-count').textContent=String(objectives.count||0);
+  document.getElementById('kpi-quests-progress').textContent=`${objectives.count||0} actifs`;
+  document.getElementById('kpi-energy-total').textContent=fmtNum(energyResources.total_energy);
+  document.getElementById('kpi-resources-total').textContent=fmtNum(energyResources.total_resources);
+  document.getElementById('kpi-code-progression').textContent=String(codeGeneration.progression||'n/a');
+  document.getElementById('kpi-code-risks').textContent=risks.length?risks.join(', '):String(codeGeneration.risk_level||'n/a');
+  const objectivesList=document.getElementById('kpi-active-objectives-list');
+  objectivesList.innerHTML='';
+  for(const item of (objectives.items||[])){
+    const li=document.createElement('li');
+    li.textContent=String(item.name||item.id||'objectif');
+    objectivesList.appendChild(li);
+  }
+  if(!(objectives.items||[]).length){const li=document.createElement('li');li.textContent='Aucun objectif actif';objectivesList.appendChild(li);}
   setStatusTone(document.getElementById('kpi-trend'),trend==='amélioration'?'good':(trend==='dégradation'?'bad':'warn'));
 
   const notable=d.last_notable_mutation;
@@ -349,11 +399,13 @@ const renderLivesTable=(rows)=>{const body=document.getElementById('lives-table-
 const renderUnattachedRuns=(payload)=>{const panel=document.getElementById('unattached-runs-panel');const list=document.getElementById('unattached-runs-list');const runs=(payload?.runs)||[];const runsCount=Number(payload?.runs_count||0);const recordsCount=Number(payload?.records_count||0);document.getElementById('unattached-runs-count').textContent=String(runsCount);document.getElementById('unattached-records-count').textContent=String(recordsCount);list.innerHTML='';if(!runsCount){panel.style.display='none';return;}panel.style.display='block';for(const item of runs){const li=document.createElement('li');li.textContent=`${item.run_id||'unknown'} · ${item.records_count||0} enregistrements`;list.appendChild(li);}};
 const renderGenealogyTree=(payload)=>{const nodes=payload?.nodes||[];const treeEl=document.getElementById('genealogy-tree');if(!nodes.length){treeEl.textContent='Aucune lignée enregistrée.';return;}const bySlug=new Map(nodes.map(node=>[node.slug,node]));const children=new Map();for(const node of nodes){children.set(node.slug,[]);}for(const node of nodes){for(const parent of (node.parents||[])){if(children.has(parent)){children.get(parent).push(node.slug);}}}const roots=nodes.filter(node=>(node.parents||[]).length===0).map(node=>node.slug);const lines=[];const visit=(slug,depth)=>{const node=bySlug.get(slug);if(!node){return;}const marker=node.active?'★':'•';const status=node.status==='extinct'?'✝':'✓';lines.push(`${'  '.repeat(depth)}${marker} ${node.name} (${node.slug}) [${status}]`);for(const child of (children.get(slug)||[])){visit(child,depth+1);}};for(const root of roots){visit(root,0);}const detached=nodes.filter(node=>!roots.includes(node.slug)&&!(node.parents||[]).every(parent=>bySlug.has(parent)));for(const node of detached){lines.push(`• ${node.name} (${node.slug}) [orphan]`);}treeEl.textContent=lines.join('\n');};
 const loadGenealogy=()=>fetch('/lives/genealogy').then(r=>r.json()).then(renderGenealogyTree).catch(()=>{document.getElementById('genealogy-tree').textContent='Impossible de charger la généalogie.';});
-const loadLivesBoard=()=>{const q=new URLSearchParams();q.set('sort_by',livesTableState.sortBy);q.set('sort_order',livesTableState.sortOrder);if(document.getElementById('filter-active').checked){q.set('active_only','true');}if(document.getElementById('filter-degrading').checked){q.set('degrading_only','true');}if(document.getElementById('filter-dead').checked){q.set('dead_only','true');}if(scopeState.currentLifeOnly){q.set('current_life_only','true');}return fetch(`/lives/comparison?${q.toString()}`).then(r=>r.json()).then(d=>{renderLivesBuckets(Object.entries(d.lives||{}).map(([life,payload])=>({life,...payload})));renderLivesTable(d.table||[]);renderUnattachedRuns(d.unattached_runs);});};
+const loadLivesBoard=()=>{const q=new URLSearchParams();q.set('sort_by',livesTableState.sortBy);q.set('sort_order',livesTableState.sortOrder);if(document.getElementById('filter-active').checked){q.set('active_only','true');}if(document.getElementById('filter-degrading').checked){q.set('degrading_only','true');}if(document.getElementById('filter-dead').checked){q.set('dead_only','true');}const timeWindow=document.getElementById('filter-time-window').value||'all';q.set('time_window',timeWindow);const compareLives=(document.getElementById('filter-compare-lives').value||'').trim();if(compareLives){q.set('compare_lives',compareLives);}if(scopeState.currentLifeOnly){q.set('current_life_only','true');}return fetch(`/lives/comparison?${q.toString()}`).then(r=>r.json()).then(d=>{renderLivesBuckets(Object.entries(d.lives||{}).map(([life,payload])=>({life,...payload})));renderLivesTable(d.table||[]);renderUnattachedRuns(d.unattached_runs);});};
 for(const button of document.querySelectorAll('#lives-table [data-sort]')){button.onclick=()=>{const next=button.getAttribute('data-sort');if(livesTableState.sortBy===next){livesTableState.sortOrder=livesTableState.sortOrder==='desc'?'asc':'desc';}else{livesTableState.sortBy=next;livesTableState.sortOrder='desc';}loadLivesBoard();};}
 document.getElementById('filter-active').onchange=()=>loadLivesBoard();
 document.getElementById('filter-degrading').onchange=()=>loadLivesBoard();
 document.getElementById('filter-dead').onchange=()=>loadLivesBoard();
+document.getElementById('filter-time-window').onchange=()=>loadLivesBoard();
+document.getElementById('filter-compare-lives').onchange=()=>loadLivesBoard();
 const renderLiveEvents=()=>{const pre=document.getElementById('live-events');const rows=liveState.events.map(item=>`${item.ts||'n/a'} | ${item.run_id||'n/a'} | ${item.event||'unknown'}`);pre.textContent=rows.join('\n');if(liveState.autoScroll){pre.scrollTop=pre.scrollHeight;}};
 const updateLiveStatus=()=>{document.getElementById('live-status').textContent=liveState.paused?'Pause activée':'Lecture en direct';document.getElementById('live-toggle').textContent=liveState.paused?'Reprendre':'Pause';};
 document.getElementById('live-toggle').onclick=()=>{liveState.paused=!liveState.paused;updateLiveStatus();if(!liveState.paused){renderLiveEvents();}};
