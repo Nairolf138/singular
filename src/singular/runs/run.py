@@ -6,6 +6,7 @@ import ast
 import difflib
 import random
 
+from singular.beliefs.store import BeliefStore
 from singular.life.operators import const_tune, deadcode_elim, eq_rewrite_reduce_sum
 from singular.life.score import score
 from graine.evolver.generate import propose_mutations
@@ -87,6 +88,12 @@ def run(seed: int | None = None) -> str:
     }
 
     psyche.process_run_record(record)
+    BeliefStore().update_after_run(
+        f"operator:{op_name}",
+        success=bool(record["improved"]),
+        evidence=f"improved={record['improved']};base={base_score:.6f};new={mutated_score:.6f}",
+        reward_delta=base_score - mutated_score,
+    )
     add_episode(
         {
             "event": "mutation",
