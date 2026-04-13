@@ -6,6 +6,7 @@ import ast
 import logging
 import multiprocessing
 import os
+import queue as queue_module
 import sys
 import tempfile
 from types import ModuleType
@@ -121,10 +122,18 @@ def run(code: str, timeout: float = 1.5, memory_limit: int = 256 * 1024 * 1024) 
         proc.terminate()
         proc.join()
         raise TimeoutError("sandbox execution timed out")
+    queue_timeout = max(0.05, timeout)
+    try:
+        out = queue.get(timeout=queue_timeout)
+    except queue_module.Empty as exc:
+        if proc.exitcode not in (0, None):
+            raise SandboxError(
+                f"sandbox worker exited without payload (exit code {proc.exitcode})"
+            ) from exc
+        raise SandboxError(
+            "sandbox worker finished without returning a payload"
+        ) from exc
 
-    if not queue.empty():
-        out = queue.get()
-        if isinstance(out, Exception):
-            raise out
-        return out
-    return None
+    if isinstance(out, Exception):
+        raise out
+    return out
