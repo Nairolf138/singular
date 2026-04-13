@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from random import choice, random
 from typing import Dict, Optional
 
+from singular.cognition.reflect import ActionHypothesis, reflect_action
+from singular.memory import add_episode
 from singular.morals.moral_rules import score_action
 
 from singular.models.agents.motivation import Motivation
@@ -59,6 +61,7 @@ class Agent:
             return None
 
         context = context or {}
+        action_costs = context.get("action_costs", {})
         allowed_actions = {
             act: val
             for act, val in actions.items()
@@ -68,7 +71,29 @@ class Agent:
         if not allowed_actions:
             return None
 
-        best_action = max(allowed_actions, key=lambda action: allowed_actions[action])
+        max_value = max(allowed_actions.values()) or 1.0
+        hypotheses = [
+            ActionHypothesis(
+                action=action,
+                long_term=value / max_value,
+                sandbox_risk=max(0.0, -score_action(action, context)),
+                resource_cost=float(action_costs.get(action, 0.0)),
+                metadata={"raw_value": value},
+            )
+            for action, value in allowed_actions.items()
+        ]
+        reflection = reflect_action(hypotheses)
+        best_action = reflection.action
+        if best_action is None:
+            return None
+        add_episode(
+            {
+                "event": "agent_decision",
+                "decision_reason": reflection.decision_reason,
+                "selected_action": best_action,
+                "alternative_scores": reflection.alternative_scores,
+            }
+        )
         # Explore a non-optimal action with probability ``decision_noise``
         if len(allowed_actions) > 1 and random() < self.decision_noise:
             alternatives = [act for act in allowed_actions if act != best_action]
