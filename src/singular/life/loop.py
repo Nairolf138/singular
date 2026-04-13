@@ -479,6 +479,7 @@ def run(
     max_test_candidates: int = 3,
     event_bus: EventBus | None = None,
     governance_policy: MutationGovernancePolicy | None = None,
+    max_iterations: int | None = None,
 ) -> Checkpoint:
     """Run the evolutionary loop for at most ``budget_seconds`` seconds.
 
@@ -540,7 +541,10 @@ def run(
     with RunLogger(run_id, psyche=psyche) as logger:
         health_tracker = HealthTracker.from_state(state.health_counters)
         delayed: list[tuple[float, str, Path]] = []
+        tick_count = 0
         while time.time() - start < budget_seconds:
+            if max_iterations is not None and tick_count >= max_iterations:
+                break
             if getattr(psyche, "sleeping", False) or (
                 hasattr(psyche, "energy")
                 and getattr(psyche, "energy") < SLEEP_THRESHOLD
@@ -555,6 +559,7 @@ def run(
                     setattr(psyche, "sleeping", False)
                 if hasattr(psyche, "save_state"):
                     psyche.save_state()
+                tick_count += 1
                 continue
 
             resource_manager.metabolize()
@@ -939,6 +944,7 @@ def run(
                 del world.organisms[org_name]
                 if not world.organisms:
                     break
+                tick_count += 1
                 continue
 
             # Remove organisms with depleted stores
@@ -989,8 +995,52 @@ def run(
                         child_skills_dir=str(child_dir),
                         alive=True,
                     )
+            tick_count += 1
 
     return state
+
+
+def run_tick(
+    skills_dirs: OrganismInputs,
+    checkpoint_path: Path,
+    rng: random.Random | None = None,
+    run_id: str = "loop",
+    operators: Dict[str, Callable[[ast.AST], ast.AST]] | None = None,
+    mortality: DeathMonitor | None = None,
+    world: WorldState | None = None,
+    map_elites: MapElites | None = None,
+    resource_manager: ResourceManager | None = None,
+    test_runner: Callable[[], int] | None = None,
+    coevolve_tests: bool = False,
+    test_pool: LivingTestPool | None = None,
+    robustness_weight: float = 1.0,
+    max_test_candidates: int = 3,
+    event_bus: EventBus | None = None,
+    governance_policy: MutationGovernancePolicy | None = None,
+    tick_budget_seconds: float = 0.2,
+) -> Checkpoint:
+    """Execute one mutation tick and persist checkpoint state."""
+
+    return run(
+        skills_dirs=skills_dirs,
+        checkpoint_path=checkpoint_path,
+        budget_seconds=max(tick_budget_seconds, 0.01),
+        rng=rng,
+        run_id=run_id,
+        operators=operators,
+        mortality=mortality,
+        world=world,
+        map_elites=map_elites,
+        resource_manager=resource_manager,
+        test_runner=test_runner,
+        coevolve_tests=coevolve_tests,
+        test_pool=test_pool,
+        robustness_weight=robustness_weight,
+        max_test_candidates=max_test_candidates,
+        event_bus=event_bus,
+        governance_policy=governance_policy,
+        max_iterations=1,
+    )
 
 
 def main(argv: list[str] | None = None) -> None:  # pragma: no cover - CLI wrapper
