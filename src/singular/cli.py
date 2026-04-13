@@ -667,12 +667,17 @@ def main(argv: list[str] | None = None) -> int:
         "run",
         help="Lance le daemon d'orchestration structuré",
     )
-    orchestrate_run.add_argument("--veille-seconds", type=float, default=2.0)
-    orchestrate_run.add_argument("--action-seconds", type=float, default=1.0)
-    orchestrate_run.add_argument("--introspection-seconds", type=float, default=1.0)
-    orchestrate_run.add_argument("--sommeil-seconds", type=float, default=3.0)
-    orchestrate_run.add_argument("--poll-interval", type=float, default=0.3)
-    orchestrate_run.add_argument("--tick-budget", type=float, default=0.2)
+    orchestrate_run.add_argument("--veille-seconds", type=float, default=None)
+    orchestrate_run.add_argument("--action-seconds", type=float, default=None)
+    orchestrate_run.add_argument("--introspection-seconds", type=float, default=None)
+    orchestrate_run.add_argument("--sommeil-seconds", type=float, default=None)
+    orchestrate_run.add_argument("--poll-interval", type=float, default=None)
+    orchestrate_run.add_argument("--tick-budget", type=float, default=None)
+    orchestrate_run.add_argument(
+        "--lifecycle-config",
+        default=None,
+        help="Chemin vers le fichier lifecycle.yaml pour l'horloge vitale",
+    )
     orchestrate_run.add_argument(
         "--dry-run",
         action="store_true",
@@ -1013,6 +1018,7 @@ def main(argv: list[str] | None = None) -> int:
                 sommeil_seconds=args.sommeil_seconds,
                 poll_interval_seconds=args.poll_interval,
                 tick_budget_seconds=args.tick_budget,
+                lifecycle_config_path=args.lifecycle_config,
                 dry_run=args.dry_run,
             )
 

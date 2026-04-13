@@ -14,6 +14,10 @@ from typing import Any
 from singular.events import Event, EventBus, get_global_event_bus
 from singular.life.loop import run_tick
 from singular.memory import _atomic_write_text, get_base_dir, get_mem_dir
+from singular.orchestrator.lifecycle_clock import (
+    LifecycleClockConfig,
+    load_lifecycle_clock_config,
+)
 from singular.perception import capture_signals
 from singular.psyche import Psyche
 from singular.resource_manager import ResourceManager
@@ -64,6 +68,9 @@ class OrchestratorConfig:
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     poll_interval_seconds: float = 0.3
     tick_budget_seconds: float = 0.2
+    introspection_frequency_ticks: int = 1
+    mutation_window_seconds: float = 0.2
+    phase_behaviors: dict[str, dict[str, Any]] = field(default_factory=dict)
     dry_run: bool = False
 
 
@@ -92,6 +99,7 @@ class OrchestratorService:
         self._running = False
         self._wake_requested = False
         self._pending_events: list[dict[str, Any]] = []
+        self._tick_count = 0
 
         self._subscribe_external_stimuli()
 
@@ -220,6 +228,15 @@ class OrchestratorService:
         if phase is LifecyclePhase.ACTION:
             self.resource_manager.metabolize()
             mood = self.psyche.update_from_resource_manager(self.resource_manager)
+            behavior = self.config.phase_behaviors.get(phase.value, {})
+            fatigue_slowdown = float(behavior.get("slowdown_on_fatigue", 1.0))
+            cpu_budget_percent = float(behavior.get("cpu_budget_percent", 100.0))
+            tick_budget = min(
+                self.config.tick_budget_seconds,
+                self.config.mutation_window_seconds,
+            )
+            if mood.value == "fatigue":
+                tick_budget *= max(fatigue_slowdown, 1.0)
             if not self.config.dry_run:
                 run_tick(
                     skills_dirs=self.skills_dir,
@@ -227,7 +244,7 @@ class OrchestratorService:
                     run_id="orchestrator",
                     event_bus=self.bus,
                     resource_manager=self.resource_manager,
-                    tick_budget_seconds=self.config.tick_budget_seconds,
+                    tick_budget_seconds=tick_budget,
                 )
             self._push_event(
                 phase,
@@ -235,11 +252,17 @@ class OrchestratorService:
                     "energy": self.resource_manager.energy,
                     "food": self.resource_manager.food,
                     "mood": mood.value,
+                    "cpu_budget_percent": cpu_budget_percent,
+                    "tick_budget_seconds": tick_budget,
+                    "allowed_actions": behavior.get("allowed_actions", []),
                 },
             )
             return
 
         if phase is LifecyclePhase.INTROSPECTION:
+            if self._tick_count % self.config.introspection_frequency_ticks != 0:
+                self._push_event(phase, {"skipped": True, "reason": "frequency_gate"})
+                return
             mood = self.psyche.update_from_resource_manager(self.resource_manager)
             self.psyche.save_state()
             self._push_event(phase, {"mood": mood.value, "energy": self.psyche.energy})
@@ -251,6 +274,7 @@ class OrchestratorService:
         self._push_event(phase, {"energy": self.psyche.energy})
 
     def tick(self) -> LifecyclePhase:
+        self._tick_count += 1
         phase = LifecyclePhase(self.state.current_phase)
         self._run_phase(phase)
 
@@ -291,32 +315,68 @@ class OrchestratorService:
 
 def run_orchestrator_daemon(
     *,
-    veille_seconds: float,
-    action_seconds: float,
-    introspection_seconds: float,
-    sommeil_seconds: float,
-    poll_interval_seconds: float,
-    tick_budget_seconds: float,
+    veille_seconds: float | None,
+    action_seconds: float | None,
+    introspection_seconds: float | None,
+    sommeil_seconds: float | None,
+    poll_interval_seconds: float | None,
+    tick_budget_seconds: float | None,
+    lifecycle_config_path: str | None,
     dry_run: bool,
 ) -> int:
     """CLI entry point for ``singular orchestrate run``."""
 
+    lifecycle_clock: LifecycleClockConfig = load_lifecycle_clock_config(
+        Path(lifecycle_config_path) if lifecycle_config_path else None
+    )
+    resolved_veille = (
+        veille_seconds
+        if veille_seconds is not None
+        else lifecycle_clock.cycle.veille_seconds
+    )
+    resolved_sommeil = (
+        sommeil_seconds
+        if sommeil_seconds is not None
+        else lifecycle_clock.cycle.sommeil_seconds
+    )
+    resolved_introspection = (
+        introspection_seconds
+        if introspection_seconds is not None
+        else 1.0
+    )
+    resolved_action = action_seconds if action_seconds is not None else 1.0
+    resolved_poll = poll_interval_seconds if poll_interval_seconds is not None else 0.3
+    resolved_tick_budget = (
+        tick_budget_seconds
+        if tick_budget_seconds is not None
+        else lifecycle_clock.cycle.mutation_window_seconds
+    )
     service = OrchestratorService(
         config=OrchestratorConfig(
             scheduler=SchedulerConfig(
-                veille_seconds=veille_seconds,
-                action_seconds=action_seconds,
-                introspection_seconds=introspection_seconds,
-                sommeil_seconds=sommeil_seconds,
+                veille_seconds=resolved_veille,
+                action_seconds=resolved_action,
+                introspection_seconds=float(resolved_introspection),
+                sommeil_seconds=resolved_sommeil,
             ),
-            poll_interval_seconds=poll_interval_seconds,
-            tick_budget_seconds=tick_budget_seconds,
+            poll_interval_seconds=resolved_poll,
+            tick_budget_seconds=resolved_tick_budget,
+            introspection_frequency_ticks=lifecycle_clock.cycle.introspection_frequency_ticks,
+            mutation_window_seconds=lifecycle_clock.cycle.mutation_window_seconds,
+            phase_behaviors={
+                phase: {
+                    "cpu_budget_percent": behavior.cpu_budget_percent,
+                    "allowed_actions": list(behavior.allowed_actions),
+                    "slowdown_on_fatigue": behavior.slowdown_on_fatigue,
+                }
+                for phase, behavior in lifecycle_clock.phases.items()
+            },
             dry_run=dry_run,
         )
     )
     print(
         "Orchestrateur démarré "
-        f"(veille={veille_seconds}s, action={action_seconds}s, introspection={introspection_seconds}s, sommeil={sommeil_seconds}s)"
+        f"(veille={resolved_veille}s, action={resolved_action}s, introspection={resolved_introspection}s, sommeil={resolved_sommeil}s)"
     )
     try:
         service.run_forever()

@@ -1,0 +1,23 @@
+cycle:
+  veille_seconds: 2.0
+  sommeil_seconds: 3.0
+  introspection_frequency_ticks: 1
+  mutation_window_seconds: 0.2
+
+phases:
+  veille:
+    cpu_budget_percent: 30
+    allowed_actions: [perception, resource_scan]
+    slowdown_on_fatigue: 1.1
+  action:
+    cpu_budget_percent: 75
+    allowed_actions: [mutation, evaluation, checkpoint]
+    slowdown_on_fatigue: 1.5
+  introspection:
+    cpu_budget_percent: 40
+    allowed_actions: [self_review, memory_consolidation]
+    slowdown_on_fatigue: 1.2
+  sommeil:
+    cpu_budget_percent: 15
+    allowed_actions: [recovery, cooldown]
+    slowdown_on_fatigue: 1.0
