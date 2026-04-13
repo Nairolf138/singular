@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+import json
+import multiprocessing as mp
+from pathlib import Path
+
 from singular.multiagent import (
     AgentMessage,
     CollectiveMemory,
@@ -8,6 +13,25 @@ from singular.multiagent import (
     OrchestrationScenario,
     resolve_conflicts,
 )
+
+
+def _send_messages_worker(path: str, start: int, count: int) -> None:
+    transport = FileQueueTransport(Path(path))
+    for idx in range(start, start + count):
+        transport.send(
+            AgentMessage(
+                intent="answer",
+                task=f"part-{idx}",
+                evidence=["mp"],
+                confidence=0.9,
+            )
+        )
+
+
+def _append_collective_worker(root: str, namespace: str, start: int, count: int) -> None:
+    memory = CollectiveMemory(Path(root), namespace)
+    for idx in range(start, start + count):
+        memory.append({"kind": "mp", "id": idx})
 
 
 def test_message_is_versioned_and_serializable():
@@ -132,3 +156,66 @@ def test_orchestration_sharing_merge_and_namespaced_memory(tmp_path):
     assert any(record["kind"] == "dispatch" for record in alpha_records)
     assert any(record["kind"] == "merge" for record in alpha_records)
     assert beta_memory.read() == []
+
+
+def test_file_queue_transport_concurrent_threads_and_processes(tmp_path):
+    queue_path = tmp_path / "queue" / "messages.jsonl"
+    transport = FileQueueTransport(queue_path)
+    thread_count = 40
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for idx in range(thread_count):
+            pool.submit(
+                transport.send,
+                AgentMessage(
+                    intent="answer",
+                    task=f"thread-{idx}",
+                    evidence=["thread"],
+                    confidence=0.7,
+                ),
+            )
+
+    processes = [
+        mp.Process(
+            target=_send_messages_worker,
+            args=(str(queue_path), proc_idx * 15, 15),
+        )
+        for proc_idx in range(2)
+    ]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join(timeout=10)
+        assert process.exitcode == 0
+
+    lines = queue_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == thread_count + 30
+    assert all(line.strip() for line in lines)
+    parsed = [json.loads(line) for line in lines]
+    assert len(parsed) == thread_count + 30
+
+
+def test_collective_memory_concurrent_threads_and_processes(tmp_path):
+    root = tmp_path / "collective"
+    memory = CollectiveMemory(root, "alpha")
+    thread_count = 30
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        for idx in range(thread_count):
+            pool.submit(memory.append, {"kind": "thread", "id": idx})
+
+    processes = [
+        mp.Process(
+            target=_append_collective_worker,
+            args=(str(root), "alpha", proc_idx * 10, 10),
+        )
+        for proc_idx in range(2)
+    ]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join(timeout=10)
+        assert process.exitcode == 0
+
+    records = memory.read()
+    assert len(records) == thread_count + 20
+    ids = {record["id"] for record in records}
+    assert set(range(thread_count)).issubset(ids)

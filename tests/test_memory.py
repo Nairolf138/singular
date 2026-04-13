@@ -1,5 +1,7 @@
 from pathlib import Path
 import json
+import multiprocessing as mp
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from typing import Any
@@ -7,6 +9,11 @@ from typing import Any
 from singular.memory import add_episode, update_trait, update_score, update_note
 import singular.memory as memory
 from singular.organisms.birth import birth
+
+
+def _append_episode_worker(path: str, start: int, count: int) -> None:
+    for idx in range(start, start + count):
+        add_episode({"event": "mp", "id": idx}, path=Path(path))
 
 
 def test_birth_creates_memory_files(tmp_path: Path) -> None:
@@ -46,6 +53,44 @@ def test_add_episode(tmp_path: Path) -> None:
     lines = episode_path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 1
     assert json.loads(lines[0]) == {"event": "test"}
+
+
+def test_add_episode_concurrent_threads(tmp_path: Path) -> None:
+    episode_path = tmp_path / "mem" / "episodic.jsonl"
+    total = 80
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for idx in range(total):
+            pool.submit(add_episode, {"event": "thread", "id": idx}, episode_path)
+
+    lines = episode_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == total
+    ids = {json.loads(line)["id"] for line in lines}
+    assert ids == set(range(total))
+
+
+def test_add_episode_concurrent_processes(tmp_path: Path) -> None:
+    episode_path = tmp_path / "mem" / "episodic.jsonl"
+    proc_count = 4
+    per_proc = 20
+    processes = [
+        mp.Process(
+            target=_append_episode_worker,
+            args=(str(episode_path), proc_idx * per_proc, per_proc),
+        )
+        for proc_idx in range(proc_count)
+    ]
+
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join(timeout=10)
+        assert process.exitcode == 0
+
+    lines = episode_path.read_text(encoding="utf-8").splitlines()
+    expected = proc_count * per_proc
+    assert len(lines) == expected
+    ids = {json.loads(line)["id"] for line in lines}
+    assert ids == set(range(expected))
 
 
 def test_update_trait_score_and_note(tmp_path: Path) -> None:

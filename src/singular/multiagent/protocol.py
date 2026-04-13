@@ -4,9 +4,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Protocol
 import json
+import os
 import tempfile
 import time
 from collections import defaultdict, deque
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 
 @dataclass(slots=True)
@@ -90,10 +96,7 @@ class FileQueueTransport:
         self.path = Path(path)
 
     def send(self, message: AgentMessage) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        line = json.dumps(message.to_dict(), ensure_ascii=False) + "\n"
-        existing = self.path.read_text(encoding="utf-8") if self.path.exists() else ""
-        _atomic_write_text(self.path, existing + line)
+        _append_jsonl_line(self.path, message.to_dict())
 
     def receive(self) -> list[AgentMessage]:
         if not self.path.exists():
@@ -136,10 +139,7 @@ class CollectiveMemory:
         return self.root / f"{self.namespace}.jsonl"
 
     def append(self, record: dict[str, Any]) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        line = json.dumps(record, ensure_ascii=False) + "\n"
-        existing = self._path.read_text(encoding="utf-8") if self._path.exists() else ""
-        _atomic_write_text(self._path, existing + line)
+        _append_jsonl_line(self._path, record)
 
     def read(self) -> list[dict[str, Any]]:
         if not self._path.exists():
@@ -224,3 +224,26 @@ def _atomic_write_text(path: Path, data: str) -> None:
             Path(tmp.name).unlink()
         except FileNotFoundError:
             pass
+
+
+def _append_jsonl_line(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(payload, ensure_ascii=False) + "\n"
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    with lock_path.open("a+b") as lock_file:
+        if os.name == "nt":
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            with path.open("a", encoding="utf-8") as file:
+                file.write(line)
+                file.flush()
+                os.fsync(file.fileno())
+        finally:
+            if os.name == "nt":
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)

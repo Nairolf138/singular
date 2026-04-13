@@ -12,6 +12,11 @@ import json
 import os
 import tempfile
 
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
+
 from .events import Event, EventBus
 from .memory_layers import MemoryLayerService, build_backend
 
@@ -81,6 +86,31 @@ def _atomic_write_text(path: Path, data: str) -> None:
             os.unlink(tmp.name)
         except FileNotFoundError:
             pass
+
+
+def _append_jsonl_line(path: Path, payload: dict[str, Any]) -> None:
+    """Safely append one JSON line with cross-platform file locking."""
+
+    _ensure_dir(path)
+    line = json.dumps(payload, ensure_ascii=False) + "\n"
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    with lock_path.open("a+b") as lock_file:
+        if os.name == "nt":
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            with path.open("a", encoding="utf-8") as file:
+                file.write(line)
+                file.flush()
+                os.fsync(file.fileno())
+        finally:
+            if os.name == "nt":
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def ensure_memory_structure(mem_dir: Path | str | None = None) -> None:
@@ -230,8 +260,7 @@ def add_episode(
     if path is None:
         path = get_episodic_file()
     path = Path(path)
-    existing = path.read_text(encoding="utf-8") if path.exists() else ""
-    _atomic_write_text(path, existing + json.dumps(episode) + "\n")
+    _append_jsonl_line(path, episode)
     try:
         get_memory_layer_service().ingest_episode(episode)
     except Exception:

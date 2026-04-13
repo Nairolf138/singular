@@ -24,19 +24,21 @@ def test_write_profile_atomic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert json.loads(profile_path.read_text(encoding="utf-8")) == {"old": 1}
 
 
-def test_add_episode_atomic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_add_episode_uses_append_path_not_snapshot_replace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     episode_path = tmp_path / "mem" / "episodic.jsonl"
     episode_path.parent.mkdir(parents=True, exist_ok=True)
     episode_path.write_text(json.dumps({"event": "old"}) + "\n", encoding="utf-8")
 
     monkeypatch.setattr(memory.os, "replace", failing_replace)
 
-    with pytest.raises(RuntimeError):
-        memory.add_episode({"event": "new"}, path=episode_path)
+    memory.add_episode({"event": "new"}, path=episode_path)
 
     lines = episode_path.read_text(encoding="utf-8").splitlines()
-    assert len(lines) == 1
+    assert len(lines) == 2
     assert json.loads(lines[0]) == {"event": "old"}
+    assert json.loads(lines[1]) == {"event": "new"}
 
 
 def test_resource_manager_save_atomic(
