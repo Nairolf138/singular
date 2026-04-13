@@ -600,6 +600,15 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Export report to file (.json/.md) or use `markdown` for stdout",
     )
+    rollback_parser = subparsers.add_parser(
+        "rollback", help="Rollback atomique vers une génération stable"
+    )
+    rollback_parser.add_argument(
+        "--generation",
+        type=int,
+        required=True,
+        help="Identifiant de génération à restaurer",
+    )
 
     subparsers.add_parser("dashboard", help="Launch web dashboard")
     quickstart_parser = subparsers.add_parser(
@@ -973,6 +982,20 @@ def main(argv: list[str] | None = None) -> int:
         from .dashboard import run as dashboard_run
 
         dashboard_run()
+    elif args.command == "rollback":
+        from .runs.generations import rollback_generation
+
+        _ensure_active_life(resolve_life, args.life)
+        try:
+            restored = rollback_generation(args.generation)
+        except ValueError as exc:
+            print(f"Rollback impossible: {exc}", file=sys.stderr)
+            return 1
+        print(
+            "Rollback appliqué: "
+            f"generation={restored['generation_id']} "
+            f"target={restored['skill_path']}"
+        )
 
     elif args.command == "quickstart":
         if args.name:
