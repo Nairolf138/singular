@@ -2,6 +2,7 @@ from pathlib import Path
 
 from singular.psyche import Psyche, Mood
 from singular.resource_manager import ResourceManager
+from singular.motivation import GoalPolicy, Objective
 
 
 def test_feel_updates_traits_and_last_mood() -> None:
@@ -88,3 +89,50 @@ def test_resource_manager_influences_mood(tmp_path: Path) -> None:
     mood = psyche.update_from_resource_manager(rm)
     assert mood is Mood.LONELY
     assert psyche.last_mood is Mood.LONELY
+
+
+def test_objective_policy_persistence_and_schema(tmp_path: Path) -> None:
+    path = tmp_path / "mem" / "psyche.json"
+    psyche = Psyche(
+        objectives={
+            "survie": Objective(
+                "survie",
+                weight=0.7,
+                parent=None,
+                horizon_ticks=4,
+                policy=GoalPolicy(besoin=0.9, priorite=0.8, urgence=1.0, alignement_valeurs=0.7),
+            )
+        }
+    )
+    psyche.feel(Mood.PROUD)
+    psyche.save_state(path)
+
+    loaded = Psyche.load_state(path)
+    assert loaded.schema_version >= 2
+    assert loaded.mood_history
+    assert loaded.objectives["survie"].horizon_ticks == 4
+    assert loaded.objectives["survie"].policy.urgence == 1.0
+
+
+def test_weighted_axes_and_operator_bias() -> None:
+    psyche = Psyche(
+        objectives={
+            "root": Objective(
+                "root",
+                weight=1.0,
+                policy=GoalPolicy(besoin=0.6, priorite=0.9, urgence=0.2, alignement_valeurs=0.9),
+            ),
+            "urgent": Objective(
+                "urgent",
+                weight=0.5,
+                parent="root",
+                horizon_ticks=3,
+                policy=GoalPolicy(besoin=0.9, priorite=0.5, urgence=1.0, alignement_valeurs=0.4),
+            ),
+        }
+    )
+    axes = psyche.weighted_objective_axes()
+    assert set(axes) == {"long_term", "sandbox", "resource"}
+    assert abs(sum(axes.values()) - 1.0) < 1e-6
+    biases = psyche.operator_bias(["op_a", "op_b", "op_c"])
+    assert set(biases) == {"op_a", "op_b", "op_c"}

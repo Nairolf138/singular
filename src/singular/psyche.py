@@ -9,7 +9,7 @@ import random
 from enum import Enum
 
 from .memory import read_psyche, write_psyche
-from .motivation import Objective
+from .motivation import GoalPolicy, Objective
 from .resource_manager import ResourceManager
 
 
@@ -86,6 +86,8 @@ class Psyche:
     energy: float = 100.0
     sleeping: bool = False
     objectives: Dict[str, Objective] = field(default_factory=dict)
+    schema_version: int = field(default=2, init=False)
+    mood_history: list[str] = field(default_factory=list)
 
     # ``last_mood`` is updated every time :meth:`feel` is called and can be
     # queried by other subsystems (interaction and mutation policies).
@@ -284,6 +286,9 @@ class Psyche:
         if mood not in self._MOOD_EFFECTS:
             mood = Mood.NEUTRAL
         self.last_mood = mood
+        self.mood_history.append(mood.value)
+        if len(self.mood_history) > 256:
+            self.mood_history = self.mood_history[-256:]
 
         for attr, delta in self._MOOD_EFFECTS[mood].items():
             value = getattr(self, attr)
@@ -300,9 +305,107 @@ class Psyche:
         return mood
 
     def adjust_objectives(self) -> None:
-        """Clamp objective weights to the ``[0, 1]`` range."""
-        for obj in self.objectives.values():
-            obj.weight = _clamp(obj.weight)
+        """Clamp and rebalance objective weights for arbitration."""
+        modulation = self.goal_modulation_profile()
+        for name, obj in self.objectives.items():
+            horizon_boost = 0.0
+            if obj.horizon_ticks is not None:
+                horizon_boost = 0.15 if obj.horizon_ticks <= 10 else -0.05
+            parent_boost = 0.0
+            if obj.parent and obj.parent in self.objectives:
+                parent_boost = self.objectives[obj.parent].weight * 0.1
+            policy_signal = obj.arbitration_score()
+            obj.weight = _clamp(
+                obj.weight * modulation
+                + horizon_boost
+                + parent_boost
+                + (policy_signal - 0.5) * 0.2
+            )
+
+    def goal_modulation_profile(self) -> float:
+        """Return a modulation factor derived from mood and recent history."""
+        mood = self.last_mood or Mood.NEUTRAL
+        mood_factor = {
+            Mood.PROUD: 1.08,
+            Mood.CURIOUS: 1.05,
+            Mood.PLEASURE: 1.06,
+            Mood.FRUSTRATED: 0.92,
+            Mood.ANXIOUS: 0.95,
+            Mood.PAIN: 0.9,
+            Mood.FATIGUE: 0.88,
+        }.get(mood, 1.0)
+        if not self.objectives:
+            return mood_factor
+        reward_signal = sum(obj.reward for obj in self.objectives.values()) / max(
+            len(self.objectives), 1
+        )
+        reward_factor = 1.0 + max(-0.1, min(0.1, reward_signal * 0.05))
+        return max(0.7, min(1.3, mood_factor * reward_factor))
+
+    def objective_weights(self) -> Dict[str, float]:
+        """Return normalized objective weights after modulation."""
+        self.adjust_objectives()
+        if not self.objectives:
+            return {}
+        total = sum(max(0.0, obj.weight) for obj in self.objectives.values())
+        if total <= 0:
+            total = float(len(self.objectives))
+        return {
+            name: max(0.0, obj.weight) / total for name, obj in self.objectives.items()
+        }
+
+    def weighted_objective_axes(self) -> dict[str, float]:
+        """Map objective policies to reflection axes."""
+        if not self.objectives:
+            return {"long_term": 0.33, "sandbox": 0.33, "resource": 0.34}
+        normalized = self.objective_weights()
+        long_term = 0.0
+        sandbox = 0.0
+        resource = 0.0
+        for name, obj in self.objectives.items():
+            w = normalized.get(name, 0.0)
+            policy = obj.policy
+            long_term += w * (0.6 * policy.priorite + 0.4 * policy.alignement_valeurs)
+            sandbox += w * (0.7 * policy.urgence + 0.3 * policy.besoin)
+            resource += w * (0.6 * policy.besoin + 0.4 * (1.0 - policy.urgence))
+        total = long_term + sandbox + resource
+        if total <= 0.0:
+            return {"long_term": 0.33, "sandbox": 0.33, "resource": 0.34}
+        return {
+            "long_term": long_term / total,
+            "sandbox": sandbox / total,
+            "resource": resource / total,
+        }
+
+    def operator_bias(self, operator_names: list[str]) -> Dict[str, float]:
+        """Return operator bias from objective hierarchy and horizon pressure."""
+        if not operator_names:
+            return {}
+        weights = self.objective_weights()
+        if not weights:
+            return {}
+        horizon_pressure = sum(
+            1.0
+            for obj in self.objectives.values()
+            if obj.horizon_ticks is not None and obj.horizon_ticks <= 10
+        ) / max(1, len(self.objectives))
+        ordered = list(operator_names)
+        midpoint = max(1, len(ordered) - 1)
+        biases: Dict[str, float] = {}
+        ambition = sum(
+            weights.get(name, 0.0) * obj.policy.priorite
+            for name, obj in self.objectives.items()
+        )
+        urgency = sum(
+            weights.get(name, 0.0) * obj.policy.urgence
+            for name, obj in self.objectives.items()
+        )
+        for index, name in enumerate(ordered):
+            exploit_index = 1.0 - (index / midpoint)
+            biases[name] = (ambition * exploit_index * 0.2) + (
+                urgency * horizon_pressure * (1.0 - exploit_index) * 0.2
+            )
+        return biases
 
     # Exposed helpers -----------------------------------------------------
     def interaction_policy(self) -> str:
@@ -358,6 +461,7 @@ class Psyche:
     def save_state(self, path: Path | str | None = None) -> None:
         """Persist current psyche state to disk."""
         state: Dict[str, Any] = {
+            "schema_version": self.schema_version,
             "curiosity": self.curiosity,
             "patience": self.patience,
             "playfulness": self.playfulness,
@@ -365,10 +469,22 @@ class Psyche:
             "resilience": self.resilience,
             "energy": self.energy,
             "last_mood": self.last_mood.value if self.last_mood else None,
+            "mood_history": list(self.mood_history),
         }
         if self.objectives:
             state["objectives"] = {
-                name: {"weight": obj.weight, "reward": obj.reward}
+                name: {
+                    "weight": obj.weight,
+                    "reward": obj.reward,
+                    "parent": obj.parent,
+                    "horizon_ticks": obj.horizon_ticks,
+                    "policy": {
+                        "besoin": obj.policy.besoin,
+                        "priorite": obj.policy.priorite,
+                        "urgence": obj.policy.urgence,
+                        "alignement_valeurs": obj.policy.alignement_valeurs,
+                    },
+                }
                 for name, obj in self.objectives.items()
             }
         if path is None:
@@ -383,6 +499,25 @@ class Psyche:
             data = read_psyche()
         else:
             data = read_psyche(Path(path))
+        objectives_payload = data.get("objectives", {})
+        if not isinstance(objectives_payload, dict):
+            objectives_payload = {}
+        mood_history = data.get("mood_history", [])
+        schema_version = int(data.get("schema_version", 1))
+        if not isinstance(mood_history, list):
+            mood_history = []
+
+        def _policy_from(payload: dict[str, Any]) -> GoalPolicy:
+            policy_payload = payload.get("policy")
+            if not isinstance(policy_payload, dict):
+                policy_payload = {}
+            return GoalPolicy(
+                besoin=float(policy_payload.get("besoin", 0.5)),
+                priorite=float(policy_payload.get("priorite", 0.5)),
+                urgence=float(policy_payload.get("urgence", 0.5)),
+                alignement_valeurs=float(policy_payload.get("alignement_valeurs", 0.5)),
+            )
+
         psyche = cls(
             curiosity=data.get("curiosity", 0.5),
             patience=data.get("patience", 0.5),
@@ -392,13 +527,19 @@ class Psyche:
             energy=data.get("energy", 100.0),
             objectives={
                 name: Objective(
-                    name,
-                    obj.get("weight", 1.0),
-                    obj.get("reward", 0.0),
+                    name=name,
+                    weight=float(obj.get("weight", 1.0)),
+                    reward=float(obj.get("reward", 0.0)),
+                    parent=obj.get("parent"),
+                    horizon_ticks=obj.get("horizon_ticks"),
+                    policy=_policy_from(obj),
                 )
-                for name, obj in data.get("objectives", {}).items()
+                for name, obj in objectives_payload.items()
+                if isinstance(obj, dict)
             },
+            mood_history=[str(entry) for entry in mood_history[-256:]],
         )
         mood_val = data.get("last_mood")
         psyche.last_mood = Mood(mood_val) if mood_val else None
+        psyche.schema_version = max(2, schema_version)
         return psyche
