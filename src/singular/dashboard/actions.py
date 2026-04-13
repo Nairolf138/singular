@@ -242,6 +242,8 @@ class DashboardActionService:
                         "name": meta.name,
                         "path": str(meta.path),
                         "active": slug == active,
+                        "parents": list(meta.parents),
+                        "lineage_depth": meta.lineage_depth,
                     }
                 )
             return {"active": active, "lives": items}

@@ -27,8 +27,10 @@ class LifeMetadata:
     path: Path
     created_at: str
     status: str = "active"
+    parents: tuple[str, ...] = ()
+    lineage_depth: int = 0
 
-    def to_payload(self) -> Dict[str, str]:
+    def to_payload(self) -> Dict[str, Any]:
         """Return a JSON-serialisable representation."""
         return {
             "name": self.name,
@@ -36,6 +38,8 @@ class LifeMetadata:
             "path": str(self.path),
             "created_at": self.created_at,
             "status": self.status,
+            "parents": list(self.parents),
+            "lineage_depth": self.lineage_depth,
         }
 
     @classmethod
@@ -47,6 +51,8 @@ class LifeMetadata:
             path=Path(data["path"]),
             created_at=str(data["created_at"]),
             status=str(data.get("status", "active")),
+            parents=tuple(str(item) for item in data.get("parents", []) if isinstance(item, str)),
+            lineage_depth=max(0, int(data.get("lineage_depth", 0))),
         )
 
 
@@ -183,7 +189,11 @@ def _resolve_life_metadata(name: str) -> tuple[dict[str, Any], str, LifeMetadata
     return registry, slug, metadata
 
 
-def create_life(name: str) -> LifeMetadata:
+def create_life(
+    name: str,
+    *,
+    parents: tuple[str, ...] = (),
+) -> LifeMetadata:
     """Create a new life directory and register it."""
 
     registry = load_registry()
@@ -201,12 +211,20 @@ def create_life(name: str) -> LifeMetadata:
     life_dir.mkdir(parents=True, exist_ok=True)
 
     created_at = datetime.now(timezone.utc).isoformat()
+    lineage_depth = 0
+    for parent_slug in parents:
+        parent_meta = lives.get(parent_slug)
+        if parent_meta is not None:
+            lineage_depth = max(lineage_depth, parent_meta.lineage_depth + 1)
+
     metadata = LifeMetadata(
         name=name,
         slug=slug,
         path=life_dir,
         created_at=created_at,
         status="active",
+        parents=tuple(parent for parent in parents if parent in lives),
+        lineage_depth=lineage_depth,
     )
 
     lives[slug] = metadata
@@ -310,9 +328,9 @@ def memorialize_life(name: str, *, message: str) -> Path:
 def clone_life(name: str, *, new_name: str | None = None) -> LifeMetadata:
     """Clone an existing life to a fresh life entry."""
 
-    _, _, source = _resolve_life_metadata(name)
+    _, source_slug, source = _resolve_life_metadata(name)
     clone_name = new_name or f"{source.name} clone"
-    clone_meta = create_life(clone_name)
+    clone_meta = create_life(clone_name, parents=(source_slug,))
     shutil.copytree(source.path, clone_meta.path, dirs_exist_ok=True)
     registry = load_registry()
     lives: dict[str, LifeMetadata] = registry.get("lives", {})

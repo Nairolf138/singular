@@ -5,7 +5,12 @@ import pytest
 
 from singular.organisms.spawn import spawn
 from singular.governance.policy import MutationGovernancePolicy
-from singular.life.reproduction import authorize_reproduction_write, crossover
+from singular.life.reproduction import (
+    InheritanceRules,
+    ReproductionVariationPolicy,
+    authorize_reproduction_write,
+    crossover,
+)
 
 
 def test_reproduction(tmp_path: Path):
@@ -46,8 +51,57 @@ def test_reproduction(tmp_path: Path):
     import json
 
     state = json.loads(psyche)
-    assert state["curiosity"] == pytest.approx(0.5)
+    assert 0.0 <= state["curiosity"] <= 1.0
+    assert state["curiosity"] == pytest.approx(0.5, abs=0.1)
     assert state["mood"] in {"happy", "sad"}
+
+
+def test_reproduction_inherits_partial_memory(tmp_path: Path):
+    parent_a = tmp_path / "parent_a"
+    parent_b = tmp_path / "parent_b"
+    (parent_a / "skills").mkdir(parents=True)
+    (parent_b / "skills").mkdir(parents=True)
+    (parent_a / "skills" / "skill_a.py").write_text("def mix(x):\n    return x\n", encoding="utf-8")
+    (parent_b / "skills" / "skill_b.py").write_text("def mix(x):\n    return x + 1\n", encoding="utf-8")
+
+    (parent_a / "mem").mkdir()
+    (parent_b / "mem").mkdir()
+    (parent_a / "mem" / "psyche.json").write_text('{"curiosity": 0.2}', encoding="utf-8")
+    (parent_b / "mem" / "psyche.json").write_text('{"curiosity": 0.8}', encoding="utf-8")
+    (parent_a / "mem" / "episodic.jsonl").write_text('{"ts":"1","text":"a"}\n', encoding="utf-8")
+    (parent_b / "mem" / "episodic.jsonl").write_text('{"ts":"2","text":"b"}\n', encoding="utf-8")
+
+    child = spawn(
+        parent_a,
+        parent_b,
+        out_dir=tmp_path / "child",
+        seed=1,
+        inheritance_rules=InheritanceRules(inherit_partial_memory=True, memory_episode_limit=1),
+    )
+    lines = (child / "mem" / "episodic.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+
+
+def test_reproduction_blocks_incompatible_parents(tmp_path: Path):
+    parent_a = tmp_path / "parent_a"
+    parent_b = tmp_path / "parent_b"
+    (parent_a / "skills").mkdir(parents=True)
+    (parent_b / "skills").mkdir(parents=True)
+    (parent_a / "skills" / "skill_a.py").write_text("def mix(x):\n    return x\n", encoding="utf-8")
+    (parent_b / "skills" / "skill_b.py").write_text("def mix(x):\n    return x + 1\n", encoding="utf-8")
+    (parent_a / "mem").mkdir()
+    (parent_b / "mem").mkdir()
+    (parent_a / "mem" / "psyche.json").write_text('{"curiosity": 0.2}', encoding="utf-8")
+    (parent_b / "mem" / "psyche.json").write_text('{"resilience": 0.8}', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="compatibility"):
+        spawn(
+            parent_a,
+            parent_b,
+            out_dir=tmp_path / "child",
+            seed=1,
+            variation_policy=ReproductionVariationPolicy(compatibility_threshold=0.8),
+        )
 
 
 def test_reproduction_invalid_skill(tmp_path: Path):

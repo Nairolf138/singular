@@ -218,6 +218,12 @@ def test_lives_archive_memorial_clone_guided_commands(
     assert (root / "lives" / "alpha" / "mem" / "memorial.json").exists()
 
     main(["--root", str(root), "lives", "clone", "alpha", "--new-name", "Alpha 2"])
+    registry = load_registry()
+    cloned_slug = registry["active"]
+    assert isinstance(cloned_slug, str)
+    cloned_meta = registry["lives"][cloned_slug]
+    assert "alpha" in cloned_meta.parents
+    assert cloned_meta.lineage_depth >= 1
     clone_out = capsys.readouterr().out
     assert "Vie clonée" in clone_out
     assert "singular status --verbose" in clone_out
