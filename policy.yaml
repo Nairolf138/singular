@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "memory": {
+    "preserve_threshold": 0.6
+  },
+  "forgetting": {
+    "enabled": true,
+    "max_episodic_entries": 5000
+  },
+  "permissions": {
+    "modifiable_paths": ["skills"],
+    "review_required_paths": ["skills/experimental"],
+    "forbidden_paths": ["src", ".git", "mem", "runs", "tests"],
+    "force_allow_paths": []
+  },
+  "autonomy": {
+    "safe_mode": false,
+    "mutation_quota_per_window": 25,
+    "mutation_quota_window_seconds": 300.0,
+    "circuit_breaker_threshold": 3,
+    "circuit_breaker_window_seconds": 180.0,
+    "circuit_breaker_cooldown_seconds": 300.0
+  }
+}

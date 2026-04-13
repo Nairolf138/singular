@@ -144,3 +144,32 @@ def test_cli_values_show_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, c
         "preservation_memoire",
         "curiosite_bornee",
     }
+
+
+def test_cli_policy_show_and_set(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys) -> None:
+    root = tmp_path / "root"
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    code_show = main(["--root", str(root), "--format", "json", "policy", "show"])
+    output = capsys.readouterr().out.strip().splitlines()
+    payload = json.loads(output[-1])
+    assert code_show == 0
+    assert payload["policy"]["version"] == 1
+    assert "impact" in payload["policy"]
+
+    code_set = main(
+        [
+            "--root",
+            str(root),
+            "policy",
+            "set",
+            "--key",
+            "autonomy.safe_mode",
+            "--value",
+            "true",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code_set == 0
+    assert "Politique mise à jour" in out

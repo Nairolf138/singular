@@ -16,6 +16,7 @@ from singular.life.vital import compute_vital_timeline
 from singular.metrics.autonomy import compute_autonomy_metrics
 
 from singular.dashboard.actions import DashboardActionService
+from singular.governance.policy import load_runtime_policy
 from fastapi.responses import HTMLResponse
 
 from singular.schedulers.reevaluation import alerts_from_records
@@ -864,10 +865,13 @@ def create_app(
 
     @app.get("/dashboard/context")
     def read_dashboard_context() -> dict[str, object]:
+        policy = load_runtime_policy()
         return {
             "singular_root": str(registry_root),
             "singular_home": str(base_dir),
             "registry_lives_count": len(_registry_lives_paths()),
+            "policy": policy.to_payload(),
+            "policy_impact": policy.impact_summary(),
         }
 
     @app.get("/timeline")

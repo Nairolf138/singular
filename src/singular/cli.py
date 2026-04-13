@@ -315,6 +315,46 @@ def _configure_openai(api_key: str, *, shell_profile: str | None, test: bool) ->
     return 0
 
 
+_POLICY_SETTERS: dict[str, tuple[str, str]] = {
+    "memory.preserve_threshold": ("float", "memory_preserve_threshold"),
+    "forgetting.enabled": ("bool", "forgetting_enabled"),
+    "forgetting.max_episodic_entries": ("int", "forgetting_max_episodic_entries"),
+    "autonomy.safe_mode": ("bool", "safe_mode"),
+    "autonomy.mutation_quota_per_window": ("int", "mutation_quota_per_window"),
+    "autonomy.mutation_quota_window_seconds": ("float", "mutation_quota_window_seconds"),
+    "autonomy.circuit_breaker_threshold": ("int", "circuit_breaker_threshold"),
+    "autonomy.circuit_breaker_window_seconds": ("float", "circuit_breaker_window_seconds"),
+    "autonomy.circuit_breaker_cooldown_seconds": ("float", "circuit_breaker_cooldown_seconds"),
+    "permissions.modifiable_paths": ("paths", "modifiable_paths"),
+    "permissions.review_required_paths": ("paths", "review_required_paths"),
+    "permissions.forbidden_paths": ("paths", "forbidden_paths"),
+    "permissions.force_allow_paths": ("paths", "force_allow_paths"),
+}
+
+
+def _parse_policy_value(expected_type: str, raw: str) -> object:
+    value = raw.strip()
+    if expected_type == "bool":
+        lowered = value.lower()
+        if lowered in {"true", "1", "yes", "oui"}:
+            return True
+        if lowered in {"false", "0", "no", "non"}:
+            return False
+        raise ValueError("expected boolean value (true/false)")
+    if expected_type == "int":
+        return int(value)
+    if expected_type == "float":
+        return float(value)
+    if expected_type == "paths":
+        if not value:
+            return tuple()
+        parts = [part.strip().strip("/") for part in value.split(",")]
+        if any(not part for part in parts):
+            raise ValueError("empty path entry is not allowed")
+        return tuple(parts)
+    raise ValueError(f"unsupported policy type: {expected_type}")
+
+
 def _preparse_environment(argv: list[str] | None) -> argparse.Namespace:
     """Parse minimal options to configure the environment before imports."""
 
@@ -769,6 +809,18 @@ def main(argv: list[str] | None = None) -> int:
     values_subparsers = values_parser.add_subparsers(dest="values_command", required=True)
     values_subparsers.add_parser("show", help="Afficher la configuration des valeurs chargée")
 
+    policy_parser = subparsers.add_parser(
+        "policy", help="Inspecter et modifier la politique globale"
+    )
+    policy_subparsers = policy_parser.add_subparsers(dest="policy_command", required=True)
+    policy_subparsers.add_parser("show", help="Afficher la politique active")
+    policy_set_parser = policy_subparsers.add_parser(
+        "set",
+        help="Modifier une clé de politique (validation stricte)",
+    )
+    policy_set_parser.add_argument("--key", required=True, choices=tuple(sorted(_POLICY_SETTERS.keys())))
+    policy_set_parser.add_argument("--value", required=True, help="Nouvelle valeur")
+
     ecosystem_parser = subparsers.add_parser(
         "ecosystem", help="Run multiple lives in a shared ecosystem"
     )
@@ -1000,12 +1052,18 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "report":
         from .runs.report import report
 
-        run_id = args.id or _resolve_latest_run_id()
+        run_id = args.id or _resolve_latest_run_id(Path("runs"))
         if run_id is None:
             print("No run log found. Use `singular report --id <run_id>`.")
             return 1
         report_format = args.report_output_format or args.output_format
-        report(run_id=run_id, output_format=report_format, export=args.export)
+        report(
+            run_id=run_id,
+            runs_dir=Path("runs"),
+            skills_path=Path("mem") / "skills.json",
+            output_format=report_format,
+            export=args.export,
+        )
 
     elif args.command == "dashboard":
         _ensure_active_life(resolve_life, args.life)
@@ -1197,6 +1255,53 @@ def main(argv: list[str] | None = None) -> int:
             print("Valeurs critiques:")
             for key, value in payload.items():
                 print(f"- {key}: {value:.4f}")
+
+    elif args.command == "policy":
+        from dataclasses import replace
+        from .governance.policy import (
+            PolicySchemaError,
+            load_runtime_policy,
+            save_runtime_policy,
+        )
+
+        try:
+            policy = load_runtime_policy()
+        except PolicySchemaError as exc:
+            print(f"Erreur de validation policy.yaml: {exc}", file=sys.stderr)
+            return 1
+
+        if args.policy_command == "show":
+            payload = policy.to_payload()
+            payload["impact"] = policy.impact_summary()
+            if args.output_format == "json":
+                print(json.dumps({"policy": payload}, ensure_ascii=False))
+            elif args.output_format == "table":
+                rows = [[key, str(value)] for key, value in payload.items() if key != "impact"]
+                _print_table(["Section", "Valeur"], rows)
+                print("Impact:")
+                for item in payload["impact"]:
+                    print(f"- {item}")
+            else:
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+                print("Impact:")
+                for item in payload["impact"]:
+                    print(f"- {item}")
+        elif args.policy_command == "set":
+            expected_type, field_name = _POLICY_SETTERS[args.key]
+            try:
+                value = _parse_policy_value(expected_type, args.value)
+            except (ValueError, TypeError) as exc:
+                print(f"Valeur invalide pour {args.key}: {exc}", file=sys.stderr)
+                return 1
+            policy = replace(policy, **{field_name: value})
+            try:
+                save_runtime_policy(policy)
+            except PolicySchemaError as exc:
+                print(f"Échec validation policy.yaml: {exc}", file=sys.stderr)
+                return 1
+            print(f"✅ Politique mise à jour: {args.key}={args.value}")
+            for item in policy.impact_summary():
+                print(f"- {item}")
 
     elif args.command == "uninstall":
         purge_lives = bool(args.purge_lives)
