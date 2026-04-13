@@ -1107,6 +1107,38 @@ def create_app(
             },
         }
 
+    @app.get("/lives/genealogy")
+    def read_lives_genealogy() -> dict[str, object]:
+        registry = load_registry()
+        lives = registry.get("lives", {})
+        active = registry.get("active")
+        nodes: list[dict[str, object]] = []
+        edges: list[dict[str, str]] = []
+        if not isinstance(lives, dict):
+            return {"active": active, "nodes": nodes, "edges": edges}
+
+        for slug, meta in sorted(lives.items()):
+            name = getattr(meta, "name", slug)
+            status = getattr(meta, "status", "active")
+            parents = getattr(meta, "parents", ()) or ()
+            lineage_depth = getattr(meta, "lineage_depth", 0)
+            if not isinstance(parents, (tuple, list)):
+                parents = ()
+            nodes.append(
+                {
+                    "slug": slug,
+                    "name": str(name),
+                    "status": str(status),
+                    "active": slug == active,
+                    "lineage_depth": int(lineage_depth) if isinstance(lineage_depth, int) else 0,
+                    "parents": [str(parent) for parent in parents if isinstance(parent, str)],
+                }
+            )
+            for parent in parents:
+                if isinstance(parent, str) and parent:
+                    edges.append({"parent": parent, "child": slug})
+        return {"active": active, "nodes": nodes, "edges": edges}
+
     @app.get("/mutations/top")
     def read_top_mutations(limit: int = 3, current_life_only: bool = False) -> dict[str, object]:
         mutations: list[dict[str, object]] = []

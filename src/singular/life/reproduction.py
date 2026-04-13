@@ -22,13 +22,41 @@ from __future__ import annotations
 
 import ast
 import random
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
+from typing import Any, Tuple
 
 from singular.governance.policy import MutationGovernancePolicy
 
 
-__all__ = ["crossover", "authorize_reproduction_write"]
+__all__ = [
+    "ReproductionVariationPolicy",
+    "InheritanceRules",
+    "compute_parent_compatibility",
+    "inherit_psyche",
+    "inherit_values",
+    "inherit_episodic_memory",
+    "crossover",
+    "authorize_reproduction_write",
+]
+
+
+@dataclass(frozen=True)
+class ReproductionVariationPolicy:
+    """Bound mutation intensity and parental compatibility."""
+
+    mutation_intensity: float = 0.1
+    compatibility_threshold: float = 0.3
+    numeric_min: float = 0.0
+    numeric_max: float = 1.0
+
+
+@dataclass(frozen=True)
+class InheritanceRules:
+    """Describe inheritance behaviour for non-code memory artefacts."""
+
+    inherit_partial_memory: bool = True
+    memory_episode_limit: int = 50
 
 
 
@@ -50,6 +78,113 @@ def authorize_reproduction_write(
     if not enforced.allowed:
         return False, f"{enforced.reason}; corrective_action={enforced.corrective_action}"
     return True, "authorized"
+
+
+def compute_parent_compatibility(parent_a: dict[str, Any], parent_b: dict[str, Any]) -> float:
+    """Estimate compatibility based on shared psyche keys."""
+
+    keys_a = set(parent_a.keys())
+    keys_b = set(parent_b.keys())
+    union = keys_a | keys_b
+    if not union:
+        return 1.0
+    return len(keys_a & keys_b) / len(union)
+
+
+def _bounded_numeric_inheritance(
+    val_a: float,
+    val_b: float,
+    *,
+    rng: random.Random,
+    policy: ReproductionVariationPolicy,
+) -> float:
+    base = (val_a + val_b) / 2
+    amplitude = abs(val_a - val_b) * max(0.0, policy.mutation_intensity)
+    variation = rng.uniform(-amplitude, amplitude)
+    mutated = base + variation
+    return max(policy.numeric_min, min(policy.numeric_max, mutated))
+
+
+def inherit_psyche(
+    psyche_a: dict[str, Any],
+    psyche_b: dict[str, Any],
+    *,
+    rng: random.Random,
+    policy: ReproductionVariationPolicy,
+) -> dict[str, Any]:
+    """Inherit psyche traits/values under variation bounds."""
+
+    child_psyche: dict[str, Any] = {}
+    for key in sorted(set(psyche_a) | set(psyche_b)):
+        val_a = psyche_a.get(key)
+        val_b = psyche_b.get(key)
+        if isinstance(val_a, (int, float)) and isinstance(val_b, (int, float)):
+            child_psyche[key] = _bounded_numeric_inheritance(
+                float(val_a),
+                float(val_b),
+                rng=rng,
+                policy=policy,
+            )
+            continue
+        options = [v for v in (val_a, val_b) if v is not None]
+        if options:
+            child_psyche[key] = rng.choice(options)
+    return child_psyche
+
+
+def inherit_values(
+    values_a: dict[str, Any],
+    values_b: dict[str, Any],
+    *,
+    rng: random.Random,
+    policy: ReproductionVariationPolicy,
+) -> dict[str, Any]:
+    """Inherit governance values map while bounding numeric drift."""
+
+    result: dict[str, Any] = {}
+    for key in sorted(set(values_a) | set(values_b)):
+        val_a = values_a.get(key)
+        val_b = values_b.get(key)
+        if isinstance(val_a, dict) and isinstance(val_b, dict):
+            result[key] = inherit_values(val_a, val_b, rng=rng, policy=policy)
+            continue
+        if isinstance(val_a, (int, float)) and isinstance(val_b, (int, float)):
+            result[key] = _bounded_numeric_inheritance(
+                float(val_a),
+                float(val_b),
+                rng=rng,
+                policy=policy,
+            )
+            continue
+        options = [v for v in (val_a, val_b) if v is not None]
+        if options:
+            result[key] = rng.choice(options)
+    return result
+
+
+def inherit_episodic_memory(
+    episodes_a: list[dict[str, Any]],
+    episodes_b: list[dict[str, Any]],
+    *,
+    rng: random.Random,
+    rules: InheritanceRules,
+) -> list[dict[str, Any]]:
+    """Merge episodic memory with optional partial inheritance."""
+
+    if not rules.inherit_partial_memory:
+        return []
+
+    combined = [*episodes_a, *episodes_b]
+    if not combined:
+        return []
+    sample_size = min(len(combined), max(0, rules.memory_episode_limit))
+    if sample_size == 0:
+        return []
+    if len(combined) <= sample_size:
+        return combined
+    selected = rng.sample(combined, sample_size)
+    selected.sort(key=lambda ep: str(ep.get("ts", "")))
+    return selected
 
 
 def crossover(

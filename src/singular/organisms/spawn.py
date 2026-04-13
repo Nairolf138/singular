@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import random
 from pathlib import Path
 
-from singular.life.reproduction import crossover
-from singular.memory import read_psyche, write_psyche
+from singular.life.reproduction import (
+    InheritanceRules,
+    ReproductionVariationPolicy,
+    compute_parent_compatibility,
+    crossover,
+    inherit_episodic_memory,
+    inherit_psyche,
+    inherit_values,
+)
+from singular.memory import read_episodes, read_psyche, read_values, write_psyche, write_values
 
 
 def spawn(
@@ -14,6 +23,8 @@ def spawn(
     parent_b: Path,
     out_dir: Path | None = None,
     seed: int | None = None,
+    variation_policy: ReproductionVariationPolicy | None = None,
+    inheritance_rules: InheritanceRules | None = None,
 ) -> Path:
     """Generate a child organism by crossing over two parents.
 
@@ -36,6 +47,8 @@ def spawn(
 
     rng = random.Random(seed)
     out_dir = out_dir or parent_a.parent / "child"
+    variation_policy = variation_policy or ReproductionVariationPolicy()
+    inheritance_rules = inheritance_rules or InheritanceRules()
 
     # ------------------------------------------------------------------
     # Generate hybrid skill
@@ -50,20 +63,41 @@ def spawn(
     # ------------------------------------------------------------------
     psyche_a = read_psyche(parent_a / "mem" / "psyche.json")
     psyche_b = read_psyche(parent_b / "mem" / "psyche.json")
+    compatibility = compute_parent_compatibility(psyche_a, psyche_b)
+    if compatibility < variation_policy.compatibility_threshold:
+        raise ValueError(
+            "parent compatibility below threshold: "
+            f"{compatibility:.2f} < {variation_policy.compatibility_threshold:.2f}"
+        )
 
-    child_psyche: dict[str, object] = {}
-    keys = set(psyche_a) | set(psyche_b)
-    for key in keys:
-        val_a = psyche_a.get(key)
-        val_b = psyche_b.get(key)
-        if isinstance(val_a, (int, float)) and isinstance(val_b, (int, float)):
-            child_psyche[key] = (val_a + val_b) / 2
-        else:
-            options = [v for v in (val_a, val_b) if v is not None]
-            if options:
-                child_psyche[key] = rng.choice(options)
+    child_psyche = inherit_psyche(
+        psyche_a,
+        psyche_b,
+        rng=rng,
+        policy=variation_policy,
+    )
 
     write_psyche(child_psyche, out_dir / "mem" / "psyche.json")
+
+    values_a = read_values(parent_a / "mem" / "values.yaml")
+    values_b = read_values(parent_b / "mem" / "values.yaml")
+    child_values = inherit_values(values_a, values_b, rng=rng, policy=variation_policy)
+    if child_values:
+        write_values(child_values, out_dir / "mem" / "values.yaml")
+
+    memory_a = read_episodes(parent_a / "mem" / "episodic.jsonl")
+    memory_b = read_episodes(parent_b / "mem" / "episodic.jsonl")
+    inherited_episodes = inherit_episodic_memory(
+        memory_a,
+        memory_b,
+        rng=rng,
+        rules=inheritance_rules,
+    )
+    if inherited_episodes:
+        episodic_file = out_dir / "mem" / "episodic.jsonl"
+        episodic_file.parent.mkdir(parents=True, exist_ok=True)
+        lines = "\n".join(json.dumps(ep, ensure_ascii=False) for ep in inherited_episodes)
+        episodic_file.write_text(lines + "\n", encoding="utf-8")
     return out_dir
 
 
