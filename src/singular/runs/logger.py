@@ -130,6 +130,8 @@ class RunLogger:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.events_path = self.run_dir / "events.jsonl"
         self._events_file = self.events_path.open("a", encoding="utf-8")
+        self.consciousness_path = self.run_dir / "consciousness.jsonl"
+        self._consciousness_file = self.consciousness_path.open("a", encoding="utf-8")
 
         # Resume from existing temporary file if present
         tmp_pattern = f"{self.run_id}-*.jsonl.tmp"
@@ -164,6 +166,39 @@ class RunLogger:
         self._events_file.write(json.dumps(event) + "\n")
         self._events_file.flush()
         os.fsync(self._events_file.fileno())
+
+    def log_consciousness(
+        self,
+        *,
+        perception_summary: str,
+        evaluated_hypotheses: list[dict[str, Any]],
+        final_choice: str | None,
+        justification: str,
+        objective: str | None = None,
+        mood: str | None = None,
+        energy: float | None = None,
+        success: bool | None = None,
+    ) -> None:
+        """Record a reflection event in ``runs/<run_id>/consciousness.jsonl``."""
+
+        ts = datetime.utcnow().isoformat(timespec="seconds")
+        record: dict[str, Any] = {
+            "ts": ts,
+            "event": "consciousness",
+            "perception_summary": perception_summary,
+            "evaluated_hypotheses": evaluated_hypotheses,
+            "final_choice": final_choice,
+            "justification": justification,
+            "objective": objective,
+            "emotional_state": {
+                "mood": mood,
+                "energy": energy,
+            },
+            "success": success,
+        }
+        self._consciousness_file.write(json.dumps(record) + "\n")
+        self._consciousness_file.flush()
+        os.fsync(self._consciousness_file.fileno())
 
     def log(
         self,
@@ -315,6 +350,10 @@ class RunLogger:
 
     def close(self) -> None:
         """Flush and finalize the log files atomically."""
+        if not self._consciousness_file.closed:
+            self._consciousness_file.flush()
+            os.fsync(self._consciousness_file.fileno())
+            self._consciousness_file.close()
         if not self._events_file.closed:
             self._events_file.flush()
             os.fsync(self._events_file.fileno())

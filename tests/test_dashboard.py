@@ -193,6 +193,8 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "Navigation" in body
     assert "#cockpit" in body
     assert "#timeline-section" in body
+    assert "Timeline des réflexions" in body
+    assert "reflection-objective" in body
     assert "#vies" in body
     assert "#logs-live" in body
     assert "#parametres" in body
@@ -207,6 +209,7 @@ def test_dashboard_index_renders_main_sections(tmp_path: Path) -> None:
 
     assert "<section id=\"cockpit\">" in body
     assert "<section id=\"timeline-section\">" in body
+    assert "<section id=\"reflections-section\">" in body
     assert "<section id=\"vies\">" in body
     assert "<section id=\"logs-live\">" in body
     assert "<section id=\"parametres\">" in body
@@ -301,6 +304,51 @@ def test_dashboard_timeline_comparison_and_top_mutations(tmp_path: Path) -> None
     assert top_payload["most_risky"][0]["life"] == "life-a"
     assert top_payload["most_risky"][0]["impact_delta"] == -1.0
     assert top_payload["most_frequent"][0] == {"operator": "flip", "count": 2}
+
+
+def test_dashboard_consciousness_endpoint_filters(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run_file = runs_dir / "mind-20260412101010.jsonl"
+    run_file.write_text(json.dumps({"event": "start"}) + "\n", encoding="utf-8")
+
+    run_dir = runs_dir / "mind"
+    run_dir.mkdir()
+    (run_dir / "consciousness.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "ts": "2026-04-12T10:10:10",
+                        "objective": "coherence",
+                        "success": True,
+                        "emotional_state": {"mood": "focused"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-04-12T10:11:10",
+                        "objective": "exploration",
+                        "success": False,
+                        "emotional_state": {"mood": "fatigue"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    payload = app._routes["/api/runs/{run_id}/consciousness"](
+        run_id="mind-20260412101010",
+        objective="coherence",
+        success="true",
+        mood="focused",
+    )
+
+    assert payload["count"] == 1
+    assert payload["items"][0]["objective"] == "coherence"
 
 
 def test_dashboard_lives_comparison_excludes_runs_without_explicit_life(tmp_path: Path) -> None:
