@@ -616,6 +616,45 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Display detailed alerts and diagnostics",
     )
+    watch_parser = subparsers.add_parser(
+        "watch",
+        aliases=["veille"],
+        help="Lance une veille continue avec détection de changements significatifs",
+    )
+    watch_parser.add_argument(
+        "--interval",
+        type=float,
+        default=5.0,
+        help="Intervalle en secondes entre deux perceptions",
+    )
+    watch_parser.add_argument(
+        "--sources",
+        default="file,weather,runs,folder",
+        help="Sources surveillées (CSV): file,weather,runs,folder",
+    )
+    watch_parser.add_argument(
+        "--cpu-budget",
+        type=float,
+        default=50.0,
+        help="Budget CPU (%) informatif pour l'orchestration de veille",
+    )
+    watch_parser.add_argument(
+        "--memory-budget",
+        type=float,
+        default=512.0,
+        help="Budget mémoire (MB) informatif pour l'orchestration de veille",
+    )
+    watch_parser.add_argument(
+        "--watch-dir",
+        type=Path,
+        default=None,
+        help="Dossier supplémentaire à surveiller",
+    )
+    watch_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Détecte et émet les événements sans persister l'inbox",
+    )
     doctor_parser = subparsers.add_parser(
         "doctor", help="Diagnose CLI installation and PATH"
     )
@@ -901,6 +940,19 @@ def main(argv: list[str] | None = None) -> int:
         from .organisms.status import status
 
         status(verbose=verbose, output_format=args.output_format)
+
+    elif args.command in {"watch", "veille"}:
+        _ensure_active_life(resolve_life, args.life)
+        from .watch.daemon import run_watch_daemon
+
+        return run_watch_daemon(
+            interval_seconds=args.interval,
+            sources=args.sources,
+            cpu_budget_percent=args.cpu_budget,
+            memory_budget_mb=args.memory_budget,
+            dry_run=args.dry_run,
+            watch_dir=args.watch_dir,
+        )
 
     elif args.command == "doctor":
         _doctor(fix=args.fix)
