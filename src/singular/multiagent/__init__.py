@@ -7,6 +7,7 @@ from .protocol import (
     InMemoryQueueTransport,
     OrchestrationScenario,
     resolve_conflicts,
+    validate_message_schema,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "InMemoryQueueTransport",
     "OrchestrationScenario",
     "resolve_conflicts",
+    "validate_message_schema",
 ]
