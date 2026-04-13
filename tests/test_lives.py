@@ -99,3 +99,44 @@ def test_set_life_status_updates_registry(
 
     registry = load_registry()
     assert registry["lives"][life.slug].status == "extinct"
+
+
+def test_load_registry_returns_default_for_empty_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    registry_path = tmp_path / "lives" / "registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text("", encoding="utf-8")
+
+    registry = load_registry()
+
+    assert registry == {"active": None, "lives": {}}
+    assert "Failed to load life registry" in caplog.text
+
+
+def test_load_registry_returns_default_for_invalid_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    registry_path = tmp_path / "lives" / "registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text("{invalid", encoding="utf-8")
+
+    registry = load_registry()
+
+    assert registry == {"active": None, "lives": {}}
+    assert "Failed to load life registry" in caplog.text
+
+
+def test_load_registry_handles_partial_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    registry_path = tmp_path / "lives" / "registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text('{"active": "missing-slug"}', encoding="utf-8")
+
+    registry = load_registry()
+
+    assert registry == {"active": None, "lives": {}}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -13,6 +14,8 @@ from typing import Any, Dict
 
 _REGISTRY_DIRNAME = "lives"
 _REGISTRY_FILENAME = "registry.json"
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -81,11 +84,14 @@ def load_registry() -> dict[str, Any]:
     """Load the life registry from disk."""
 
     path = _registry_path()
-    if not path.exists():
-        return {"active": None, "lives": {}}
+    default_registry = {"active": None, "lives": {}}
 
-    with path.open(encoding="utf-8") as fh:
-        payload = json.load(fh)
+    try:
+        with path.open(encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+        _LOGGER.warning("Failed to load life registry from %s: %s", path, exc)
+        return default_registry
 
     lives_payload = payload.get("lives", {})
     lives: dict[str, LifeMetadata] = {}
