@@ -8,6 +8,7 @@ import json
 from typing import Any
 
 from .logger import RUNS_DIR
+from ..governance.policy import load_runtime_policy
 from ..life.health import detect_health_state
 from ..memory import read_skills, get_skills_file
 
@@ -129,6 +130,7 @@ def _build_report_payload(
 
     if skills_path is None:
         skills_path = get_skills_file()
+    policy = load_runtime_policy()
 
     return {
         "schema_version": 1,
@@ -152,6 +154,10 @@ def _build_report_payload(
         "alerts": alerts,
         "verdict": final_verdict,
         "skills": read_skills(path=skills_path),
+        "policy": {
+            "active": policy.to_payload(),
+            "impact": policy.impact_summary(),
+        },
     }
 
 
@@ -203,6 +209,10 @@ def _render_markdown(payload: dict[str, Any]) -> str:
         )
     else:
         lines.append("- indisponible")
+
+    lines.extend(["", "## Politiques actives"])
+    for item in payload.get("policy", {}).get("impact", []):
+        lines.append(f"- {item}")
 
     return "\n".join(lines) + "\n"
 

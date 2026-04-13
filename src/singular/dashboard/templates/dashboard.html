@@ -139,7 +139,12 @@
     <div><strong>Registre courant (SINGULAR_ROOT)</strong> : <code id='ctx-root'>n/a</code></div>
     <div><strong>Vie courante (SINGULAR_HOME)</strong> : <code id='ctx-home'>n/a</code></div>
     <div><strong>Nombre de vies détectées</strong> : <span id='ctx-lives-count'>0</span></div>
+    <div><strong>Version politique</strong> : <span id='ctx-policy-version'>n/a</span></div>
+    <div><strong>Autonomie</strong> : <span id='ctx-policy-autonomy'>n/a</span></div>
+    <div><strong>Permissions</strong> : <span id='ctx-policy-permissions'>n/a</span></div>
   </div>
+  <h3>Impact des politiques actives</h3>
+  <ul id='ctx-policy-impact'><li>Chargement…</li></ul>
   <h3>État psychique</h3><pre id='psyche'></pre>
   <h3>Quêtes</h3><pre id='quests'>
 {"active":[],"completed":[]}
@@ -271,6 +276,16 @@ const loadContext=()=>fetch('/dashboard/context').then(r=>r.json()).then(ctx=>{
   document.getElementById('ctx-root').textContent=ctx.singular_root||'n/a';
   document.getElementById('ctx-home').textContent=ctx.singular_home||'n/a';
   document.getElementById('ctx-lives-count').textContent=String(ctx.registry_lives_count||0);
+  const policy=ctx.policy||{};
+  const autonomy=policy.autonomy||{};
+  const permissions=policy.permissions||{};
+  document.getElementById('ctx-policy-version').textContent=String(policy.version??'n/a');
+  document.getElementById('ctx-policy-autonomy').textContent=`safe_mode=${autonomy.safe_mode?'on':'off'} · quota=${autonomy.mutation_quota_per_window??'n/a'}/${autonomy.mutation_quota_window_seconds??'n/a'}s`;
+  document.getElementById('ctx-policy-permissions').textContent=`auto=${(permissions.modifiable_paths||[]).length} · review=${(permissions.review_required_paths||[]).length} · forbidden=${(permissions.forbidden_paths||[]).length}`;
+  const impactList=document.getElementById('ctx-policy-impact');
+  impactList.innerHTML='';
+  for(const item of (ctx.policy_impact||[])){const li=document.createElement('li');li.textContent=String(item);impactList.appendChild(li);}
+  if(!(ctx.policy_impact||[]).length){const li=document.createElement('li');li.textContent='Aucun impact disponible.';impactList.appendChild(li);}
 });
 
 const loadEco=()=>Promise.all([fetch(withScope('/ecosystem')).then(r=>r.json()),fetch(withScope('/lives/comparison?sort_by=last_activity&sort_order=desc')).then(r=>r.json())]).then(([eco,lives])=>{

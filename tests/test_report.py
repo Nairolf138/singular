@@ -244,6 +244,8 @@ def test_report_export_json_schema(monkeypatch, tmp_path):
     assert payload["timeline"][0]["verdict"] == "improvement"
     assert payload["verdict"] == "improvement"
     assert isinstance(payload["alerts"], list)
+    assert payload["policy"]["active"]["version"] == 1
+    assert isinstance(payload["policy"]["impact"], list)
 
 
 def test_report_export_json_is_stable(monkeypatch, tmp_path):

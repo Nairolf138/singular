@@ -30,6 +30,9 @@ def test_dashboard_endpoints(tmp_path: Path, monkeypatch) -> None:
     assert client.get("/logs").json() == {"log.txt": "hello"}
     assert client.get("/psyche").json() == data
     assert client.get("/alerts").json() == {"run": None, "alerts": []}
+    context = client.get("/dashboard/context").json()
+    assert context["policy"]["version"] == 1
+    assert isinstance(context["policy_impact"], list)
 
 
 def test_dashboard_quests_endpoint(tmp_path: Path, monkeypatch) -> None:
