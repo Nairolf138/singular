@@ -97,6 +97,12 @@
 
 <section id="parametres">
   <h2>Paramètres</h2>
+  <div class='panel' style='margin-bottom:12px;'>
+    <h3 style='margin-top:0;'>Contexte registre</h3>
+    <div><strong>Registre courant (SINGULAR_ROOT)</strong> : <code id='ctx-root'>n/a</code></div>
+    <div><strong>Vie courante (SINGULAR_HOME)</strong> : <code id='ctx-home'>n/a</code></div>
+    <div><strong>Nombre de vies détectées</strong> : <span id='ctx-lives-count'>0</span></div>
+  </div>
   <h3>État psychique</h3><pre id='psyche'></pre>
   <h3>Organismes (résumé)</h3>
   <ul id='organisms-list'></ul>
@@ -176,10 +182,18 @@
 const ws=new WebSocket(`ws://${location.host}/ws`);
 const livesTableState={sortBy:'score',sortOrder:'desc'};
 const liveState={paused:false,autoScroll:true,events:[]};
+const scopeState={currentLifeOnly:false};
 
 const setStatusTone=(el,tone)=>{el.classList.remove('status-good','status-warn','status-bad');if(tone==='good'){el.classList.add('status-good');}if(tone==='warn'){el.classList.add('status-warn');}if(tone==='bad'){el.classList.add('status-bad');}};
+const withScope=(url)=>{const u=new URL(url,window.location.origin);if(scopeState.currentLifeOnly){u.searchParams.set('current_life_only','true');}return `${u.pathname}${u.search}`;};
 
-const loadEco=()=>Promise.all([fetch('/ecosystem').then(r=>r.json()),fetch('/lives/comparison?sort_by=last_activity&sort_order=desc').then(r=>r.json())]).then(([eco,lives])=>{
+const loadContext=()=>fetch('/dashboard/context').then(r=>r.json()).then(ctx=>{
+  document.getElementById('ctx-root').textContent=ctx.singular_root||'n/a';
+  document.getElementById('ctx-home').textContent=ctx.singular_home||'n/a';
+  document.getElementById('ctx-lives-count').textContent=String(ctx.registry_lives_count||0);
+});
+
+const loadEco=()=>Promise.all([fetch(withScope('/ecosystem')).then(r=>r.json()),fetch(withScope('/lives/comparison?sort_by=last_activity&sort_order=desc')).then(r=>r.json())]).then(([eco,lives])=>{
   const summary=eco.summary||{};
   const total=Number(summary.total_organisms||0);
   const alive=Number(summary.alive_organisms||0);
@@ -211,7 +225,7 @@ const loadEco=()=>Promise.all([fetch('/ecosystem').then(r=>r.json()),fetch('/liv
   document.getElementById('raw-eco-json').textContent=JSON.stringify(eco,null,2);
 });
 
-const loadCockpit=()=>fetch('/api/cockpit').then(r=>r.json()).then(d=>{
+const loadCockpit=()=>fetch(withScope('/api/cockpit')).then(r=>r.json()).then(d=>{
   const statusBox=document.getElementById('cockpit-status');
   statusBox.textContent=`Statut global: ${d.global_status||'unknown'}`;
   if(d.global_status==='stable'){setStatusTone(statusBox,'good');}
@@ -264,7 +278,7 @@ const badge=(label,bg)=>`<span style="display:inline-block;padding:2px 8px;borde
 const renderLivesBuckets=(rows)=>{const activeInRegistry=(rows||[]).filter(row=>row.is_registry_active_life===true);const extinctInRuns=(rows||[]).filter(row=>row.extinction_seen_in_runs===true);const aliveList=document.getElementById('alive-lives');const deadList=document.getElementById('dead-lives');document.getElementById('alive-count').textContent=String(activeInRegistry.length);document.getElementById('dead-count').textContent=String(extinctInRuns.length);aliveList.innerHTML='';deadList.innerHTML='';for(const row of activeInRegistry){const li=document.createElement('li');li.textContent=row.life||'n/a';aliveList.appendChild(li);}for(const row of extinctInRuns){const li=document.createElement('li');li.textContent=row.life||'n/a';deadList.appendChild(li);}if(!activeInRegistry.length){const li=document.createElement('li');li.textContent='Aucune';aliveList.appendChild(li);}if(!extinctInRuns.length){const li=document.createElement('li');li.textContent='Aucune';deadList.appendChild(li);}};
 const renderLivesTable=(rows)=>{const body=document.getElementById('lives-table-body');body.innerHTML='';for(const row of rows||[]){const tr=document.createElement('tr');const score=row.current_health_score===null||row.current_health_score===undefined?'n/a':Number(row.current_health_score).toFixed(1);const stability=row.stability===null||row.stability===undefined?'n/a':`${(Number(row.stability)*100).toFixed(1)}%`;const lastActivity=row.last_activity||'n/a';let badges='';if(row.selected_life){badges+=badge('Vie sélectionnée','#d1fadf');}else{badges+=badge('Vie non sélectionnée','#fde2e1');}if(row.is_registry_active_life){badges+=badge('Vie active dans le registre','#d1fadf');}else{badges+=badge(`Statut registre: ${row.life_status||'n/a'}`,'#fde2e1');}if(row.run_terminated){badges+=badge('Run terminé','#ffe7c2');}if(row.extinction_seen_in_runs){badges+=badge('Extinction détectée','#fecdca');}if(row.has_recent_activity){badges+=badge('Activité récente','#d9ecff');}if(row.trend==='dégradation'){badges+=badge('dégradation','#ffe7c2');}if((row.alerts_count||0)>0){badges+=badge(`${row.alerts_count} alertes`,'#fecdca');}tr.innerHTML=`<td>${row.life||'n/a'}</td><td>${score}</td><td>${row.trend||'n/a'}</td><td>${stability}</td><td>${lastActivity}</td><td>${row.iterations??0}</td><td>${badges}</td>`;body.appendChild(tr);}if(!(rows||[]).length){const tr=document.createElement('tr');tr.innerHTML="<td colspan='7'>Aucune vie ne correspond aux filtres.</td>";body.appendChild(tr);}};
 const renderUnattachedRuns=(payload)=>{const panel=document.getElementById('unattached-runs-panel');const list=document.getElementById('unattached-runs-list');const runs=(payload?.runs)||[];const runsCount=Number(payload?.runs_count||0);const recordsCount=Number(payload?.records_count||0);document.getElementById('unattached-runs-count').textContent=String(runsCount);document.getElementById('unattached-records-count').textContent=String(recordsCount);list.innerHTML='';if(!runsCount){panel.style.display='none';return;}panel.style.display='block';for(const item of runs){const li=document.createElement('li');li.textContent=`${item.run_id||'unknown'} · ${item.records_count||0} enregistrements`;list.appendChild(li);}};
-const loadLivesBoard=()=>{const q=new URLSearchParams();q.set('sort_by',livesTableState.sortBy);q.set('sort_order',livesTableState.sortOrder);if(document.getElementById('filter-active').checked){q.set('active_only','true');}if(document.getElementById('filter-degrading').checked){q.set('degrading_only','true');}if(document.getElementById('filter-dead').checked){q.set('dead_only','true');}return fetch(`/lives/comparison?${q.toString()}`).then(r=>r.json()).then(d=>{renderLivesBuckets(Object.entries(d.lives||{}).map(([life,payload])=>({life,...payload})));renderLivesTable(d.table||[]);renderUnattachedRuns(d.unattached_runs);});};
+const loadLivesBoard=()=>{const q=new URLSearchParams();q.set('sort_by',livesTableState.sortBy);q.set('sort_order',livesTableState.sortOrder);if(document.getElementById('filter-active').checked){q.set('active_only','true');}if(document.getElementById('filter-degrading').checked){q.set('degrading_only','true');}if(document.getElementById('filter-dead').checked){q.set('dead_only','true');}if(scopeState.currentLifeOnly){q.set('current_life_only','true');}return fetch(`/lives/comparison?${q.toString()}`).then(r=>r.json()).then(d=>{renderLivesBuckets(Object.entries(d.lives||{}).map(([life,payload])=>({life,...payload})));renderLivesTable(d.table||[]);renderUnattachedRuns(d.unattached_runs);});};
 for(const button of document.querySelectorAll('#lives-table [data-sort]')){button.onclick=()=>{const next=button.getAttribute('data-sort');if(livesTableState.sortBy===next){livesTableState.sortOrder=livesTableState.sortOrder==='desc'?'asc':'desc';}else{livesTableState.sortBy=next;livesTableState.sortOrder='desc';}loadLivesBoard();};}
 document.getElementById('filter-active').onchange=()=>loadLivesBoard();
 document.getElementById('filter-degrading').onchange=()=>loadLivesBoard();
@@ -273,8 +287,8 @@ const renderLiveEvents=()=>{const pre=document.getElementById('live-events');con
 const updateLiveStatus=()=>{document.getElementById('live-status').textContent=liveState.paused?'Pause activée':'Lecture en direct';document.getElementById('live-toggle').textContent=liveState.paused?'Reprendre':'Pause';};
 document.getElementById('live-toggle').onclick=()=>{liveState.paused=!liveState.paused;updateLiveStatus();if(!liveState.paused){renderLiveEvents();}};
 document.getElementById('live-autoscroll').onchange=e=>{liveState.autoScroll=Boolean(e.target.checked);if(liveState.autoScroll){renderLiveEvents();}};
-const loadTimeline=()=>fetch('/runs/latest').then(r=>r.json()).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}return fetch(`/api/runs/${meta.run}/timeline?page=1&page_size=120`).then(r=>r.json());}).then(data=>{const wrap=document.getElementById('timeline');const summary=document.getElementById('timeline-summary');const impact=document.getElementById('timeline-impact');const diff=document.getElementById('timeline-diff');wrap.innerHTML='';let mutationIndex=0;for(const item of data.items||[]){const row=document.createElement('div');row.style.display='inline-flex';row.style.gap='4px';const btn=document.createElement('button');btn.textContent=`${item.event} · ${item.timestamp||'n/a'}`;btn.style.padding='6px';row.appendChild(btn);if(item.event==='mutation'&&data.run_id){const currentIndex=mutationIndex;mutationIndex+=1;btn.onclick=()=>showMutationDetail(data.run_id,currentIndex);const link=document.createElement('a');link.href=`/runs/${data.run_id}/mutations/${currentIndex}`;link.textContent='Voir détail';link.style.alignSelf='center';row.appendChild(link);}wrap.appendChild(row);}if(!(data.items||[]).length){summary.textContent='Aucun événement de frise disponible.';impact.textContent='';diff.textContent='';}});
-loadEco();loadCockpit();loadTimeline();loadLivesBoard();setInterval(()=>{loadEco();loadCockpit();loadTimeline();loadLivesBoard();},500);
+const loadTimeline=()=>fetch(withScope('/runs/latest')).then(r=>r.json()).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}const q=scopeState.currentLifeOnly?'&current_life_only=true':'';return fetch(`/api/runs/${meta.run}/timeline?page=1&page_size=120${q}`).then(r=>r.json());}).then(data=>{const wrap=document.getElementById('timeline');const summary=document.getElementById('timeline-summary');const impact=document.getElementById('timeline-impact');const diff=document.getElementById('timeline-diff');wrap.innerHTML='';let mutationIndex=0;for(const item of data.items||[]){const row=document.createElement('div');row.style.display='inline-flex';row.style.gap='4px';const btn=document.createElement('button');btn.textContent=`${item.event} · ${item.timestamp||'n/a'}`;btn.style.padding='6px';row.appendChild(btn);if(item.event==='mutation'&&data.run_id){const currentIndex=mutationIndex;mutationIndex+=1;btn.onclick=()=>showMutationDetail(data.run_id,currentIndex);const link=document.createElement('a');link.href=`/runs/${data.run_id}/mutations/${currentIndex}`;link.textContent='Voir détail';link.style.alignSelf='center';row.appendChild(link);}wrap.appendChild(row);}if(!(data.items||[]).length){summary.textContent='Aucun événement de frise disponible.';impact.textContent='';diff.textContent='';}});
+loadContext();loadEco();loadCockpit();loadTimeline();loadLivesBoard();setInterval(()=>{loadContext();loadEco();loadCockpit();loadTimeline();loadLivesBoard();},500);
 updateLiveStatus();
 ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);return;}if(typeof m.run_id==='string'&&typeof m.event==='string'){liveState.events.push({type:m.type,run_id:m.run_id,event:m.event,ts:m.ts||null});if(!liveState.paused){renderLiveEvents();}}};
 </script>

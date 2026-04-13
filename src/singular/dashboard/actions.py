@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from singular.lives import get_registry_root
+
 
 @dataclass(slots=True)
 class ActionResult:
@@ -31,8 +33,18 @@ class DashboardActionService:
     """Execute controlled dashboard actions with strict validation."""
 
     def __init__(self, *, root: Path | None = None, home: Path | None = None) -> None:
-        self.root = Path(root or os.environ.get("SINGULAR_ROOT", Path.home() / ".singular"))
-        self.home = Path(home or os.environ.get("SINGULAR_HOME", "."))
+        self.root = Path(root) if root is not None else get_registry_root()
+        if home is not None:
+            self.home = Path(home)
+        else:
+            self.home = Path(os.environ.get("SINGULAR_HOME", self.root))
+
+    def _context_payload(self) -> dict[str, str]:
+        current_home = Path(os.environ.get("SINGULAR_HOME", str(self.home)))
+        return {
+            "registry_root": str(self.root),
+            "current_life_home": str(current_home),
+        }
 
     def validate_token(self, token: str | None) -> None:
         expected = os.environ.get("SINGULAR_DASHBOARD_ACTION_TOKEN")
@@ -54,22 +66,27 @@ class DashboardActionService:
             elif action == "lives_use":
                 result = self._lives_use(params)
             else:
-                return ActionResult(
+                payload = ActionResult(
                     ok=False,
                     action=action,
-                    data={},
+                    data=self._context_payload(),
                     log="",
                     error=f"unsupported action: {action}",
                 ).to_payload()
-            return result.to_payload()
+                return payload
+            payload = result.to_payload()
+            payload["context"] = self._context_payload()
+            return payload
         except Exception as exc:  # pragma: no cover - defensive fallback
-            return ActionResult(
+            payload = ActionResult(
                 ok=False,
                 action=action,
-                data={},
+                data=self._context_payload(),
                 log="",
                 error=str(exc),
             ).to_payload()
+            payload["context"] = self._context_payload()
+            return payload
 
     def _capture(self, fn: Callable[[], dict[str, Any]]) -> tuple[dict[str, Any], str]:
         stream = io.StringIO()
