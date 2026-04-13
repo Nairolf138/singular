@@ -196,6 +196,9 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "#vies" in body
     assert "#logs-live" in body
     assert "#parametres" in body
+    assert "Registre courant (SINGULAR_ROOT)" in body
+    assert "Vie courante (SINGULAR_HOME)" in body
+    assert "Nombre de vies détectées" in body
 
 
 def test_dashboard_index_renders_main_sections(tmp_path: Path) -> None:
@@ -740,6 +743,9 @@ def test_dashboard_actions_endpoint_and_ui_panel(tmp_path: Path, monkeypatch: py
     ok = app._routes["/api/actions/{action}"]("lives_list", token="secret", payload="{}")
     assert ok["ok"] is True
     assert ok["action"] == "lives_list"
+    assert "context" in ok
+    assert "registry_root" in ok["context"]
+    assert "current_life_home" in ok["context"]
 
     with pytest.raises(Exception):
         app._routes["/api/actions/{action}"]("lives_list", token="wrong", payload="{}")
@@ -764,3 +770,119 @@ def test_dashboard_actions_validation_robustness(tmp_path: Path) -> None:
 
     with pytest.raises(Exception):
         route("lives_use", payload=json.dumps({"name": ""}))
+
+
+def test_dashboard_registry_scope_aggregates_multiple_lives_and_can_filter_current_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root_default = tmp_path / "default-root"
+    root_lab = tmp_path / "lab-root"
+    default_alpha = root_default / "lives" / "alpha"
+    default_beta = root_default / "lives" / "beta"
+    lab_gamma = root_lab / "lives" / "gamma"
+    (root_default / "lives").mkdir(parents=True)
+    (root_lab / "lives").mkdir(parents=True)
+    (default_alpha / "runs").mkdir(parents=True)
+    (default_beta / "runs").mkdir(parents=True)
+    (lab_gamma / "runs").mkdir(parents=True)
+
+    (default_alpha / "runs" / "run-a.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": "2026-04-12T08:00:00",
+                "life": "alpha",
+                "op": "flip",
+                "accepted": True,
+                "score_base": 10.0,
+                "score_new": 8.0,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (default_beta / "runs" / "run-b.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": "2026-04-12T09:00:00",
+                "life": "beta",
+                "op": "swap",
+                "accepted": False,
+                "score_base": 9.0,
+                "score_new": 10.0,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (lab_gamma / "runs" / "run-c.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": "2026-04-12T10:00:00",
+                "life": "gamma",
+                "op": "noop",
+                "accepted": True,
+                "score_base": 6.0,
+                "score_new": 5.0,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (root_default / "lives" / "registry.json").write_text(
+        json.dumps(
+            {
+                "active": "alpha",
+                "lives": {
+                    "alpha": {
+                        "name": "Alpha",
+                        "slug": "alpha",
+                        "path": str(default_alpha),
+                        "created_at": "2026-04-12T00:00:00+00:00",
+                        "status": "active",
+                    },
+                    "beta": {
+                        "name": "Beta",
+                        "slug": "beta",
+                        "path": str(default_beta),
+                        "created_at": "2026-04-12T00:05:00+00:00",
+                        "status": "active",
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root_lab / "lives" / "registry.json").write_text(
+        json.dumps(
+            {
+                "active": "gamma",
+                "lives": {
+                    "gamma": {
+                        "name": "Gamma",
+                        "slug": "gamma",
+                        "path": str(lab_gamma),
+                        "created_at": "2026-04-12T00:10:00+00:00",
+                        "status": "active",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("SINGULAR_ROOT", str(root_default))
+    monkeypatch.setenv("SINGULAR_HOME", str(default_alpha))
+
+    app = create_app(psyche_file=tmp_path / "psyche.json")
+    context = app._routes["/dashboard/context"]()
+    assert context["singular_root"] == str(root_default)
+    assert context["singular_home"] == str(default_alpha)
+    assert context["registry_lives_count"] == 2
+
+    timeline_all = app._routes["/timeline"]()
+    assert timeline_all["count"] == 2
+    assert {item["life"] for item in timeline_all["items"]} == {"alpha", "beta"}
+
+    timeline_current = app._routes["/timeline"](current_life_only=True)
+    assert timeline_current["count"] == 1
+    assert timeline_current["items"][0]["life"] == "alpha"

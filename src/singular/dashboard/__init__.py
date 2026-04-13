@@ -11,7 +11,7 @@ import os
 import sys
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from singular.lives import load_registry, set_life_status
+from singular.lives import get_registry_root, load_registry, set_life_status
 
 from singular.dashboard.actions import DashboardActionService
 from fastapi.responses import HTMLResponse
@@ -29,8 +29,9 @@ def create_app(
     runs_dir: Path | str | None = None, psyche_file: Path | str | None = None
 ) -> FastAPI:
     """Create the dashboard FastAPI application."""
-    base_dir = Path(os.environ.get("SINGULAR_HOME", "."))
-    runs_path = Path(runs_dir) if runs_dir is not None else base_dir / "runs"
+    registry_root = get_registry_root()
+    base_dir = Path(os.environ.get("SINGULAR_HOME", registry_root))
+    runs_path = Path(runs_dir) if runs_dir is not None else None
     psyche_path = (
         Path(psyche_file)
         if psyche_file is not None
@@ -46,27 +47,57 @@ def create_app(
             template = template.replace(key, value)
         return template
 
-    def _load_run_records() -> list[dict[str, object]]:
-        records: list[dict[str, object]] = []
-        if not runs_path.exists():
-            return records
+    def _registry_lives_paths() -> list[Path]:
+        registry = load_registry()
+        raw_lives = registry.get("lives")
+        if not isinstance(raw_lives, dict):
+            return []
+        lives_paths: list[Path] = []
+        for meta in raw_lives.values():
+            path = getattr(meta, "path", None)
+            if isinstance(path, Path):
+                lives_paths.append(path)
+        return lives_paths
 
-        for file in runs_path.iterdir():
-            if not file.is_file() or file.suffix != ".jsonl":
+    def _runs_dirs(current_life_only: bool = False) -> list[Path]:
+        if runs_path is not None:
+            return [runs_path]
+        if current_life_only:
+            return [base_dir / "runs"]
+        dirs: list[Path] = []
+        seen: set[str] = set()
+        for life_dir in _registry_lives_paths():
+            candidate = life_dir / "runs"
+            candidate_key = str(candidate.resolve()) if candidate.exists() else str(candidate)
+            if candidate_key in seen:
                 continue
-            for line in file.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if not line:
+            seen.add(candidate_key)
+            dirs.append(candidate)
+        if not dirs:
+            dirs.append(base_dir / "runs")
+        return dirs
+
+    def _load_run_records(current_life_only: bool = False) -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
+        for directory in _runs_dirs(current_life_only=current_life_only):
+            if not directory.exists():
+                continue
+            for file in directory.iterdir():
+                if not file.is_file() or file.suffix != ".jsonl":
                     continue
-                try:
-                    payload = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(payload, dict):
-                    continue
-                if "_run_file" not in payload:
-                    payload["_run_file"] = file.stem
-                records.append(payload)
+                for line in file.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        payload = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(payload, dict):
+                        continue
+                    if "_run_file" not in payload:
+                        payload["_run_file"] = file.stem
+                    records.append(payload)
         return records
 
     def _is_mutation_record(record: dict[str, object]) -> bool:
@@ -130,10 +161,12 @@ def create_app(
                 return mapped_life
         return "unknown"
 
-    def _compute_ecosystem() -> dict:
+    def _compute_ecosystem(current_life_only: bool = False) -> dict:
         organisms: dict[str, dict[str, object]] = {}
-        if runs_path.exists():
-            for file in runs_path.iterdir():
+        for directory in _runs_dirs(current_life_only=current_life_only):
+            if not directory.exists():
+                continue
+            for file in directory.iterdir():
                 if not file.is_file() or file.suffix != ".jsonl":
                     continue
                 for line in file.read_text(encoding="utf-8").splitlines():
@@ -198,11 +231,16 @@ def create_app(
             },
         }
 
-    def _iter_run_files() -> list[Path]:
-        if not runs_path.exists():
-            return []
+    def _iter_run_files(current_life_only: bool = False) -> list[Path]:
+        files: list[Path] = []
+        for directory in _runs_dirs(current_life_only=current_life_only):
+            if not directory.exists():
+                continue
+            for path in directory.iterdir():
+                if path.is_file() and path.suffix == ".jsonl":
+                    files.append(path)
         return sorted(
-            [path for path in runs_path.iterdir() if path.is_file() and path.suffix == ".jsonl"],
+            files,
             key=lambda path: (path.stat().st_mtime_ns, path.name),
         )
 
@@ -220,8 +258,8 @@ def create_app(
                 records.append(payload)
         return records
 
-    def _latest_run_file() -> Path | None:
-        files = _iter_run_files()
+    def _latest_run_file(current_life_only: bool = False) -> Path | None:
+        files = _iter_run_files(current_life_only=current_life_only)
         if not files:
             return None
 
@@ -337,8 +375,8 @@ def create_app(
             },
         }
 
-    def _summarize_cockpit() -> dict[str, object]:
-        latest = _latest_run_file()
+    def _summarize_cockpit(current_life_only: bool = False) -> dict[str, object]:
+        latest = _latest_run_file(current_life_only=current_life_only)
         if latest is None:
             empty = {
                 "run": None,
@@ -450,12 +488,16 @@ def create_app(
 
 
     @app.get("/logs")
-    def read_logs() -> dict[str, str]:
+    def read_logs(current_life_only: bool = False) -> dict[str, str]:
         logs: dict[str, str] = {}
-        if runs_path.exists():
-            for file in runs_path.iterdir():
+        prefix_paths = runs_path is None
+        for directory in _runs_dirs(current_life_only=current_life_only):
+            if not directory.exists():
+                continue
+            for file in directory.iterdir():
                 if file.is_file():
-                    logs[file.name] = file.read_text()
+                    key = f"{directory.parent.name}/{file.name}" if prefix_paths else file.name
+                    logs[key] = file.read_text()
         return logs
 
     @app.get("/psyche")
@@ -465,20 +507,20 @@ def create_app(
         return json.loads(psyche_path.read_text())
 
     @app.get("/ecosystem")
-    def read_ecosystem() -> dict:
-        return _compute_ecosystem()
+    def read_ecosystem(current_life_only: bool = False) -> dict:
+        return _compute_ecosystem(current_life_only=current_life_only)
 
     @app.get("/alerts")
-    def read_alerts() -> dict[str, object]:
-        latest = _latest_run_file()
+    def read_alerts(current_life_only: bool = False) -> dict[str, object]:
+        latest = _latest_run_file(current_life_only=current_life_only)
         if latest is None:
             return {"run": None, "alerts": []}
         records = _read_jsonl_records(latest)
         return {"run": latest.stem, "alerts": alerts_from_records(records)}
 
     @app.get("/runs/latest")
-    def read_latest_run() -> dict[str, object]:
-        latest = _latest_run_file()
+    def read_latest_run(current_life_only: bool = False) -> dict[str, object]:
+        latest = _latest_run_file(current_life_only=current_life_only)
         if latest is None:
             return {"run": None, "records": []}
         return {"run": latest.stem, "records": _read_jsonl_records(latest)}
@@ -493,9 +535,17 @@ def create_app(
         period_start: str | None = None,
         period_end: str | None = None,
         organism: str | None = None,
+        current_life_only: bool = False,
     ) -> dict[str, object]:
-        run_file = runs_path / f"{run_id}.jsonl"
-        if not run_file.exists():
+        run_file = next(
+            (
+                directory / f"{run_id}.jsonl"
+                for directory in _runs_dirs(current_life_only=current_life_only)
+                if (directory / f"{run_id}.jsonl").exists()
+            ),
+            None,
+        )
+        if run_file is None:
             raise HTTPException(status_code=404, detail=f"run '{run_id}' not found")
 
         all_items: list[dict[str, object]] = []
@@ -557,9 +607,18 @@ def create_app(
         }
 
     @app.get("/api/runs/{run_id}/mutations/{index}")
-    def read_run_mutation(run_id: str, index: int) -> dict[str, object]:
-        run_file = runs_path / f"{run_id}.jsonl"
-        if not run_file.exists():
+    def read_run_mutation(
+        run_id: str, index: int, current_life_only: bool = False
+    ) -> dict[str, object]:
+        run_file = next(
+            (
+                directory / f"{run_id}.jsonl"
+                for directory in _runs_dirs(current_life_only=current_life_only)
+                if (directory / f"{run_id}.jsonl").exists()
+            ),
+            None,
+        )
+        if run_file is None:
             raise HTTPException(status_code=404, detail=f"run '{run_id}' not found")
 
         mutations = [record for record in _read_jsonl_records(run_file) if _is_mutation_record(record)]
@@ -571,8 +630,8 @@ def create_app(
         return _mutation_detail(mutations[index], run_id=run_id, index=index)
 
     @app.get("/runs/latest/summary")
-    def read_latest_run_summary() -> dict[str, object]:
-        latest = _latest_run_file()
+    def read_latest_run_summary(current_life_only: bool = False) -> dict[str, object]:
+        latest = _latest_run_file(current_life_only=current_life_only)
         if latest is None:
             return {"run": None, "summary": None}
 
@@ -612,8 +671,16 @@ def create_app(
         }
 
     @app.get("/api/cockpit")
-    def read_cockpit() -> dict[str, object]:
-        return _summarize_cockpit()
+    def read_cockpit(current_life_only: bool = False) -> dict[str, object]:
+        return _summarize_cockpit(current_life_only=current_life_only)
+
+    @app.get("/dashboard/context")
+    def read_dashboard_context() -> dict[str, object]:
+        return {
+            "singular_root": str(registry_root),
+            "singular_home": str(base_dir),
+            "registry_lives_count": len(_registry_lives_paths()),
+        }
 
     @app.get("/timeline")
     def read_timeline(
@@ -622,8 +689,9 @@ def create_app(
         operator: str | None = None,
         decision: str | None = None,
         impact: str | None = None,
+        current_life_only: bool = False,
     ) -> dict[str, object]:
-        records = _load_run_records()
+        records = _load_run_records(current_life_only=current_life_only)
         items: list[dict[str, object]] = []
 
         for record in records:
@@ -730,7 +798,9 @@ def create_app(
                     return slug, None
         return None, None
 
-    def _aggregate_lives() -> tuple[dict[str, dict[str, object]], dict[str, object]]:
+    def _aggregate_lives(
+        current_life_only: bool = False,
+    ) -> tuple[dict[str, dict[str, object]], dict[str, object]]:
         registry = load_registry()
         active_life = registry.get("active")
         registry_lives = registry.get("lives")
@@ -738,7 +808,7 @@ def create_app(
             registry_lives = {}
         by_life: dict[str, list[dict[str, object]]] = {}
         unattached_runs: dict[str, int] = {}
-        for record in _load_run_records():
+        for record in _load_run_records(current_life_only=current_life_only):
             life_name = _record_life(record)
             if life_name == "unknown":
                 run_id = _record_run_id(record)
@@ -877,8 +947,9 @@ def create_app(
         active_only: bool = False,
         degrading_only: bool = False,
         dead_only: bool = False,
+        current_life_only: bool = False,
     ) -> dict[str, object]:
-        comparison, unattached = _aggregate_lives()
+        comparison, unattached = _aggregate_lives(current_life_only=current_life_only)
         lives_rows = [{"life": name, **payload} for name, payload in comparison.items()]
 
         if active_only:
@@ -925,10 +996,10 @@ def create_app(
         }
 
     @app.get("/mutations/top")
-    def read_top_mutations(limit: int = 3) -> dict[str, object]:
+    def read_top_mutations(limit: int = 3, current_life_only: bool = False) -> dict[str, object]:
         mutations: list[dict[str, object]] = []
         operator_counts: Counter[str] = Counter()
-        for record in _load_run_records():
+        for record in _load_run_records(current_life_only=current_life_only):
             if not _is_mutation_record(record):
                 continue
             operator = record.get("operator", record.get("op"))
@@ -1040,16 +1111,21 @@ def create_app(
                         await ws.send_json({"type": "psyche", "data": data})
 
                 incremental_events: list[dict[str, object]] = []
-                if runs_path.exists():
+                run_directories = _runs_dirs()
+                if run_directories:
                     current_files: set[str] = set()
-                    for file in runs_path.iterdir():
-                        if not file.is_file() or file.suffix != ".jsonl":
+                    for directory in run_directories:
+                        if not directory.exists():
                             continue
-                        current_files.add(file.name)
-                        entries, next_cursor = await asyncio.to_thread(
-                            _read_new_entries, file, log_cursors.get(file.name)
-                        )
-                        log_cursors[file.name] = next_cursor
+                        for file in directory.iterdir():
+                            if not file.is_file() or file.suffix != ".jsonl":
+                                continue
+                            key = f"{directory.parent.name}/{file.name}"
+                            current_files.add(key)
+                            entries, next_cursor = await asyncio.to_thread(
+                                _read_new_entries, file, log_cursors.get(key)
+                            )
+                            log_cursors[key] = next_cursor
                         for line in entries:
                             try:
                                 payload = json.loads(line)
