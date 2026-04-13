@@ -6,12 +6,14 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import atexit
+import logging
 import os
 from queue import Empty, Queue
 import threading
 from typing import Any, Callable
 
 EventHandler = Callable[["Event"], None]
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -27,11 +29,12 @@ class Event:
 class EventBus:
     """Simple event bus supporting sync and async dispatch modes."""
 
-    def __init__(self, *, mode: str = "sync") -> None:
+    def __init__(self, *, mode: str = "sync", strict: bool = False) -> None:
         normalized_mode = mode.strip().lower()
         if normalized_mode not in {"sync", "async"}:
             normalized_mode = "sync"
         self.mode = normalized_mode
+        self.strict = strict
         self._subscribers: dict[str, list[EventHandler]] = defaultdict(list)
         self._lock = threading.Lock()
         self._queue: Queue[Event] | None = None
@@ -91,7 +94,13 @@ class EventBus:
             try:
                 handler(event)
             except Exception:
-                continue
+                logger.exception(
+                    "Error while handling event '%s' in handler '%s'",
+                    event.event_type,
+                    getattr(handler, "__name__", repr(handler)),
+                )
+                if self.strict:
+                    raise
 
     def _start_worker(self) -> None:
         if self._queue is None:
@@ -126,11 +135,20 @@ def get_bus_mode_from_env() -> str:
     return os.environ.get("SINGULAR_EVENT_BUS_MODE", "sync").strip().lower()
 
 
+def get_bus_strict_from_env() -> bool:
+    """Read strict event bus mode from configuration environment."""
+
+    value = os.environ.get("SINGULAR_EVENT_BUS_STRICT", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 def get_global_event_bus() -> EventBus:
     """Return process-wide event bus configured by environment."""
 
     global _GLOBAL_BUS
     if _GLOBAL_BUS is None:
-        _GLOBAL_BUS = EventBus(mode=get_bus_mode_from_env())
+        _GLOBAL_BUS = EventBus(
+            mode=get_bus_mode_from_env(), strict=get_bus_strict_from_env()
+        )
         atexit.register(_GLOBAL_BUS.shutdown)
     return _GLOBAL_BUS
