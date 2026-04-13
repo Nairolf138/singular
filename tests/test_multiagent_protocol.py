@@ -12,6 +12,7 @@ from singular.multiagent import (
     InMemoryQueueTransport,
     OrchestrationScenario,
     resolve_conflicts,
+    validate_message_schema,
 )
 
 
@@ -36,19 +37,64 @@ def _append_collective_worker(root: str, namespace: str, start: int, count: int)
 
 def test_message_is_versioned_and_serializable():
     message = AgentMessage(
-        intent="answer",
+        intent="knowledge_share",
         task="sum",
         evidence=["calc:1+1=2"],
         confidence=0.9,
         priority=1,
         agent_id="agent-a",
+        version=2,
+        payload={"topic": "arithmetic"},
     )
 
     decoded = AgentMessage.from_dict(message.to_dict())
-    assert decoded.version == 1
-    assert decoded.intent == "answer"
+    assert decoded.version == 2
+    assert decoded.intent == "knowledge_share"
     assert decoded.task == "sum"
     assert decoded.evidence == ["calc:1+1=2"]
+    assert decoded.payload == {"topic": "arithmetic"}
+
+
+def test_message_schema_validation_and_backward_compatibility():
+    payload_v1 = {
+        "version": 1,
+        "intent": "request",
+        "task": "part-a",
+        "evidence": ["need cpu"],
+        "confidence": 0.5,
+    }
+    payload_v2 = {
+        "version": 2,
+        "intent": "resource_negotiation",
+        "task": "part-b",
+        "evidence": ["offer bandwidth"],
+        "confidence": 0.6,
+        "payload": {"cpu_quota": 3},
+    }
+
+    validate_message_schema(payload_v1)
+    validate_message_schema(payload_v2)
+    decoded_v1 = AgentMessage.from_dict(payload_v1)
+    decoded_v2 = AgentMessage.from_dict(payload_v2)
+
+    assert decoded_v1.version == 1
+    assert decoded_v2.version == 2
+
+
+def test_message_schema_validation_rejects_invalid_payload():
+    invalid = {
+        "version": 2,
+        "intent": "offer",
+        "evidence": ["missing task"],
+        "confidence": 0.7,
+    }
+
+    try:
+        validate_message_schema(invalid)
+    except ValueError as exc:
+        assert "missing required field" in str(exc)
+    else:
+        raise AssertionError("Expected schema validation error")
 
 
 def test_transports_queue_and_file(tmp_path):

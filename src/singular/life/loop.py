@@ -24,7 +24,7 @@ from singular.beliefs.meta_learning import (
     register_run_result,
 )
 from singular.events import EventBus, get_global_event_bus
-from singular.memory import register_memory_event_handlers
+from singular.memory import register_memory_event_handlers, update_score
 from singular.psyche import Psyche, Mood
 from singular.runs.logger import RunLogger
 from singular.runs.explain import summarize_mutation
@@ -35,6 +35,7 @@ from graine.evolver.generate import propose_mutations
 from singular.environment import artifacts as env_artifacts
 from singular.environment import files as env_files
 from singular.environment import notifications as env_notifications
+from singular.environment.reputation import ReputationSystem
 from singular.goals import IntrinsicGoals
 from singular.resource_manager import ResourceManager
 
@@ -87,6 +88,20 @@ class WorldState:
 
     organisms: Dict[str, Organism] = field(default_factory=dict)
     resource_pool: float = 100.0
+    reputation: ReputationSystem = field(default_factory=ReputationSystem)
+
+
+@dataclass
+class EcosystemRules:
+    """Configurable local ecosystem rules for interactions."""
+
+    resource_competition_unit: float = 1.0
+    passive_energy_decay: float = 0.05
+    passive_resource_decay: float = 0.02
+    crossover_interval: int = 50
+    reputation_action_weights: dict[str, float] = field(
+        default_factory=lambda: {"share": 0.2, "steal": -0.2}
+    )
 
 
 OrganismInputs = Mapping[str, Path] | Iterable[Path] | Path
@@ -435,6 +450,20 @@ def _choose_skill(
     return org_name, rng.choice(available)
 
 
+def _pick_crossover_parents(rng: random.Random, world: WorldState) -> tuple[str, str]:
+    """Prefer high-reputation organisms when selecting crossover parents."""
+
+    names = list(world.organisms.keys())
+    weighted = sorted(
+        names,
+        key=lambda name: world.reputation.get(name),
+        reverse=True,
+    )
+    primary = weighted[0]
+    remaining = [name for name in names if name != primary]
+    return primary, rng.choice(remaining)
+
+
 def _normalize_organism_inputs(skills_dirs: OrganismInputs) -> Dict[str, Path]:
     """Normalize organism inputs into a ``name -> skills_dir`` mapping."""
 
@@ -489,6 +518,7 @@ def run(
     event_bus: EventBus | None = None,
     governance_policy: MutationGovernancePolicy | None = None,
     max_iterations: int | None = None,
+    ecosystem_rules: EcosystemRules | None = None,
 ) -> Checkpoint:
     """Run the evolutionary loop for at most ``budget_seconds`` seconds.
 
@@ -512,6 +542,7 @@ def run(
     organisms_input = _normalize_organism_inputs(skills_dirs)
 
     world = world or WorldState()
+    ecosystem_rules = ecosystem_rules or EcosystemRules()
     for org_name, skills_dir in organisms_input.items():
         skills_dir.mkdir(parents=True, exist_ok=True)
         if org_name not in world.organisms:
@@ -717,6 +748,9 @@ def run(
                 combined_bias[operator_name] = combined_bias.get(operator_name, 0.0) + extra_bias
             for operator_name, extra_bias in psyche_bias.items():
                 combined_bias[operator_name] = combined_bias.get(operator_name, 0.0) + extra_bias
+            reputation_bonus = world.reputation.get(org_name) * 0.01
+            for operator_name in combined_bias:
+                combined_bias[operator_name] += reputation_bonus
 
             mood_label = getattr(getattr(psyche, "last_mood", None), "value", None)
             if mood_label is None and getattr(psyche, "last_mood", None) is not None:
@@ -852,9 +886,19 @@ def run(
                 else:
                     org.last_score = mutated_score
                     org.energy += 0.2
+                    world.reputation.update(
+                        org_name,
+                        "share",
+                        {"moral_weights": ecosystem_rules.reputation_action_weights},
+                    )
                     env_artifacts.save_text(f"mutation_{state.iteration}", diff)
             else:
                 org.energy -= 0.1
+                world.reputation.update(
+                    org_name,
+                    "steal",
+                    {"moral_weights": ecosystem_rules.reputation_action_weights},
+                )
 
             objective_weights = asdict(goal_weights)
             dominant_objective = max(
@@ -941,15 +985,17 @@ def run(
                 last_post = time.time()
 
             # Shared resource competition
+            competition_unit = max(ecosystem_rules.resource_competition_unit, 0.0)
             if world.resource_pool > 0:
-                world.resource_pool -= 1
-                org.resources += 1
+                claimed = min(world.resource_pool, competition_unit)
+                world.resource_pool -= claimed
+                org.resources += claimed
             else:
-                org.resources -= 1
+                org.resources -= competition_unit
 
             for other in world.organisms.values():
-                other.energy -= 0.05
-                other.resources -= 0.02
+                other.energy -= ecosystem_rules.passive_energy_decay
+                other.resources -= ecosystem_rules.passive_resource_decay
 
             sandbox_failure = (
                 base_score == float("-inf") or mutated_score == float("-inf")
@@ -979,6 +1025,7 @@ def run(
                 resource_pool=world.resource_pool,
                 energy=org.energy,
                 resources=org.resources,
+                reputation=world.reputation.get(org_name),
                 score=org.last_score,
                 alive=True,
             )
@@ -988,6 +1035,7 @@ def run(
                 if len(world.organisms) > 1
                 else skill_path.stem
             )
+            update_score(key, mutated_score)
             mutation_payload = {
                 "iteration": state.iteration,
                 "skill": key,
@@ -1087,8 +1135,12 @@ def run(
                 del world.organisms[name]
 
             # Periodic crossover
-            if state.iteration % 50 == 0 and len(world.organisms) >= 2:
-                parent_names = rng.sample(list(world.organisms.keys()), 2)
+            if (
+                ecosystem_rules.crossover_interval > 0
+                and state.iteration % ecosystem_rules.crossover_interval == 0
+                and len(world.organisms) >= 2
+            ):
+                parent_names = list(_pick_crossover_parents(rng, world))
                 pa = world.organisms[parent_names[0]].skills_dir
                 pb = world.organisms[parent_names[1]].skills_dir
                 child_dir = pa.parent / f"child_{state.iteration}"
@@ -1142,6 +1194,7 @@ def run_tick(
     event_bus: EventBus | None = None,
     governance_policy: MutationGovernancePolicy | None = None,
     tick_budget_seconds: float = 0.2,
+    ecosystem_rules: EcosystemRules | None = None,
 ) -> Checkpoint:
     """Execute one mutation tick and persist checkpoint state."""
 
@@ -1164,6 +1217,7 @@ def run_tick(
         event_bus=event_bus,
         governance_policy=governance_policy,
         max_iterations=1,
+        ecosystem_rules=ecosystem_rules,
     )
 
 

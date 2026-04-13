@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Protocol
+from typing import Any, Iterable, Literal, Protocol
 import json
 import os
 import tempfile
@@ -14,6 +14,20 @@ if os.name == "nt":
 else:
     import fcntl
 
+MESSAGE_SCHEMA_V1: dict[str, Any] = {
+    "required": {"intent", "task", "evidence", "confidence"},
+    "types": {
+        "intent": str,
+        "task": str,
+        "evidence": list,
+        "confidence": (float, int),
+        "priority": int,
+        "agent_id": (str, type(None)),
+        "created_at": (float, int),
+        "payload": dict,
+    },
+}
+
 
 @dataclass(slots=True)
 class AgentMessage:
@@ -23,7 +37,15 @@ class AgentMessage:
     ``intent``, ``task``, ``evidence`` and ``confidence``.
     """
 
-    intent: str
+    intent: Literal[
+        "request",
+        "offer",
+        "warning",
+        "knowledge_share",
+        "resource_negotiation",
+        "sub_problem",
+        "answer",
+    ]
     task: str
     evidence: list[str]
     confidence: float
@@ -31,10 +53,12 @@ class AgentMessage:
     agent_id: str | None = None
     version: int = 1
     created_at: float = field(default_factory=time.time)
+    payload: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.version != 1:
-            raise ValueError("unsupported message version")
+        if self.version not in {1, 2}:
+            raise ValueError(f"unsupported message version: {self.version}")
+        _validate_payload_schema(self.to_dict(), self.version, schema=MESSAGE_SCHEMA_V1)
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError("confidence must be in [0, 1]")
 
@@ -48,12 +72,15 @@ class AgentMessage:
             "priority": self.priority,
             "agent_id": self.agent_id,
             "created_at": self.created_at,
+            "payload": dict(self.payload),
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "AgentMessage":
+        version = int(payload.get("version", 1))
+        validate_message_schema(payload, version=version)
         return cls(
-            version=int(payload.get("version", 1)),
+            version=version,
             intent=str(payload["intent"]),
             task=str(payload["task"]),
             evidence=[str(item) for item in payload.get("evidence", [])],
@@ -65,7 +92,37 @@ class AgentMessage:
                 else None
             ),
             created_at=float(payload.get("created_at", time.time())),
+            payload=dict(payload.get("payload", {})),
         )
+
+
+def _validate_payload_schema(
+    payload: dict[str, Any],
+    version: int,
+    *,
+    schema: dict[str, Any],
+) -> None:
+    if version not in {1, 2}:
+        raise ValueError(f"unsupported message version: {version}")
+    missing = [name for name in schema["required"] if name not in payload]
+    if missing:
+        raise ValueError(f"missing required field(s): {', '.join(sorted(missing))}")
+    for field_name, expected_type in schema["types"].items():
+        if field_name not in payload:
+            continue
+        if not isinstance(payload[field_name], expected_type):
+            raise ValueError(f"invalid type for '{field_name}'")
+
+
+def validate_message_schema(payload: dict[str, Any], *, version: int | None = None) -> None:
+    """Validate payload shape and compatible protocol versions.
+
+    Version 2 extends v1 with a generic ``payload`` map and keeps backward
+    compatibility with v1 by preserving the required top-level fields.
+    """
+
+    effective_version = int(payload.get("version", 1) if version is None else version)
+    _validate_payload_schema(payload, effective_version, schema=MESSAGE_SCHEMA_V1)
 
 
 class MessageTransport(Protocol):

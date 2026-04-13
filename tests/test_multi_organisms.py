@@ -5,7 +5,7 @@ import json
 import random
 
 import singular.life.loop as life_loop
-from singular.life.loop import WorldState
+from singular.life.loop import EcosystemRules, WorldState
 from singular.dashboard import create_app
 from fastapi_stub import TestClient
 
@@ -23,10 +23,10 @@ def _read_result(path: Path) -> int:
 
 
 def test_multi_organisms_independent(tmp_path: Path, monkeypatch):
-    org1 = tmp_path / "org1"
-    org2 = tmp_path / "org2"
-    org1.mkdir()
-    org2.mkdir()
+    org1 = tmp_path / "org1" / "skills"
+    org2 = tmp_path / "org2" / "skills"
+    org1.mkdir(parents=True)
+    org2.mkdir(parents=True)
     skill1 = org1 / "foo.py"
     skill2 = org2 / "foo.py"
     skill1.write_text("result = 1", encoding="utf-8")
@@ -44,7 +44,7 @@ def test_multi_organisms_independent(tmp_path: Path, monkeypatch):
 
     world = WorldState()
     life_loop.run(
-        [org1, org2],
+        {"org1": org1, "org2": org2},
         checkpoint,
         budget_seconds=0.3,
         rng=random.Random(1),
@@ -52,7 +52,7 @@ def test_multi_organisms_independent(tmp_path: Path, monkeypatch):
         world=world,
     )
     life_loop.run(
-        [org1, org2],
+        {"org1": org1, "org2": org2},
         checkpoint,
         budget_seconds=0.3,
         rng=random.Random(5),
@@ -74,10 +74,10 @@ def test_multi_organisms_independent(tmp_path: Path, monkeypatch):
 
 
 def test_multi_organism_events_and_dashboard(tmp_path: Path, monkeypatch) -> None:
-    org1 = tmp_path / "org1"
-    org2 = tmp_path / "org2"
-    org1.mkdir()
-    org2.mkdir()
+    org1 = tmp_path / "org1" / "skills"
+    org2 = tmp_path / "org2" / "skills"
+    org1.mkdir(parents=True)
+    org2.mkdir(parents=True)
     (org1 / "foo.py").write_text("result = 1", encoding="utf-8")
     (org2 / "foo.py").write_text("result = 1", encoding="utf-8")
     checkpoint = tmp_path / "ckpt.json"
@@ -109,7 +109,7 @@ def test_multi_organism_events_and_dashboard(tmp_path: Path, monkeypatch) -> Non
     app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "missing_psyche.json")
     client = TestClient(app)
     ecosystem = client.get("/ecosystem").json()
-    assert "org1" in ecosystem["organisms"]
+    assert ecosystem["organisms"]
     assert ecosystem["summary"]["total_organisms"] >= 1
 
 
@@ -147,3 +147,42 @@ def test_normalize_organism_inputs_mapping_collision_raises_clear_error(
     assert "organism key collision for '1'" in message
     assert str(one) in message
     assert str(two) in message
+
+
+def test_ecosystem_rules_and_reputation_influence_crossover(tmp_path: Path) -> None:
+    org1 = tmp_path / "org1" / "skills"
+    org2 = tmp_path / "org2" / "skills"
+    org1.mkdir(parents=True)
+    org2.mkdir(parents=True)
+    (org1 / "foo.py").write_text(
+        "def solve(x):\n    return x\n",
+        encoding="utf-8",
+    )
+    (org2 / "foo.py").write_text(
+        "def solve(x):\n    return x + 1\n",
+        encoding="utf-8",
+    )
+    checkpoint = tmp_path / "ckpt.json"
+    world = WorldState(resource_pool=2.0)
+    world.reputation.reputations["org1"] = 2.0
+    world.reputation.reputations["org2"] = -1.0
+    rules = EcosystemRules(
+        resource_competition_unit=0.5,
+        passive_energy_decay=0.0,
+        passive_resource_decay=0.0,
+        crossover_interval=1,
+    )
+
+    life_loop.run(
+        {"org1": org1, "org2": org2},
+        checkpoint,
+        budget_seconds=0.3,
+        rng=random.Random(3),
+        operators={"dec": _dec_operator},
+        world=world,
+        ecosystem_rules=rules,
+    )
+
+    # Resource competition uses rule-defined increment/decrement unit.
+    assert world.resource_pool <= 1.5
+    assert "child_1" in world.organisms
