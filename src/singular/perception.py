@@ -15,6 +15,8 @@ import time
 from typing import Any, Dict
 from pathlib import Path
 
+from singular.events import EventBus, get_global_event_bus
+
 
 def _read_optional_file() -> Dict[str, Any]:
     """Read data from ``SINGULAR_SENSOR_FILE`` if available."""
@@ -72,8 +74,12 @@ def get_temperature() -> float:
     return random.uniform(-20.0, 40.0)
 
 
-def capture_signals() -> Dict[str, Any]:
-    """Collect sensory signals from virtual and optional real sources."""
+def capture_signals(
+    *,
+    bus: EventBus | None = None,
+    publish_event: bool = True,
+) -> Dict[str, Any]:
+    """Collect sensory signals and optionally publish ``signal.captured``."""
     signals: Dict[str, Any] = {
         "temperature": random.uniform(-20.0, 40.0),
         "is_daytime": 6 <= time.localtime().tm_hour < 18,
@@ -81,4 +87,7 @@ def capture_signals() -> Dict[str, Any]:
     }
     signals.update(_read_optional_file())
     signals.update(_query_optional_weather_api())
+    if publish_event:
+        emitter = bus or get_global_event_bus()
+        emitter.publish("signal.captured", {"signals": dict(signals)}, payload_version=1)
     return signals

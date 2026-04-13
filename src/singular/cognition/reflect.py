@@ -10,7 +10,9 @@ highest-scoring action according to:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Mapping
+
+from singular.events import EventBus, get_global_event_bus
 
 
 @dataclass(frozen=True)
@@ -61,16 +63,33 @@ def reflect_action(
     long_term_weight: float = 0.6,
     sandbox_weight: float = 0.25,
     resource_weight: float = 0.15,
+    bus: EventBus | None = None,
+    event_context: Mapping[str, Any] | None = None,
 ) -> ReflectionDecision:
     """Select the best action from candidate hypotheses."""
 
     if not hypotheses:
-        return ReflectionDecision(
+        decision = ReflectionDecision(
             action=None,
             decision_reason="no hypothesis available",
             alternative_scores={},
             ranked_actions=[],
         )
+        emitter = bus or get_global_event_bus()
+        emitter.publish(
+            "decision.made",
+            {
+                "decision": {
+                    "action": decision.action,
+                    "decision_reason": decision.decision_reason,
+                    "alternative_scores": decision.alternative_scores,
+                    "ranked_actions": decision.ranked_actions,
+                },
+                "context": dict(event_context or {}),
+            },
+            payload_version=1,
+        )
+        return decision
 
     scores = {
         hyp.action: _hypothesis_score(
@@ -88,9 +107,24 @@ def reflect_action(
         f"(long_term={long_term_weight:.2f}, sandbox={sandbox_weight:.2f}, "
         f"resources={resource_weight:.2f})"
     )
-    return ReflectionDecision(
+    decision = ReflectionDecision(
         action=selected,
         decision_reason=reason,
         alternative_scores=scores,
         ranked_actions=ranked,
     )
+    emitter = bus or get_global_event_bus()
+    emitter.publish(
+        "decision.made",
+        {
+            "decision": {
+                "action": decision.action,
+                "decision_reason": decision.decision_reason,
+                "alternative_scores": decision.alternative_scores,
+                "ranked_actions": decision.ranked_actions,
+            },
+            "context": dict(event_context or {}),
+        },
+        payload_version=1,
+    )
+    return decision
