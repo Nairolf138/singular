@@ -110,3 +110,36 @@ def test_status_filters_non_mutation_records_for_success_rate(
     assert payload["success_rate"] == 50.0
     assert "autonomy_metrics" in payload
     assert "proactive_initiative_rate" in payload["autonomy_metrics"]
+
+
+def test_status_exposes_quest_counts(tmp_path, monkeypatch, capsys) -> None:
+    mem_dir = tmp_path / "mem"
+    mem_dir.mkdir()
+    (mem_dir / "quests_state.json").write_text(
+        json.dumps(
+            {
+                "active": [{"name": "q1", "status": "active", "started_at": "2026-01-01T00:00:00+00:00"}],
+                "completed": [{"name": "q0", "status": "success", "started_at": "2026-01-01T00:00:00+00:00", "completed_at": "2026-01-01T00:01:00+00:00"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class DummyPsyche:
+        last_mood = None
+        curiosity = 0.5
+        patience = 0.5
+        playfulness = 0.5
+        optimism = 0.5
+        resilience = 0.5
+
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    monkeypatch.setattr(status_mod, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(
+        status_mod.Psyche, "load_state", staticmethod(lambda: DummyPsyche())
+    )
+
+    status_mod.status(output_format="json")
+    payload = json.loads(capsys.readouterr().out)
+    assert len(payload["quests"]["active"]) == 1
+    assert len(payload["quests"]["completed"]) == 1

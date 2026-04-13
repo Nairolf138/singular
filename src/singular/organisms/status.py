@@ -8,6 +8,7 @@ from pathlib import Path
 from ..life.health import detect_health_state
 from ..metrics.autonomy import compute_autonomy_metrics
 from ..psyche import Psyche
+from ..memory import get_mem_dir
 from ..runs.logger import RUNS_DIR
 from ..schedulers.reevaluation import alerts_from_records
 
@@ -41,6 +42,22 @@ def _fmt_number(value: object, unit: str = "") -> str:
         return f"{float(value):.2f}{unit}"
     return "-"
 
+
+
+def _read_quest_status() -> dict[str, object]:
+    path = get_mem_dir() / "quests_state.json"
+    if not path.exists():
+        return {"active": [], "completed": []}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"active": [], "completed": []}
+    if not isinstance(payload, dict):
+        return {"active": [], "completed": []}
+    active = payload.get("active") if isinstance(payload.get("active"), list) else []
+    completed = payload.get("completed") if isinstance(payload.get("completed"), list) else []
+    return {"active": active, "completed": completed[-20:]}
+
 def status(*, verbose: bool = False, output_format: str = "plain") -> None:
     """Display basic metrics and current psyche state."""
 
@@ -55,6 +72,7 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         "mood": None,
         "traits": {},
         "autonomy_metrics": {},
+        "quests": {"active": [], "completed": []},
     }
     runs_dir = Path(RUNS_DIR)
     files = sorted(runs_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
@@ -113,6 +131,7 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
     psyche = Psyche.load_state()
     mood = psyche.last_mood.value if psyche.last_mood else "neutral"
     payload["mood"] = mood
+    payload["quests"] = _read_quest_status()
     payload["traits"] = {
         "curiosity": round(psyche.curiosity, 2),
         "patience": round(psyche.patience, 2),
@@ -158,6 +177,8 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             ["Latence perception→action", _fmt_number(autonomy.get("perception_to_action_latency_ms"), " ms")],
             ["Coût ressources par gain", _fmt_number(autonomy.get("resource_cost_per_gain"))],
             ["Mood", str(payload.get("mood"))],
+            ["Quêtes actives", str(len((payload.get("quests") or {}).get("active", [])))],
+            ["Quêtes terminées", str(len((payload.get("quests") or {}).get("completed", [])))],
         ]
         _print_table(["Metric", "Value"], run_rows)
         if verbose:
@@ -216,6 +237,9 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
                 print("Alerts: none")
 
     print(f"Mood: {payload['mood']}")
+    quests = payload.get("quests") if isinstance(payload.get("quests"), dict) else {"active": [], "completed": []}
+    print(f"Quêtes actives: {len(quests.get("active", []))}")
+    print(f"Quêtes terminées: {len(quests.get("completed", []))}")
     print("Traits:")
     for trait, value in payload["traits"].items():
         print(f"  {trait}: {value:.2f}")

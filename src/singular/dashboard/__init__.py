@@ -38,6 +38,7 @@ def create_app(
         if psyche_file is not None
         else base_dir / "mem" / "psyche.json"
     )
+    quests_path = base_dir / "mem" / "quests_state.json"
     app = FastAPI()
     actions = DashboardActionService(home=base_dir)
     templates_dir = Path(__file__).parent / "templates"
@@ -528,6 +529,21 @@ def create_app(
         if not psyche_path.exists():
             raise HTTPException(status_code=404, detail="psyche.json not found")
         return json.loads(psyche_path.read_text())
+
+
+    @app.get("/quests")
+    def read_quests() -> dict:
+        if not quests_path.exists():
+            return {"active": [], "completed": []}
+        try:
+            data = json.loads(quests_path.read_text())
+        except json.JSONDecodeError:
+            return {"active": [], "completed": []}
+        if not isinstance(data, dict):
+            return {"active": [], "completed": []}
+        active = data.get("active") if isinstance(data.get("active"), list) else []
+        completed = data.get("completed") if isinstance(data.get("completed"), list) else []
+        return {"active": active, "completed": completed[-20:]}
 
     @app.get("/ecosystem")
     def read_ecosystem(current_life_only: bool = False) -> dict:
@@ -1131,6 +1147,7 @@ def create_app(
     async def websocket_endpoint(ws: WebSocket) -> None:
         await ws.accept()
         last_psyche_mtime_ns: int | None = None
+        last_quests_mtime_ns: int | None = None
         log_cursors: dict[str, _LogCursor] = {}
 
         def _read_new_entries(file: Path, cursor: _LogCursor | None) -> tuple[list[str], _LogCursor]:
@@ -1170,6 +1187,13 @@ def create_app(
                         last_psyche_mtime_ns = mtime_ns
                         data = json.loads(psyche_path.read_text())
                         await ws.send_json({"type": "psyche", "data": data})
+
+                if quests_path.exists():
+                    mtime_ns = quests_path.stat().st_mtime_ns
+                    if mtime_ns != last_quests_mtime_ns:
+                        last_quests_mtime_ns = mtime_ns
+                        data = json.loads(quests_path.read_text())
+                        await ws.send_json({"type": "quests", "data": data})
 
                 incremental_events: list[dict[str, object]] = []
                 run_directories = _runs_dirs()

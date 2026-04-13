@@ -52,3 +52,43 @@ def test_orchestrator_detects_external_stimulus(monkeypatch, tmp_path: Path) -> 
     assert service._external_stimulus_detected() is True
     (life / "runs" / "x.jsonl").write_text("{}\n", encoding="utf-8")
     assert service._external_stimulus_detected() is True
+
+
+def test_orchestrator_triggers_and_settles_quest(monkeypatch, tmp_path: Path) -> None:
+    life = tmp_path / "life"
+    (life / "skills").mkdir(parents=True)
+    (life / "quests").mkdir(parents=True)
+    (life / "quests" / "repair.json").write_text(
+        """
+{
+  "name": "repair",
+  "signature": "repair(x)",
+  "examples": [{"input": [1], "output": 1}],
+  "constraints": {"pure": true, "no_import": true, "time_ms_max": 10},
+  "triggers": [{"signal": "noise", "gte": 0.5}],
+  "reward": {"mood": "pleasure", "resource_delta": {"food": 1}},
+  "penalty": {"mood": "pain"},
+  "cooldown": 30,
+  "success": {"resource_min": {"energy": 0}}
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("SINGULAR_HOME", str(life))
+    monkeypatch.setattr(
+        "singular.orchestrator.service.capture_signals",
+        lambda bus: {"noise": 0.8, "artifact_events": []},
+    )
+
+    bus = EventBus()
+    service = OrchestratorService(config=OrchestratorConfig(dry_run=True), bus=bus)
+
+    service.tick()  # VEILLE -> trigger
+    service.tick()  # ACTION -> resolve
+
+    quests_path = life / "mem" / "quests_state.json"
+    assert quests_path.exists()
+    payload = quests_path.read_text(encoding="utf-8")
+    assert '"repair"' in payload
+    assert '"success"' in payload
