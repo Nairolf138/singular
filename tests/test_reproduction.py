@@ -4,7 +4,8 @@ import ast
 import pytest
 
 from singular.organisms.spawn import spawn
-from singular.life.reproduction import crossover
+from singular.governance.policy import MutationGovernancePolicy
+from singular.life.reproduction import authorize_reproduction_write, crossover
 
 
 def test_reproduction(tmp_path: Path):
@@ -120,3 +121,14 @@ def test_crossover_empty_ast(tmp_path: Path):
 
     with pytest.raises(ValueError, match="function definition"):
         crossover(parent_a, parent_b)
+
+
+def test_authorize_reproduction_write_blocked(tmp_path: Path):
+    policy = MutationGovernancePolicy(modifiable_paths=("allowed",))
+    target = tmp_path / "child" / "skills" / "hybrid.py"
+
+    ok, reason = authorize_reproduction_write(target, "result = 1", policy)
+
+    assert not ok
+    assert "corrective_action" in reason
+    assert not target.exists()

@@ -18,6 +18,7 @@ from singular.life.health import detect_health_state  # noqa: E402
 from singular.life.test_coevolution import LivingTestPool, TestCandidate  # noqa: E402
 from singular.resource_manager import ResourceManager  # noqa: E402
 from singular.psyche import Psyche, Mood  # noqa: E402
+from singular.governance.policy import MutationGovernancePolicy  # noqa: E402
 
 
 def _inc_operator(tree: ast.AST, rng=None) -> ast.AST:
@@ -885,3 +886,24 @@ def test_coevolution_logs_decisions(tmp_path: Path, monkeypatch):
     log_file = next((tmp_path / "logs").glob("loop-*.jsonl"))
     records = [json.loads(line) for line in log_file.read_text().splitlines()]
     assert any(rec.get("event") == "test_coevolution" for rec in records)
+
+
+def test_governance_blocks_mutation_write(tmp_path: Path):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    skill = skills_dir / "foo.py"
+    skill.write_text("result = 1", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+
+    policy = MutationGovernancePolicy(modifiable_paths=("allowed",))
+
+    run(
+        skills_dir,
+        checkpoint,
+        budget_seconds=0.1,
+        rng=random.Random(0),
+        operators={"dec": _dec_operator},
+        governance_policy=policy,
+    )
+
+    assert _read_result(skill) == 1
