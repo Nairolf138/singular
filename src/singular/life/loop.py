@@ -33,7 +33,9 @@ from singular.resource_manager import ResourceManager
 from . import sandbox
 from .death import DeathMonitor
 from .health import HealthTracker
-from .reproduction import crossover
+from singular.governance.policy import MutationGovernancePolicy
+
+from .reproduction import authorize_reproduction_write, crossover
 from .map_elites import MapElites
 from .test_coevolution import LivingTestPool, propose_test_candidates
 
@@ -476,6 +478,7 @@ def run(
     robustness_weight: float = 1.0,
     max_test_candidates: int = 3,
     event_bus: EventBus | None = None,
+    governance_policy: MutationGovernancePolicy | None = None,
 ) -> Checkpoint:
     """Run the evolutionary loop for at most ``budget_seconds`` seconds.
 
@@ -514,6 +517,7 @@ def run(
     belief_store = BeliefStore()
     resource_manager = resource_manager or ResourceManager()
     event_bus = event_bus or get_global_event_bus()
+    governance_policy = governance_policy or MutationGovernancePolicy()
     register_memory_event_handlers(event_bus)
     start = time.time()
     last_post = 0.0
@@ -590,7 +594,19 @@ def run(
                         tofile="mutated",
                     )
                 )
-                skill_path.write_text(mutated, encoding="utf-8")
+                governance_root = skill_path.parent.parent if skill_path.parent.name == "skills" else skill_path.parent
+                decision = governance_policy.enforce_write(skill_path, mutated, root=governance_root)
+                if not decision.allowed:
+                    logger.log_interaction(
+                        "governance_violation",
+                        organism=org_name,
+                        target=str(skill_path),
+                        level=decision.level,
+                        reason=decision.reason,
+                        corrective_action=decision.corrective_action,
+                        alive=True,
+                    )
+                    continue
                 logger.log_absurde(skill_path.name, diff)
                 continue
 
@@ -729,10 +745,24 @@ def run(
                     score_combined_new=combined_mutated,
                 )
             if accepted:
-                skill_path.write_text(mutated, encoding="utf-8")
-                org.last_score = mutated_score
-                org.energy += 0.2
-                env_artifacts.save_text(f"mutation_{state.iteration}", diff)
+                governance_root = skill_path.parent.parent if skill_path.parent.name == "skills" else skill_path.parent
+                decision = governance_policy.enforce_write(skill_path, mutated, root=governance_root)
+                if not decision.allowed:
+                    accepted = False
+                    logger.log_interaction(
+                        "governance_violation",
+                        organism=org_name,
+                        target=str(skill_path),
+                        level=decision.level,
+                        reason=decision.reason,
+                        corrective_action=decision.corrective_action,
+                        alive=True,
+                    )
+                    org.energy -= 0.1
+                else:
+                    org.last_score = mutated_score
+                    org.energy += 0.2
+                    env_artifacts.save_text(f"mutation_{state.iteration}", diff)
             else:
                 org.energy -= 0.1
 
@@ -930,17 +960,33 @@ def run(
                 pa = world.organisms[parent_names[0]].skills_dir
                 pb = world.organisms[parent_names[1]].skills_dir
                 child_dir = pa.parent / f"child_{state.iteration}"
-                child_dir.mkdir(parents=True, exist_ok=True)
+                child_skills_dir = child_dir / "skills"
+                child_skills_dir.mkdir(parents=True, exist_ok=True)
                 fname, code = crossover(pa, pb, rng)
-                (child_dir / fname).write_text(code, encoding="utf-8")
-                world.organisms[child_dir.name] = Organism(child_dir)
-                logger.log_interaction(
-                    INTERACTION_CROSSOVER,
-                    parents=parent_names,
-                    child=child_dir.name,
-                    child_skills_dir=str(child_dir),
-                    alive=True,
+                target = child_skills_dir / fname
+                authorized, reason = authorize_reproduction_write(
+                    target,
+                    code,
+                    governance_policy=governance_policy,
                 )
+                if not authorized:
+                    logger.log_interaction(
+                        "governance_violation",
+                        parents=parent_names,
+                        target=str(target),
+                        reason=reason,
+                        corrective_action="write under allowlisted skills/ directory",
+                        alive=True,
+                    )
+                else:
+                    world.organisms[child_dir.name] = Organism(child_skills_dir)
+                    logger.log_interaction(
+                        INTERACTION_CROSSOVER,
+                        parents=parent_names,
+                        child=child_dir.name,
+                        child_skills_dir=str(child_dir),
+                        alive=True,
+                    )
 
     return state
 

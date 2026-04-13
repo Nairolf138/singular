@@ -25,8 +25,31 @@ import random
 from pathlib import Path
 from typing import Tuple
 
+from singular.governance.policy import MutationGovernancePolicy
 
-__all__ = ["crossover"]
+
+__all__ = ["crossover", "authorize_reproduction_write"]
+
+
+
+
+def authorize_reproduction_write(
+    target_path: Path,
+    code: str,
+    governance_policy: MutationGovernancePolicy | None = None,
+) -> tuple[bool, str]:
+    """Simulate then enforce policy for reproduction output writes."""
+
+    policy = governance_policy or MutationGovernancePolicy()
+    root = target_path.parent.parent if target_path.parent.name == "skills" else target_path.parent
+    decision = policy.simulate_write(target_path, root=root)
+    if not decision.allowed:
+        return False, f"{decision.reason}; corrective_action={decision.corrective_action}"
+
+    enforced = policy.enforce_write(target_path, code, root=root)
+    if not enforced.allowed:
+        return False, f"{enforced.reason}; corrective_action={enforced.corrective_action}"
+    return True, "authorized"
 
 
 def crossover(
