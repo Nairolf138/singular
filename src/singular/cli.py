@@ -729,6 +729,31 @@ def main(argv: list[str] | None = None) -> int:
     ecosystem_run.add_argument("--budget-seconds", type=float, required=True)
     ecosystem_run.add_argument("--run-id", default="ecosystem", help="Run identifier")
 
+    beliefs_parser = subparsers.add_parser("beliefs", help="Audit and reset beliefs")
+    beliefs_subparsers = beliefs_parser.add_subparsers(
+        dest="beliefs_command", required=True
+    )
+    beliefs_audit = beliefs_subparsers.add_parser(
+        "audit", help="Inspect current beliefs"
+    )
+    beliefs_audit.add_argument(
+        "--limit",
+        type=int,
+        default=25,
+        help="Maximum number of beliefs to display",
+    )
+    beliefs_reset = beliefs_subparsers.add_parser(
+        "reset", help="Reset beliefs (targeted or all)"
+    )
+    reset_mode = beliefs_reset.add_mutually_exclusive_group(required=True)
+    reset_mode.add_argument("--hypothesis", default=None, help="Exact hypothesis key")
+    reset_mode.add_argument("--prefix", default=None, help="Delete by key prefix")
+    reset_mode.add_argument(
+        "--all",
+        action="store_true",
+        help="Delete all beliefs",
+    )
+
     uninstall_parser = subparsers.add_parser(
         "uninstall", help="Remove Singular data from SINGULAR_ROOT"
     )
@@ -1072,6 +1097,61 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Données Singular supprimées sous: {root}")
         else:
             print(f"Artefacts globaux supprimés sous: {root} (mem/, runs/)")
+
+    elif args.command == "beliefs":
+        if args.life is not None:
+            _ensure_active_life(resolve_life, args.life)
+        elif "SINGULAR_HOME" not in os.environ:
+            _ensure_active_life(resolve_life, args.life)
+        from .beliefs.store import BeliefStore
+
+        store = BeliefStore()
+        if args.beliefs_command == "audit":
+            beliefs = store.list_beliefs()[: max(0, args.limit)]
+            rows = [
+                [
+                    belief.hypothesis,
+                    f"{belief.confidence:.3f}",
+                    str(belief.runs),
+                    belief.updated_at,
+                    belief.evidence,
+                ]
+                for belief in beliefs
+            ]
+            if args.output_format == "json":
+                print(
+                    json.dumps(
+                        {"beliefs": [belief.__dict__ for belief in beliefs]},
+                        ensure_ascii=False,
+                    )
+                )
+            elif args.output_format == "table":
+                if rows:
+                    _print_table(
+                        ["Hypothesis", "Confidence", "Runs", "Updated", "Evidence"],
+                        rows,
+                    )
+                else:
+                    print("Aucune croyance enregistrée.")
+            else:
+                if not beliefs:
+                    print("Aucune croyance enregistrée.")
+                for belief in beliefs:
+                    print(
+                        f"- {belief.hypothesis}: conf={belief.confidence:.3f} "
+                        f"runs={belief.runs} updated={belief.updated_at} "
+                        f"evidence={belief.evidence}"
+                    )
+        elif args.beliefs_command == "reset":
+            if args.hypothesis:
+                deleted = store.reset(hypothesis=args.hypothesis)
+                print(f"Croyances supprimées (hypothesis): {deleted}")
+            elif args.prefix:
+                deleted = store.reset(prefix=args.prefix)
+                print(f"Croyances supprimées (prefix): {deleted}")
+            else:
+                deleted = store.reset()
+                print(f"Croyances supprimées (all): {deleted}")
 
     else:  # pragma: no cover - defensive programming
         raise SystemExit(f"Commande inconnue: {args.command}")

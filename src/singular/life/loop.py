@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Callable, Dict, Iterable, Mapping
 
 from singular.cognition.reflect import ActionHypothesis, reflect_action
+from singular.beliefs.store import BeliefStore
 from singular.events import EventBus, get_global_event_bus
 from singular.memory import register_memory_event_handlers
 from singular.psyche import Psyche, Mood
@@ -510,6 +511,7 @@ def run(
         stats.setdefault(name, {"count": 0, "reward": 0.0})
 
     psyche = Psyche.load_state()
+    belief_store = BeliefStore()
     resource_manager = resource_manager or ResourceManager()
     event_bus = event_bus or get_global_event_bus()
     register_memory_event_handlers(event_bus)
@@ -655,12 +657,17 @@ def run(
                 sandbox_weight=goal_weights.robustesse,
                 resource_weight=goal_weights.efficacite,
             )
+            belief_bias = belief_store.operator_preference_bias(operators.keys())
+            combined_bias = intrinsic_goals.influence_operator_scores(stats)
+            for operator_name, extra_bias in belief_bias.items():
+                combined_bias[operator_name] = combined_bias.get(operator_name, 0.0) + extra_bias
+
             op_name = reflection.action or select_operator(
                 operators,
                 stats,
                 policy,
                 rng,
-                objective_bias=intrinsic_goals.influence_operator_scores(stats),
+                objective_bias=combined_bias,
             )
             mutated = apply_mutation(original, operators[op_name], rng)
             org = world.organisms[org_name]
@@ -733,6 +740,12 @@ def run(
             reward_delta = base_score - mutated_score
             if math.isfinite(reward_delta):
                 stats[op_name]["reward"] += reward_delta
+            belief_store.update_after_run(
+                f"operator:{op_name}",
+                success=accepted,
+                evidence=f"accepted={accepted};base={base_score:.6f};new={mutated_score:.6f}",
+                reward_delta=reward_delta if math.isfinite(reward_delta) else 0.0,
+            )
             state.stats = stats
 
             # Resource accounting
