@@ -11,7 +11,7 @@ import os
 from typing import Any
 
 from ..psyche import Psyche
-from ..memory import add_episode
+from ..memory import add_episode, add_procedural_memory
 from typing import Callable, Dict
 
 # Base directory for persistent files
@@ -211,6 +211,7 @@ class RunLogger:
         add_episode(
             {"event": "mutation", "mood": mood_val, **record}, mood_styles=mood_styles
         )
+        add_procedural_memory(record)
 
     def log_death(self, reason: str, **info: Any) -> None:
         """Record a death event with optional additional information."""

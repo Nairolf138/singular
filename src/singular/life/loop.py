@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, Mapping
 
-from singular.memory import add_episode, update_score
+from singular.memory import add_episode, add_procedural_memory, update_score
 from singular.psyche import Psyche, Mood
 from singular.runs.logger import RunLogger
 from singular.runs.explain import summarize_mutation
@@ -327,6 +327,19 @@ def log_mutation(
         human_summary=human_summary,
         loop_modifications=loop_modifications,
         health=health,
+    )
+    add_procedural_memory(
+        {
+            "event": "loop_mutation",
+            "iteration": iteration,
+            "skill": key,
+            "op": op_name,
+            "accepted": accepted,
+            "score_base": base_score,
+            "score_new": mutated_score,
+            "loop_modifications": loop_modifications,
+            "health": health or {},
+        }
     )
 
 
