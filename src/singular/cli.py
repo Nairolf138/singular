@@ -501,6 +501,11 @@ def main(argv: list[str] | None = None) -> int:
         default="plain",
         help="Output format for compatible commands",
     )
+    parser.add_argument(
+        "--safe-mode",
+        action="store_true",
+        help="Active un mode global qui bloque les mutations autonomes",
+    )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -871,6 +876,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.seed is not None:
         random.seed(args.seed)
+    if args.safe_mode:
+        os.environ["SINGULAR_SAFE_MODE"] = "1"
 
     if args.command == "birth":
         name = args.name or "New life"
@@ -908,6 +915,7 @@ def main(argv: list[str] | None = None) -> int:
             budget_seconds=args.budget_seconds,
             run_id=args.run_id,
             seed=args.seed,
+            safe_mode=args.safe_mode,
         )
 
     elif args.command == "ecosystem":
@@ -940,6 +948,7 @@ def main(argv: list[str] | None = None) -> int:
             budget_seconds=args.budget_seconds,
             run_id=args.run_id,
             seed=args.seed,
+            safe_mode=args.safe_mode,
         )
 
     elif args.command == "status":
@@ -1047,6 +1056,7 @@ def main(argv: list[str] | None = None) -> int:
                 tick_budget_seconds=args.tick_budget,
                 lifecycle_config_path=args.lifecycle_config,
                 dry_run=args.dry_run,
+                safe_mode=args.safe_mode,
             )
 
     elif args.command == "doctor":

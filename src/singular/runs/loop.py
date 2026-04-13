@@ -6,6 +6,7 @@ import random
 from pathlib import Path
 from typing import Iterable, Mapping
 
+from singular.governance.policy import MutationGovernancePolicy
 from singular.life.loop import run
 
 
@@ -17,6 +18,7 @@ def loop(
     budget_seconds: float,
     run_id: str = "loop",
     seed: int | None = None,
+    safe_mode: bool = False,
 ) -> None:
     """Wrapper around :func:`life.loop.run` used by the CLI.
 
@@ -32,4 +34,12 @@ def loop(
         payload: Mapping[str, Path] | Iterable[Path] | Path = skills_dir
     else:
         payload = skills_dirs
-    run(payload, checkpoint, budget_seconds, rng=rng, run_id=run_id)
+    governance_policy = MutationGovernancePolicy(safe_mode=safe_mode)
+    run(
+        payload,
+        checkpoint,
+        budget_seconds,
+        rng=rng,
+        run_id=run_id,
+        governance_policy=governance_policy,
+    )

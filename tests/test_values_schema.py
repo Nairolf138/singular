@@ -84,6 +84,49 @@ def test_policy_blocks_destructive_overwrite_when_memory_preservation_high(tmp_p
     assert "memory-preservation guard" in decision.reason
 
 
+def test_policy_enforces_mutation_quota(tmp_path: Path) -> None:
+    target = tmp_path / "skills" / "example.py"
+    policy = MutationGovernancePolicy(mutation_quota_per_window=1, mutation_quota_window_seconds=60.0)
+
+    first = policy.enforce_write(target, "result = 1\n", root=tmp_path)
+    second = policy.enforce_write(target, "result = 2\n", root=tmp_path)
+
+    assert first.allowed is True
+    assert second.allowed is False
+    assert "quota exceeded" in second.reason
+    assert second.severity == "medium"
+
+
+def test_policy_opens_circuit_breaker_on_repeated_violations(tmp_path: Path) -> None:
+    target = tmp_path / "skills" / "example.py"
+    forbidden = tmp_path / "src" / "blocked.py"
+    policy = MutationGovernancePolicy(
+        circuit_breaker_threshold=2,
+        circuit_breaker_window_seconds=60.0,
+        circuit_breaker_cooldown_seconds=120.0,
+    )
+
+    policy.enforce_write(forbidden, "x = 1\n", root=tmp_path)
+    policy.enforce_write(forbidden, "x = 2\n", root=tmp_path)
+    decision = policy.enforce_write(target, "result = 42\n", root=tmp_path)
+
+    assert policy.mutations_enabled() is False
+    assert decision.allowed is False
+    assert "circuit-breaker active" in decision.reason
+    assert decision.severity == "critical"
+
+
+def test_policy_safe_mode_blocks_writes(tmp_path: Path) -> None:
+    target = tmp_path / "skills" / "example.py"
+    policy = MutationGovernancePolicy(safe_mode=True)
+
+    decision = policy.enforce_write(target, "result = 1\n", root=tmp_path)
+
+    assert decision.allowed is False
+    assert decision.severity == "high"
+    assert "safe-mode" in decision.reason
+
+
 def test_cli_values_show_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys) -> None:
     root = tmp_path / "root"
     monkeypatch.delenv("SINGULAR_ROOT", raising=False)

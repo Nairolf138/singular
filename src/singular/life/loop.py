@@ -590,6 +590,16 @@ def run(
                     decision = psyche.irrational_decision(rng)
 
             original = skill_path.read_text(encoding="utf-8")
+            if not governance_policy.mutations_enabled():
+                logger.log_interaction(
+                    "mutation_halted",
+                    organism=org_name,
+                    target=str(skill_path),
+                    severity="critical",
+                    reason=governance_policy.mutation_lock_reason(),
+                    alive=True,
+                )
+                continue
 
             if decision is Psyche.Decision.REFUSE:
                 logger.log_refusal(skill_path.name)
@@ -617,6 +627,7 @@ def run(
                         organism=org_name,
                         target=str(skill_path),
                         level=decision.level,
+                        severity=decision.severity,
                         reason=decision.reason,
                         corrective_action=decision.corrective_action,
                         alive=True,
@@ -832,6 +843,7 @@ def run(
                         organism=org_name,
                         target=str(skill_path),
                         level=decision.level,
+                        severity=decision.severity,
                         reason=decision.reason,
                         corrective_action=decision.corrective_action,
                         alive=True,
@@ -942,6 +954,11 @@ def run(
             sandbox_failure = (
                 base_score == float("-inf") or mutated_score == float("-inf")
             )
+            if sandbox_failure:
+                governance_policy.record_violation(
+                    category="sandbox_violation",
+                    severity="critical",
+                )
             failed = sandbox_failure or (not accepted)
             health_snapshot = health_tracker.update(
                 iteration=state.iteration,
