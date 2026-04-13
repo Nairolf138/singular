@@ -736,6 +736,38 @@ def run(
             else:
                 org.energy -= 0.1
 
+            objective_weights = asdict(goal_weights)
+            dominant_objective = max(
+                objective_weights,
+                key=lambda objective_name: objective_weights[objective_name],
+            )
+            mood_value = getattr(getattr(psyche, "last_mood", None), "value", None)
+            if mood_value is None:
+                raw_mood = getattr(psyche, "last_mood", None)
+                mood_value = str(raw_mood) if raw_mood is not None else None
+            logger.log_consciousness(
+                perception_summary=(
+                    f"temp={temp:.2f}, baseline_failure_risk={baseline_failure_risk:.3f}, "
+                    f"resource_energy={resource_manager.energy:.2f}"
+                ),
+                evaluated_hypotheses=[
+                    {
+                        "action": hypothesis.action,
+                        "long_term": hypothesis.long_term,
+                        "sandbox_risk": hypothesis.sandbox_risk,
+                        "resource_cost": hypothesis.resource_cost,
+                        "score": reflection.alternative_scores.get(hypothesis.action),
+                    }
+                    for hypothesis in weighted_hypotheses
+                ],
+                final_choice=op_name,
+                justification=reflection.decision_reason,
+                objective=dominant_objective,
+                mood=mood_value,
+                energy=float(getattr(psyche, "energy", resource_manager.energy)),
+                success=accepted,
+            )
+
             stats[op_name]["count"] += 1
             reward_delta = base_score - mutated_score
             if math.isfinite(reward_delta):

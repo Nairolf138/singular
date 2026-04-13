@@ -475,6 +475,9 @@ def test_angry_increases_proposals(tmp_path: Path, monkeypatch):
         def log_death(self, *a, **k):
             pass
 
+        def log_consciousness(self, *a, **k):
+            pass
+
     skill_dir = tmp_path / "skills"
     skill_dir.mkdir()
     checkpoint = tmp_path / "ckpt.json"
@@ -519,6 +522,9 @@ def test_fatigue_reduces_proposals(tmp_path: Path, monkeypatch):
             pass
 
         def log_death(self, *a, **k):
+            pass
+
+        def log_consciousness(self, *a, **k):
             pass
 
     skill_dir = tmp_path / "skills"

@@ -276,6 +276,24 @@ def create_app(
             key=lambda path: (path.stat().st_mtime_ns, _latest_ts_in_file(path), path.name),
         )
 
+    def _resolve_run_file(run_id: str, current_life_only: bool = False) -> Path | None:
+        return next(
+            (
+                directory / f"{run_id}.jsonl"
+                for directory in _runs_dirs(current_life_only=current_life_only)
+                if (directory / f"{run_id}.jsonl").exists()
+            ),
+            None,
+        )
+
+    def _resolve_consciousness_path(run_id: str, current_life_only: bool = False) -> Path | None:
+        raw_run_id = run_id.rsplit("-", 1)[0]
+        for directory in _runs_dirs(current_life_only=current_life_only):
+            candidate = directory / raw_run_id / "consciousness.jsonl"
+            if candidate.exists():
+                return candidate
+        return None
+
     def _parse_ts(value: object) -> datetime | None:
         if not isinstance(value, str):
             return None
@@ -537,14 +555,7 @@ def create_app(
         organism: str | None = None,
         current_life_only: bool = False,
     ) -> dict[str, object]:
-        run_file = next(
-            (
-                directory / f"{run_id}.jsonl"
-                for directory in _runs_dirs(current_life_only=current_life_only)
-                if (directory / f"{run_id}.jsonl").exists()
-            ),
-            None,
-        )
+        run_file = _resolve_run_file(run_id, current_life_only=current_life_only)
         if run_file is None:
             raise HTTPException(status_code=404, detail=f"run '{run_id}' not found")
 
@@ -606,18 +617,63 @@ def create_app(
             "items": items,
         }
 
+    @app.get("/api/runs/{run_id}/consciousness")
+    def read_run_consciousness(
+        run_id: str,
+        objective: str | None = None,
+        mood: str | None = None,
+        success: str | None = None,
+        current_life_only: bool = False,
+    ) -> dict[str, object]:
+        consciousness_file = _resolve_consciousness_path(
+            run_id, current_life_only=current_life_only
+        )
+        if consciousness_file is None:
+            raise HTTPException(
+                status_code=404, detail=f"consciousness timeline for run '{run_id}' not found"
+            )
+
+        success_filter: bool | None = None
+        if isinstance(success, str):
+            lowered = success.strip().lower()
+            if lowered in {"true", "1", "yes", "success"}:
+                success_filter = True
+            elif lowered in {"false", "0", "no", "failure"}:
+                success_filter = False
+
+        items: list[dict[str, object]] = []
+        for line in consciousness_file.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(record, dict):
+                continue
+            if objective and record.get("objective") != objective:
+                continue
+            emotional = record.get("emotional_state")
+            record_mood = emotional.get("mood") if isinstance(emotional, dict) else None
+            if mood and record_mood != mood:
+                continue
+            if success_filter is not None and record.get("success") is not success_filter:
+                continue
+            items.append(record)
+
+        items.sort(key=lambda item: str(item.get("ts", "")))
+        return {
+            "run_id": run_id,
+            "filters": {"objective": objective, "mood": mood, "success": success},
+            "count": len(items),
+            "items": items,
+        }
+
     @app.get("/api/runs/{run_id}/mutations/{index}")
     def read_run_mutation(
         run_id: str, index: int, current_life_only: bool = False
     ) -> dict[str, object]:
-        run_file = next(
-            (
-                directory / f"{run_id}.jsonl"
-                for directory in _runs_dirs(current_life_only=current_life_only)
-                if (directory / f"{run_id}.jsonl").exists()
-            ),
-            None,
-        )
+        run_file = _resolve_run_file(run_id, current_life_only=current_life_only)
         if run_file is None:
             raise HTTPException(status_code=404, detail=f"run '{run_id}' not found")
 

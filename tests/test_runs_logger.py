@@ -88,6 +88,28 @@ def test_log_test_coevolution(tmp_path: Path) -> None:
     assert record["regression_detection_rate"] == 0.5
 
 
+def test_log_consciousness_file(tmp_path: Path) -> None:
+    logger = RunLogger("mind", root=tmp_path)
+    logger.log_consciousness(
+        perception_summary="temperature stable",
+        evaluated_hypotheses=[{"action": "flip", "score": 0.2}],
+        final_choice="flip",
+        justification="best weighted score",
+        objective="coherence",
+        mood="focused",
+        energy=77.0,
+        success=True,
+    )
+    logger.close()
+
+    consciousness_path = tmp_path / "mind" / "consciousness.jsonl"
+    assert consciousness_path.exists()
+    payload = json.loads(consciousness_path.read_text(encoding="utf-8").splitlines()[0])
+    assert payload["event"] == "consciousness"
+    assert payload["objective"] == "coherence"
+    assert payload["success"] is True
+
+
 def test_human_summary_quality_minimum() -> None:
     summary = summarize_mutation(
         operator="arith",
