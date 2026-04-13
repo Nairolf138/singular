@@ -6,7 +6,7 @@ import asyncio
 from collections import Counter
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import os
 import sys
 from pathlib import Path
@@ -305,6 +305,17 @@ def create_app(
         except ValueError:
             return None
 
+    def _resolve_time_window_cutoff(time_window: str) -> datetime | None:
+        normalized = time_window.strip().lower()
+        now = datetime.now(timezone.utc)
+        if normalized == "24h":
+            return now - timedelta(hours=24)
+        if normalized == "7d":
+            return now - timedelta(days=7)
+        if normalized == "30d":
+            return now - timedelta(days=30)
+        return None
+
     def _event_type(record: dict[str, object]) -> str | None:
         event = record.get("event")
         if isinstance(event, str):
@@ -413,6 +424,24 @@ def create_app(
                 ],
                 "global_status": "unknown",
                 "autonomy_metrics": {},
+                "vital_metrics": {
+                    "circadian_cycle": {"phase": "indéterminée", "hour_utc": None},
+                    "active_objectives": {"count": 0, "items": []},
+                    "energy_resources": {
+                        "total_energy": 0.0,
+                        "total_resources": 0.0,
+                        "alive_organisms": 0,
+                        "total_organisms": 0,
+                    },
+                    "code_generation": {
+                        "progression": "n/a",
+                        "accepted": 0,
+                        "rejected": 0,
+                        "success_rate": None,
+                        "risk_level": "n/a",
+                    },
+                    "risks": [],
+                },
                 "vital_timeline": compute_vital_timeline(
                     age=0,
                     current_health=None,
@@ -504,6 +533,40 @@ def create_app(
             global_status = "stable"
 
         autonomy_metrics = compute_autonomy_metrics(records)
+        ecosystem = _compute_ecosystem(current_life_only=current_life_only)
+        summary = ecosystem.get("summary", {}) if isinstance(ecosystem, dict) else {}
+
+        hour_utc = datetime.now(timezone.utc).hour
+        if 5 <= hour_utc < 12:
+            circadian_phase = "matin"
+        elif 12 <= hour_utc < 18:
+            circadian_phase = "jour"
+        elif 18 <= hour_utc < 23:
+            circadian_phase = "soir"
+        else:
+            circadian_phase = "nuit"
+
+        active_objectives: list[dict[str, object]] = []
+        if quests_path.exists():
+            try:
+                quests_data = json.loads(quests_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                quests_data = {}
+            if isinstance(quests_data, dict):
+                raw_active = quests_data.get("active")
+                if isinstance(raw_active, list):
+                    for entry in raw_active:
+                        if isinstance(entry, dict):
+                            active_objectives.append(entry)
+
+        accepted_count = sum(1 for value in accepted_values if value is True)
+        rejected_count = sum(1 for value in accepted_values if value is False)
+        code_risk = "faible"
+        if critical_alerts:
+            code_risk = "élevé"
+        elif trend == "dégradation" or (accepted_rate is not None and accepted_rate < 0.5):
+            code_risk = "modéré"
+
         failure_streak = 0
         max_failure_streak = 0
         for rec in records:
@@ -534,6 +597,27 @@ def create_app(
             "suggested_actions": suggested_actions,
             "global_status": global_status,
             "autonomy_metrics": autonomy_metrics,
+            "vital_metrics": {
+                "circadian_cycle": {"phase": circadian_phase, "hour_utc": hour_utc},
+                "active_objectives": {
+                    "count": len(active_objectives),
+                    "items": active_objectives[:5],
+                },
+                "energy_resources": {
+                    "total_energy": float(summary.get("total_energy", 0.0) or 0.0),
+                    "total_resources": float(summary.get("total_resources", 0.0) or 0.0),
+                    "alive_organisms": int(summary.get("alive_organisms", 0) or 0),
+                    "total_organisms": int(summary.get("total_organisms", 0) or 0),
+                },
+                "code_generation": {
+                    "progression": trend,
+                    "accepted": accepted_count,
+                    "rejected": rejected_count,
+                    "success_rate": accepted_rate,
+                    "risk_level": code_risk,
+                },
+                "risks": [str(alert.get("kind", "")) for alert in critical_alerts],
+            },
             "vital_timeline": vital_timeline,
         }
 
@@ -903,17 +987,27 @@ def create_app(
         return None, None
 
     def _aggregate_lives(
+        *,
         current_life_only: bool = False,
+        compare_lives: set[str] | None = None,
+        time_window: str = "all",
     ) -> tuple[dict[str, dict[str, object]], dict[str, object]]:
         registry = load_registry()
         active_life = registry.get("active")
         registry_lives = registry.get("lives")
         if not isinstance(registry_lives, dict):
             registry_lives = {}
+        cutoff = _resolve_time_window_cutoff(time_window)
         by_life: dict[str, list[dict[str, object]]] = {}
         unattached_runs: dict[str, int] = {}
         for record in _load_run_records(current_life_only=current_life_only):
+            if cutoff is not None:
+                ts = _parse_ts(record.get("ts"))
+                if ts is None or ts < cutoff:
+                    continue
             life_name = _record_life(record)
+            if compare_lives and life_name != "unknown" and life_name not in compare_lives:
+                continue
             if life_name == "unknown":
                 run_id = _record_run_id(record)
                 unattached_runs[run_id] = unattached_runs.get(run_id, 0) + 1
@@ -1059,9 +1153,22 @@ def create_app(
         active_only: bool = False,
         degrading_only: bool = False,
         dead_only: bool = False,
+        time_window: str = "all",
+        compare_lives: str | None = None,
         current_life_only: bool = False,
     ) -> dict[str, object]:
-        comparison, unattached = _aggregate_lives(current_life_only=current_life_only)
+        compare_set: set[str] | None = None
+        if isinstance(compare_lives, str) and compare_lives.strip():
+            compare_set = {
+                part.strip()
+                for part in compare_lives.split(",")
+                if part.strip()
+            }
+        comparison, unattached = _aggregate_lives(
+            current_life_only=current_life_only,
+            compare_lives=compare_set,
+            time_window=time_window,
+        )
         lives_rows = [{"life": name, **payload} for name, payload in comparison.items()]
 
         if active_only:
@@ -1104,6 +1211,8 @@ def create_app(
                 "active_only": active_only,
                 "degrading_only": degrading_only,
                 "dead_only": dead_only,
+                "time_window": time_window,
+                "compare_lives": sorted(compare_set) if compare_set else [],
             },
         }
 

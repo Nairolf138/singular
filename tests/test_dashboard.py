@@ -194,6 +194,12 @@ def test_dashboard_cockpit_endpoint_schema(tmp_path: Path) -> None:
     assert "state" in payload["vital_timeline"]
     assert "autonomy_metrics" in payload
     assert "proactive_initiative_rate" in payload["autonomy_metrics"]
+    assert "vital_metrics" in payload
+    assert "circadian_cycle" in payload["vital_metrics"]
+    assert "active_objectives" in payload["vital_metrics"]
+    assert "energy_resources" in payload["vital_metrics"]
+    assert "code_generation" in payload["vital_metrics"]
+    assert "risks" in payload["vital_metrics"]
 
 
 def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
@@ -234,6 +240,12 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "Vie courante (SINGULAR_HOME)" in body
     assert "Nombre de vies détectées" in body
     assert "Quêtes" in body
+    assert "Cycle circadien & objectifs actifs" in body
+    assert "Énergie / ressources & génération de code" in body
+    assert "Fenêtre temporelle" in body
+    assert "Comparer vies (CSV)" in body
+    assert "filter-time-window" in body
+    assert "filter-compare-lives" in body
 
 
 def test_dashboard_index_renders_main_sections(tmp_path: Path) -> None:
@@ -705,6 +717,44 @@ def test_lives_comparison_table_aggregation_filters_and_sorting(
 
     by_life_asc = route(sort_by="life", sort_order="asc")["table"]
     assert [row["life"] for row in by_life_asc] == ["life-a", "life-b", "life-c"]
+
+
+def test_lives_comparison_compare_lives_filter(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "compare.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "ts": "2026-04-11T09:00:00",
+                        "skill": "life-a:skills/a.py",
+                        "accepted": True,
+                        "score_base": 10.0,
+                        "score_new": 8.0,
+                        "health": {"score": 80.0},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-04-11T10:00:00",
+                        "skill": "life-b:skills/b.py",
+                        "accepted": True,
+                        "score_base": 10.0,
+                        "score_new": 7.5,
+                        "health": {"score": 92.0},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    payload = app._routes["/lives/comparison"](compare_lives="life-a", time_window="all")
+    assert set(payload["lives"]) == {"life-a"}
+    assert payload["filters"]["compare_lives"] == ["life-a"]
+    assert payload["filters"]["time_window"] == "all"
 
 
 def test_psyche_missing_returns_404(tmp_path: Path) -> None:

@@ -5,6 +5,7 @@ import json
 import os
 from contextlib import redirect_stdout
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -39,11 +40,88 @@ class DashboardActionService:
         else:
             self.home = Path(os.environ.get("SINGULAR_HOME", self.root))
 
-    def _context_payload(self) -> dict[str, str]:
+    def _context_payload(self) -> dict[str, Any]:
         current_home = Path(os.environ.get("SINGULAR_HOME", str(self.home)))
+        runs_dir = current_home / "runs"
+        vital_metrics = self._consolidated_vital_metrics(runs_dir=runs_dir)
         return {
             "registry_root": str(self.root),
             "current_life_home": str(current_home),
+            "vital_metrics": vital_metrics,
+        }
+
+    def _consolidated_vital_metrics(self, *, runs_dir: Path) -> dict[str, Any]:
+        if not runs_dir.exists():
+            return {
+                "health_score": None,
+                "accepted_mutation_rate": None,
+                "circadian_phase": "indéterminée",
+                "risk_level": "n/a",
+            }
+        latest_file: Path | None = None
+        latest_mtime = -1
+        for file in runs_dir.iterdir():
+            if not file.is_file() or file.suffix != ".jsonl":
+                continue
+            mtime = file.stat().st_mtime_ns
+            if mtime > latest_mtime:
+                latest_file = file
+                latest_mtime = mtime
+        if latest_file is None:
+            return {
+                "health_score": None,
+                "accepted_mutation_rate": None,
+                "circadian_phase": "indéterminée",
+                "risk_level": "n/a",
+            }
+        records: list[dict[str, Any]] = []
+        for line in latest_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                records.append(payload)
+        accepted_values: list[bool] = []
+        health_scores: list[float] = []
+        for record in records:
+            accepted = record.get("accepted")
+            if not isinstance(accepted, bool):
+                accepted = record.get("ok")
+            if isinstance(accepted, bool):
+                accepted_values.append(accepted)
+            health = record.get("health")
+            if isinstance(health, dict):
+                score = health.get("score")
+                if isinstance(score, (int, float)):
+                    health_scores.append(float(score))
+        accepted_rate = (
+            sum(1 for value in accepted_values if value) / len(accepted_values)
+            if accepted_values
+            else None
+        )
+        risk_level = "faible"
+        if accepted_rate is not None and accepted_rate < 0.5:
+            risk_level = "élevé"
+        elif accepted_rate is None:
+            risk_level = "n/a"
+        hour_utc = datetime.now(timezone.utc).hour
+        if 5 <= hour_utc < 12:
+            circadian_phase = "matin"
+        elif 12 <= hour_utc < 18:
+            circadian_phase = "jour"
+        elif 18 <= hour_utc < 23:
+            circadian_phase = "soir"
+        else:
+            circadian_phase = "nuit"
+        return {
+            "health_score": health_scores[-1] if health_scores else None,
+            "accepted_mutation_rate": accepted_rate,
+            "circadian_phase": circadian_phase,
+            "risk_level": risk_level,
         }
 
     def validate_token(self, token: str | None) -> None:
