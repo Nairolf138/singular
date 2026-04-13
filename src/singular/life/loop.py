@@ -14,6 +14,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, Mapping
 
+from singular.cognition.reflect import ActionHypothesis, reflect_action
 from singular.memory import add_episode, add_procedural_memory, update_score
 from singular.psyche import Psyche, Mood
 from singular.runs.logger import RunLogger
@@ -288,19 +289,21 @@ def log_mutation(
     mutated_score: float,
     impacted_file: str,
     loop_modifications: dict[str, int],
+    alternative_scores: dict[str, float] | None = None,
+    decision_reason: str | None = None,
     health: dict[str, float | int] | None = None,
 ) -> None:
     """Record mutation outcome and notify observers."""
 
     env_notifications.notify(f"iteration {iteration}: {op_name}", channel=log.info)
     _ = env_files.list_files()
-    if accepted:
+    if decision_reason is None and accepted:
         decision_reason = (
             "accepted: score improved or stayed equal"
             if mutated_score <= base_score
             else "accepted: non-score policy override"
         )
-    else:
+    elif decision_reason is None:
         decision_reason = "rejected: score regression or no measurable gain"
 
     human_summary = summarize_mutation(
@@ -324,6 +327,7 @@ def log_mutation(
         mutated_score,
         impacted_file=impacted_file,
         decision_reason=decision_reason,
+        alternative_scores=alternative_scores or {},
         human_summary=human_summary,
         loop_modifications=loop_modifications,
         health=health,
@@ -338,6 +342,8 @@ def log_mutation(
             "score_base": base_score,
             "score_new": mutated_score,
             "loop_modifications": loop_modifications,
+            "decision_reason": decision_reason,
+            "alternative_scores": alternative_scores or {},
             "health": health or {},
         }
     )
@@ -594,7 +600,36 @@ def run(
                 continue
 
             policy = psyche.mutation_policy()
-            op_name = select_operator(operators, stats, policy, rng)
+            baseline_failure_risk = (
+                float(state.health_counters.get("sandbox_failures", 0))
+                / max(float(state.health_counters.get("total", 0)), 1.0)
+            )
+            max_count = max((stats[name]["count"] for name in operators), default=0.0)
+            candidate_names = list(operators.keys())
+            rng.shuffle(candidate_names)
+            candidate_names = candidate_names[: max(1, min(5, len(candidate_names)))]
+            hypotheses: list[ActionHypothesis] = []
+            for candidate in candidate_names:
+                candidate_stats = stats[candidate]
+                expected_gain = (
+                    candidate_stats["reward"] / candidate_stats["count"]
+                    if candidate_stats["count"]
+                    else 0.0
+                )
+                long_term = 0.5 + max(-0.5, min(0.5, expected_gain))
+                resource_cost = (
+                    (candidate_stats["count"] / max_count) if max_count else 0.0
+                )
+                hypotheses.append(
+                    ActionHypothesis(
+                        action=candidate,
+                        long_term=long_term,
+                        sandbox_risk=baseline_failure_risk,
+                        resource_cost=resource_cost,
+                    )
+                )
+            reflection = reflect_action(hypotheses)
+            op_name = reflection.action or select_operator(operators, stats, policy, rng)
             mutated = apply_mutation(original, operators[op_name], rng)
             org = world.organisms[org_name]
 
@@ -755,6 +790,8 @@ def run(
                 mutated_score,
                 skill_path.name,
                 loop_modifications,
+                alternative_scores=reflection.alternative_scores,
+                decision_reason=reflection.decision_reason,
                 health=health_snapshot.to_dict(),
             )
 
