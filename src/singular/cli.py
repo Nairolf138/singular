@@ -730,6 +730,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     lives_delete.add_argument("name", help="Slug or name of the life to delete")
 
+    values_parser = subparsers.add_parser("values", help="Inspecter les poids de valeurs")
+    values_subparsers = values_parser.add_subparsers(dest="values_command", required=True)
+    values_subparsers.add_parser("show", help="Afficher la configuration des valeurs chargée")
+
     ecosystem_parser = subparsers.add_parser(
         "ecosystem", help="Run multiple lives in a shared ecosystem"
     )
@@ -1099,6 +1103,24 @@ def main(argv: list[str] | None = None) -> int:
                 os.environ["SINGULAR_HOME"] = str(next_life)
             else:
                 os.environ.pop("SINGULAR_HOME", None)
+
+    elif args.command == "values":
+        _ensure_active_life(resolve_life, args.life)
+        from .governance.values import load_value_weights
+
+        weights = load_value_weights()
+        payload = weights.to_dict()
+        if args.values_command != "show":
+            raise SystemExit(f"Sous-commande values inconnue: {args.values_command}")
+        if args.output_format == "json":
+            print(json.dumps({"values": payload}, ensure_ascii=False))
+        elif args.output_format == "table":
+            rows = [[key, f"{value:.4f}"] for key, value in payload.items()]
+            _print_table(["Axe", "Poids"], rows)
+        else:
+            print("Valeurs critiques:")
+            for key, value in payload.items():
+                print(f"- {key}: {value:.4f}")
 
     elif args.command == "uninstall":
         purge_lives = bool(args.purge_lives)
