@@ -16,6 +16,11 @@ from typing import Callable, Dict, Iterable, Mapping
 
 from singular.cognition.reflect import ActionHypothesis, reflect_action
 from singular.beliefs.store import BeliefStore
+from singular.beliefs.meta_learning import (
+    extract_run_features,
+    recommend_strategy,
+    register_run_result,
+)
 from singular.events import EventBus, get_global_event_bus
 from singular.memory import register_memory_event_handlers
 from singular.psyche import Psyche, Mood
@@ -684,13 +689,48 @@ def run(
             for operator_name, extra_bias in belief_bias.items():
                 combined_bias[operator_name] = combined_bias.get(operator_name, 0.0) + extra_bias
 
-            op_name = reflection.action or select_operator(
-                operators,
-                stats,
-                policy,
-                rng,
-                objective_bias=combined_bias,
+            mood_label = getattr(getattr(psyche, "last_mood", None), "value", None)
+            if mood_label is None and getattr(psyche, "last_mood", None) is not None:
+                mood_label = str(getattr(psyche, "last_mood"))
+            predicted_failure = (
+                "hot"
+                if temp >= 30.0
+                else "cold"
+                if temp <= 5.0
+                else "stable"
             )
+            meta_recommendation = None
+            if policy != "analyze":
+                meta_recommendation = recommend_strategy(
+                    belief_store,
+                    failure_type="anticipated",
+                    environment_signal=predicted_failure,
+                    mood=mood_label,
+                    outcome_hint="success",
+                    candidates=operators.keys(),
+                )
+            if policy == "analyze":
+                op_name = select_operator(
+                    operators,
+                    stats,
+                    policy,
+                    rng,
+                    objective_bias=combined_bias,
+                )
+            elif (
+                reflection.action is None
+                and meta_recommendation is not None
+                and meta_recommendation.confidence >= 0.55
+            ):
+                op_name = meta_recommendation.operator
+            else:
+                op_name = reflection.action or select_operator(
+                    operators,
+                    stats,
+                    policy,
+                    rng,
+                    objective_bias=combined_bias,
+                )
             mutated = apply_mutation(original, operators[op_name], rng)
             org = world.organisms[org_name]
 
@@ -815,6 +855,20 @@ def run(
                 evidence=f"accepted={accepted};base={base_score:.6f};new={mutated_score:.6f}",
                 reward_delta=reward_delta if math.isfinite(reward_delta) else 0.0,
             )
+            run_features = extract_run_features(
+                operator=op_name,
+                accepted=accepted,
+                base_score=base_score,
+                mutated_score=mutated_score,
+                temperature=temp,
+                mood=mood_value,
+            )
+            register_run_result(
+                belief_store,
+                run_features,
+                reward_delta=reward_delta if math.isfinite(reward_delta) else 0.0,
+            )
+            belief_store.forget_stale()
             state.stats = stats
 
             # Resource accounting

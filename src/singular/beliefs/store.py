@@ -52,12 +52,14 @@ class BeliefStore:
         prior_alpha: float = 1.0,
         prior_beta: float = 1.0,
         decay_per_day: float = 0.03,
+        ttl_days: float = 45.0,
     ) -> None:
         base = Path(os.environ.get("SINGULAR_HOME", "."))
         self.path = path or (base / "mem" / "beliefs.json")
         self.prior_alpha = float(prior_alpha)
         self.prior_beta = float(prior_beta)
         self.decay_per_day = max(0.0, float(decay_per_day))
+        self.ttl_days = max(0.0, float(ttl_days))
         self._beliefs = self._load()
 
     def _load(self) -> dict[str, BeliefRecord]:
@@ -120,6 +122,29 @@ class BeliefStore:
         record.alpha = self.prior_alpha + (record.alpha - self.prior_alpha) * retention
         record.beta = self.prior_beta + (record.beta - self.prior_beta) * retention
 
+    def _is_stale(self, record: BeliefRecord, now: datetime) -> bool:
+        if self.ttl_days <= 0.0:
+            return False
+        age_days = max(0.0, (now - _parse_datetime(record.updated_at)).total_seconds() / 86400.0)
+        near_prior = abs(record.alpha - self.prior_alpha) < 0.02 and abs(record.beta - self.prior_beta) < 0.02
+        return age_days >= self.ttl_days and near_prior
+
+    def forget_stale(self, *, when: datetime | None = None) -> int:
+        now = when or _utcnow()
+        removed = 0
+        for key in list(self._beliefs):
+            record = self._beliefs[key]
+            self._apply_decay(record, now)
+            if self._is_stale(record, now):
+                self._beliefs.pop(key, None)
+                removed += 1
+            else:
+                record.confidence = record.alpha / max(record.alpha + record.beta, 1e-9)
+                record.updated_at = now.isoformat()
+        if removed:
+            self._save()
+        return removed
+
     def update_after_run(
         self,
         hypothesis: str,
@@ -181,3 +206,47 @@ class BeliefStore:
             confidence_shift = record.confidence - 0.5
             biases[name] = (confidence_shift * 0.4) + max(-0.2, min(0.2, record.score_ema))
         return biases
+
+    def update_probabilistic_rule(
+        self,
+        *,
+        context_key: str,
+        strategy: str,
+        success: bool,
+        evidence: str,
+        reward_delta: float = 0.0,
+        when: datetime | None = None,
+    ) -> BeliefRecord:
+        rule_hypothesis = f"strategy:{context_key}->{strategy}"
+        return self.update_after_run(
+            rule_hypothesis,
+            success=success,
+            evidence=evidence,
+            reward_delta=reward_delta,
+            when=when,
+        )
+
+    def recommend_strategies(
+        self,
+        *,
+        context_key: str,
+        candidates: Iterable[str],
+    ) -> list[tuple[str, float]]:
+        now = _utcnow()
+        ranked: list[tuple[str, float]] = []
+        for name in candidates:
+            hypothesis = f"strategy:{context_key}->{name}"
+            record = self._beliefs.get(hypothesis)
+            if record is None:
+                continue
+            self._apply_decay(record, now)
+            record.confidence = record.alpha / max(record.alpha + record.beta, 1e-9)
+            record.updated_at = now.isoformat()
+            if self._is_stale(record, now):
+                self._beliefs.pop(hypothesis, None)
+                continue
+            ranked.append((name, record.confidence))
+        if ranked:
+            self._save()
+        ranked.sort(key=lambda item: item[1], reverse=True)
+        return ranked
