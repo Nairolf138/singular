@@ -80,14 +80,55 @@ def create_app(
             return float(value)
         return None
 
+    def _record_run_id(record: dict[str, object]) -> str:
+        run_id = record.get("run_id")
+        if isinstance(run_id, str) and run_id:
+            return run_id
+        run = record.get("_run_file")
+        return str(run) if isinstance(run, str) else "unknown"
+
+    def _registry_run_to_life_mapping() -> dict[str, str]:
+        registry = load_registry()
+        mapping: dict[str, str] = {}
+        lives = registry.get("lives")
+        if not isinstance(lives, dict):
+            return mapping
+
+        for slug, metadata in lives.items():
+            if not isinstance(slug, str):
+                continue
+            candidates: list[object] = []
+            if isinstance(metadata, dict):
+                candidates.extend(
+                    [
+                        metadata.get("run_id"),
+                        metadata.get("last_run_id"),
+                        metadata.get("run"),
+                    ]
+                )
+                run_ids = metadata.get("run_ids")
+                if isinstance(run_ids, list):
+                    candidates.extend(run_ids)
+                runs = metadata.get("runs")
+                if isinstance(runs, list):
+                    candidates.extend(runs)
+            for candidate in candidates:
+                if isinstance(candidate, str) and candidate:
+                    mapping[candidate] = slug
+        return mapping
+
     def _record_life(record: dict[str, object]) -> str:
         skill = record.get("skill")
         if isinstance(skill, str) and ":" in skill:
             return skill.split(":", 1)[0]
         if isinstance(record.get("life"), str):
             return str(record["life"])
-        run = record.get("_run_file")
-        return str(run) if isinstance(run, str) else "default"
+        run_id = _record_run_id(record)
+        if run_id != "unknown":
+            mapped_life = _registry_run_to_life_mapping().get(run_id)
+            if isinstance(mapped_life, str) and mapped_life:
+                return mapped_life
+        return "unknown"
 
     def _compute_ecosystem() -> dict:
         organisms: dict[str, dict[str, object]] = {}
@@ -669,12 +710,18 @@ def create_app(
             return 2
         return -1
 
-    def _aggregate_lives() -> dict[str, dict[str, object]]:
+    def _aggregate_lives() -> tuple[dict[str, dict[str, object]], dict[str, object]]:
         registry = load_registry()
         active_life = registry.get("active")
         by_life: dict[str, list[dict[str, object]]] = {}
+        unattached_runs: dict[str, int] = {}
         for record in _load_run_records():
-            by_life.setdefault(_record_life(record), []).append(record)
+            life_name = _record_life(record)
+            if life_name == "unknown":
+                run_id = _record_run_id(record)
+                unattached_runs[run_id] = unattached_runs.get(run_id, 0) + 1
+                continue
+            by_life.setdefault(life_name, []).append(record)
 
         comparison: dict[str, dict[str, object]] = {}
         for life_name, all_records in by_life.items():
@@ -765,7 +812,15 @@ def create_app(
                 "alive": is_alive,
                 "active": is_alive,
             }
-        return comparison
+        unattached_summary = {
+            "records_count": sum(unattached_runs.values()),
+            "runs_count": len(unattached_runs),
+            "runs": [
+                {"run_id": run_id, "records_count": count}
+                for run_id, count in sorted(unattached_runs.items())
+            ],
+        }
+        return comparison, unattached_summary
 
     @app.get("/lives/comparison")
     def read_lives_comparison(
@@ -775,7 +830,7 @@ def create_app(
         degrading_only: bool = False,
         dead_only: bool = False,
     ) -> dict[str, object]:
-        comparison = _aggregate_lives()
+        comparison, unattached = _aggregate_lives()
         lives_rows = [{"life": name, **payload} for name, payload in comparison.items()]
 
         if active_only:
@@ -807,6 +862,7 @@ def create_app(
         return {
             "lives": comparison,
             "table": lives_rows,
+            "unattached_runs": unattached,
             "filters": {
                 "sort_by": sort_by,
                 "sort_order": "desc" if reverse else "asc",
