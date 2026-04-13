@@ -122,6 +122,7 @@ def ensure_memory_structure(mem_dir: Path | str | None = None) -> None:
     (mem_dir / "profile.json").touch(exist_ok=True)
     (mem_dir / "values.yaml").touch(exist_ok=True)
     (mem_dir / "episodic.jsonl").touch(exist_ok=True)
+    (mem_dir / "generations.jsonl").touch(exist_ok=True)
     (mem_dir / "skills.json").touch(exist_ok=True)
     (mem_dir / "psyche.json").touch(exist_ok=True)
     (mem_dir / "layers").mkdir(parents=True, exist_ok=True)

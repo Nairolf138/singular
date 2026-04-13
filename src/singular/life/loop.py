@@ -10,6 +10,8 @@ import math
 import random
 import time
 import heapq
+import hashlib
+import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, Mapping
@@ -26,6 +28,7 @@ from singular.memory import register_memory_event_handlers
 from singular.psyche import Psyche, Mood
 from singular.runs.logger import RunLogger
 from singular.runs.explain import summarize_mutation
+from singular.runs.generations import record_generation
 from singular.organisms.spawn import mutation_absurde
 from singular.perception import capture_signals, get_temperature
 from graine.evolver.generate import propose_mutations
@@ -783,6 +786,13 @@ def run(
                 if map_elites
                 else mutated_score <= base_score
             )
+            security_metadata: dict[str, object] = {
+                "governance_checked": False,
+                "allowed": accepted,
+                "level": None,
+                "reason": "score_gate",
+                "corrective_action": None,
+            }
             detection_rate = 0.0
             test_delta = {"added": 0, "removed": 0}
             if coevolve_tests and test_pool is not None:
@@ -808,6 +818,13 @@ def run(
             if accepted:
                 governance_root = skill_path.parent.parent if skill_path.parent.name == "skills" else skill_path.parent
                 decision = governance_policy.enforce_write(skill_path, mutated, root=governance_root)
+                security_metadata = {
+                    "governance_checked": True,
+                    "allowed": decision.allowed,
+                    "level": decision.level,
+                    "reason": decision.reason,
+                    "corrective_action": decision.corrective_action,
+                }
                 if not decision.allowed:
                     accepted = False
                     logger.log_interaction(
@@ -973,6 +990,27 @@ def run(
                 "mutation.applied" if accepted else "mutation.rejected",
                 mutation_payload,
                 payload_version=1,
+            )
+            life_root = Path(os.environ.get("SINGULAR_HOME", ".")).resolve()
+            try:
+                skill_relative_path = str(skill_path.resolve().relative_to(life_root))
+            except ValueError:
+                skill_relative_path = str(skill_path)
+
+            record_generation(
+                run_id=logger.run_id,
+                iteration=state.iteration,
+                skill=key,
+                operator=op_name,
+                mutation_diff=diff,
+                score_base=base_score,
+                score_new=mutated_score,
+                accepted=accepted,
+                reason=reflection.decision_reason,
+                parent_hash=hashlib.sha256(original.encode("utf-8")).hexdigest(),
+                candidate_code=mutated,
+                skill_relative_path=skill_relative_path,
+                security_metadata=security_metadata,
             )
             log_mutation(
                 logger,

@@ -337,6 +337,20 @@ singular status --verbose --format json
 - `--export evolution.json` écrit un JSON stable (clés triées) sur disque.
 - `--export markdown` imprime un rapport Markdown sur la sortie standard.
 
+### Registre des générations et rollback
+
+Chaque tentative de mutation est journalisée dans `mem/generations.jsonl` avec :
+parent, mutation, score, verdict, hash, raison d’acceptation/rejet, lien run,
+snapshot de skill, et métadonnées de sécurité.
+
+Rollback atomique vers une génération stable :
+
+```bash
+singular rollback --generation 42
+```
+
+Politique de conservation/archivage/purge : `docs/generations_registry.md`.
+
 Schéma JSON (`schema_version: 1`) :
 
 - `context` : métadonnées d'exécution (`run_id`, bornes temporelles, volumes).
