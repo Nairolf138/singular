@@ -675,18 +675,31 @@ def run(
                 )
                 for entry in adjusted_hypotheses
             ]
+            psyche_axes = getattr(psyche, "weighted_objective_axes", lambda: {})()
             reflection = reflect_action(
                 weighted_hypotheses,
                 bus=event_bus,
                 event_context={"iteration": state.iteration, "organism": org_name},
-                long_term_weight=goal_weights.coherence,
-                sandbox_weight=goal_weights.robustesse,
-                resource_weight=goal_weights.efficacite,
+                long_term_weight=(
+                    goal_weights.coherence
+                    + (psyche_axes.get("long_term", 0.0) * 0.4)
+                ),
+                sandbox_weight=(
+                    goal_weights.robustesse
+                    + (psyche_axes.get("sandbox", 0.0) * 0.4)
+                ),
+                resource_weight=(
+                    goal_weights.efficacite
+                    + (psyche_axes.get("resource", 0.0) * 0.4)
+                ),
             )
             score_by_index = {index: score for index, _, score in reflection.alternative_scores}
             belief_bias = belief_store.operator_preference_bias(operators.keys())
             combined_bias = intrinsic_goals.influence_operator_scores(stats)
+            psyche_bias = getattr(psyche, "operator_bias", lambda names: {})(list(operators.keys()))
             for operator_name, extra_bias in belief_bias.items():
+                combined_bias[operator_name] = combined_bias.get(operator_name, 0.0) + extra_bias
+            for operator_name, extra_bias in psyche_bias.items():
                 combined_bias[operator_name] = combined_bias.get(operator_name, 0.0) + extra_bias
 
             mood_label = getattr(getattr(psyche, "last_mood", None), "value", None)
