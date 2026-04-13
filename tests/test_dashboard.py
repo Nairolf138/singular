@@ -183,7 +183,7 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "Runs non rattachés" in body
     assert "data-sort='life'" in body
     assert "<td colspan='7'>Aucune vie ne correspond aux filtres.</td>" in body
-    assert "Actives seulement" in body
+    assert "Statut registre: active" in body
     assert "Seulement en dégradation" in body
     assert "Logs en direct" in body
     assert "live-autoscroll" in body
@@ -585,8 +585,8 @@ def test_lives_comparison_table_aggregation_filters_and_sorting(
             "active": "life-c",
             "lives": {
                 "life-a": {"slug": "life-a", "name": "Life A"},
-                "life-b": {"slug": "life-b", "name": "Life B"},
-                "life-c": {"slug": "life-c", "name": "Life C"},
+                "life-b": {"slug": "life-b", "name": "Life B", "status": "extinct"},
+                "life-c": {"slug": "life-c", "name": "Life C", "status": "active"},
             },
         },
     )
@@ -596,16 +596,18 @@ def test_lives_comparison_table_aggregation_filters_and_sorting(
     table = payload["table"]
     assert [row["life"] for row in table] == ["life-c", "life-a", "life-b"]
     assert payload["lives"]["life-a"]["trend"] == "dégradation"
-    assert payload["lives"]["life-a"]["selected"] is False
-    assert payload["lives"]["life-a"]["alive"] is True
-    assert payload["lives"]["life-a"]["active"] is True
+    assert payload["lives"]["life-a"]["selected_life"] is False
+    assert payload["lives"]["life-a"]["life_status"] == "active"
+    assert payload["lives"]["life-a"]["is_registry_active_life"] is True
+    assert payload["lives"]["life-a"]["extinction_seen_in_runs"] is False
     assert payload["lives"]["life-a"]["iterations"] == 2
     assert isinstance(payload["lives"]["life-a"]["alerts_count"], int)
-    assert payload["lives"]["life-b"]["selected"] is False
-    assert payload["lives"]["life-b"]["alive"] is False
-    assert payload["lives"]["life-b"]["active"] is False
-    assert payload["lives"]["life-c"]["selected"] is True
-    assert payload["lives"]["life-c"]["alive"] is True
+    assert payload["lives"]["life-b"]["selected_life"] is False
+    assert payload["lives"]["life-b"]["life_status"] == "extinct"
+    assert payload["lives"]["life-b"]["is_registry_active_life"] is False
+    assert payload["lives"]["life-b"]["extinction_seen_in_runs"] is True
+    assert payload["lives"]["life-c"]["selected_life"] is True
+    assert payload["lives"]["life-c"]["life_status"] == "active"
     assert payload["lives"]["life-c"]["stability"] == 0.99
 
     active_only = route(active_only=True)["table"]
