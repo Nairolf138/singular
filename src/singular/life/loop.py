@@ -296,7 +296,7 @@ def log_mutation(
     mutated_score: float,
     impacted_file: str,
     loop_modifications: dict[str, int],
-    alternative_scores: dict[str, float] | None = None,
+    alternative_scores: list[tuple[int, str, float]] | None = None,
     decision_reason: str | None = None,
     health: dict[str, float | int] | None = None,
 ) -> None:
@@ -334,7 +334,7 @@ def log_mutation(
         mutated_score,
         impacted_file=impacted_file,
         decision_reason=decision_reason,
-        alternative_scores=alternative_scores or {},
+        alternative_scores=alternative_scores or [],
         human_summary=human_summary,
         loop_modifications=loop_modifications,
         health=health,
@@ -673,6 +673,7 @@ def run(
                 sandbox_weight=goal_weights.robustesse,
                 resource_weight=goal_weights.efficacite,
             )
+            score_by_index = {index: score for index, _, score in reflection.alternative_scores}
             belief_bias = belief_store.operator_preference_bias(operators.keys())
             combined_bias = intrinsic_goals.influence_operator_scores(stats)
             for operator_name, extra_bias in belief_bias.items():
@@ -782,13 +783,14 @@ def run(
                 ),
                 evaluated_hypotheses=[
                     {
+                        "hypothesis_index": hypothesis_index,
                         "action": hypothesis.action,
                         "long_term": hypothesis.long_term,
                         "sandbox_risk": hypothesis.sandbox_risk,
                         "resource_cost": hypothesis.resource_cost,
-                        "score": reflection.alternative_scores.get(hypothesis.action),
+                        "score": score_by_index.get(hypothesis_index),
                     }
-                    for hypothesis in weighted_hypotheses
+                    for hypothesis_index, hypothesis in enumerate(weighted_hypotheses)
                 ],
                 final_choice=op_name,
                 justification=reflection.decision_reason,

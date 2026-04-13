@@ -32,7 +32,7 @@ class ReflectionDecision:
 
     action: str | None
     decision_reason: str
-    alternative_scores: dict[str, float]
+    alternative_scores: list[tuple[int, str, float]]
     ranked_actions: list[str]
 
 
@@ -72,7 +72,7 @@ def reflect_action(
         decision = ReflectionDecision(
             action=None,
             decision_reason="no hypothesis available",
-            alternative_scores={},
+            alternative_scores=[],
             ranked_actions=[],
         )
         emitter = bus or get_global_event_bus()
@@ -91,17 +91,22 @@ def reflect_action(
         )
         return decision
 
-    scores = {
-        hyp.action: _hypothesis_score(
-            hyp,
-            long_term_weight=long_term_weight,
-            sandbox_weight=sandbox_weight,
-            resource_weight=resource_weight,
+    scores = [
+        (
+            index,
+            hyp.action,
+            _hypothesis_score(
+                hyp,
+                long_term_weight=long_term_weight,
+                sandbox_weight=sandbox_weight,
+                resource_weight=resource_weight,
+            ),
         )
-        for hyp in hypotheses
-    }
-    ranked = sorted(scores, key=lambda action: scores[action], reverse=True)
-    selected = ranked[0]
+        for index, hyp in enumerate(hypotheses)
+    ]
+    ranked_scores = sorted(scores, key=lambda entry: (-entry[2], entry[0]))
+    ranked = [action for _, action, _ in ranked_scores]
+    selected = ranked_scores[0][1]
     reason = (
         "selected highest weighted score "
         f"(long_term={long_term_weight:.2f}, sandbox={sandbox_weight:.2f}, "
@@ -110,7 +115,7 @@ def reflect_action(
     decision = ReflectionDecision(
         action=selected,
         decision_reason=reason,
-        alternative_scores=scores,
+        alternative_scores=ranked_scores,
         ranked_actions=ranked,
     )
     emitter = bus or get_global_event_bus()
