@@ -190,6 +190,8 @@ def test_dashboard_cockpit_endpoint_schema(tmp_path: Path) -> None:
     assert "health_score" in payload
     assert "accepted_mutation_rate" in payload
     assert "last_notable_mutation" in payload
+    assert "vital_timeline" in payload
+    assert "state" in payload["vital_timeline"]
     assert "autonomy_metrics" in payload
     assert "proactive_initiative_rate" in payload["autonomy_metrics"]
 
@@ -818,6 +820,9 @@ def test_dashboard_actions_endpoint_and_ui_panel(tmp_path: Path, monkeypatch: py
     assert "action-result" in body
     assert "Créer vie" in body
     assert "Discuter" in body
+    assert "Archiver" in body
+    assert "Mémorial" in body
+    assert "Cloner" in body
 
     ok = app._routes["/api/actions/{action}"]("lives_list", token="secret", payload="{}")
     assert ok["ok"] is True

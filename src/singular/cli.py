@@ -462,10 +462,13 @@ def main(argv: list[str] | None = None) -> int:
     _preparse_environment(argv_list)
 
     from .lives import (
+        archive_life,
         bootstrap_life,
+        clone_life,
         delete_life,
         get_registry_root,
         load_registry,
+        memorialize_life,
         resolve_life,
         uninstall_singular,
     )
@@ -743,6 +746,24 @@ def main(argv: list[str] | None = None) -> int:
         "delete", help="Delete a life and its data"
     )
     lives_delete.add_argument("name", help="Slug or name of the life to delete")
+    lives_archive = lives_subparsers.add_parser(
+        "archive", help="Archive a life (status extinct) with guided next steps"
+    )
+    lives_archive.add_argument("name", help="Slug or name of the life to archive")
+    lives_memorial = lives_subparsers.add_parser(
+        "memorial", help="Write a memorial message for a life"
+    )
+    lives_memorial.add_argument("name", help="Slug or name of the life")
+    lives_memorial.add_argument(
+        "--message",
+        default="Merci pour ce cycle de vie.",
+        help="Message à inscrire dans le mémorial",
+    )
+    lives_clone = lives_subparsers.add_parser(
+        "clone", help="Clone a life to a new life with guided next steps"
+    )
+    lives_clone.add_argument("name", help="Slug or name of the source life")
+    lives_clone.add_argument("--new-name", default=None, help="Nom de la nouvelle vie")
 
     values_parser = subparsers.add_parser("values", help="Inspecter les poids de valeurs")
     values_subparsers = values_parser.add_subparsers(dest="values_command", required=True)
@@ -1136,6 +1157,28 @@ def main(argv: list[str] | None = None) -> int:
                 os.environ["SINGULAR_HOME"] = str(next_life)
             else:
                 os.environ.pop("SINGULAR_HOME", None)
+        elif args.lives_command == "archive":
+            try:
+                metadata = archive_life(args.name)
+            except KeyError as exc:
+                raise SystemExit(f"Vie introuvable: {args.name}") from exc
+            print(f"Vie archivée: {metadata.name} ({metadata.slug}) → statut={metadata.status}")
+            print("Conseil: exécutez `singular lives memorial <vie> --message \"...\"`.")
+        elif args.lives_command == "memorial":
+            try:
+                memorial_path = memorialize_life(args.name, message=args.message)
+            except KeyError as exc:
+                raise SystemExit(f"Vie introuvable: {args.name}") from exc
+            print(f"Mémorial enregistré: {memorial_path}")
+            print("Conseil: exécutez `singular lives clone <vie> --new-name \"...\"`.")
+        elif args.lives_command == "clone":
+            try:
+                metadata = clone_life(args.name, new_name=args.new_name)
+            except KeyError as exc:
+                raise SystemExit(f"Vie introuvable: {args.name}") from exc
+            os.environ["SINGULAR_HOME"] = str(metadata.path)
+            print(f"Vie clonée: {metadata.name} ({metadata.slug}) → {metadata.path}")
+            print("Conseil: exécutez `singular status --verbose` puis `singular loop --budget-seconds 10`.")
 
     elif args.command == "values":
         _ensure_active_life(resolve_life, args.life)
