@@ -113,6 +113,9 @@
     <div><strong>Nombre de vies détectées</strong> : <span id='ctx-lives-count'>0</span></div>
   </div>
   <h3>État psychique</h3><pre id='psyche'></pre>
+  <h3>Quêtes</h3><pre id='quests'>
+{"active":[],"completed":[]}
+</pre>
   <h3>Organismes (résumé)</h3>
   <ul id='organisms-list'></ul>
 </section>
@@ -260,6 +263,8 @@ const loadEco=()=>Promise.all([fetch(withScope('/ecosystem')).then(r=>r.json()),
   document.getElementById('raw-eco-json').textContent=JSON.stringify(eco,null,2);
 });
 
+
+const loadQuests=()=>fetch('/quests').then(r=>r.json()).then(data=>{document.getElementById('quests').textContent=JSON.stringify(data,null,2);});
 const loadCockpit=()=>fetch(withScope('/api/cockpit')).then(r=>r.json()).then(d=>{
   const statusBox=document.getElementById('cockpit-status');
   statusBox.textContent=`Statut global: ${d.global_status||'unknown'}`;
@@ -334,10 +339,10 @@ document.getElementById('live-autoscroll').onchange=e=>{liveState.autoScroll=Boo
 const loadTimeline=()=>fetch(withScope('/runs/latest')).then(r=>r.json()).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}const q=scopeState.currentLifeOnly?'&current_life_only=true':'';return fetch(`/api/runs/${meta.run}/timeline?page=1&page_size=120${q}`).then(r=>r.json());}).then(data=>{const wrap=document.getElementById('timeline');const summary=document.getElementById('timeline-summary');const impact=document.getElementById('timeline-impact');const diff=document.getElementById('timeline-diff');wrap.innerHTML='';let mutationIndex=0;for(const item of data.items||[]){const row=document.createElement('div');row.style.display='inline-flex';row.style.gap='4px';const btn=document.createElement('button');btn.textContent=`${item.event} · ${item.timestamp||'n/a'}`;btn.style.padding='6px';row.appendChild(btn);if(item.event==='mutation'&&data.run_id){const currentIndex=mutationIndex;mutationIndex+=1;btn.onclick=()=>showMutationDetail(data.run_id,currentIndex);const link=document.createElement('a');link.href=`/runs/${data.run_id}/mutations/${currentIndex}`;link.textContent='Voir détail';link.style.alignSelf='center';row.appendChild(link);}wrap.appendChild(row);}if(!(data.items||[]).length){summary.textContent='Aucun événement de frise disponible.';impact.textContent='';diff.textContent='';}});
 const loadReflections=()=>fetch(withScope('/runs/latest')).then(r=>r.json()).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}const q=new URLSearchParams();const objective=document.getElementById('reflection-objective').value;const mood=document.getElementById('reflection-mood').value;const success=document.getElementById('reflection-success').value;if(objective){q.set('objective',objective);}if(mood){q.set('mood',mood);}if(success){q.set('success',success);}if(scopeState.currentLifeOnly){q.set('current_life_only','true');}const suffix=q.toString()?`?${q.toString()}`:'';return fetch(`/api/runs/${meta.run}/consciousness${suffix}`).then(r=>r.ok?r.json():{run_id:meta.run,items:[]});}).then(data=>{const wrap=document.getElementById('reflections-timeline');const detail=document.getElementById('reflections-detail');wrap.innerHTML='';for(const item of data.items||[]){const row=document.createElement('div');row.style.display='inline-flex';row.style.gap='4px';const btn=document.createElement('button');const mood=item.emotional_state?.mood||'n/a';const objective=item.objective||'n/a';btn.textContent=`${item.ts||'n/a'} · ${objective} · ${mood}`;btn.style.padding='6px';btn.onclick=()=>{detail.textContent=JSON.stringify(item,null,2);};row.appendChild(btn);wrap.appendChild(row);}if(!(data.items||[]).length){detail.textContent='Aucune réflexion disponible pour ces filtres.';}});
 document.getElementById('reflection-apply').onclick=()=>loadReflections();
-loadContext();loadEco();loadCockpit();loadTimeline();loadLivesBoard();setInterval(()=>{loadContext();loadEco();loadCockpit();loadTimeline();loadLivesBoard();},500);
+loadContext();loadEco();loadCockpit();loadTimeline();loadLivesBoard();loadQuests();setInterval(()=>{loadContext();loadEco();loadCockpit();loadTimeline();loadLivesBoard();loadQuests();},500);
 loadReflections();setInterval(()=>{loadReflections();},800);
 updateLiveStatus();
-ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);return;}if(typeof m.run_id==='string'&&typeof m.event==='string'){liveState.events.push({type:m.type,run_id:m.run_id,event:m.event,ts:m.ts||null});if(!liveState.paused){renderLiveEvents();}}};
+ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);return;}if(m.type==='quests'){document.getElementById('quests').textContent=JSON.stringify(m.data,null,2);return;}if(typeof m.run_id==='string'&&typeof m.event==='string'){liveState.events.push({type:m.type,run_id:m.run_id,event:m.event,ts:m.ts||null});if(!liveState.paused){renderLiveEvents();}}};
 </script>
 </body>
 </html>

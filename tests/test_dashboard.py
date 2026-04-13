@@ -15,7 +15,7 @@ def _receive_with_timeout(ws: TestClient._WSConnection, timeout: float = 2.0) ->
         raise AssertionError("timed out waiting for websocket message") from exc
 
 
-def test_dashboard_endpoints(tmp_path: Path) -> None:
+def test_dashboard_endpoints(tmp_path: Path, monkeypatch) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
     (runs_dir / "log.txt").write_text("hello")
@@ -23,12 +23,38 @@ def test_dashboard_endpoints(tmp_path: Path) -> None:
     data = {"mood": "happy"}
     psyche_file.write_text(json.dumps(data))
 
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
     app = create_app(runs_dir=runs_dir, psyche_file=psyche_file)
     client = TestClient(app)
 
     assert client.get("/logs").json() == {"log.txt": "hello"}
     assert client.get("/psyche").json() == data
     assert client.get("/alerts").json() == {"run": None, "alerts": []}
+
+
+def test_dashboard_quests_endpoint(tmp_path: Path, monkeypatch) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    psyche_file = tmp_path / "psyche.json"
+    psyche_file.write_text(json.dumps({"mood": "curious"}))
+
+    mem_dir = tmp_path / "mem"
+    mem_dir.mkdir()
+    quests_state = {
+        "active": [{"name": "q1", "status": "active", "started_at": "2026-01-01T00:00:00+00:00"}],
+        "completed": [{"name": "q0", "status": "success", "started_at": "2026-01-01T00:00:00+00:00", "completed_at": "2026-01-01T00:01:00+00:00"}],
+    }
+    (mem_dir / "quests_state.json").write_text(json.dumps(quests_state), encoding="utf-8")
+
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    app = create_app(runs_dir=runs_dir, psyche_file=psyche_file)
+    client = TestClient(app)
+
+    response = client.get("/quests")
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["active"]) == 1
+    assert len(payload["completed"]) == 1
 
 
 def test_dashboard_alerts_endpoint(tmp_path: Path) -> None:
@@ -205,6 +231,7 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "Registre courant (SINGULAR_ROOT)" in body
     assert "Vie courante (SINGULAR_HOME)" in body
     assert "Nombre de vies détectées" in body
+    assert "Quêtes" in body
 
 
 def test_dashboard_index_renders_main_sections(tmp_path: Path) -> None:

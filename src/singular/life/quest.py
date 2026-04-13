@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List
 import json
@@ -37,31 +37,15 @@ class Spec:
     signature: str
     examples: List[Example]
     constraints: Constraints
+    triggers: list[dict[str, Any]] = field(default_factory=list)
+    reward: dict[str, Any] = field(default_factory=dict)
+    penalty: dict[str, Any] = field(default_factory=dict)
+    cooldown: int = 0
+    success: dict[str, Any] = field(default_factory=dict)
 
 
 def load(path: Path) -> Spec:
-    """Parse *path* as a JSON spec and return a :class:`Spec`.
-
-    The expected format is::
-
-        {
-            "name": "skill_name",
-            "signature": "skill(arg1, arg2)",
-            "examples": [
-                {"input": [..], "output": ..},
-                ...,
-            ],
-            "constraints": {
-                "pure": true,
-                "no_import": true,
-                "time_ms_max": 1000
-            }
-        }
-
-    Each example's ``input`` may be a single value or a list of positional
-    arguments.  The ``constraints`` object is mandatory and must request pure
-    operation, disallow imports and specify a positive ``time_ms_max`` value.
-    """
+    """Parse *path* as a JSON spec and return a :class:`Spec`."""
 
     data = json.loads(path.read_text(encoding="utf-8"))
 
@@ -107,8 +91,39 @@ def load(path: Path) -> Spec:
             "'constraints.time_ms_max' must be a positive integer"
         )
 
+    triggers = data.get("triggers", [])
+    if not isinstance(triggers, list):
+        raise SpecValidationError("'triggers' must be a list")
+    for idx, trigger in enumerate(triggers):
+        if not isinstance(trigger, dict):
+            raise SpecValidationError(f"trigger {idx} must be an object")
+
+    reward = data.get("reward", {})
+    if not isinstance(reward, dict):
+        raise SpecValidationError("'reward' must be an object")
+
+    penalty = data.get("penalty", {})
+    if not isinstance(penalty, dict):
+        raise SpecValidationError("'penalty' must be an object")
+
+    cooldown = data.get("cooldown", 0)
+    if not isinstance(cooldown, int) or cooldown < 0:
+        raise SpecValidationError("'cooldown' must be a non-negative integer")
+
+    success = data.get("success", {})
+    if not isinstance(success, dict):
+        raise SpecValidationError("'success' must be an object")
+
     constraints = Constraints(pure=True, no_import=True, time_ms_max=time_ms_max)
 
     return Spec(
-        name=name, signature=signature, examples=examples, constraints=constraints
+        name=name,
+        signature=signature,
+        examples=examples,
+        constraints=constraints,
+        triggers=triggers,
+        reward=reward,
+        penalty=penalty,
+        cooldown=cooldown,
+        success=success,
     )

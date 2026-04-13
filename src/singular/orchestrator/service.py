@@ -21,6 +21,7 @@ from singular.orchestrator.lifecycle_clock import (
 from singular.perception import capture_signals
 from singular.psyche import Psyche
 from singular.resource_manager import ResourceManager
+from singular.quests import QuestRuntime
 
 
 class LifecyclePhase(Enum):
@@ -96,6 +97,7 @@ class OrchestratorService:
         self.state = self._load_state()
         self.resource_manager = ResourceManager(path=self.resources_path)
         self.psyche = Psyche.load_state()
+        self.quest_runtime = QuestRuntime(base_dir=self.base_dir, mem_dir=self.mem_dir)
         self._running = False
         self._wake_requested = False
         self._pending_events: list[dict[str, Any]] = []
@@ -222,7 +224,11 @@ class OrchestratorService:
     def _run_phase(self, phase: LifecyclePhase) -> None:
         if phase is LifecyclePhase.VEILLE:
             signals = capture_signals(bus=self.bus)
-            self._push_event(phase, {"signals": list(signals.keys())})
+            activated = self.quest_runtime.evaluate_triggers(signals)
+            self._push_event(
+                phase,
+                {"signals": list(signals.keys()), "quests_triggered": activated},
+            )
             return
 
         if phase is LifecyclePhase.ACTION:
@@ -246,6 +252,10 @@ class OrchestratorService:
                     resource_manager=self.resource_manager,
                     tick_budget_seconds=tick_budget,
                 )
+            quest_outcomes = self.quest_runtime.settle_active(
+                psyche=self.psyche,
+                resource_manager=self.resource_manager,
+            )
             self._push_event(
                 phase,
                 {
@@ -255,6 +265,7 @@ class OrchestratorService:
                     "cpu_budget_percent": cpu_budget_percent,
                     "tick_budget_seconds": tick_budget,
                     "allowed_actions": behavior.get("allowed_actions", []),
+                    "quests": quest_outcomes,
                 },
             )
             return
