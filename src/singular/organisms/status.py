@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from ..life.health import detect_health_state
+from ..metrics.autonomy import compute_autonomy_metrics
 from ..psyche import Psyche
 from ..runs.logger import RUNS_DIR
 from ..schedulers.reevaluation import alerts_from_records
@@ -26,6 +27,20 @@ def _print_table(headers: list[str], rows: list[list[str]]) -> None:
         print(_fmt(row))
 
 
+
+
+
+def _fmt_ratio(value: object) -> str:
+    if isinstance(value, (int, float)):
+        return f"{float(value) * 100:.1f}%"
+    return "-"
+
+
+def _fmt_number(value: object, unit: str = "") -> str:
+    if isinstance(value, (int, float)):
+        return f"{float(value):.2f}{unit}"
+    return "-"
+
 def status(*, verbose: bool = False, output_format: str = "plain") -> None:
     """Display basic metrics and current psyche state."""
 
@@ -39,6 +54,7 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         "alerts": [],
         "mood": None,
         "traits": {},
+        "autonomy_metrics": {},
     }
     runs_dir = Path(RUNS_DIR)
     files = sorted(runs_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
@@ -88,6 +104,7 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
                     "trend": state,
                     "window": "10/50",
                 }
+            payload["autonomy_metrics"] = compute_autonomy_metrics(records)
             if verbose:
                 alerts = alerts_from_records(records)
                 payload["alerts"] = alerts
@@ -109,6 +126,8 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         return
 
     if output_format == "table":
+        autonomy = payload.get("autonomy_metrics") if isinstance(payload.get("autonomy_metrics"), dict) else {}
+        decision_quality = autonomy.get("decision_quality") if isinstance(autonomy.get("decision_quality"), dict) else {}
         run_rows = [
             ["Latest run", str(payload.get("latest_run") or "-")],
             ["Last execution speed", f"{payload['last_execution_ms']}ms" if payload.get("last_execution_ms") is not None else "-"],
@@ -130,6 +149,14 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
                     else "-"
                 ),
             ],
+            ["Taux d’initiatives proactives", _fmt_ratio(autonomy.get("proactive_initiative_rate"))],
+            ["Stabilité long terme", _fmt_ratio(autonomy.get("long_term_stability"))],
+            [
+                "Qualité décisions (acceptation/régression)",
+                f"{_fmt_ratio(decision_quality.get('acceptance_rate'))} / {_fmt_ratio(decision_quality.get('regression_rate'))}",
+            ],
+            ["Latence perception→action", _fmt_number(autonomy.get("perception_to_action_latency_ms"), " ms")],
+            ["Coût ressources par gain", _fmt_number(autonomy.get("resource_cost_per_gain"))],
             ["Mood", str(payload.get("mood"))],
         ]
         _print_table(["Metric", "Value"], run_rows)
@@ -160,6 +187,16 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         if payload.get("mutation_success_rate") is not None:
             print(f"Mutation success rate: {payload['mutation_success_rate']:.0f}%")
         print(f"Mutation count: {payload['mutation_count']}")
+        autonomy = payload.get("autonomy_metrics") if isinstance(payload.get("autonomy_metrics"), dict) else {}
+        decision_quality = autonomy.get("decision_quality") if isinstance(autonomy.get("decision_quality"), dict) else {}
+        print(f"Taux d’initiatives proactives: {_fmt_ratio(autonomy.get('proactive_initiative_rate'))}")
+        print(f"Stabilité long terme: {_fmt_ratio(autonomy.get('long_term_stability'))}")
+        print(
+            "Qualité décisions (acceptation/régression): "
+            f"{_fmt_ratio(decision_quality.get('acceptance_rate'))} / {_fmt_ratio(decision_quality.get('regression_rate'))}"
+        )
+        print(f"Latence perception→action: {_fmt_number(autonomy.get('perception_to_action_latency_ms'), ' ms')}")
+        print(f"Coût ressources par gain: {_fmt_number(autonomy.get('resource_cost_per_gain'))}")
         health = payload.get("health")
         if isinstance(health, dict):
             print(

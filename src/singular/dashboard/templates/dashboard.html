@@ -67,6 +67,15 @@
     <div class='card'><div class='card-label'>Prochaine action</div><div id='kpi-next-action' class='card-value'>n/a</div></div>
   </div>
 
+  <h3>Métriques d’autonomie</h3>
+  <div class='cards-grid'>
+    <div class='card'><div class='card-label'>Taux d’initiatives proactives</div><div id='kpi-autonomy-proactive' class='card-value'>n/a</div></div>
+    <div class='card'><div class='card-label'>Stabilité long terme</div><div id='kpi-autonomy-stability' class='card-value'>n/a</div></div>
+    <div class='card'><div class='card-label'>Qualité décisions (accept./régr.)</div><div id='kpi-autonomy-decision' class='card-value'>n/a</div></div>
+    <div class='card'><div class='card-label'>Latence perception→action</div><div id='kpi-autonomy-latency' class='card-value'>n/a</div></div>
+    <div class='card'><div class='card-label'>Coût ressources par gain</div><div id='kpi-autonomy-cost' class='card-value'>n/a</div></div>
+  </div>
+
   <div class='panel'>
     <h3 style='margin-top:0;'>Synthèse des vies</h3>
     <div class='cards-grid'>
@@ -262,12 +271,21 @@ const loadCockpit=()=>fetch(withScope('/api/cockpit')).then(r=>r.json()).then(d=
   const trend=d.trend||'n/a';
   const accepted=d.accepted_mutation_rate===null?'n/a':`${(d.accepted_mutation_rate*100).toFixed(1)}%`;
   const alertsCount=(d.critical_alerts||[]).length;
+  const autonomy=d.autonomy_metrics||{};
+  const decisionQuality=autonomy.decision_quality||{};
+  const fmtPct=(value)=>value===null||value===undefined?'n/a':`${(Number(value)*100).toFixed(1)}%`;
+  const fmtNum=(value,suffix='')=>value===null||value===undefined?'n/a':`${Number(value).toFixed(2)}${suffix}`;
 
   document.getElementById('kpi-health').textContent=healthValue;
   document.getElementById('kpi-trend').textContent=trend;
   document.getElementById('kpi-accepted').textContent=accepted;
   document.getElementById('kpi-alerts').textContent=String(alertsCount);
   document.getElementById('kpi-next-action').textContent=d.next_action||'n/a';
+  document.getElementById('kpi-autonomy-proactive').textContent=fmtPct(autonomy.proactive_initiative_rate);
+  document.getElementById('kpi-autonomy-stability').textContent=fmtPct(autonomy.long_term_stability);
+  document.getElementById('kpi-autonomy-decision').textContent=`${fmtPct(decisionQuality.acceptance_rate)} / ${fmtPct(decisionQuality.regression_rate)}`;
+  document.getElementById('kpi-autonomy-latency').textContent=fmtNum(autonomy.perception_to_action_latency_ms,' ms');
+  document.getElementById('kpi-autonomy-cost').textContent=fmtNum(autonomy.resource_cost_per_gain);
   setStatusTone(document.getElementById('kpi-trend'),trend==='amélioration'?'good':(trend==='dégradation'?'bad':'warn'));
 
   const notable=d.last_notable_mutation;

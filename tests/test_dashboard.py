@@ -164,6 +164,8 @@ def test_dashboard_cockpit_endpoint_schema(tmp_path: Path) -> None:
     assert "health_score" in payload
     assert "accepted_mutation_rate" in payload
     assert "last_notable_mutation" in payload
+    assert "autonomy_metrics" in payload
+    assert "proactive_initiative_rate" in payload["autonomy_metrics"]
 
 
 def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
@@ -175,6 +177,8 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     body = response.json()
     assert "Cockpit" in body
     assert "Prochaine action" in body
+    assert "Métriques d’autonomie" in body
+    assert "Taux d’initiatives proactives" in body
     assert "/api/cockpit" in body
     assert "Timeline des événements" in body
     assert "timeline-diff" in body
