@@ -174,12 +174,13 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert response.status_code == 200
     body = response.json()
     assert "Cockpit" in body
-    assert "Prochaine action recommandée" in body
+    assert "Prochaine action" in body
     assert "/api/cockpit" in body
     assert "Timeline des événements" in body
     assert "timeline-diff" in body
     assert "Voir détail" in body
     assert "Vies · Tableau comparatif" in body
+    assert "Runs non rattachés" in body
     assert "data-sort='life'" in body
     assert "<td colspan='7'>Aucune vie ne correspond aux filtres.</td>" in body
     assert "Actives seulement" in body
@@ -297,6 +298,51 @@ def test_dashboard_timeline_comparison_and_top_mutations(tmp_path: Path) -> None
     assert top_payload["most_risky"][0]["life"] == "life-a"
     assert top_payload["most_risky"][0]["impact_delta"] == -1.0
     assert top_payload["most_frequent"][0] == {"operator": "flip", "count": 2}
+
+
+def test_dashboard_lives_comparison_excludes_runs_without_explicit_life(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "loop-1001.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": "2026-04-12T12:00:00",
+                "op": "flip",
+                "accepted": True,
+                "score_base": 12.0,
+                "score_new": 10.0,
+                "health": {"score": 77.0},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (runs_dir / "with-life.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": "2026-04-12T12:05:00",
+                "life": "life-explicit",
+                "op": "swap",
+                "accepted": True,
+                "score_base": 10.0,
+                "score_new": 8.0,
+                "health": {"score": 91.0},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    payload = app._routes["/lives/comparison"]()
+
+    assert set(payload["lives"]) == {"life-explicit"}
+    assert "loop-1001" not in payload["lives"]
+    assert payload["unattached_runs"] == {
+        "records_count": 1,
+        "runs_count": 1,
+        "runs": [{"run_id": "loop-1001", "records_count": 1}],
+    }
 
 
 def test_run_timeline_endpoint_filters_pagination_and_event_coherence(tmp_path: Path) -> None:
