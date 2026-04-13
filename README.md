@@ -156,6 +156,28 @@ le fichier hybride dans `child/`.
    singular birth --name Lumen
    ```
 
+### ⏰ Horloge vitale
+
+L'horloge vitale centralise le rythme du daemon `orchestrate run` et son adaptation en fatigue.
+
+- **Fichier versionné** : `configs/lifecycle.yaml`.
+- **Surcharge CLI** : `singular orchestrate run --lifecycle-config <chemin>`.
+- **Paramètres principaux** :
+  - `cycle.veille_seconds` : durée de veille.
+  - `cycle.sommeil_seconds` : durée de sommeil.
+  - `cycle.introspection_frequency_ticks` : fréquence d'introspection (1 = à chaque passage).
+  - `cycle.mutation_window_seconds` : fenêtre max dédiée à la mutation/tick.
+- **Mapping phase → comportements** :
+  - `cpu_budget_percent` : budget CPU indicatif par phase.
+  - `allowed_actions` : actions autorisées.
+  - `slowdown_on_fatigue` : facteur de ralentissement appliqué en humeur `fatigue`.
+
+Exemple de démarrage:
+
+```bash
+singular orchestrate run --lifecycle-config configs/lifecycle.yaml
+```
+
 ### ⚙️ Fonctionnement interne
 
 **Corps**

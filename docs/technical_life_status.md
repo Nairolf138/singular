@@ -29,3 +29,34 @@ Le dashboard n'infère plus un statut de vie uniquement à partir des runs:
 1. Il lit d'abord `status` depuis le registre (source de vérité).
 2. Il calcule en parallèle des indicateurs run-level (`extinction_seen_in_runs`, `run_terminated`, `has_recent_activity`).
 3. Si une extinction est détectée dans les runs pour une vie enregistrée, il synchronise le registre via `set_life_status(slug, "extinct")`.
+
+## Horloge vitale (cycles, transitions, priorités)
+
+L'orchestrateur suit les transitions cycliques `veille → action → introspection → sommeil`.
+
+### Paramètres de cycle
+
+Le fichier versionné `configs/lifecycle.yaml` définit:
+
+- `cycle.veille_seconds`
+- `cycle.sommeil_seconds`
+- `cycle.introspection_frequency_ticks`
+- `cycle.mutation_window_seconds`
+
+Les valeurs peuvent être surchargées via `singular orchestrate run --lifecycle-config`.
+
+### Mapping phase → comportements
+
+Chaque phase expose un mapping comportemental:
+
+- `cpu_budget_percent`: budget CPU cible.
+- `allowed_actions`: liste des actions autorisées.
+- `slowdown_on_fatigue`: multiplicateur de ralentissement quand l'humeur est `fatigue`.
+
+En phase `action`, le budget tick effectif est plafonné par la fenêtre de mutation (`mutation_window_seconds`) puis ralenti selon `slowdown_on_fatigue` si fatigue.
+
+### Priorités d'exécution
+
+1. Respect de la fenêtre de mutation.
+2. Respect de la fréquence d'introspection.
+3. Ralentissement adaptatif en fatigue.
