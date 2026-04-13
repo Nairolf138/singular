@@ -12,6 +12,10 @@ import json
 import os
 import tempfile
 
+from .memory_layers import MemoryLayerService, build_backend
+
+_MEMORY_LAYER_SERVICE: MemoryLayerService | None = None
+
 
 def get_base_dir() -> Path:
     """Return the base directory for persistent files."""
@@ -21,6 +25,12 @@ def get_base_dir() -> Path:
 def get_mem_dir() -> Path:
     """Return the base memory directory."""
     return get_base_dir() / "mem"
+
+
+def get_memory_layers_dir() -> Path:
+    """Return the directory containing layered memory storage."""
+
+    return get_mem_dir() / "layers"
 
 
 def get_profile_file() -> Path:
@@ -83,6 +93,18 @@ def ensure_memory_structure(mem_dir: Path | str | None = None) -> None:
     (mem_dir / "episodic.jsonl").touch(exist_ok=True)
     (mem_dir / "skills.json").touch(exist_ok=True)
     (mem_dir / "psyche.json").touch(exist_ok=True)
+    (mem_dir / "layers").mkdir(parents=True, exist_ok=True)
+
+
+def get_memory_layer_service() -> MemoryLayerService:
+    """Return the singleton memory layer service."""
+
+    global _MEMORY_LAYER_SERVICE
+    if _MEMORY_LAYER_SERVICE is None:
+        _MEMORY_LAYER_SERVICE = MemoryLayerService(
+            build_backend(root=get_memory_layers_dir())
+        )
+    return _MEMORY_LAYER_SERVICE
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +231,21 @@ def add_episode(
     path = Path(path)
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
     _atomic_write_text(path, existing + json.dumps(episode) + "\n")
+    try:
+        get_memory_layer_service().ingest_episode(episode)
+    except Exception:
+        # Layered memory is best effort to preserve compatibility.
+        pass
+
+
+def add_procedural_memory(result: dict[str, Any]) -> None:
+    """Store mutation/run outcomes into procedural memory."""
+
+    try:
+        get_memory_layer_service().ingest_mutation_result(result)
+    except Exception:
+        # Layered memory is best effort to preserve compatibility.
+        pass
 
 
 # ---------------------------------------------------------------------------
