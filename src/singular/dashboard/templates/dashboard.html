@@ -1,5 +1,48 @@
 <html>
-<head><title>Tableau de bord Singular</title></head>
+<head>
+  <title>Tableau de bord Singular</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+    }
+    body { margin: 20px; }
+    nav { margin-bottom: 16px; }
+    section { margin-bottom: 24px; }
+    .cards-grid {
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+      gap:12px;
+      margin:10px 0;
+    }
+    .card {
+      border:1px solid #d0d5dd;
+      border-radius:10px;
+      padding:10px;
+      background:#f8fafc;
+    }
+    .card-label { color:#344054; font-size:0.9rem; margin-bottom:4px; }
+    .card-value { font-size:1.1rem; font-weight:700; color:#101828; }
+    .status-good { background:#dcfae6; color:#067647; }
+    .status-warn { background:#fff4e5; color:#b54708; }
+    .status-bad { background:#fee4e2; color:#b42318; }
+    .panel {
+      border:1px solid #d0d5dd;
+      border-radius:10px;
+      padding:12px;
+      background:#fff;
+    }
+    .technical-toggle { margin-top:8px; }
+    pre {
+      max-height:220px;
+      overflow:auto;
+      border:1px solid #ccc;
+      padding:8px;
+      border-radius:8px;
+      background:#fcfcfd;
+    }
+  </style>
+</head>
 <body>
 <h1>Tableau de bord Singular</h1>
 <nav>
@@ -11,26 +54,52 @@
   <a href="#parametres">Paramètres</a>
 </nav>
 
-<section id="cockpit"><h2>Cockpit</h2>
-  <div id='cockpit-status'></div>
+<section id="cockpit">
+  <h2>Cockpit</h2>
+  <div id='cockpit-status' class='card card-value'>Statut global: n/a</div>
   <p><strong>Qu’est-ce que ce score ?</strong> Le score de santé agrège stabilité sandbox, tendance récente et signal d’acceptation des mutations.</p>
-  <div style='display:grid;grid-template-columns:repeat(2,minmax(240px,1fr));gap:12px;'>
-    <div><h3>Score de santé</h3><pre id='kpi-health'></pre></div>
-    <div><h3>Tendance</h3><pre id='kpi-trend'></pre></div>
-    <div><h3>Taux de mutations acceptées</h3><pre id='kpi-accepted'></pre></div>
-    <div><h3>Alertes critiques</h3><pre id='kpi-alerts'></pre></div>
+
+  <div class='cards-grid'>
+    <div class='card'><div class='card-label'>Score de santé</div><div id='kpi-health' class='card-value'>n/a</div></div>
+    <div class='card'><div class='card-label'>Tendance</div><div id='kpi-trend' class='card-value'>n/a</div></div>
+    <div class='card'><div class='card-label'>Taux de mutations acceptées</div><div id='kpi-accepted' class='card-value'>n/a</div></div>
+    <div class='card'><div class='card-label'>Alertes critiques</div><div id='kpi-alerts' class='card-value'>0</div></div>
+    <div class='card'><div class='card-label'>Prochaine action</div><div id='kpi-next-action' class='card-value'>n/a</div></div>
   </div>
-  <h3>Dernière mutation notable</h3><pre id='kpi-notable'></pre>
-  <h3>Prochaine action recommandée</h3><pre id='kpi-next-action'></pre>
-  <h3>Actions suggérées</h3><pre id='kpi-actions'></pre>
+
+  <div class='panel'>
+    <h3 style='margin-top:0;'>Synthèse des vies</h3>
+    <div class='cards-grid'>
+      <div class='card'><div class='card-label'>Vies totales</div><div id='eco-total-lives' class='card-value'>0</div></div>
+      <div class='card'><div class='card-label'>Vies vivantes</div><div id='eco-alive-lives' class='card-value'>0</div></div>
+      <div class='card'><div class='card-label'>Vies mortes</div><div id='eco-dead-lives' class='card-value'>0</div></div>
+      <div class='card'><div class='card-label'>Vie sélectionnée</div><div id='eco-selected-life' class='card-value'>n/a</div></div>
+      <div class='card'><div class='card-label'>Dernière activité</div><div id='eco-last-activity' class='card-value'>n/a</div></div>
+    </div>
+  </div>
+
+  <div class='panel'>
+    <h3 style='margin-top:0;'>Dernière mutation notable</h3>
+    <div id='kpi-notable-summary'>Aucune mutation notable</div>
+    <h4>Actions suggérées</h4>
+    <ul id='kpi-actions' style='margin-top:6px;'></ul>
+    <details class='technical-toggle'>
+      <summary><button type='button'>Voir détail technique</button></summary>
+      <h4>Payload cockpit</h4>
+      <pre id='raw-cockpit-json'></pre>
+      <h4>Payload écosystème</h4>
+      <pre id='raw-eco-json'></pre>
+    </details>
+  </div>
+
   <p><strong>Pourquoi cette alerte ?</strong> Une alerte critique apparaît si la santé chute fortement, si la stabilité de sandbox baisse, ou si trop de mutations sont refusées.</p>
 </section>
 
 <section id="parametres">
   <h2>Paramètres</h2>
   <h3>État psychique</h3><pre id='psyche'></pre>
-  <h3>Résumé écosystème</h3><pre id='ecosystem-summary'></pre>
-  <h3>Organismes</h3><pre id='organisms'></pre>
+  <h3>Organismes (résumé)</h3>
+  <ul id='organisms-list'></ul>
 </section>
 
 <section id="timeline-section">
@@ -72,15 +141,20 @@
 </section>
 
 <section id="actions"><h2>Actions rapides</h2><pre id='action-result'>Aucune exécution</pre>
-  <div style='display:flex;flex-direction:column;gap:8px;max-width:680px;'>
+  <div class='panel' style='display:flex;flex-direction:column;gap:8px;max-width:680px;'>
     <label>Jeton dashboard <input id='action-token' type='password' placeholder='optionnel'/></label>
     <label>Nom de vie (créer/utiliser) <input id='action-life-name' placeholder='Nouvelle vie'/></label>
     <label>Prompt de discussion <input id='action-prompt' placeholder='Prompt unique'/></label>
     <label>Budget boucle (s) <input id='action-budget' type='number' min='0.1' step='0.1' value='1.0'/></label>
     <div style='display:flex;gap:8px;flex-wrap:wrap;'>
       <button id='act-birth'>Créer vie</button><button id='act-talk'>Discuter</button><button id='act-loop'>Boucle</button>
-      <button id='act-report'>Rapport</button><button id='act-lives-list'>Lister vies</button><button id='act-lives-use'>Utiliser vie</button>
     </div>
+    <details>
+      <summary>Actions secondaires</summary>
+      <div style='display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;'>
+        <button id='act-report'>Rapport</button><button id='act-lives-list'>Lister vies</button><button id='act-lives-use'>Utiliser vie</button>
+      </div>
+    </details>
   </div>
 </section>
 
@@ -97,17 +171,81 @@
 const ws=new WebSocket(`ws://${location.host}/ws`);
 const livesTableState={sortBy:'score',sortOrder:'desc'};
 const liveState={paused:false,autoScroll:true,events:[]};
-const loadEco=()=>fetch('/ecosystem').then(r=>r.json()).then(d=>{document.getElementById('ecosystem-summary').textContent=JSON.stringify(d.summary,null,2);document.getElementById('organisms').textContent=JSON.stringify(d.organisms,null,2);});
-const loadCockpit=()=>fetch('/api/cockpit').then(r=>r.json()).then(d=>{
-document.getElementById('cockpit-status').textContent=`Statut global: ${d.global_status}`;
-document.getElementById('kpi-health').textContent=d.health_score===null?'n/a':String(d.health_score);
-document.getElementById('kpi-trend').textContent=d.trend;
-document.getElementById('kpi-accepted').textContent=d.accepted_mutation_rate===null?'n/a':`${(d.accepted_mutation_rate*100).toFixed(1)}%`;
-document.getElementById('kpi-alerts').textContent=d.critical_alerts.length?JSON.stringify(d.critical_alerts,null,2):'Aucune alerte critique';
-document.getElementById('kpi-notable').textContent=d.last_notable_mutation?JSON.stringify(d.last_notable_mutation,null,2):'Aucune mutation notable';
-document.getElementById('kpi-next-action').textContent=d.next_action;
-document.getElementById('kpi-actions').textContent=JSON.stringify(d.suggested_actions,null,2);
+
+const setStatusTone=(el,tone)=>{el.classList.remove('status-good','status-warn','status-bad');if(tone==='good'){el.classList.add('status-good');}if(tone==='warn'){el.classList.add('status-warn');}if(tone==='bad'){el.classList.add('status-bad');}};
+
+const loadEco=()=>Promise.all([fetch('/ecosystem').then(r=>r.json()),fetch('/lives/comparison?sort_by=last_activity&sort_order=desc').then(r=>r.json())]).then(([eco,lives])=>{
+  const summary=eco.summary||{};
+  const total=Number(summary.total_organisms||0);
+  const alive=Number(summary.alive_organisms||0);
+  const dead=Math.max(total-alive,0);
+  document.getElementById('eco-total-lives').textContent=String(total);
+  document.getElementById('eco-alive-lives').textContent=String(alive);
+  document.getElementById('eco-dead-lives').textContent=String(dead);
+
+  const rows=lives.table||[];
+  const selected=rows.find(row=>row.selected===true);
+  document.getElementById('eco-selected-life').textContent=selected?.life||'Aucune';
+  const latestRow=rows.find(row=>row.last_activity);
+  document.getElementById('eco-last-activity').textContent=latestRow?.last_activity||'n/a';
+
+  const organisms=eco.organisms||{};
+  const list=document.getElementById('organisms-list');
+  list.innerHTML='';
+  for(const [name,payload] of Object.entries(organisms)){
+    const li=document.createElement('li');
+    const status=payload.status||'alive';
+    const energy=payload.energy??'n/a';
+    const resources=payload.resources??'n/a';
+    li.textContent=`${name} · statut=${status} · énergie=${energy} · ressources=${resources}`;
+    list.appendChild(li);
+  }
+  if(Object.keys(organisms).length===0){
+    const li=document.createElement('li');li.textContent='Aucun organisme détecté.';list.appendChild(li);
+  }
+  document.getElementById('raw-eco-json').textContent=JSON.stringify(eco,null,2);
 });
+
+const loadCockpit=()=>fetch('/api/cockpit').then(r=>r.json()).then(d=>{
+  const statusBox=document.getElementById('cockpit-status');
+  statusBox.textContent=`Statut global: ${d.global_status||'unknown'}`;
+  if(d.global_status==='stable'){setStatusTone(statusBox,'good');}
+  else if(d.global_status==='warning'){setStatusTone(statusBox,'warn');}
+  else if(d.global_status==='critical'){setStatusTone(statusBox,'bad');}
+
+  const healthValue=d.health_score===null?'n/a':Number(d.health_score).toFixed(1);
+  const trend=d.trend||'n/a';
+  const accepted=d.accepted_mutation_rate===null?'n/a':`${(d.accepted_mutation_rate*100).toFixed(1)}%`;
+  const alertsCount=(d.critical_alerts||[]).length;
+
+  document.getElementById('kpi-health').textContent=healthValue;
+  document.getElementById('kpi-trend').textContent=trend;
+  document.getElementById('kpi-accepted').textContent=accepted;
+  document.getElementById('kpi-alerts').textContent=String(alertsCount);
+  document.getElementById('kpi-next-action').textContent=d.next_action||'n/a';
+  setStatusTone(document.getElementById('kpi-trend'),trend==='amélioration'?'good':(trend==='dégradation'?'bad':'warn'));
+
+  const notable=d.last_notable_mutation;
+  if(notable){
+    const acceptedBadge=notable.accepted===true?'acceptée':(notable.accepted===false?'refusée':'n/a');
+    document.getElementById('kpi-notable-summary').textContent=`${notable.timestamp||'n/a'} · ${notable.life||'n/a'} · ${notable.operator||'n/a'} · ${acceptedBadge} · Δ=${notable.impact_delta??'n/a'}`;
+  } else {
+    document.getElementById('kpi-notable-summary').textContent='Aucune mutation notable';
+  }
+
+  const actionsEl=document.getElementById('kpi-actions');
+  actionsEl.innerHTML='';
+  for(const action of (d.suggested_actions||[])){
+    const li=document.createElement('li');
+    li.textContent=String(action);
+    actionsEl.appendChild(li);
+  }
+  if((d.suggested_actions||[]).length===0){
+    const li=document.createElement('li');li.textContent='Aucune action suggérée';actionsEl.appendChild(li);
+  }
+  document.getElementById('raw-cockpit-json').textContent=JSON.stringify(d,null,2);
+});
+
 const paintDiff=(raw)=>{const escaped=String(raw||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');return escaped.split('\n').map(line=>{if(line.startsWith('+')){return `<span style="color:#0a7f2e;">${line}</span>`;}if(line.startsWith('-')){return `<span style="color:#b42318;">${line}</span>`;}if(line.startsWith('@@')){return `<span style="color:#175cd3;">${line}</span>`;}return line;}).join('\n');};
 const showMutationDetail=(runId,index)=>fetch(`/api/runs/${runId}/mutations/${index}`).then(r=>r.json()).then(d=>{document.getElementById('timeline-summary').textContent=d.human_summary||d.decision_reason||'Aucun résumé disponible.';document.getElementById('timeline-impact').textContent=JSON.stringify(d.impact,null,2);document.getElementById('timeline-diff').innerHTML=paintDiff(d.diff)||'Aucun diff.';});
 const runAction=(action,payload)=>{const token=document.getElementById('action-token')?.value||'';const q=new URLSearchParams();if(token){q.set('token',token);}if(payload){q.set('payload',JSON.stringify(payload));}return fetch(`/api/actions/${action}?${q.toString()}`).then(async r=>{if(!r.ok){throw new Error(`HTTP ${r.status}`);}return r.json();}).then(data=>{document.getElementById('action-result').textContent=JSON.stringify(data,null,2);loadEco();loadCockpit();loadTimeline();}).catch(err=>{document.getElementById('action-result').textContent=`Erreur action ${action}: ${err.message}`;});};
