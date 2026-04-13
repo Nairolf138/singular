@@ -23,6 +23,7 @@ class LifeMetadata:
     slug: str
     path: Path
     created_at: str
+    status: str = "active"
 
     def to_payload(self) -> Dict[str, str]:
         """Return a JSON-serialisable representation."""
@@ -31,6 +32,7 @@ class LifeMetadata:
             "slug": self.slug,
             "path": str(self.path),
             "created_at": self.created_at,
+            "status": self.status,
         }
 
     @classmethod
@@ -41,6 +43,7 @@ class LifeMetadata:
             slug=str(data["slug"]),
             path=Path(data["path"]),
             created_at=str(data["created_at"]),
+            status=str(data.get("status", "active")),
         )
 
 
@@ -120,6 +123,25 @@ def save_registry(registry: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
+def set_life_status(slug: str, status: str) -> None:
+    """Update a life status in the registry."""
+
+    normalized = status.strip().lower()
+    if normalized not in {"active", "extinct"}:
+        raise ValueError(f"unsupported life status '{status}'")
+
+    registry = load_registry()
+    lives: dict[str, LifeMetadata] = registry.get("lives", {})
+    metadata = lives.get(slug)
+    if metadata is None:
+        return
+    if metadata.status == normalized:
+        return
+
+    metadata.status = normalized
+    save_registry(registry)
+
+
 def _slugify(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return slug or "life"
@@ -143,7 +165,13 @@ def create_life(name: str) -> LifeMetadata:
     life_dir.mkdir(parents=True, exist_ok=True)
 
     created_at = datetime.now(timezone.utc).isoformat()
-    metadata = LifeMetadata(name=name, slug=slug, path=life_dir, created_at=created_at)
+    metadata = LifeMetadata(
+        name=name,
+        slug=slug,
+        path=life_dir,
+        created_at=created_at,
+        status="active",
+    )
 
     lives[slug] = metadata
     registry["active"] = slug

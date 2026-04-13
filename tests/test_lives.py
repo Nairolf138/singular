@@ -9,6 +9,7 @@ from singular.lives import (
     get_registry_root,
     load_registry,
     resolve_life,
+    set_life_status,
 )
 from singular.organisms.birth import birth
 
@@ -42,6 +43,8 @@ def test_registry_tracks_multiple_lives(
     lives = registry["lives"]
     assert set(lives) == {life1.slug, life2.slug}
     assert registry["active"] == life2.slug
+    assert lives[life1.slug].status == "active"
+    assert lives[life2.slug].status == "active"
 
     assert resolve_life(None) == life2.path
     assert resolve_life(life1.name) == life1.path
@@ -85,3 +88,14 @@ def test_registry_root_uses_cwd_with_valid_registry_marker(
     monkeypatch.chdir(workspace)
 
     assert get_registry_root() == workspace
+
+
+def test_set_life_status_updates_registry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    life = bootstrap_life("Vie test", seed=3)
+    set_life_status(life.slug, "extinct")
+
+    registry = load_registry()
+    assert registry["lives"][life.slug].status == "extinct"

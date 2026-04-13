@@ -11,7 +11,7 @@ import os
 import sys
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from singular.lives import load_registry
+from singular.lives import load_registry, set_life_status
 
 from singular.dashboard.actions import DashboardActionService
 from fastapi.responses import HTMLResponse
@@ -710,9 +710,32 @@ def create_app(
             return 2
         return -1
 
+    def _registry_life_meta(
+        life_name: str, lives_payload: dict[str, object]
+    ) -> tuple[str | None, dict[str, object] | None]:
+        for slug, raw_meta in lives_payload.items():
+            if not isinstance(slug, str):
+                continue
+            if isinstance(raw_meta, dict):
+                candidate_name = raw_meta.get("name")
+                if life_name == slug or (
+                    isinstance(candidate_name, str) and candidate_name == life_name
+                ):
+                    return slug, raw_meta
+            else:
+                candidate_name = getattr(raw_meta, "name", None)
+                if life_name == slug or (
+                    isinstance(candidate_name, str) and candidate_name == life_name
+                ):
+                    return slug, None
+        return None, None
+
     def _aggregate_lives() -> tuple[dict[str, dict[str, object]], dict[str, object]]:
         registry = load_registry()
         active_life = registry.get("active")
+        registry_lives = registry.get("lives")
+        if not isinstance(registry_lives, dict):
+            registry_lives = {}
         by_life: dict[str, list[dict[str, object]]] = {}
         unattached_runs: dict[str, int] = {}
         for record in _load_run_records():
@@ -780,9 +803,31 @@ def create_app(
                 (str(rec.get("ts")) for rec in reversed(all_records) if isinstance(rec.get("ts"), str)),
                 None,
             )
-            is_extinct = any(rec.get("event") == "death" for rec in all_records)
-            is_selected = isinstance(active_life, str) and life_name == active_life
-            is_alive = not is_extinct
+            last_event = next(
+                (
+                    str(rec.get("event"))
+                    for rec in reversed(all_records)
+                    if isinstance(rec.get("event"), str)
+                ),
+                None,
+            )
+            extinction_seen = any(rec.get("event") == "death" for rec in all_records)
+            run_terminated = last_event == "death"
+            slug, raw_meta = _registry_life_meta(life_name, registry_lives)
+            registry_status = "active"
+            if isinstance(raw_meta, dict):
+                status_value = raw_meta.get("status")
+                if isinstance(status_value, str) and status_value in {"active", "extinct"}:
+                    registry_status = status_value
+            elif slug is not None:
+                registry_meta = registry_lives.get(slug)
+                status_value = getattr(registry_meta, "status", None)
+                if isinstance(status_value, str) and status_value in {"active", "extinct"}:
+                    registry_status = status_value
+            if extinction_seen and slug is not None and registry_status != "extinct":
+                set_life_status(slug, "extinct")
+                registry_status = "extinct"
+            is_selected = isinstance(active_life, str) and active_life in {life_name, slug}
             trend = _life_trend_label(health_score_points)
             alerts = alerts_from_records(mutation_records) if mutation_records else []
             current_health_score = health_score_points[-1] if health_score_points else None
@@ -808,9 +853,12 @@ def create_app(
                 "alerts": alerts,
                 "alerts_count": len(alerts),
                 "iterations": len(mutation_records),
-                "selected": is_selected,
-                "alive": is_alive,
-                "active": is_alive,
+                "selected_life": is_selected,
+                "life_status": registry_status,
+                "is_registry_active_life": registry_status == "active",
+                "has_recent_activity": last_timestamp is not None,
+                "extinction_seen_in_runs": extinction_seen,
+                "run_terminated": run_terminated,
             }
         unattached_summary = {
             "records_count": sum(unattached_runs.values()),
@@ -834,11 +882,15 @@ def create_app(
         lives_rows = [{"life": name, **payload} for name, payload in comparison.items()]
 
         if active_only:
-            lives_rows = [row for row in lives_rows if row.get("active") is True]
+            lives_rows = [
+                row for row in lives_rows if row.get("is_registry_active_life") is True
+            ]
         if degrading_only:
             lives_rows = [row for row in lives_rows if row.get("trend") == "dégradation"]
         if dead_only:
-            lives_rows = [row for row in lives_rows if row.get("alive") is False]
+            lives_rows = [
+                row for row in lives_rows if row.get("extinction_seen_in_runs") is True
+            ]
 
         sort_key_map: dict[str, str] = {
             "life": "life",
