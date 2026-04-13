@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from singular.events import Event, EventBus, get_global_event_bus
+from singular.governance.policy import MutationGovernancePolicy
 from singular.life.loop import run_tick
 from singular.memory import _atomic_write_text, get_base_dir, get_mem_dir
 from singular.orchestrator.lifecycle_clock import (
@@ -73,6 +74,7 @@ class OrchestratorConfig:
     mutation_window_seconds: float = 0.2
     phase_behaviors: dict[str, dict[str, Any]] = field(default_factory=dict)
     dry_run: bool = False
+    safe_mode: bool = False
 
 
 class OrchestratorService:
@@ -98,6 +100,7 @@ class OrchestratorService:
         self.resource_manager = ResourceManager(path=self.resources_path)
         self.psyche = Psyche.load_state()
         self.quest_runtime = QuestRuntime(base_dir=self.base_dir, mem_dir=self.mem_dir)
+        self.governance_policy = MutationGovernancePolicy(safe_mode=self.config.safe_mode)
         self._running = False
         self._wake_requested = False
         self._pending_events: list[dict[str, Any]] = []
@@ -251,6 +254,7 @@ class OrchestratorService:
                     event_bus=self.bus,
                     resource_manager=self.resource_manager,
                     tick_budget_seconds=tick_budget,
+                    governance_policy=self.governance_policy,
                 )
             quest_outcomes = self.quest_runtime.settle_active(
                 psyche=self.psyche,
@@ -334,6 +338,7 @@ def run_orchestrator_daemon(
     tick_budget_seconds: float | None,
     lifecycle_config_path: str | None,
     dry_run: bool,
+    safe_mode: bool,
 ) -> int:
     """CLI entry point for ``singular orchestrate run``."""
 
@@ -383,6 +388,7 @@ def run_orchestrator_daemon(
                 for phase, behavior in lifecycle_clock.phases.items()
             },
             dry_run=dry_run,
+            safe_mode=safe_mode,
         )
     )
     print(

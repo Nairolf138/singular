@@ -47,6 +47,7 @@ def test_cli_orchestrate_run_dispatches(monkeypatch, tmp_path) -> None:
     assert captured["tick_budget_seconds"] == 0.05
     assert captured["lifecycle_config_path"] is None
     assert captured["dry_run"] is True
+    assert captured["safe_mode"] is False
 
 
 def test_cli_orchestrate_run_passes_lifecycle_config_path(monkeypatch, tmp_path) -> None:
@@ -79,3 +80,33 @@ def test_cli_orchestrate_run_passes_lifecycle_config_path(monkeypatch, tmp_path)
 
     assert code == 0
     assert captured["lifecycle_config_path"] == str(config)
+    assert captured["safe_mode"] is False
+
+
+def test_cli_orchestrate_run_passes_safe_mode(monkeypatch, tmp_path) -> None:
+    root = tmp_path / "root"
+    main(["--root", str(root), "lives", "create", "--name", "Alpha"])
+
+    captured: dict[str, object] = {}
+
+    def fake_run_orchestrator_daemon(**kwargs):
+        captured.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(
+        "singular.orchestrator.run_orchestrator_daemon",
+        fake_run_orchestrator_daemon,
+    )
+
+    code = main(
+        [
+            "--root",
+            str(root),
+            "--safe-mode",
+            "orchestrate",
+            "run",
+        ]
+    )
+
+    assert code == 0
+    assert captured["safe_mode"] is True
