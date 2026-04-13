@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
-from singular.beliefs.store import BeliefStore
+from singular.beliefs.store import BeliefStore, _parse_datetime
 from singular.life.loop import select_operator
 
 
@@ -71,3 +72,21 @@ def test_beliefs_file_is_json_serializable(tmp_path: Path) -> None:
     store.update_after_run("operator:demo", success=True, evidence="ok")
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert "operator:demo" in payload
+
+
+def test_parse_datetime_normalizes_naive_updated_at_to_utc() -> None:
+    parsed = _parse_datetime("2026-04-13T10:30:00")
+    assert parsed == datetime(2026, 4, 13, 10, 30, tzinfo=timezone.utc)
+
+
+def test_parse_datetime_converts_tz_updated_at_to_utc() -> None:
+    parsed = _parse_datetime("2026-04-13T10:30:00+02:00")
+    assert parsed == datetime(2026, 4, 13, 8, 30, tzinfo=timezone.utc)
+
+
+def test_parse_datetime_uses_safe_fallback_for_corrupted_value(
+    monkeypatch,
+) -> None:
+    fallback = datetime(2026, 4, 13, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr("singular.beliefs.store._utcnow", lambda: fallback)
+    assert _parse_datetime("not-a-date") == fallback

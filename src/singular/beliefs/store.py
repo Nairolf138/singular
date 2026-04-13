@@ -20,9 +20,12 @@ def _parse_datetime(value: str | None) -> datetime:
     if not value:
         return _utcnow()
     try:
-        return datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(value)
     except ValueError:
         return _utcnow()
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 @dataclass
