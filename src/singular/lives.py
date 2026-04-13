@@ -153,6 +153,36 @@ def _slugify(name: str) -> str:
     return slug or "life"
 
 
+def _resolve_life_metadata(name: str) -> tuple[dict[str, Any], str, LifeMetadata]:
+    """Resolve a life by slug or name and return ``(registry, slug, metadata)``."""
+
+    registry = load_registry()
+    lives: dict[str, LifeMetadata] = registry.setdefault("lives", {})
+    if not lives:
+        raise KeyError(name)
+
+    slug: str | None = None
+    metadata: LifeMetadata | None = None
+    if name in lives:
+        slug = name
+        metadata = lives[name]
+    else:
+        candidate = _slugify(name)
+        if candidate in lives:
+            slug = candidate
+            metadata = lives[candidate]
+        else:
+            for candidate_slug, meta in lives.items():
+                if meta.name == name:
+                    slug = candidate_slug
+                    metadata = meta
+                    break
+
+    if slug is None or metadata is None:
+        raise KeyError(name)
+    return registry, slug, metadata
+
+
 def create_life(name: str) -> LifeMetadata:
     """Create a new life directory and register it."""
 
@@ -237,30 +267,8 @@ def bootstrap_life(name: str, seed: int | None = None) -> LifeMetadata:
 def delete_life(name: str) -> LifeMetadata:
     """Remove a life from the registry and delete its directory."""
 
-    registry = load_registry()
+    registry, slug, metadata = _resolve_life_metadata(name)
     lives: dict[str, LifeMetadata] = registry.setdefault("lives", {})
-    if not lives:
-        raise KeyError(name)
-
-    slug: str | None = None
-    metadata: LifeMetadata | None = None
-    if name in lives:
-        slug = name
-        metadata = lives[name]
-    else:
-        candidate = _slugify(name)
-        if candidate in lives:
-            slug = candidate
-            metadata = lives[candidate]
-        else:
-            for candidate_slug, meta in lives.items():
-                if meta.name == name:
-                    slug = candidate_slug
-                    metadata = meta
-                    break
-
-    if slug is None or metadata is None:
-        raise KeyError(name)
 
     try:
         shutil.rmtree(metadata.path)
@@ -273,6 +281,47 @@ def delete_life(name: str) -> LifeMetadata:
     save_registry(registry)
 
     return metadata
+
+
+def archive_life(name: str) -> LifeMetadata:
+    """Mark a life as extinct and return its metadata."""
+
+    registry, slug, metadata = _resolve_life_metadata(name)
+    metadata.status = "extinct"
+    if registry.get("active") == slug:
+        registry["active"] = next((key for key in registry["lives"] if key != slug), None)
+    save_registry(registry)
+    return metadata
+
+
+def memorialize_life(name: str, *, message: str) -> Path:
+    """Write a memorial note for a life and return the created file path."""
+
+    _, _, metadata = _resolve_life_metadata(name)
+    memorial_dir = metadata.path / "mem"
+    memorial_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).isoformat()
+    memorial_file = memorial_dir / "memorial.json"
+    payload = {"life": metadata.slug, "written_at": stamp, "message": message.strip()}
+    memorial_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return memorial_file
+
+
+def clone_life(name: str, *, new_name: str | None = None) -> LifeMetadata:
+    """Clone an existing life to a fresh life entry."""
+
+    _, _, source = _resolve_life_metadata(name)
+    clone_name = new_name or f"{source.name} clone"
+    clone_meta = create_life(clone_name)
+    shutil.copytree(source.path, clone_meta.path, dirs_exist_ok=True)
+    registry = load_registry()
+    lives: dict[str, LifeMetadata] = registry.get("lives", {})
+    current = lives.get(clone_meta.slug)
+    if current is not None:
+        current.status = "active"
+    registry["active"] = clone_meta.slug
+    save_registry(registry)
+    return lives.get(clone_meta.slug, clone_meta)
 
 
 def _remove_tree(path: Path) -> None:

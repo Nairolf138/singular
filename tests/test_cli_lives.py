@@ -184,3 +184,40 @@ def test_birth_prints_registry_root_used(
     out = capsys.readouterr().out
     assert "Registre de vies utilisé:" in out
     assert str(root.resolve()) in out
+
+
+def test_lives_archive_memorial_clone_guided_commands(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "guided"
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    main(["--root", str(root), "lives", "create", "--name", "Alpha"])
+    capsys.readouterr()
+    main(["--root", str(root), "lives", "archive", "alpha"])
+    archive_out = capsys.readouterr().out
+    assert "Vie archivée" in archive_out
+    assert "singular lives memorial" in archive_out
+
+    main(
+        [
+            "--root",
+            str(root),
+            "lives",
+            "memorial",
+            "alpha",
+            "--message",
+            "Merci Alpha",
+        ]
+    )
+    memorial_out = capsys.readouterr().out
+    assert "Mémorial enregistré" in memorial_out
+    assert (root / "lives" / "alpha" / "mem" / "memorial.json").exists()
+
+    main(["--root", str(root), "lives", "clone", "alpha", "--new-name", "Alpha 2"])
+    clone_out = capsys.readouterr().out
+    assert "Vie clonée" in clone_out
+    assert "singular status --verbose" in clone_out

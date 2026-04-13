@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from ..life.health import detect_health_state
+from ..life.vital import compute_vital_timeline
 from ..metrics.autonomy import compute_autonomy_metrics
 from ..psyche import Psyche
 from ..memory import get_mem_dir
@@ -73,6 +74,15 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         "traits": {},
         "autonomy_metrics": {},
         "quests": {"active": [], "completed": []},
+        "vital_timeline": {
+            "age": 0,
+            "state": "mature",
+            "risk_level": "low",
+            "terminal": False,
+            "causes": [],
+            "reproduction_eligible": False,
+            "thresholds": {},
+        },
     }
     runs_dir = Path(RUNS_DIR)
     files = sorted(runs_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
@@ -123,6 +133,24 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
                     "window": "10/50",
                 }
             payload["autonomy_metrics"] = compute_autonomy_metrics(records)
+            failure_streak = 0
+            max_failure_streak = 0
+            for rec in records:
+                accepted = rec.get("accepted")
+                if not isinstance(accepted, bool):
+                    accepted = rec.get("ok")
+                if accepted is False:
+                    failure_streak += 1
+                    max_failure_streak = max(max_failure_streak, failure_streak)
+                elif accepted is True:
+                    failure_streak = 0
+            payload["vital_timeline"] = compute_vital_timeline(
+                age=mutation_count,
+                current_health=health_scores[-1] if health_scores else None,
+                failure_rate=(1 - (ok_count / len(success_records))) if success_records else None,
+                failure_streak=max_failure_streak,
+                extinction_seen=any(r.get("event") == "death" for r in records),
+            )
             if verbose:
                 alerts = alerts_from_records(records)
                 payload["alerts"] = alerts
@@ -179,6 +207,9 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             ["Mood", str(payload.get("mood"))],
             ["Quêtes actives", str(len((payload.get("quests") or {}).get("active", [])))],
             ["Quêtes terminées", str(len((payload.get("quests") or {}).get("completed", [])))],
+            ["Âge vital", str((payload.get("vital_timeline") or {}).get("age", 0))],
+            ["État vital", str((payload.get("vital_timeline") or {}).get("state", "n/a"))],
+            ["Risque vital", str((payload.get("vital_timeline") or {}).get("risk_level", "n/a"))],
         ]
         _print_table(["Metric", "Value"], run_rows)
         if verbose:
@@ -218,6 +249,13 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         )
         print(f"Latence perception→action: {_fmt_number(autonomy.get('perception_to_action_latency_ms'), ' ms')}")
         print(f"Coût ressources par gain: {_fmt_number(autonomy.get('resource_cost_per_gain'))}")
+        vital = payload.get("vital_timeline") if isinstance(payload.get("vital_timeline"), dict) else {}
+        print(f"Âge vital: {vital.get('age', 0)}")
+        print(f"État vital: {vital.get('state', 'n/a')}")
+        print(f"Risque vital: {vital.get('risk_level', 'n/a')}")
+        causes = vital.get("causes")
+        if isinstance(causes, list) and causes:
+            print(f"Causes observées: {', '.join(str(c) for c in causes)}")
         health = payload.get("health")
         if isinstance(health, dict):
             print(

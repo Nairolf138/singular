@@ -65,6 +65,12 @@ class DashboardActionService:
                 result = self._lives_list(params)
             elif action == "lives_use":
                 result = self._lives_use(params)
+            elif action == "archive":
+                result = self._archive(params)
+            elif action == "memorial":
+                result = self._memorial(params)
+            elif action == "clone":
+                result = self._clone(params)
             else:
                 payload = ActionResult(
                     ok=False,
@@ -256,3 +262,60 @@ class DashboardActionService:
 
         data, log = self._capture(_run)
         return ActionResult(ok=True, action="lives_use", data=data, log=log)
+
+    def _archive(self, params: dict[str, Any]) -> ActionResult:
+        name = self._require_non_empty_text(params.get("name"), field="name", max_len=80)
+        from singular.lives import archive_life
+
+        def _run() -> dict[str, Any]:
+            meta = archive_life(name)
+            return {
+                "name": meta.name,
+                "slug": meta.slug,
+                "status": meta.status,
+                "guided_message": "Vie archivée: statut extinct, prête pour memorial.",
+            }
+
+        data, log = self._capture(_run)
+        return ActionResult(ok=True, action="archive", data=data, log=log)
+
+    def _memorial(self, params: dict[str, Any]) -> ActionResult:
+        name = self._require_non_empty_text(params.get("name"), field="name", max_len=80)
+        message = self._require_non_empty_text(
+            params.get("message", "Merci pour ce cycle de vie."),
+            field="message",
+            max_len=500,
+        )
+        from singular.lives import memorialize_life
+
+        def _run() -> dict[str, Any]:
+            path = memorialize_life(name, message=message)
+            return {
+                "name": name,
+                "memorial_path": str(path),
+                "guided_message": "Mémorial créé. Vous pouvez maintenant cloner cette vie.",
+            }
+
+        data, log = self._capture(_run)
+        return ActionResult(ok=True, action="memorial", data=data, log=log)
+
+    def _clone(self, params: dict[str, Any]) -> ActionResult:
+        name = self._require_non_empty_text(params.get("name"), field="name", max_len=80)
+        new_name = params.get("new_name")
+        if new_name is not None:
+            new_name = self._require_non_empty_text(new_name, field="new_name", max_len=80)
+        from singular.lives import clone_life
+
+        def _run() -> dict[str, Any]:
+            meta = clone_life(name, new_name=new_name)
+            os.environ["SINGULAR_HOME"] = str(meta.path)
+            return {
+                "source": name,
+                "name": meta.name,
+                "slug": meta.slug,
+                "path": str(meta.path),
+                "guided_message": "Clone actif. Recommandé: lancer `status` puis `loop`.",
+            }
+
+        data, log = self._capture(_run)
+        return ActionResult(ok=True, action="clone", data=data, log=log)

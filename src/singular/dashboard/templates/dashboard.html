@@ -75,6 +75,13 @@
     <div class='card'><div class='card-label'>Latence perception→action</div><div id='kpi-autonomy-latency' class='card-value'>n/a</div></div>
     <div class='card'><div class='card-label'>Coût ressources par gain</div><div id='kpi-autonomy-cost' class='card-value'>n/a</div></div>
   </div>
+  <h3>Timeline vitale</h3>
+  <div class='cards-grid'>
+    <div class='card'><div class='card-label'>Âge</div><div id='kpi-vital-age' class='card-value'>0</div></div>
+    <div class='card'><div class='card-label'>Risque</div><div id='kpi-vital-risk' class='card-value'>n/a</div></div>
+    <div class='card'><div class='card-label'>État terminal</div><div id='kpi-vital-terminal' class='card-value'>n/a</div></div>
+    <div class='card'><div class='card-label'>Causes</div><div id='kpi-vital-causes' class='card-value'>n/a</div></div>
+  </div>
 
   <div class='panel'>
     <h3 style='margin-top:0;'>Synthèse des vies</h3>
@@ -197,6 +204,7 @@
     <label>Budget boucle (s) <input id='action-budget' type='number' min='0.1' step='0.1' value='1.0'/></label>
     <div style='display:flex;gap:8px;flex-wrap:wrap;'>
       <button id='act-birth'>Créer vie</button><button id='act-talk'>Discuter</button><button id='act-loop'>Boucle</button>
+      <button id='act-archive'>Archiver</button><button id='act-memorial'>Mémorial</button><button id='act-clone'>Cloner</button>
     </div>
     <details>
       <summary>Actions secondaires</summary>
@@ -291,6 +299,11 @@ const loadCockpit=()=>fetch(withScope('/api/cockpit')).then(r=>r.json()).then(d=
   document.getElementById('kpi-autonomy-decision').textContent=`${fmtPct(decisionQuality.acceptance_rate)} / ${fmtPct(decisionQuality.regression_rate)}`;
   document.getElementById('kpi-autonomy-latency').textContent=fmtNum(autonomy.perception_to_action_latency_ms,' ms');
   document.getElementById('kpi-autonomy-cost').textContent=fmtNum(autonomy.resource_cost_per_gain);
+  const vital=d.vital_timeline||{};
+  document.getElementById('kpi-vital-age').textContent=String(vital.age??0);
+  document.getElementById('kpi-vital-risk').textContent=String(vital.risk_level||'n/a');
+  document.getElementById('kpi-vital-terminal').textContent=vital.terminal===true?'oui':'non';
+  document.getElementById('kpi-vital-causes').textContent=(vital.causes||[]).join(', ')||'n/a';
   setStatusTone(document.getElementById('kpi-trend'),trend==='amélioration'?'good':(trend==='dégradation'?'bad':'warn'));
 
   const notable=d.last_notable_mutation;
@@ -323,6 +336,9 @@ document.getElementById('act-loop').onclick=()=>runAction('loop',{budget_seconds
 document.getElementById('act-report').onclick=()=>runAction('report',{});
 document.getElementById('act-lives-list').onclick=()=>runAction('lives_list',{});
 document.getElementById('act-lives-use').onclick=()=>runAction('lives_use',{name:document.getElementById('action-life-name').value||''});
+document.getElementById('act-archive').onclick=()=>runAction('archive',{name:document.getElementById('action-life-name').value||''});
+document.getElementById('act-memorial').onclick=()=>runAction('memorial',{name:document.getElementById('action-life-name').value||'',message:'Merci pour ce cycle de vie.'});
+document.getElementById('act-clone').onclick=()=>runAction('clone',{name:document.getElementById('action-life-name').value||'',new_name:`${document.getElementById('action-life-name').value||'Vie'} clone`});
 const badge=(label,bg)=>`<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:${bg};margin-right:4px;">${label}</span>`;
 const renderLivesBuckets=(rows)=>{const activeInRegistry=(rows||[]).filter(row=>row.is_registry_active_life===true);const extinctInRuns=(rows||[]).filter(row=>row.extinction_seen_in_runs===true);const aliveList=document.getElementById('alive-lives');const deadList=document.getElementById('dead-lives');document.getElementById('alive-count').textContent=String(activeInRegistry.length);document.getElementById('dead-count').textContent=String(extinctInRuns.length);aliveList.innerHTML='';deadList.innerHTML='';for(const row of activeInRegistry){const li=document.createElement('li');li.textContent=row.life||'n/a';aliveList.appendChild(li);}for(const row of extinctInRuns){const li=document.createElement('li');li.textContent=row.life||'n/a';deadList.appendChild(li);}if(!activeInRegistry.length){const li=document.createElement('li');li.textContent='Aucune';aliveList.appendChild(li);}if(!extinctInRuns.length){const li=document.createElement('li');li.textContent='Aucune';deadList.appendChild(li);}};
 const renderLivesTable=(rows)=>{const body=document.getElementById('lives-table-body');body.innerHTML='';for(const row of rows||[]){const tr=document.createElement('tr');const score=row.current_health_score===null||row.current_health_score===undefined?'n/a':Number(row.current_health_score).toFixed(1);const stability=row.stability===null||row.stability===undefined?'n/a':`${(Number(row.stability)*100).toFixed(1)}%`;const lastActivity=row.last_activity||'n/a';let badges='';if(row.selected_life){badges+=badge('Vie sélectionnée','#d1fadf');}else{badges+=badge('Vie non sélectionnée','#fde2e1');}if(row.is_registry_active_life){badges+=badge('Vie active dans le registre','#d1fadf');}else{badges+=badge(`Statut registre: ${row.life_status||'n/a'}`,'#fde2e1');}if(row.run_terminated){badges+=badge('Run terminé','#ffe7c2');}if(row.extinction_seen_in_runs){badges+=badge('Extinction détectée','#fecdca');}if(row.has_recent_activity){badges+=badge('Activité récente','#d9ecff');}if(row.trend==='dégradation'){badges+=badge('dégradation','#ffe7c2');}if((row.alerts_count||0)>0){badges+=badge(`${row.alerts_count} alertes`,'#fecdca');}tr.innerHTML=`<td>${row.life||'n/a'}</td><td>${score}</td><td>${row.trend||'n/a'}</td><td>${stability}</td><td>${lastActivity}</td><td>${row.iterations??0}</td><td>${badges}</td>`;body.appendChild(tr);}if(!(rows||[]).length){const tr=document.createElement('tr');tr.innerHTML="<td colspan='7'>Aucune vie ne correspond aux filtres.</td>";body.appendChild(tr);}};

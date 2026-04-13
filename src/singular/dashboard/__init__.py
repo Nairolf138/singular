@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from singular.lives import get_registry_root, load_registry, set_life_status
+from singular.life.vital import compute_vital_timeline
 from singular.metrics.autonomy import compute_autonomy_metrics
 
 from singular.dashboard.actions import DashboardActionService
@@ -412,6 +413,13 @@ def create_app(
                 ],
                 "global_status": "unknown",
                 "autonomy_metrics": {},
+                "vital_timeline": compute_vital_timeline(
+                    age=0,
+                    current_health=None,
+                    failure_rate=None,
+                    failure_streak=0,
+                    extinction_seen=False,
+                ),
             }
             return empty
 
@@ -496,6 +504,24 @@ def create_app(
             global_status = "stable"
 
         autonomy_metrics = compute_autonomy_metrics(records)
+        failure_streak = 0
+        max_failure_streak = 0
+        for rec in records:
+            accepted = rec.get("accepted")
+            if not isinstance(accepted, bool):
+                accepted = rec.get("ok")
+            if accepted is False:
+                failure_streak += 1
+                max_failure_streak = max(max_failure_streak, failure_streak)
+            elif accepted is True:
+                failure_streak = 0
+        vital_timeline = compute_vital_timeline(
+            age=len(mutations),
+            current_health=health_score,
+            failure_rate=(1 - accepted_rate) if accepted_rate is not None else None,
+            failure_streak=max_failure_streak,
+            extinction_seen=any(rec.get("event") == "death" for rec in records),
+        )
 
         return {
             "run": latest.stem,
@@ -508,6 +534,7 @@ def create_app(
             "suggested_actions": suggested_actions,
             "global_status": global_status,
             "autonomy_metrics": autonomy_metrics,
+            "vital_timeline": vital_timeline,
         }
 
 
@@ -1006,6 +1033,14 @@ def create_app(
                 "has_recent_activity": last_timestamp is not None,
                 "extinction_seen_in_runs": extinction_seen,
                 "run_terminated": run_terminated,
+                "vital_timeline": compute_vital_timeline(
+                    age=len(mutation_records),
+                    current_health=current_health_score,
+                    failure_rate=failure_rate,
+                    failure_streak=0,
+                    extinction_seen=extinction_seen,
+                    registry_status=registry_status,
+                ),
             }
         unattached_summary = {
             "records_count": sum(unattached_runs.values()),

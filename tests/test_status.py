@@ -108,6 +108,8 @@ def test_status_filters_non_mutation_records_for_success_rate(
     assert payload["mutation_count"] == 3
     assert payload["mutation_success_rate"] == 50.0
     assert payload["success_rate"] == 50.0
+    assert payload["vital_timeline"]["age"] == 3
+    assert payload["vital_timeline"]["state"] in {"mature", "declining", "terminal", "extinct"}
     assert "autonomy_metrics" in payload
     assert "proactive_initiative_rate" in payload["autonomy_metrics"]
 
