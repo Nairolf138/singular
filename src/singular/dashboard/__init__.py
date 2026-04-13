@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from singular.lives import get_registry_root, load_registry, set_life_status
+from singular.metrics.autonomy import compute_autonomy_metrics
 
 from singular.dashboard.actions import DashboardActionService
 from fastapi.responses import HTMLResponse
@@ -409,6 +410,7 @@ def create_app(
                     "Vérifier la collecte des métriques",
                 ],
                 "global_status": "unknown",
+                "autonomy_metrics": {},
             }
             return empty
 
@@ -492,6 +494,8 @@ def create_app(
         else:
             global_status = "stable"
 
+        autonomy_metrics = compute_autonomy_metrics(records)
+
         return {
             "run": latest.stem,
             "health_score": health_score,
@@ -502,6 +506,7 @@ def create_app(
             "next_action": next_action,
             "suggested_actions": suggested_actions,
             "global_status": global_status,
+            "autonomy_metrics": autonomy_metrics,
         }
 
 
