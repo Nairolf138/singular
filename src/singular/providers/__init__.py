@@ -227,9 +227,6 @@ def _load_provider_contract(name: str) -> LLMProviderContract | None:
 def load_llm_client(name: str | None) -> LLMProviderClient | None:
     """Load one provider or a configured fallback chain as :class:`LLMProviderClient`."""
 
-    if not name and not os.getenv("LLM_PROVIDER_FALLBACK"):
-        return None
-
     chain_names = _resolve_provider_chain(name)
     clients: list[LLMProviderClient] = []
     for chain_name in chain_names:
