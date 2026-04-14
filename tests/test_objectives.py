@@ -233,3 +233,30 @@ def test_intrinsic_goals_strategy_applies_repeated_failure_penalty(tmp_path) -> 
     assert strategy["mode"] == "cautious"
     assert strategy["repeated_failure_penalty"] == 0.8
     assert strategy["intrinsic_modulation_version"] == "intrinsic-mod-v2"
+
+
+def test_intrinsic_goals_raise_robustesse_under_eco_relational_debt(tmp_path) -> None:
+    goals = IntrinsicGoals(path=tmp_path / "goals.json")
+    psyche = Psyche()
+
+    baseline = goals.update_tick(
+        tick=1,
+        psyche=psyche,
+        health_score=82.0,
+        resources={"energy": 82.0, "food": 82.0, "warmth": 82.0, "ecological_debt": 0.0, "relational_debt": 0.0},
+        perception_signals={},
+    )
+    pressured = goals.update_tick(
+        tick=2,
+        psyche=psyche,
+        health_score=82.0,
+        resources={"energy": 82.0, "food": 82.0, "warmth": 82.0, "ecological_debt": 70.0, "relational_debt": 65.0},
+        perception_signals={
+            "world_events": [
+                {"type": "world.delayed.crisis", "data": {"risk": 0.7}},
+            ]
+        },
+    )
+
+    assert pressured.robustesse > baseline.robustesse
+    assert pressured.exploration < baseline.exploration

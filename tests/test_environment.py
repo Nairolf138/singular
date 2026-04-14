@@ -19,6 +19,20 @@ def test_update_from_environment_decreases_warmth(tmp_path):
     assert rm.warmth < 50.0
 
 
+def test_world_debt_pressure_reduces_local_resources(tmp_path):
+    path = tmp_path / "resources.json"
+    rm = ResourceManager(energy=80.0, food=80.0, warmth=80.0, path=path)
+    rm.apply_world_state(
+        {
+            "dynamics": {"ecological_debt": 80.0, "relational_debt": 70.0},
+            "global_health": {"signals": {"delayed_risk": 0.6}},
+        }
+    )
+    assert rm.energy < 80.0
+    assert rm.food < 80.0
+    assert rm.warmth < 80.0
+
+
 def test_notify_supports_levels_and_actions() -> None:
     messages: list[str] = []
     notify(

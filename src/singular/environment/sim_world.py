@@ -37,10 +37,30 @@ ACTION_TYPE_TO_WORLD_EFFECT: dict[str, dict[str, Any]] = {
     "resource.cooperation": {
         "produce_resources": {"renewable": {"solar": 0.6}},
         "health_delta": 0.3,
+        "relational_debt_delta": -1.0,
     },
     "resource.conflict": {
         "consume_resources": {"renewable": {"biomass": 0.7}},
         "health_delta": -0.5,
+        "ecological_debt_delta": 2.5,
+        "relational_debt_delta": 2.0,
+    },
+    "resource.overexploitation": {
+        "consume_resources": {"renewable": {"biomass": 1.6, "solar": 0.9}},
+        "health_delta": -0.7,
+        "ecological_debt_delta": 5.0,
+        "delayed_events": [
+            {
+                "kind": "crisis",
+                "label": "ecosystem-backlash",
+                "in_ticks": 2,
+                "effect": {
+                    "consume_resources": {"renewable": {"biomass": 2.0}},
+                    "health_delta": -1.1,
+                    "ecological_debt_delta": 2.0,
+                },
+            }
+        ],
     },
     "skill.execution.succeeded": {
         "produce_resources": {"renewable": {"solar": 0.4}},
@@ -97,7 +117,15 @@ def default_world_state() -> dict[str, Any]:
             "signals": {
                 "resource_pressure": 0.2,
                 "cohesion": 0.85,
+                "ecological_debt": 0.0,
+                "relational_debt": 0.0,
+                "delayed_risk": 0.0,
             },
+        },
+        "dynamics": {
+            "ecological_debt": 0.0,
+            "relational_debt": 0.0,
+            "delayed_events": [],
         },
     }
 
@@ -170,6 +198,23 @@ def _apply_action_to_state(next_state: dict[str, Any], action: dict[str, Any]) -
 
     health = next_state.setdefault("global_health", {})
     health["score"] = _clamp(float(health.get("score", 50.0)) + float(action.get("health_delta", 0.0)))
+    dynamics = next_state.setdefault("dynamics", {})
+    ecological_debt = float(dynamics.get("ecological_debt", 0.0)) + float(action.get("ecological_debt_delta", 0.0))
+    relational_debt = float(dynamics.get("relational_debt", 0.0)) + float(action.get("relational_debt_delta", 0.0))
+    dynamics["ecological_debt"] = _clamp(ecological_debt, minimum=0.0, maximum=100.0)
+    dynamics["relational_debt"] = _clamp(relational_debt, minimum=0.0, maximum=100.0)
+    delayed_events = dynamics.setdefault("delayed_events", [])
+    for delayed_event in action.get("delayed_events", []):
+        if not isinstance(delayed_event, dict):
+            continue
+        delayed_events.append(
+            {
+                "kind": str(delayed_event.get("kind", "unknown")),
+                "label": str(delayed_event.get("label", "scheduled-effect")),
+                "in_ticks": max(int(delayed_event.get("in_ticks", 1)), 1),
+                "effect": deepcopy(delayed_event.get("effect", {})),
+            }
+        )
 
     external = next_state.setdefault("external", {})
     entities = external.setdefault("entities", [])
@@ -213,6 +258,12 @@ def map_action_type_to_effect(action_type: str, payload: dict[str, Any] | None =
 def _merge_action_effect(total: dict[str, Any], effect: dict[str, Any]) -> dict[str, Any]:
     merged = deepcopy(total)
     merged["health_delta"] = float(merged.get("health_delta", 0.0)) + float(effect.get("health_delta", 0.0))
+    merged["ecological_debt_delta"] = float(merged.get("ecological_debt_delta", 0.0)) + float(
+        effect.get("ecological_debt_delta", 0.0)
+    )
+    merged["relational_debt_delta"] = float(merged.get("relational_debt_delta", 0.0)) + float(
+        effect.get("relational_debt_delta", 0.0)
+    )
     for family in ("consume_resources", "produce_resources"):
         family_dst = merged.setdefault(family, {})
         family_src = effect.get(family, {})
@@ -285,12 +336,43 @@ def tick_world(
     tick_count = max(int(steps), 0)
     resources = next_state.get("resources", {})
     renewable = resources.get("renewable", {})
+    dynamics = next_state.setdefault("dynamics", {})
+    ecological_debt = _clamp(float(dynamics.get("ecological_debt", 0.0)), minimum=0.0, maximum=100.0)
+    relational_debt = _clamp(float(dynamics.get("relational_debt", 0.0)), minimum=0.0, maximum=100.0)
+    delayed_events = list(dynamics.get("delayed_events", []))
+    fired_delayed_events: list[dict[str, Any]] = []
 
     for _ in range(tick_count):
         for payload in renewable.values():
             regen_rate = max(float(payload.get("regen_rate", 0.0)), 0.0)
             capacity = max(float(payload.get("capacity", 100.0)), 0.0)
-            payload["amount"] = min(capacity, max(float(payload.get("amount", 0.0)), 0.0) + regen_rate)
+            regen_penalty = (ecological_debt / 100.0) * 0.4
+            effective_regen = regen_rate * max(0.1, 1.0 - regen_penalty)
+            payload["amount"] = min(capacity, max(float(payload.get("amount", 0.0)), 0.0) + effective_regen)
+        matured: list[dict[str, Any]] = []
+        pending: list[dict[str, Any]] = []
+        for entry in delayed_events:
+            if not isinstance(entry, dict):
+                continue
+            remaining = int(entry.get("in_ticks", 1)) - 1
+            updated_entry = dict(entry)
+            updated_entry["in_ticks"] = remaining
+            if remaining <= 0:
+                matured.append(updated_entry)
+            else:
+                pending.append(updated_entry)
+        for matured_entry in matured:
+            fired_delayed_events.append(
+                {
+                    "kind": str(matured_entry.get("kind", "unknown")),
+                    "label": str(matured_entry.get("label", "scheduled-effect")),
+                }
+            )
+            effect_payload = matured_entry.get("effect", {})
+            if isinstance(effect_payload, dict):
+                _apply_action_to_state(next_state, effect_payload)
+        delayed_events = pending
+        dynamics["delayed_events"] = delayed_events
         next_state["world_clock"] = int(next_state.get("world_clock", 0)) + 1
 
     total_capacity = 0.0
@@ -304,9 +386,21 @@ def tick_world(
     health = next_state.setdefault("global_health", {})
     signals = health.setdefault("signals", {})
     signals["resource_pressure"] = round(pressure, 3)
+    dynamics = next_state.setdefault("dynamics", {})
+    ecological_debt = _clamp(float(dynamics.get("ecological_debt", 0.0)), minimum=0.0, maximum=100.0)
+    relational_debt = _clamp(float(dynamics.get("relational_debt", 0.0)), minimum=0.0, maximum=100.0)
+    delayed_risk = _clamp(len(dynamics.get("delayed_events", [])) / 8.0, minimum=0.0, maximum=1.0)
+    signals["ecological_debt"] = round(ecological_debt / 100.0, 3)
+    signals["relational_debt"] = round(relational_debt / 100.0, 3)
+    signals["delayed_risk"] = round(delayed_risk, 3)
+    if fired_delayed_events:
+        health["delayed_events_fired"] = fired_delayed_events
+    else:
+        health.pop("delayed_events_fired", None)
 
     base_score = float(health.get("score", 50.0))
-    drift = (coverage - 0.5) * 2.5 * tick_count
+    debt_drag = ((ecological_debt * 0.012) + (relational_debt * 0.009)) * tick_count
+    drift = ((coverage - 0.5) * 2.5 * tick_count) - debt_drag
     updated_score = _clamp(base_score + drift)
     health["score"] = round(updated_score, 3)
     if drift > 0.2:

@@ -408,6 +408,26 @@ def _derive_world_events(world_state: dict[str, Any] | None) -> list[dict[str, A
                 data={"resources": opportunities},
             )
         )
+    signals = health.get("signals", {}) if isinstance(health.get("signals"), dict) else {}
+    delayed_risk = float(signals.get("delayed_risk", 0.0) or 0.0)
+    if delayed_risk >= 0.35:
+        events.append(
+            _build_perception_event(
+                event_type="world.delayed.crisis",
+                source="world_state",
+                confidence=min(0.95, 0.6 + delayed_risk * 0.35),
+                data={"risk": round(delayed_risk, 3)},
+            )
+        )
+    elif delayed_risk > 0.0:
+        events.append(
+            _build_perception_event(
+                event_type="world.delayed.opportunity",
+                source="world_state",
+                confidence=0.7,
+                data={"risk": round(delayed_risk, 3)},
+            )
+        )
     return events
 
 

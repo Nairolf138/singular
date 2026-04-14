@@ -146,6 +146,8 @@ class IntrinsicGoals:
         energy = _clamp(float((resources or {}).get("energy", 50.0)) / 100.0)
         food = _clamp(float((resources or {}).get("food", 50.0)) / 100.0)
         warmth = _clamp(float((resources or {}).get("warmth", 50.0)) / 100.0)
+        ecological_debt = _clamp(float((resources or {}).get("ecological_debt", 0.0)) / 100.0)
+        relational_debt = _clamp(float((resources or {}).get("relational_debt", 0.0)) / 100.0)
         resource_stability = (energy + food + warmth) / 3.0
         telemetry_efficiency_penalty = 0.0
         telemetry_quality_pressure = 0.0
@@ -159,6 +161,8 @@ class IntrinsicGoals:
         injuries_pressure = 0.0
         success_boost = 0.0
         repeated_failure_pressure = 0.0
+        delayed_crisis_pressure = 0.0
+        delayed_opportunity_pressure = 0.0
         if isinstance(narrative, Mapping):
             risk_aversion = _mean_mapping_value(narrative.get("risk_aversion_by_action_family"))
             confidence_map = narrative.get("accumulated_confidence_by_action_family")
@@ -172,6 +176,22 @@ class IntrinsicGoals:
             repeated_failure_pressure = _clamp(
                 _as_float(execution_history.get("repeated_failure_pressure", 0.0), default=0.0)
             )
+        world_events = (perception_signals or {}).get("world_events")
+        if isinstance(world_events, list):
+            total_events = float(len(world_events))
+            crisis_count = 0.0
+            opportunity_count = 0.0
+            for event in world_events:
+                if not isinstance(event, Mapping):
+                    continue
+                event_type = str(event.get("type", ""))
+                if "delayed.crisis" in event_type:
+                    crisis_count += 1.0
+                if "delayed.opportunity" in event_type:
+                    opportunity_count += 1.0
+            if total_events > 0.0:
+                delayed_crisis_pressure = _clamp(crisis_count / total_events)
+                delayed_opportunity_pressure = _clamp(opportunity_count / total_events)
 
         skill_reputation = (perception_signals or {}).get("skill_reputation")
         if isinstance(skill_reputation, Mapping) and skill_reputation:
@@ -234,11 +254,14 @@ class IntrinsicGoals:
             robustesse=0.2
             + 0.35 * (1.0 - health_norm)
             + 0.25 * (1.0 - resource_stability)
+            + 0.22 * ecological_debt
+            + 0.14 * relational_debt
             + 0.2 * telemetry_failure_pressure
             + 0.25 * host_environmental_pressure
             + 0.1 * host_environmental_variance
             + 0.25 * injuries_pressure
             + 0.18 * risk_aversion
+            + 0.2 * delayed_crisis_pressure
             + 0.2 * repeated_failure_pressure,
             efficacite=0.2
             + 0.45 * health_norm
@@ -247,12 +270,17 @@ class IntrinsicGoals:
             + 0.2 * (1.0 - host_environmental_pressure)
             + 0.22 * success_boost
             + 0.15 * accumulated_confidence
+            + 0.12 * delayed_opportunity_pressure
+            - 0.1 * ecological_debt
             - 0.12 * repeated_failure_pressure,
             exploration=0.2
             + 0.45 * curiosity
             + 0.2 * playfulness
             + 0.1 * (1.0 - energy)
             + 0.18 * accumulated_confidence
+            - 0.15 * ecological_debt
+            - 0.1 * relational_debt
+            - 0.22 * delayed_crisis_pressure
             - 0.25 * risk_aversion
             - 0.18 * repeated_failure_pressure,
         )
@@ -286,6 +314,10 @@ class IntrinsicGoals:
                     "injuries_pressure": injuries_pressure,
                     "success_boost": success_boost,
                     "repeated_failure_pressure": repeated_failure_pressure,
+                    "ecological_debt": ecological_debt,
+                    "relational_debt": relational_debt,
+                    "delayed_crisis_pressure": delayed_crisis_pressure,
+                    "delayed_opportunity_pressure": delayed_opportunity_pressure,
                     "intrinsic_modulation_version": INTRINSIC_MODULATION_VERSION,
                     "perception_rules_version": modulation["version"],
                     "perception_rule_count": len(modulation["applied_rules"]),
