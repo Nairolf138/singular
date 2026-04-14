@@ -92,3 +92,34 @@ def test_orchestrator_triggers_and_settles_quest(monkeypatch, tmp_path: Path) ->
     payload = quests_path.read_text(encoding="utf-8")
     assert '"repair"' in payload
     assert '"success"' in payload
+
+
+def test_orchestrator_action_executes_skill_runtime(monkeypatch, tmp_path: Path) -> None:
+    life = tmp_path / "life"
+    (life / "skills").mkdir(parents=True)
+    (life / "mem").mkdir(parents=True)
+    (life / "skills" / "a.py").write_text("result = 1", encoding="utf-8")
+
+    monkeypatch.setenv("SINGULAR_HOME", str(life))
+
+    from singular.skills.runtime import SkillExecutionResult
+
+    calls: list[tuple[object, object]] = []
+
+    def _fake_execute(task, context):
+        calls.append((task, context))
+        return SkillExecutionResult(skill="a", status="succeeded", score=0.9)
+
+    monkeypatch.setattr("singular.orchestrator.service.run_tick", lambda **kwargs: None)
+
+    bus = EventBus()
+    service = OrchestratorService(config=OrchestratorConfig(dry_run=False), bus=bus)
+    service.state.current_phase = LifecyclePhase.ACTION.value
+    monkeypatch.setattr(service.skill_runtime, "execute_best_skill", _fake_execute)
+
+    service.tick()
+
+    assert calls
+    task, context = calls[0]
+    assert task["name"] == "orchestrator.action"
+    assert context["phase"] == "action"
