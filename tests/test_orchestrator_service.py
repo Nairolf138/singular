@@ -127,6 +127,41 @@ def test_orchestrator_action_executes_skill_runtime(monkeypatch, tmp_path: Path)
     assert context["phase"] == "action"
 
 
+def test_orchestrator_requests_help_after_failure_streak(monkeypatch, tmp_path: Path) -> None:
+    life = tmp_path / "life"
+    (life / "skills").mkdir(parents=True)
+    (life / "mem").mkdir(parents=True)
+    (life / "skills" / "a.py").write_text("result = 1", encoding="utf-8")
+    monkeypatch.setenv("SINGULAR_HOME", str(life))
+    monkeypatch.setattr("singular.orchestrator.service.run_tick", lambda **kwargs: None)
+
+    events: list[dict[str, object]] = []
+    bus = EventBus()
+    bus.subscribe("help.requested", lambda event: events.append(event.payload))
+    service = OrchestratorService(
+        config=OrchestratorConfig(dry_run=False, help_request_failure_threshold=2),
+        bus=bus,
+    )
+    service.state.current_phase = LifecyclePhase.ACTION.value
+
+    def _fail_execute(task, context):
+        return SkillExecutionResult(
+            skill="a",
+            status="failed",
+            score=0.1,
+            reason="sandbox failure",
+        )
+
+    monkeypatch.setattr(service.skill_runtime, "execute_best_skill", _fail_execute)
+    service.tick()
+    service.state.current_phase = LifecyclePhase.ACTION.value
+    service.tick()
+
+    assert len(events) == 1
+    assert events[0]["task"] == "orchestrator.action"
+    assert events[0]["attempts"] == 2
+
+
 def test_orchestrator_repeated_negative_feedback_reprioritizes_action_routines(monkeypatch, tmp_path: Path) -> None:
     life = tmp_path / "life"
     (life / "skills").mkdir(parents=True)

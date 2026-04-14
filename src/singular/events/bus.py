@@ -15,6 +15,14 @@ from typing import Any, Callable
 EventHandler = Callable[["Event"], None]
 logger = logging.getLogger(__name__)
 
+HELP_REQUESTED = "help.requested"
+HELP_OFFERED = "help.offered"
+HELP_ACCEPTED = "help.accepted"
+HELP_COMPLETED = "help.completed"
+STANDARD_HELP_EVENTS = frozenset(
+    {HELP_REQUESTED, HELP_OFFERED, HELP_ACCEPTED, HELP_COMPLETED}
+)
+
 
 @dataclass(frozen=True)
 class Event:
@@ -152,3 +160,22 @@ def get_global_event_bus() -> EventBus:
         )
         atexit.register(_GLOBAL_BUS.shutdown)
     return _GLOBAL_BUS
+
+
+def build_help_event_payload(
+    *,
+    requester_life: str,
+    helper_life: str | None,
+    task: str,
+    attempts: int,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a normalized payload for standard help events."""
+
+    return {
+        "requester_life": requester_life,
+        "helper_life": helper_life,
+        "task": task,
+        "attempts": max(0, int(attempts)),
+        "metadata": dict(metadata or {}),
+    }

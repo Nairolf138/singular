@@ -12,7 +12,13 @@ import time
 from pathlib import Path
 from typing import Any
 
-from singular.events import Event, EventBus, get_global_event_bus
+from singular.events import (
+    Event,
+    EventBus,
+    HELP_REQUESTED,
+    build_help_event_payload,
+    get_global_event_bus,
+)
 from singular.goals import IntrinsicGoals
 from singular.governance.policy import MutationGovernancePolicy
 from singular.life.loop import run_tick
@@ -82,6 +88,7 @@ class OrchestratorConfig:
     phase_behaviors: dict[str, dict[str, Any]] = field(default_factory=dict)
     dry_run: bool = False
     safe_mode: bool = False
+    help_request_failure_threshold: int = 3
 
 
 class OrchestratorService:
@@ -120,6 +127,7 @@ class OrchestratorService:
         self._pending_events: list[dict[str, Any]] = []
         self._tick_count = 0
         self._latest_signals: dict[str, Any] = {}
+        self._failure_streak_by_task: dict[str, int] = {}
         self._host_thresholds = load_host_sensor_thresholds()
 
         self._subscribe_external_stimuli()
@@ -335,6 +343,10 @@ class OrchestratorService:
                     task={"name": "orchestrator.action", "capabilities": []},
                     context=action_context,
                 )
+                self._track_action_failure_and_request_help(
+                    task_name="orchestrator.action",
+                    skill_execution=skill_execution,
+                )
                 routine_executions = self.routines.execute_with_runtime(
                     skill_runtime=self.skill_runtime,
                     base_context=action_context,
@@ -475,6 +487,32 @@ class OrchestratorService:
                 "warmth": self.resource_manager.warmth,
             },
         }
+
+    def _track_action_failure_and_request_help(
+        self,
+        *,
+        task_name: str,
+        skill_execution: Any,
+    ) -> None:
+        if not hasattr(skill_execution, "status"):
+            return
+        status = str(getattr(skill_execution, "status", "")).strip().lower()
+        if status == "succeeded":
+            self._failure_streak_by_task[task_name] = 0
+            return
+        current = self._failure_streak_by_task.get(task_name, 0) + 1
+        self._failure_streak_by_task[task_name] = current
+        threshold = max(1, int(self.config.help_request_failure_threshold))
+        if current < threshold:
+            return
+        payload = build_help_event_payload(
+            requester_life="active",
+            helper_life=None,
+            task=task_name,
+            attempts=current,
+            metadata={"status": status, "reason": getattr(skill_execution, "reason", None)},
+        )
+        self.bus.publish(HELP_REQUESTED, payload, payload_version=1)
 
     def tick(self) -> LifecyclePhase:
         self._tick_count += 1

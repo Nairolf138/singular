@@ -9,11 +9,13 @@ from singular.multiagent import (
     AgentMessage,
     CollectiveMemory,
     FileQueueTransport,
+    HelpExchangeCoordinator,
     InMemoryQueueTransport,
     OrchestrationScenario,
     resolve_conflicts,
     validate_message_schema,
 )
+from singular.governance.policy import MutationGovernancePolicy
 
 
 def _send_messages_worker(path: str, start: int, count: int) -> None:
@@ -232,7 +234,6 @@ def test_file_queue_transport_concurrent_threads_and_processes(tmp_path):
     for process in processes:
         process.join(timeout=10)
         assert process.exitcode == 0
-
     lines = queue_path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == thread_count + 30
     assert all(line.strip() for line in lines)
@@ -260,8 +261,32 @@ def test_collective_memory_concurrent_threads_and_processes(tmp_path):
     for process in processes:
         process.join(timeout=10)
         assert process.exitcode == 0
-
     records = memory.read()
     assert len(records) == thread_count + 20
     ids = {record["id"] for record in records}
     assert set(range(thread_count)).issubset(ids)
+
+
+def test_help_requested_message_intent_is_supported() -> None:
+    message = AgentMessage(
+        intent="help.requested",
+        task="task-a",
+        evidence=["streak:3"],
+        confidence=1.0,
+        version=2,
+        payload={"attempts": 3},
+    )
+    decoded = AgentMessage.from_dict(message.to_dict())
+    assert decoded.intent == "help.requested"
+
+
+def test_help_exchange_coordinator_emits_help_requested(tmp_path: Path) -> None:
+    transport = InMemoryQueueTransport()
+    coordinator = HelpExchangeCoordinator(
+        transport=transport,
+        policy=MutationGovernancePolicy(review_required_paths=()),
+    )
+    coordinator.emit_help_requested(requester_life="life-a", task="task-y", attempts=4)
+    messages = transport.receive()
+    assert len(messages) == 1
+    assert messages[0].intent == "help.requested"

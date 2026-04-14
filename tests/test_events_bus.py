@@ -2,7 +2,17 @@ import logging
 
 import pytest
 
-from singular.events.bus import EventBus, Event, get_bus_strict_from_env
+from singular.events.bus import (
+    HELP_ACCEPTED,
+    HELP_COMPLETED,
+    HELP_OFFERED,
+    HELP_REQUESTED,
+    EventBus,
+    Event,
+    STANDARD_HELP_EVENTS,
+    build_help_event_payload,
+    get_bus_strict_from_env,
+)
 
 
 def test_dispatch_logs_handler_error(caplog: pytest.LogCaptureFixture) -> None:
@@ -38,3 +48,23 @@ def test_get_bus_strict_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setenv("SINGULAR_EVENT_BUS_STRICT", "0")
     assert get_bus_strict_from_env() is False
+
+
+def test_standard_help_events_and_payload_builder() -> None:
+    assert STANDARD_HELP_EVENTS == {
+        HELP_REQUESTED,
+        HELP_OFFERED,
+        HELP_ACCEPTED,
+        HELP_COMPLETED,
+    }
+    payload = build_help_event_payload(
+        requester_life="life-a",
+        helper_life="life-b",
+        task="routine.fix_bug",
+        attempts=4,
+        metadata={"reason": "streak"},
+    )
+    assert payload["requester_life"] == "life-a"
+    assert payload["helper_life"] == "life-b"
+    assert payload["task"] == "routine.fix_bug"
+    assert payload["attempts"] == 4
