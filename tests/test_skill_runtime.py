@@ -112,3 +112,40 @@ def test_execute_best_skill_rejects_malformed_catalog_annotations(monkeypatch, t
 
     assert result.status == "failed"
     assert result.reason == "no_compatible_skill"
+
+
+def test_execute_best_skill_cautious_strategy_prefers_reliable_skill(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("singular.skills.runtime.sandbox.run", lambda code: {"ok": True})
+    life = tmp_path / "life"
+    skills = life / "skills"
+    mem = life / "mem"
+    skills.mkdir(parents=True)
+    mem.mkdir(parents=True)
+
+    (skills / "fast.py").write_text("def run(context=None):\n    return {'ok': True}\n", encoding="utf-8")
+    (skills / "safe.py").write_text("def run(context=None):\n    return {'ok': True}\n", encoding="utf-8")
+    (mem / "skills.json").write_text(
+        """
+{
+  "fast": {
+    "capabilities": ["assist"],
+    "risk": 0.8,
+    "metrics": {"usage_count": 20, "average_gain": 2.0, "average_cost": 0.1, "failure_count": 8}
+  },
+  "safe": {
+    "capabilities": ["assist"],
+    "risk": 0.1,
+    "metrics": {"usage_count": 20, "average_gain": 1.0, "average_cost": 0.4, "failure_count": 1}
+  }
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    runtime = SkillRuntime(skills_dir=skills, mem_dir=mem)
+    result = runtime.execute_best_skill(
+        task={"name": "assist", "capabilities": ["assist"], "max_risk": 1.0},
+        context={"execution_strategy": {"mode": "cautious", "frustration": 0.9}},
+    )
+    assert result.status == "succeeded"
+    assert result.skill == "safe"

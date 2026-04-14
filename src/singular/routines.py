@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, Mapping
 
 from singular.memory import _atomic_write_text
 
@@ -200,6 +200,32 @@ class RoutinesOrchestrator:
         due.sort(key=lambda item: (-item.priority, item.deadline_at))
         return due
 
+    def due_tasks_with_priority_overrides(
+        self, priority_overrides: Mapping[str, int] | None
+    ) -> list[RoutineTask]:
+        tasks = self.due_tasks()
+        if not priority_overrides:
+            return tasks
+        adjusted: list[RoutineTask] = []
+        for task in tasks:
+            override = priority_overrides.get(task.id)
+            if isinstance(override, int):
+                adjusted.append(
+                    RoutineTask(
+                        id=task.id,
+                        prompt=task.prompt,
+                        description=task.description,
+                        priority=max(0, override),
+                        due_at=task.due_at,
+                        deadline_at=task.deadline_at,
+                        max_risk=task.max_risk,
+                    )
+                )
+            else:
+                adjusted.append(task)
+        adjusted.sort(key=lambda item: (-item.priority, item.deadline_at))
+        return adjusted
+
     def mark_executed(self, task: RoutineTask, *, success: bool, latency_ms: float) -> None:
         executed_at = self._now()
         next_run = executed_at + timedelta(
@@ -213,11 +239,17 @@ class RoutinesOrchestrator:
         )
         self._save_state()
 
-    def execute_with_runtime(self, *, skill_runtime: Any, base_context: dict[str, Any]) -> list[dict[str, Any]]:
+    def execute_with_runtime(
+        self,
+        *,
+        skill_runtime: Any,
+        base_context: dict[str, Any],
+        priority_overrides: Mapping[str, int] | None = None,
+    ) -> list[dict[str, Any]]:
         """Execute all due routines through the skill runtime."""
 
         outcomes: list[dict[str, Any]] = []
-        for task in self.due_tasks():
+        for task in self.due_tasks_with_priority_overrides(priority_overrides):
             started = perf_counter()
             result = skill_runtime.execute_best_skill(
                 task={

@@ -107,3 +107,37 @@ def test_intrinsic_goals_uses_skill_reputation_telemetry(tmp_path) -> None:
 
     assert with_telemetry.efficacite > baseline.efficacite
     assert with_telemetry.coherence > baseline.coherence
+
+
+def test_intrinsic_goals_strategy_turns_cautious_on_repeated_negative_feedback(tmp_path) -> None:
+    goals = IntrinsicGoals(path=tmp_path / "goals.json")
+    strategy = goals.derive_execution_strategy(
+        {
+            "episode_memory": {
+                "structured_feedback": {
+                    "frustration": 0.8,
+                    "satisfaction": 0.1,
+                    "urgency": 0.4,
+                    "theme": "support",
+                },
+                "negative_feedback_streak": 3,
+            }
+        }
+    )
+    assert strategy["mode"] == "cautious"
+
+
+def test_intrinsic_goals_adjust_routine_priorities_from_urgency(tmp_path) -> None:
+    goals = IntrinsicGoals(path=tmp_path / "goals.json")
+    adjusted = goals.adjust_routine_priorities(
+        [
+            {"id": "deep_research", "prompt": "explore roadmap", "priority": 70},
+            {"id": "user_support", "prompt": "help user quickly", "priority": 50},
+        ],
+        perception_signals={
+            "episode_memory": {
+                "structured_feedback": {"frustration": 0.2, "satisfaction": 0.2, "urgency": 0.8, "theme": "support"}
+            }
+        },
+    )
+    assert adjusted[0]["id"] == "user_support"

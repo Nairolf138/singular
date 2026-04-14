@@ -29,6 +29,7 @@ def test_talk_loop(monkeypatch, tmp_path):
     episodes = [e for e in read_episodes() if e.get("event") != "perception"]
     assert len(episodes) == 4
     assert episodes[0]["role"] == "user"
+    assert "structured_signals" in episodes[0]
     assert episodes[1]["role"] == "assistant"
     assert episodes[1]["raw_reply"]
     assert "Mood: neutral" in episodes[1]["text"]
@@ -95,6 +96,7 @@ def test_talk_single_prompt(monkeypatch, tmp_path):
     assert len(episodes) == 2
     assert episodes[0]["role"] == "user"
     assert episodes[0]["text"] == "hello"
+    assert episodes[0]["structured_signals"]["theme"] == "general"
     expected = _default_reply("hello", random.Random(123)) + " | Mood: neutral"
     assert outputs[0] == "Provider: stub"
     assert outputs[-1] == expected

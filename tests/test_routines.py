@@ -69,3 +69,26 @@ routines:
     assert calls
     assert calls[0]["task"]["name"] == "routine.answer_human_prompt"
     assert (life / "mem" / "routines_state.json").exists()
+
+
+def test_routines_apply_priority_overrides(tmp_path: Path) -> None:
+    config = tmp_path / "routines.yaml"
+    state = tmp_path / "routines_state.json"
+    config.write_text(
+        """
+routines:
+  - id: low
+    prompt: "Routine basse"
+    interval_minutes: 5
+    priority: 20
+  - id: high
+    prompt: "Routine haute"
+    interval_minutes: 5
+    priority: 80
+""".strip(),
+        encoding="utf-8",
+    )
+    orchestrator = RoutinesOrchestrator(config_path=config, state_path=state)
+    due = orchestrator.due_tasks_with_priority_overrides({"low": 95})
+    assert due[0].id == "low"
+    assert due[0].priority == 95

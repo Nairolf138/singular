@@ -54,7 +54,8 @@ class SkillRuntime:
         if not catalog:
             catalog = refresh_skill_catalog(skills_dir=self.skills_dir, mem_dir=self.mem_dir)
 
-        candidates = self._compatible_candidates(task_dict, skills_state, catalog)
+        strategy = context.get("execution_strategy", {}) if isinstance(context, dict) else {}
+        candidates = self._compatible_candidates(task_dict, skills_state, catalog, strategy=strategy)
         if not candidates:
             result = SkillExecutionResult(skill=None, status="failed", reason="no_compatible_skill")
             self.bus.publish(
@@ -118,6 +119,8 @@ class SkillRuntime:
         task: dict[str, Any],
         skills_state: dict[str, Any],
         catalog: dict[str, dict[str, Any]],
+        *,
+        strategy: dict[str, Any] | None = None,
     ) -> list[_ScoredCandidate]:
         required_signature = task.get("signature")
         required_capabilities = set(task.get("capabilities", []))
@@ -167,12 +170,18 @@ class SkillRuntime:
                     skill=skill,
                     path=path,
                     metadata={"state": metadata, "catalog": descriptor},
-                    score=self._score_candidate(metadata, descriptor),
+                    score=self._score_candidate(metadata, descriptor, strategy=strategy),
                 )
             )
         return candidates
 
-    def _score_candidate(self, metadata: dict[str, Any], descriptor: dict[str, Any]) -> float:
+    def _score_candidate(
+        self,
+        metadata: dict[str, Any],
+        descriptor: dict[str, Any],
+        *,
+        strategy: dict[str, Any] | None = None,
+    ) -> float:
         metrics = metadata.get("metrics") if isinstance(metadata.get("metrics"), dict) else {}
         usage_count = max(int(metrics.get("usage_count", 0) or 0), 0)
         average_gain = float(metrics.get("average_gain", 0.0) or 0.0)
@@ -187,8 +196,31 @@ class SkillRuntime:
         expected_utility = average_gain
         resource_cost = max(0.0, average_cost)
         risk = self._estimated_risk(metadata, descriptor)
+        mode = str((strategy or {}).get("mode", "balanced"))
+        frustration = max(0.0, min(1.0, float((strategy or {}).get("frustration", 0.0) or 0.0))
+        )
+        urgency = max(0.0, min(1.0, float((strategy or {}).get("urgency", 0.0) or 0.0)))
 
-        return (expected_utility * 0.45) + (success_rate * 0.35) - (resource_cost * 0.1) - (risk * 0.1)
+        utility_w = 0.45
+        success_w = 0.35
+        cost_w = 0.1
+        risk_w = 0.1
+        if mode == "cautious":
+            success_w += 0.12 + frustration * 0.08
+            risk_w += 0.16 + frustration * 0.08
+            utility_w -= 0.08
+            expected_utility *= 0.7 + (0.3 * success_rate)
+            risk = min(1.0, risk + (frustration * 0.15))
+        elif mode == "utility_focused":
+            utility_w += 0.12 + urgency * 0.08
+            cost_w += 0.05
+            risk_w -= 0.03
+        elif mode == "exploratory":
+            novelty_bonus = max(0.0, 1.0 - (usage_count / 10.0))
+            expected_utility += novelty_bonus * 0.15
+            risk_w -= 0.03
+
+        return (expected_utility * utility_w) + (success_rate * success_w) - (resource_cost * cost_w) - (risk * risk_w)
 
     def _estimated_risk(self, metadata: dict[str, Any], descriptor: dict[str, Any]) -> float:
         metrics = metadata.get("metrics") if isinstance(metadata.get("metrics"), dict) else {}
