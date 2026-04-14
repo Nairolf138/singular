@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Any
+from typing import Dict, Any, ClassVar
 from pathlib import Path
 import random
 from enum import Enum
@@ -86,7 +86,8 @@ class Psyche:
     energy: float = 100.0
     sleeping: bool = False
     objectives: Dict[str, Objective] = field(default_factory=dict)
-    schema_version: int = field(default=2, init=False)
+    social_states: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    schema_version: int = field(default=3, init=False)
     mood_history: list[str] = field(default_factory=list)
 
     # ``last_mood`` is updated every time :meth:`feel` is called and can be
@@ -193,6 +194,44 @@ class Psyche:
         repr=False,
     )
 
+    _SOCIAL_KEYS: ClassVar[tuple[str, ...]] = (
+        "gratitude",
+        "loyalty",
+        "jealousy",
+        "resentment",
+    )
+
+    _SOCIAL_EVENT_DELTAS: Dict[str, Dict[str, float]] = field(
+        default_factory=lambda: {
+            "help.completed": {
+                "gratitude": 0.20,
+                "loyalty": 0.10,
+                "jealousy": -0.05,
+                "resentment": -0.10,
+            },
+            "competition.lost": {
+                "gratitude": -0.05,
+                "loyalty": -0.05,
+                "jealousy": 0.20,
+                "resentment": 0.15,
+            },
+            "betrayal": {
+                "gratitude": -0.15,
+                "loyalty": -0.25,
+                "jealousy": 0.10,
+                "resentment": 0.30,
+            },
+            "share.completed": {
+                "gratitude": 0.15,
+                "loyalty": 0.15,
+                "jealousy": -0.10,
+                "resentment": -0.10,
+            },
+        },
+        init=False,
+        repr=False,
+    )
+
     @property
     def mutation_rate(self) -> float:
         """Return a mutation rate derived from the latest mood."""
@@ -268,6 +307,65 @@ class Psyche:
 
         self.feel(derive_mood(record))
         self.save_state()
+
+    def social_state(self, target_life: str) -> Dict[str, float]:
+        """Return social state for ``target_life``, creating defaults if missing."""
+
+        current = self.social_states.get(target_life)
+        if not isinstance(current, dict):
+            current = {}
+        normalized = {
+            key: _clamp(float(current.get(key, 0.5))) for key in self._SOCIAL_KEYS
+        }
+        self.social_states[target_life] = normalized
+        return normalized
+
+    def apply_social_interaction(self, target_life: str, interaction: str) -> Dict[str, float]:
+        """Apply interaction-triggered social deltas for one target life."""
+
+        state = self.social_state(target_life)
+        for key, delta in self._SOCIAL_EVENT_DELTAS.get(interaction, {}).items():
+            state[key] = _clamp(state[key] + delta)
+        return state
+
+    def cooperation_score(self, target_life: str) -> float:
+        """Return willingness to cooperate with ``target_life`` in ``[0, 1]``."""
+
+        state = self.social_state(target_life)
+        trait_base = (self.optimism + self.resilience + self.patience) / 3.0
+        social_signal = (
+            0.35 * state["gratitude"]
+            + 0.35 * state["loyalty"]
+            - 0.20 * state["jealousy"]
+            - 0.30 * state["resentment"]
+        )
+        return _clamp((0.6 * trait_base) + (0.4 * _clamp(0.5 + social_signal)))
+
+    def reproduction_arbitration_score(self, base_score: float, target_life: str) -> float:
+        """Modulate reproduction arbitration score using social emotions."""
+
+        state = self.social_state(target_life)
+        affect = _clamp(
+            0.5
+            + (0.25 * state["loyalty"])
+            + (0.15 * state["gratitude"])
+            - (0.20 * state["resentment"])
+            - (0.10 * state["jealousy"])
+        )
+        return _clamp((0.7 * _clamp(base_score)) + (0.3 * affect))
+
+    def relational_risk_tolerance(self, target_life: str) -> float:
+        """Return tolerated relational risk level for ``target_life`` in ``[0, 1]``."""
+
+        state = self.social_state(target_life)
+        trait_base = (self.playfulness + self.optimism) / 2.0
+        social_adjustment = (
+            0.15 * state["gratitude"]
+            + 0.10 * state["loyalty"]
+            + 0.05 * state["jealousy"]
+            - 0.25 * state["resentment"]
+        )
+        return _clamp(trait_base + social_adjustment)
 
     def feel(self, event: Mood) -> Mood:
         """Register an event and update internal state.
@@ -408,8 +506,14 @@ class Psyche:
         return biases
 
     # Exposed helpers -----------------------------------------------------
-    def interaction_policy(self) -> str:
+    def interaction_policy(self, target_life: str | None = None) -> str:
         """Return the interaction policy based on mood and traits."""
+        if target_life is not None:
+            cooperation = self.cooperation_score(target_life)
+            if cooperation >= 0.65:
+                return "engaging"
+            if cooperation <= 0.35:
+                return "cautious"
         mood = self.last_mood or Mood.NEUTRAL
         if self.optimism >= 0.7:
             return "engaging"
@@ -470,6 +574,14 @@ class Psyche:
             "energy": self.energy,
             "last_mood": self.last_mood.value if self.last_mood else None,
             "mood_history": list(self.mood_history),
+            "social_states": {
+                target: {
+                    key: _clamp(float(values.get(key, 0.5)))
+                    for key in self._SOCIAL_KEYS
+                }
+                for target, values in self.social_states.items()
+                if isinstance(values, dict)
+            },
         }
         if self.objectives:
             state["objectives"] = {
@@ -504,6 +616,9 @@ class Psyche:
             objectives_payload = {}
         mood_history = data.get("mood_history", [])
         schema_version = int(data.get("schema_version", 1))
+        social_payload = data.get("social_states", {})
+        if not isinstance(social_payload, dict):
+            social_payload = {}
         if not isinstance(mood_history, list):
             mood_history = []
 
@@ -537,9 +652,17 @@ class Psyche:
                 for name, obj in objectives_payload.items()
                 if isinstance(obj, dict)
             },
+            social_states={
+                str(target): {
+                    key: _clamp(float(values.get(key, 0.5)))
+                    for key in cls._SOCIAL_KEYS
+                }
+                for target, values in social_payload.items()
+                if isinstance(values, dict)
+            },
             mood_history=[str(entry) for entry in mood_history[-256:]],
         )
         mood_val = data.get("last_mood")
         psyche.last_mood = Mood(mood_val) if mood_val else None
-        psyche.schema_version = max(2, schema_version)
+        psyche.schema_version = max(3, schema_version)
         return psyche
