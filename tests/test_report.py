@@ -246,6 +246,8 @@ def test_report_export_json_schema(monkeypatch, tmp_path):
     assert isinstance(payload["alerts"], list)
     assert payload["policy"]["active"]["version"] == 1
     assert isinstance(payload["policy"]["impact"], list)
+    assert "host_environment" in payload
+    assert "impact_level" in payload["host_environment"]["impact"]
 
 
 def test_report_export_json_is_stable(monkeypatch, tmp_path):

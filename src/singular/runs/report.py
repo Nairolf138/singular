@@ -11,6 +11,7 @@ from .logger import RUNS_DIR
 from ..governance.policy import load_runtime_policy
 from ..life.health import detect_health_state
 from ..memory import read_skills, get_skills_file
+from ..sensors import compute_host_metrics_aggregates, summarize_environmental_impact
 
 
 def load_run_records(
@@ -131,6 +132,8 @@ def _build_report_payload(
     if skills_path is None:
         skills_path = get_skills_file()
     policy = load_runtime_policy()
+    host_aggregates = compute_host_metrics_aggregates()
+    host_impact = summarize_environmental_impact(host_aggregates)
 
     return {
         "schema_version": 1,
@@ -157,6 +160,10 @@ def _build_report_payload(
         "policy": {
             "active": policy.to_payload(),
             "impact": policy.impact_summary(),
+        },
+        "host_environment": {
+            "aggregates": host_aggregates,
+            "impact": host_impact,
         },
     }
 
@@ -213,6 +220,10 @@ def _render_markdown(payload: dict[str, Any]) -> str:
     lines.extend(["", "## Politiques actives"])
     for item in payload.get("policy", {}).get("impact", []):
         lines.append(f"- {item}")
+    lines.extend(["", "## Environnement hôte"])
+    host_impact = payload.get("host_environment", {}).get("impact", {})
+    lines.append(f"- Niveau d'impact: {host_impact.get('impact_level', 'low')}")
+    lines.append(f"- Biais décisionnel: {host_impact.get('decision_bias', 'balanced')}")
 
     return "\n".join(lines) + "\n"
 
@@ -276,6 +287,12 @@ def report(
             f"{payload['health']['score']:.2f}/100 "
             f"({payload['health']['trend']}, comparaison fenêtres {payload['health']['window']})"
         )
+    host_impact = payload.get("host_environment", {}).get("impact", {})
+    print(
+        "Impact environnement hôte: "
+        f"{host_impact.get('impact_level', 'low')} "
+        f"(biais: {host_impact.get('decision_bias', 'balanced')})"
+    )
 
     counter = summary["operator_histogram"]
     if output_format == "table":

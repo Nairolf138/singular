@@ -109,6 +109,47 @@ def test_intrinsic_goals_uses_skill_reputation_telemetry(tmp_path) -> None:
     assert with_telemetry.coherence > baseline.coherence
 
 
+def test_intrinsic_goals_account_for_host_environment_pressure(tmp_path) -> None:
+    goals = IntrinsicGoals(path=tmp_path / "goals.json")
+    psyche = Psyche()
+
+    low_pressure = goals.update_tick(
+        tick=1,
+        psyche=psyche,
+        health_score=80.0,
+        resources={"energy": 80.0, "food": 80.0, "warmth": 80.0},
+        perception_signals={
+            "host_metrics_aggregates": {
+                "rolling_means": {
+                    "cpu_percent": {"20": 18.0},
+                    "ram_used_percent": {"20": 22.0},
+                    "host_temperature_c": {"20": 35.0},
+                },
+                "variance": {"cpu_percent": 5.0, "ram_used_percent": 7.0},
+            }
+        },
+    )
+    high_pressure = goals.update_tick(
+        tick=2,
+        psyche=psyche,
+        health_score=80.0,
+        resources={"energy": 80.0, "food": 80.0, "warmth": 80.0},
+        perception_signals={
+            "host_metrics_aggregates": {
+                "rolling_means": {
+                    "cpu_percent": {"20": 90.0},
+                    "ram_used_percent": {"20": 91.0},
+                    "host_temperature_c": {"20": 84.0},
+                },
+                "variance": {"cpu_percent": 110.0, "ram_used_percent": 95.0},
+            }
+        },
+    )
+
+    assert high_pressure.robustesse > low_pressure.robustesse
+    assert high_pressure.efficacite < low_pressure.efficacite
+
+
 def test_intrinsic_goals_strategy_turns_cautious_on_repeated_negative_feedback(tmp_path) -> None:
     goals = IntrinsicGoals(path=tmp_path / "goals.json")
     strategy = goals.derive_execution_strategy(

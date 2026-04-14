@@ -112,6 +112,8 @@ def test_status_filters_non_mutation_records_for_success_rate(
     assert payload["vital_timeline"]["state"] in {"mature", "declining", "terminal", "extinct"}
     assert "autonomy_metrics" in payload
     assert "proactive_initiative_rate" in payload["autonomy_metrics"]
+    assert "host_environment" in payload
+    assert "impact" in payload["host_environment"]
 
 
 def test_status_exposes_quest_counts(tmp_path, monkeypatch, capsys) -> None:

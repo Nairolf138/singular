@@ -22,7 +22,12 @@ from typing import Any
 
 from singular.events import EventBus, get_global_event_bus
 from singular.governance.policy import MutationGovernancePolicy
-from singular.sensors import collect_host_metrics, load_host_sensor_thresholds
+from singular.sensors import (
+    append_host_metrics_sample,
+    collect_host_metrics,
+    compute_host_metrics_aggregates,
+    load_host_sensor_thresholds,
+)
 
 
 def _read_optional_file() -> dict[str, Any]:
@@ -406,6 +411,11 @@ def capture_signals(
     host_metrics = _collect_host_signals()
     if host_metrics is not None:
         signals["host_metrics"] = host_metrics
+        try:
+            append_host_metrics_sample(host_metrics)
+            signals["host_metrics_aggregates"] = compute_host_metrics_aggregates()
+        except Exception:
+            pass
 
     root = _resolve_sandbox_root(sandbox_root)
     state = artifact_state or _ARTIFACT_STATE
