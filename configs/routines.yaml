@@ -1,0 +1,21 @@
+routines:
+  - id: summarize_inbox
+    description: Résumer les nouveaux messages de la boîte de réception.
+    prompt: "Résume les nouveautés de la inbox et propose 3 prochaines actions."
+    interval_minutes: 30
+    priority: 80
+  - id: check_technical_debt
+    description: Vérifier les signaux de dette technique et lister les remédiations.
+    prompt: "Inspecte les signaux de dette technique et priorise les corrections."
+    interval_minutes: 180
+    priority: 70
+  - id: consolidate_memory
+    description: Consolider la mémoire épisodique vers des éléments exploitables.
+    prompt: "Consolide la mémoire: épisodes clés, apprentissages, actions suivantes."
+    interval_minutes: 240
+    priority: 60
+  - id: answer_human_prompt
+    description: Traiter une sollicitation humaine en attente.
+    prompt: "Détecte et réponds au prochain prompt humain en attente."
+    interval_minutes: 15
+    priority: 90
