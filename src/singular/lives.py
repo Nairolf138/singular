@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from .governance.policy import MutationGovernancePolicy
-from .memory import _append_jsonl_line
+from .memory import append_jsonl_line_safe
 
 _REGISTRY_DIRNAME = "lives"
 _REGISTRY_FILENAME = "registry.json"
@@ -151,7 +151,7 @@ def _log_legacy_transfer(
     reason: str,
     payload: dict[str, Any] | None = None,
 ) -> None:
-    _append_jsonl_line(
+    append_jsonl_line_safe(
         _legacy_transfers_journal_path(),
         {
             "ts": _now_iso(),

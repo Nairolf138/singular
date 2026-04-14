@@ -120,6 +120,20 @@ def _append_jsonl_line(path: Path, payload: dict[str, Any]) -> None:
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
+def append_jsonl_line_safe(
+    path: Path | str,
+    payload: Mapping[str, Any],
+) -> None:
+    """Append one JSON object as JSONL with durable cross-platform locking.
+
+    This public API should be used by other modules when they need a locked
+    append operation. It preserves the existing lock+append behavior while
+    exposing a stable cross-module contract.
+    """
+
+    _append_jsonl_line(Path(path), dict(payload))
+
+
 def ensure_memory_structure(mem_dir: Path | str | None = None) -> None:
     """Create the memory directory structure if it does not exist."""
     if mem_dir is None:
