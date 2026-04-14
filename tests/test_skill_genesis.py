@@ -45,6 +45,8 @@ def test_skill_genesis_creation_allowed(monkeypatch, tmp_path: Path) -> None:
     assert result.target.exists()
     payload = json.loads((mem_dir / "skills.json").read_text(encoding="utf-8"))
     assert result.skill_name in payload
+    catalog = json.loads((mem_dir / "skill_catalog.json").read_text(encoding="utf-8"))
+    assert result.skill_name in catalog
     assert (mem_dir / "skill_genesis.jsonl").exists()
 
 

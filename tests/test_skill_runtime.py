@@ -86,3 +86,29 @@ def test_execute_best_skill_emits_failed_when_none(tmp_path: Path) -> None:
     assert result.status == "failed"
     assert result.reason == "no_compatible_skill"
     assert failed_payloads[-1]["reason"] == "no_compatible_skill"
+
+
+def test_execute_best_skill_rejects_malformed_catalog_annotations(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("singular.skills.runtime.sandbox.run", lambda code: {"ok": True})
+    life = tmp_path / "life"
+    skills = life / "skills"
+    mem = life / "mem"
+    skills.mkdir(parents=True)
+    mem.mkdir(parents=True)
+
+    (skills / "json_skill.py").write_text(
+        '"""Capabilities: json\nInput: json\nOutput: dict\nReliability: very-high\n"""\n\n'
+        "def run(context=None):\n    return {'ok': True}\n",
+        encoding="utf-8",
+    )
+
+    (mem / "skills.json").write_text('{"json_skill": {"risk": 0.0}}', encoding="utf-8")
+
+    runtime = SkillRuntime(skills_dir=skills, mem_dir=mem)
+    result = runtime.execute_best_skill(
+        task={"name": "json task", "capabilities": ["json"], "input_format": "json"},
+        context={"payload": {}},
+    )
+
+    assert result.status == "failed"
+    assert result.reason == "no_compatible_skill"

@@ -14,6 +14,7 @@ from ..governance.values import ValueWeights
 from ..identity import create_identity
 from ..memory import ensure_memory_structure, update_score, write_profile
 from ..psyche import Psyche
+from ..life.skill_catalog import refresh_skill_catalog
 
 
 _PSYCHE_TRAITS = ("curiosity", "patience", "playfulness", "optimism", "resilience")
@@ -239,6 +240,8 @@ def birth(
                 0.0,
                 path=home / "mem" / "skills.json",
             )
+
+    refresh_skill_catalog(skills_dir=skills_dir, mem_dir=home / "mem")
 
     if seed is not None:
         random.seed(seed)

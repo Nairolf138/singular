@@ -9,6 +9,8 @@ from pathlib import Path
 from singular.governance.policy import MutationGovernancePolicy
 from singular.memory import read_skills, write_skills
 
+from .skill_catalog import refresh_skill_catalog
+
 
 @dataclass(frozen=True)
 class SkillGenesisResult:
@@ -127,6 +129,7 @@ def create_skill(
             "trigger": trigger,
         }
         write_skills(skills_after, mem_dir / "skills.json")
+        refresh_skill_catalog(skills_dir=skills_dir, mem_dir=mem_dir)
         _append_journal(
             mem_dir,
             {
