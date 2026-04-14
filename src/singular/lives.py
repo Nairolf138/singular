@@ -13,10 +13,12 @@ from pathlib import Path
 from typing import Any, Dict
 
 from .governance.policy import MutationGovernancePolicy
+from .memory import _append_jsonl_line
 
 _REGISTRY_DIRNAME = "lives"
 _REGISTRY_FILENAME = "registry.json"
 _RELATIONS_JOURNAL = "lives_relations.jsonl"
+_LEGACY_TRANSFERS_JOURNAL = "legacy_transfers.jsonl"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,6 +76,43 @@ class LifeMetadata:
         )
 
 
+@dataclass(frozen=True)
+class InheritancePolicy:
+    """Describe which artefacts can be transferred to a new life."""
+
+    memory_summary_max_entries: int = 25
+    sensitive_memory_keys: tuple[str, ...] = (
+        "password",
+        "secret",
+        "token",
+        "api_key",
+        "private_key",
+        "email",
+        "phone",
+        "address",
+        "hostname",
+        "cwd",
+        "path",
+        "username",
+        "user",
+    )
+    inherit_only_flagged_skills: bool = True
+    inheritable_skill_flag: str = "inheritable"
+    aggregate_lessons_limit: int = 10
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "memory_summary_max_entries": self.memory_summary_max_entries,
+            "sensitive_memory_keys": list(self.sensitive_memory_keys),
+            "inherit_only_flagged_skills": self.inherit_only_flagged_skills,
+            "inheritable_skill_flag": self.inheritable_skill_flag,
+            "aggregate_lessons_limit": self.aggregate_lessons_limit,
+        }
+
+
+DEFAULT_INHERITANCE_POLICY = InheritancePolicy()
+
+
 def _registry_path(root: Path | None = None) -> Path:
     root = root or get_registry_root()
     return root / _REGISTRY_DIRNAME / _REGISTRY_FILENAME
@@ -85,6 +124,10 @@ def _now_iso() -> str:
 
 def _relations_journal_path() -> Path:
     return get_registry_root() / "mem" / _RELATIONS_JOURNAL
+
+
+def _legacy_transfers_journal_path() -> Path:
+    return get_registry_root() / "mem" / _LEGACY_TRANSFERS_JOURNAL
 
 
 def _log_relations_event(event: str, *, actor: str, target: str | None = None, details: dict[str, Any] | None = None) -> None:
@@ -99,6 +142,153 @@ def _log_relations_event(event: str, *, actor: str, target: str | None = None, d
     }
     with journal.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def _log_legacy_transfer(
+    *,
+    source: str,
+    target: str,
+    reason: str,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    _append_jsonl_line(
+        _legacy_transfers_journal_path(),
+        {
+            "ts": _now_iso(),
+            "source": source,
+            "target": target,
+            "reason": reason,
+            "payload": payload or {},
+        },
+    )
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    records: list[dict[str, Any]] = []
+    try:
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                payload = json.loads(line)
+                if isinstance(payload, dict):
+                    records.append(payload)
+    except (OSError, json.JSONDecodeError):
+        return []
+    return records
+
+
+def _is_sensitive_record(record: dict[str, Any], policy: InheritancePolicy) -> bool:
+    lowered_keys = {str(key).lower() for key in record.keys()}
+    sensitive_tokens = tuple(token.lower() for token in policy.sensitive_memory_keys)
+    return any(any(token in key for token in sensitive_tokens) for key in lowered_keys)
+
+
+def _safe_memory_summary(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "event": record.get("event") or record.get("op") or record.get("kind") or "unknown",
+        "status": record.get("status") or ("success" if record.get("success") else "failure" if record.get("success") is False else "unknown"),
+        "mood": record.get("mood"),
+        "ts": record.get("ts"),
+    }
+
+
+def _aggregate_lessons(records: list[dict[str, Any]], limit: int) -> dict[str, Any]:
+    success_events: list[str] = []
+    failure_events: list[str] = []
+    for rec in records:
+        status = rec.get("status")
+        event = str(rec.get("event") or rec.get("op") or rec.get("kind") or "unknown")
+        if status == "success" or rec.get("success") is True:
+            success_events.append(event)
+        elif status == "failure" or rec.get("success") is False:
+            failure_events.append(event)
+    return {
+        "success_count": len(success_events),
+        "failure_count": len(failure_events),
+        "top_successes": success_events[-limit:],
+        "top_failures": failure_events[-limit:],
+    }
+
+
+def _apply_inheritance_policy(*, source: LifeMetadata, target: LifeMetadata, policy: InheritancePolicy) -> None:
+    source_mem = source.path / "mem"
+    target_mem = target.path / "mem"
+    target_mem.mkdir(parents=True, exist_ok=True)
+
+    source_episodes = _read_jsonl(source_mem / "episodic.jsonl")
+    non_sensitive = [rec for rec in source_episodes if not _is_sensitive_record(rec, policy)]
+    memory_summary = [_safe_memory_summary(rec) for rec in non_sensitive[-policy.memory_summary_max_entries :]]
+    (target_mem / "legacy_memory_summary.json").write_text(
+        json.dumps(memory_summary, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    _log_legacy_transfer(
+        source=source.slug,
+        target=target.slug,
+        reason="non_sensitive_memory_summary",
+        payload={"transferred_entries": len(memory_summary)},
+    )
+
+    source_skills = _read_json(source_mem / "skills.json")
+    skill_flag = policy.inheritable_skill_flag
+    inherited_skills = {
+        name: payload
+        for name, payload in source_skills.items()
+        if isinstance(payload, dict) and bool(payload.get(skill_flag))
+    }
+    (target_mem / "skills.json").write_text(
+        json.dumps(inherited_skills, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    target_skills_dir = target.path / "skills"
+    for skill_file in target_skills_dir.glob("*.py"):
+        if skill_file.stem not in inherited_skills:
+            skill_file.unlink(missing_ok=True)
+    _log_legacy_transfer(
+        source=source.slug,
+        target=target.slug,
+        reason="inheritable_skills_only",
+        payload={"transferred_skills": sorted(inherited_skills)},
+    )
+
+    lessons = _aggregate_lessons(non_sensitive, policy.aggregate_lessons_limit)
+    (target_mem / "legacy_lessons.json").write_text(
+        json.dumps(lessons, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    _log_legacy_transfer(
+        source=source.slug,
+        target=target.slug,
+        reason="aggregated_success_failure_lessons",
+        payload=lessons,
+    )
+
+    inheritance_payload = {
+        "inherited_from": source.slug,
+        "inherited_at": _now_iso(),
+        "inheritance_policy": policy.to_payload(),
+        "transfers": {
+            "memory_summary_path": "mem/legacy_memory_summary.json",
+            "skills_path": "mem/skills.json",
+            "lessons_path": "mem/legacy_lessons.json",
+        },
+    }
+    (target_mem / "inheritance_policy.json").write_text(
+        json.dumps(inheritance_payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def _govern_relation_operation(op_name: str) -> None:
@@ -468,6 +658,7 @@ def clone_life(name: str, *, new_name: str | None = None) -> LifeMetadata:
     clone_name = new_name or f"{source.name} clone"
     clone_meta = create_life(clone_name, parents=(source_slug,))
     shutil.copytree(source.path, clone_meta.path, dirs_exist_ok=True)
+    _apply_inheritance_policy(source=source, target=clone_meta, policy=DEFAULT_INHERITANCE_POLICY)
     registry = load_registry()
     lives: dict[str, LifeMetadata] = registry.get("lives", {})
     current = lives.get(clone_meta.slug)
