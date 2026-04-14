@@ -1,0 +1,24 @@
+{
+  "profiles": {
+    "minimal": ["addition", "subtraction", "multiplication"],
+    "assistant": [
+      "addition",
+      "subtraction",
+      "multiplication",
+      "validation",
+      "summary",
+      "intent_classification",
+      "entity_extraction",
+      "planning",
+      "metrics"
+    ],
+    "ops": [
+      "validation",
+      "planning",
+      "metrics",
+      "summary",
+      "intent_classification"
+    ],
+    "creative": ["summary", "entity_extraction", "planning", "addition"]
+  }
+}

@@ -603,6 +603,17 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Trait initial borné dans [0,1]",
     )
+    birth_parser.add_argument(
+        "--starter-profile",
+        default="minimal",
+        help="Profil de starter skills à appliquer (ex: minimal, assistant, ops, creative)",
+    )
+    birth_parser.add_argument(
+        "--starter-skill",
+        action="append",
+        default=[],
+        help="Skill starter individuel à ajouter (option répétable)",
+    )
 
     spawn_parser = subparsers.add_parser(
         "spawn", help="Create child organism from two parents"
@@ -1011,6 +1022,8 @@ def main(argv: list[str] | None = None) -> int:
             name,
             seed=args.seed,
             psyche_overrides=psyche_overrides or None,
+            starter_profile=args.starter_profile,
+            starter_skills=args.starter_skill,
         )
         registry_root = get_registry_root()
         os.environ["SINGULAR_HOME"] = str(metadata.path)

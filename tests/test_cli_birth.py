@@ -56,3 +56,82 @@ def test_birth_rejects_out_of_range_psyche_override() -> None:
     with pytest.raises(SystemExit) as excinfo:
         main(["birth", "--curiosity", "1.5"])
     assert excinfo.value.code == 2
+
+
+def test_birth_uses_minimal_starter_profile_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "registry-root"
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    main(["--root", str(root), "birth", "--name", "Minimal"])
+
+    registry = load_registry()
+    slug = registry["active"]
+    life_home = Path(registry["lives"][slug].path)
+    skills = sorted(path.name for path in (life_home / "skills").glob("*.py"))
+    assert skills == ["addition.py", "multiplication.py", "subtraction.py"]
+
+
+def test_birth_applies_explicit_starter_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "registry-root"
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    main(
+        [
+            "--root",
+            str(root),
+            "birth",
+            "--name",
+            "Operator",
+            "--starter-profile",
+            "ops",
+        ]
+    )
+
+    registry = load_registry()
+    slug = registry["active"]
+    life_home = Path(registry["lives"][slug].path)
+    skills = sorted(path.name for path in (life_home / "skills").glob("*.py"))
+    assert skills == [
+        "intent_classification.py",
+        "metrics.py",
+        "planning.py",
+        "summary.py",
+        "validation.py",
+    ]
+
+
+def test_birth_unknown_profile_falls_back_to_minimal_and_adds_explicit_skills(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "registry-root"
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    main(
+        [
+            "--root",
+            str(root),
+            "birth",
+            "--name",
+            "Fallback",
+            "--starter-profile",
+            "unknown-profile",
+            "--starter-skill",
+            "summary",
+        ]
+    )
+
+    registry = load_registry()
+    slug = registry["active"]
+    life_home = Path(registry["lives"][slug].path)
+    skills = sorted(path.name for path in (life_home / "skills").glob("*.py"))
+    assert skills == ["addition.py", "multiplication.py", "subtraction.py", "summary.py"]

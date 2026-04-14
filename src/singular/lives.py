@@ -274,6 +274,8 @@ def bootstrap_life(
     seed: int | None = None,
     *,
     psyche_overrides: dict[str, float] | None = None,
+    starter_profile: str = "minimal",
+    starter_skills: list[str] | None = None,
 ) -> LifeMetadata:
     """Create and initialise a life."""
 
@@ -281,7 +283,13 @@ def bootstrap_life(
 
     from .organisms.birth import birth  # Imported lazily to avoid cycles.
 
-    birth(seed=seed, home=metadata.path, psyche_overrides=psyche_overrides)
+    birth(
+        seed=seed,
+        home=metadata.path,
+        psyche_overrides=psyche_overrides,
+        starter_profile=starter_profile,
+        starter_skills=starter_skills,
+    )
     registry = load_registry()
     lives: dict[str, LifeMetadata] = registry.get("lives", {})
     return lives.get(metadata.slug, metadata)
