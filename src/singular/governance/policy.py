@@ -35,6 +35,31 @@ def _default_policy_payload() -> dict[str, Any]:
         "version": POLICY_SCHEMA_VERSION,
         "memory": {"preserve_threshold": 0.6},
         "forgetting": {"enabled": True, "max_episodic_entries": 5000},
+        "sensors": {
+            "allowed": ["host_metrics", "artifact_scan", "virtual_environment"],
+            "blocked": [],
+            "max_export_granularity": "standard",
+            "anonymization": {
+                "enabled": True,
+                "block_sensitive_by_default": True,
+                "allow_sensitive_metrics_opt_in": False,
+                "redact_machine_user_info": True,
+                "sensitive_metric_keys_blocklist": [
+                    "hostname",
+                    "host_name",
+                    "fqdn",
+                    "cwd",
+                    "cwd_path",
+                    "path",
+                    "paths",
+                    "user",
+                    "username",
+                    "home",
+                    "mount_path",
+                    "absolute_path",
+                ],
+            },
+        },
         "permissions": {
             "modifiable_paths": ["skills"],
             "review_required_paths": ["skills/experimental"],
@@ -114,6 +139,15 @@ def _coerce_string_list(payload: Mapping[str, Any], key: str) -> tuple[str, ...]
     return tuple(item.strip() for item in raw if item.strip())
 
 
+def _coerce_enum(payload: Mapping[str, Any], key: str, allowed: set[str]) -> str:
+    if key not in payload or not isinstance(payload[key], str):
+        raise PolicySchemaError(f"'{key}' must be a string")
+    value = payload[key].strip().lower()
+    if value not in allowed:
+        raise PolicySchemaError(f"'{key}' must be one of: {', '.join(sorted(allowed))}")
+    return value
+
+
 @dataclass(frozen=True)
 class RuntimePolicy:
     """Strict, versioned governance policy loaded from ``policy.yaml``."""
@@ -122,6 +156,14 @@ class RuntimePolicy:
     memory_preserve_threshold: float
     forgetting_enabled: bool
     forgetting_max_episodic_entries: int
+    sensors_allowed: tuple[str, ...]
+    sensors_blocked: tuple[str, ...]
+    sensors_max_export_granularity: str
+    sensors_anonymization_enabled: bool
+    sensors_block_sensitive_by_default: bool
+    sensors_allow_sensitive_metrics_opt_in: bool
+    sensors_redact_machine_user_info: bool
+    sensors_sensitive_metric_keys_blocklist: tuple[str, ...]
     modifiable_paths: tuple[str, ...]
     review_required_paths: tuple[str, ...]
     forbidden_paths: tuple[str, ...]
@@ -151,6 +193,20 @@ class RuntimePolicy:
             "forgetting": {
                 "enabled": self.forgetting_enabled,
                 "max_episodic_entries": self.forgetting_max_episodic_entries,
+            },
+            "sensors": {
+                "allowed": list(self.sensors_allowed),
+                "blocked": list(self.sensors_blocked),
+                "max_export_granularity": self.sensors_max_export_granularity,
+                "anonymization": {
+                    "enabled": self.sensors_anonymization_enabled,
+                    "block_sensitive_by_default": self.sensors_block_sensitive_by_default,
+                    "allow_sensitive_metrics_opt_in": self.sensors_allow_sensitive_metrics_opt_in,
+                    "redact_machine_user_info": self.sensors_redact_machine_user_info,
+                    "sensitive_metric_keys_blocklist": list(
+                        self.sensors_sensitive_metric_keys_blocklist
+                    ),
+                },
             },
             "permissions": {
                 "modifiable_paths": list(self.modifiable_paths),
@@ -204,7 +260,10 @@ class RuntimePolicy:
 
 
 def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
-    root_keys = {"version", "memory", "forgetting", "permissions", "autonomy"}
+    mutable_payload = dict(payload)
+    mutable_payload.setdefault("sensors", _default_policy_payload()["sensors"])
+    payload = mutable_payload
+    root_keys = {"version", "memory", "forgetting", "sensors", "permissions", "autonomy"}
     unexpected = sorted(set(payload.keys()) - root_keys)
     if unexpected:
         raise PolicySchemaError(f"unexpected root keys: {', '.join(unexpected)}")
@@ -220,6 +279,7 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
 
     memory = payload["memory"]
     forgetting = payload["forgetting"]
+    sensors = payload["sensors"]
     permissions = payload["permissions"]
     autonomy_raw = payload["autonomy"]
     autonomy = dict(autonomy_raw) if isinstance(autonomy_raw, Mapping) else autonomy_raw
@@ -242,6 +302,7 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
         ("memory", memory),
         ("forgetting", forgetting),
         ("permissions", permissions),
+        ("sensors", sensors),
         ("autonomy", autonomy),
     ):
         if not isinstance(section, Mapping):
@@ -249,6 +310,14 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
 
     expected_memory = {"preserve_threshold"}
     expected_forgetting = {"enabled", "max_episodic_entries"}
+    expected_sensors = {"allowed", "blocked", "max_export_granularity", "anonymization"}
+    expected_sensors_anonymization = {
+        "enabled",
+        "block_sensitive_by_default",
+        "allow_sensitive_metrics_opt_in",
+        "redact_machine_user_info",
+        "sensitive_metric_keys_blocklist",
+    }
     expected_permissions = {
         "modifiable_paths",
         "review_required_paths",
@@ -278,6 +347,7 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
         ("memory", memory, expected_memory),
         ("forgetting", forgetting, expected_forgetting),
         ("permissions", permissions, expected_permissions),
+        ("sensors", sensors, expected_sensors),
         ("autonomy", autonomy, expected_autonomy),
     ):
         section_unexpected = sorted(set(section.keys()) - expected)
@@ -290,6 +360,20 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
             raise PolicySchemaError(
                 f"section '{name}' missing keys: {', '.join(section_missing)}"
             )
+    anonymization = sensors["anonymization"]
+    if not isinstance(anonymization, Mapping):
+        raise PolicySchemaError("section 'sensors.anonymization' must be a mapping")
+    anonymization_unexpected = sorted(set(anonymization.keys()) - expected_sensors_anonymization)
+    if anonymization_unexpected:
+        raise PolicySchemaError(
+            "section 'sensors.anonymization' has unexpected keys: "
+            + ", ".join(anonymization_unexpected)
+        )
+    anonymization_missing = sorted(expected_sensors_anonymization - set(anonymization.keys()))
+    if anonymization_missing:
+        raise PolicySchemaError(
+            "section 'sensors.anonymization' missing keys: " + ", ".join(anonymization_missing)
+        )
 
     preserve_threshold = _coerce_float(memory, "preserve_threshold", minimum=0.0)
     if preserve_threshold > 1.0:
@@ -300,6 +384,22 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
         memory_preserve_threshold=preserve_threshold,
         forgetting_enabled=_coerce_bool(forgetting, "enabled"),
         forgetting_max_episodic_entries=_coerce_int(forgetting, "max_episodic_entries", minimum=1),
+        sensors_allowed=_coerce_string_list(sensors, "allowed"),
+        sensors_blocked=_coerce_string_list(sensors, "blocked"),
+        sensors_max_export_granularity=_coerce_enum(
+            sensors, "max_export_granularity", {"minimal", "standard", "detailed"}
+        ),
+        sensors_anonymization_enabled=_coerce_bool(anonymization, "enabled"),
+        sensors_block_sensitive_by_default=_coerce_bool(
+            anonymization, "block_sensitive_by_default"
+        ),
+        sensors_allow_sensitive_metrics_opt_in=_coerce_bool(
+            anonymization, "allow_sensitive_metrics_opt_in"
+        ),
+        sensors_redact_machine_user_info=_coerce_bool(anonymization, "redact_machine_user_info"),
+        sensors_sensitive_metric_keys_blocklist=_coerce_string_list(
+            anonymization, "sensitive_metric_keys_blocklist"
+        ),
         modifiable_paths=_coerce_path_list(permissions, "modifiable_paths"),
         review_required_paths=_coerce_path_list(permissions, "review_required_paths"),
         forbidden_paths=_coerce_path_list(permissions, "forbidden_paths"),
@@ -565,6 +665,22 @@ class MutationGovernancePolicy:
         )
         self.safe_mode = bool(safe_mode or runtime_policy.safe_mode)
         self.memory_preserve_threshold = runtime_policy.memory_preserve_threshold
+        self.sensors_allowed = frozenset(
+            item.strip().lower() for item in runtime_policy.sensors_allowed if item.strip()
+        )
+        self.sensors_blocked = frozenset(
+            item.strip().lower() for item in runtime_policy.sensors_blocked if item.strip()
+        )
+        self.sensors_max_export_granularity = runtime_policy.sensors_max_export_granularity
+        self.sensors_anonymization_enabled = runtime_policy.sensors_anonymization_enabled
+        self.sensors_block_sensitive_by_default = runtime_policy.sensors_block_sensitive_by_default
+        self.sensors_allow_sensitive_metrics_opt_in = runtime_policy.sensors_allow_sensitive_metrics_opt_in
+        self.sensors_redact_machine_user_info = runtime_policy.sensors_redact_machine_user_info
+        self.sensors_sensitive_metric_keys_blocklist = frozenset(
+            item.strip().lower()
+            for item in runtime_policy.sensors_sensitive_metric_keys_blocklist
+            if item.strip()
+        )
         self._mutation_timestamps: deque[datetime] = deque()
         self._skill_creation_timestamps: deque[datetime] = deque()
         self._violation_timestamps: deque[datetime] = deque()
@@ -573,6 +689,93 @@ class MutationGovernancePolicy:
         self._skill_failure_timestamps: dict[str, deque[datetime]] = {}
         self._skill_cost_totals: dict[str, float] = {}
         self._skill_circuit_open_until: dict[str, datetime] = {}
+
+    def allow_sensor(self, sensor_name: str) -> bool:
+        name = sensor_name.strip().lower()
+        if not name:
+            return False
+        if name in self.sensors_blocked:
+            self._journal_sensor_access_denial(
+                sensor_name=sensor_name,
+                reason="sensor explicitly blocked by policy.sensors.blocked",
+            )
+            return False
+        if self.sensors_allowed and name not in self.sensors_allowed:
+            self._journal_sensor_access_denial(
+                sensor_name=sensor_name,
+                reason="sensor not present in policy.sensors.allowed allowlist",
+            )
+            return False
+        return True
+
+    def sanitize_sensor_metrics(
+        self,
+        *,
+        sensor_name: str,
+        metrics: Mapping[str, Any],
+        requested_granularity: str = "detailed",
+        explicit_sensitive_opt_in: bool = False,
+    ) -> dict[str, Any]:
+        if not self.allow_sensor(sensor_name):
+            return {}
+
+        requested = requested_granularity.strip().lower()
+        order = {"minimal": 0, "standard": 1, "detailed": 2}
+        requested_level = order.get(requested, 2)
+        max_level = order.get(self.sensors_max_export_granularity, 1)
+        effective_level = min(requested_level, max_level)
+        effective_granularity = ("minimal", "standard", "detailed")[effective_level]
+        allowed_by_granularity: dict[str, set[str]] = {
+            "host_metrics": {
+                "minimal": {
+                    "cpu_percent",
+                    "ram_used_percent",
+                    "disk_used_percent",
+                    "host_temperature_c",
+                },
+                "standard": {
+                    "cpu_percent",
+                    "cpu_load_1m",
+                    "ram_used_percent",
+                    "ram_available_mb",
+                    "disk_used_percent",
+                    "disk_free_gb",
+                    "host_temperature_c",
+                    "process_cpu_percent",
+                    "process_rss_mb",
+                },
+                "detailed": set(metrics.keys()),
+            }
+        }
+        sensor_key = sensor_name.strip().lower()
+        sensor_rules = allowed_by_granularity.get(sensor_key, {})
+        allowed_keys = sensor_rules.get(effective_granularity, set(metrics.keys()))
+        payload = {key: value for key, value in metrics.items() if key in allowed_keys}
+
+        sensitive_opt_in_enabled = explicit_sensitive_opt_in and (
+            self.sensors_allow_sensitive_metrics_opt_in
+        )
+        if (
+            self.sensors_anonymization_enabled
+            and self.sensors_block_sensitive_by_default
+            and not sensitive_opt_in_enabled
+        ):
+            payload = {
+                key: value
+                for key, value in payload.items()
+                if key.strip().lower() not in self.sensors_sensitive_metric_keys_blocklist
+            }
+        if self.sensors_anonymization_enabled and self.sensors_redact_machine_user_info:
+            payload = {
+                key: value
+                for key, value in payload.items()
+                if not any(
+                    marker in key.strip().lower()
+                    for marker in ("host", "hostname", "user", "username", "path")
+                )
+                or key in {"host_temperature_c"}
+            }
+        return payload
 
     @staticmethod
     def _now() -> datetime:
@@ -963,6 +1166,24 @@ class MutationGovernancePolicy:
             "reason": decision.reason,
             "corrective_action": decision.corrective_action,
             "justification": justification,
+        }
+        with journal.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+    def _journal_sensor_access_denial(self, *, sensor_name: str, reason: str) -> None:
+        home = Path(os.environ.get("SINGULAR_HOME", "."))
+        journal = home / "mem" / _POLICY_DECISIONS_LOG
+        journal.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "ts": self._now().isoformat(),
+            "decision": AUTH_BLOCKED,
+            "allowed": False,
+            "target": f"sensor://{sensor_name}",
+            "category": "sensor_access",
+            "severity": "medium",
+            "reason": reason,
+            "corrective_action": "explicitly allow this sensor in policy.sensors.allowed",
+            "justification": "Décision bloquée: accès capteur refusé par la politique sensors.",
         }
         with journal.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, ensure_ascii=False) + "\n")

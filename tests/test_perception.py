@@ -1,8 +1,11 @@
 import sys
 import time
 import types
+from dataclasses import replace
+import json
 
 from singular.events import EventBus
+from singular.governance.policy import load_runtime_policy, save_runtime_policy
 from singular.perception import capture_signals, reset_perception_state
 from singular.memory import add_episode, read_episodes
 
@@ -149,3 +152,51 @@ def test_capture_signals_skips_host_metrics_when_sensor_unavailable(monkeypatch)
     signals = capture_signals()
 
     assert "host_metrics" not in signals
+
+
+def test_capture_signals_blocks_disallowed_host_sensor_and_journals_refusal(tmp_path, monkeypatch):
+    reset_perception_state()
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+
+    policy = load_runtime_policy()
+    save_runtime_policy(
+        replace(
+            policy,
+            sensors_allowed=("artifact_scan",),
+            sensors_blocked=("host_metrics",),
+        )
+    )
+
+    signals = capture_signals()
+    assert "host_metrics" not in signals
+
+    journal = tmp_path / "mem" / "policy_decisions.jsonl"
+    assert journal.exists()
+    entries = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert any(entry.get("category") == "sensor_access" for entry in entries)
+    assert any(str(entry.get("target", "")).startswith("sensor://host_metrics") for entry in entries)
+
+
+def test_capture_signals_sanitizes_sensitive_host_metrics(monkeypatch):
+    reset_perception_state()
+    monkeypatch.setattr(
+        "singular.perception.collect_host_metrics",
+        lambda: {
+            "cpu_percent": 40.0,
+            "ram_used_percent": 52.0,
+            "disk_used_percent": 76.0,
+            "host_temperature_c": 63.0,
+            "hostname": "machine-01",
+            "cwd_path": "/very/sensitive/path",
+            "username": "alice",
+        },
+    )
+
+    signals = capture_signals()
+    host_metrics = signals["host_metrics"]
+    assert host_metrics["cpu_percent"] == 40.0
+    assert host_metrics["ram_used_percent"] == 52.0
+    assert "hostname" not in host_metrics
+    assert "cwd_path" not in host_metrics
+    assert "username" not in host_metrics
