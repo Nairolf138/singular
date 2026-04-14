@@ -513,8 +513,8 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
     print(f"Réseau social: {len(social.get('edges', []))} relations")
     print(f"Conflits actifs: {len(relationships.get('active_conflicts', []))}")
     quests = payload.get("quests") if isinstance(payload.get("quests"), dict) else {"active": [], "completed": []}
-    print(f"Quêtes actives: {len(quests.get("active", []))}")
-    print(f"Quêtes terminées: {len(quests.get("completed", []))}")
+    print(f"Quêtes actives: {len(quests.get('active', []))}")
+    print(f"Quêtes terminées: {len(quests.get('completed', []))}")
     lifecycle = payload.get("skills_lifecycle") if isinstance(payload.get("skills_lifecycle"), dict) else {}
     print(f"Skills actives: {lifecycle.get('active', 0)}")
     print(f"Skills dormantes: {lifecycle.get('dormant', 0)}")
