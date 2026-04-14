@@ -136,3 +136,45 @@ def test_weighted_axes_and_operator_bias() -> None:
     assert abs(sum(axes.values()) - 1.0) < 1e-6
     biases = psyche.operator_bias(["op_a", "op_b", "op_c"])
     assert set(biases) == {"op_a", "op_b", "op_c"}
+
+
+def test_social_interaction_triggers_and_influence() -> None:
+    psyche = Psyche(optimism=0.6, resilience=0.6, patience=0.6, playfulness=0.5)
+
+    base_coop = psyche.cooperation_score("ally")
+    base_repro = psyche.reproduction_arbitration_score(0.6, "ally")
+    base_risk = psyche.relational_risk_tolerance("ally")
+
+    psyche.apply_social_interaction("ally", "help.completed")
+    psyche.apply_social_interaction("ally", "share.completed")
+    after_positive = psyche.social_state("ally")
+    assert after_positive["gratitude"] > 0.5
+    assert after_positive["loyalty"] > 0.5
+    assert psyche.cooperation_score("ally") > base_coop
+    assert psyche.reproduction_arbitration_score(0.6, "ally") > base_repro
+    assert psyche.relational_risk_tolerance("ally") > base_risk
+    assert psyche.interaction_policy("ally") == "engaging"
+
+    psyche.apply_social_interaction("ally", "betrayal")
+    psyche.apply_social_interaction("ally", "competition.lost")
+    after_negative = psyche.social_state("ally")
+    assert after_negative["resentment"] >= after_positive["resentment"]
+    assert after_negative["jealousy"] >= after_positive["jealousy"]
+    assert psyche.cooperation_score("ally") < 0.8
+
+
+def test_social_state_bounds_are_stable() -> None:
+    psyche = Psyche()
+    for _ in range(20):
+        psyche.apply_social_interaction("rival", "competition.lost")
+        psyche.apply_social_interaction("rival", "betrayal")
+        psyche.apply_social_interaction("friend", "help.completed")
+        psyche.apply_social_interaction("friend", "share.completed")
+
+    for target in ("rival", "friend"):
+        state = psyche.social_state(target)
+        for value in state.values():
+            assert 0.0 <= value <= 1.0
+        assert 0.0 <= psyche.cooperation_score(target) <= 1.0
+        assert 0.0 <= psyche.reproduction_arbitration_score(0.9, target) <= 1.0
+        assert 0.0 <= psyche.relational_risk_tolerance(target) <= 1.0
