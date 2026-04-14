@@ -72,7 +72,8 @@ def test_orchestrator_triggers_and_settles_quest(monkeypatch, tmp_path: Path) ->
   "reward": {"mood": "pleasure", "resource_delta": {"food": 1}},
   "penalty": {"mood": "pain"},
   "cooldown": 30,
-  "success": {"resource_min": {"energy": 0}}
+  "success": {"resource_min": {"energy": 0}},
+  "origin": "intrinsic"
 }
 """.strip(),
         encoding="utf-8",
@@ -95,6 +96,7 @@ def test_orchestrator_triggers_and_settles_quest(monkeypatch, tmp_path: Path) ->
     payload = quests_path.read_text(encoding="utf-8")
     assert '"repair"' in payload
     assert '"success"' in payload
+    assert '"origin": "intrinsic"' in payload
 
 
 def test_orchestrator_action_executes_skill_runtime(monkeypatch, tmp_path: Path) -> None:

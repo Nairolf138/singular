@@ -19,6 +19,7 @@ class QuestRecord:
     name: str
     status: str
     started_at: str
+    origin: str = "external"
     completed_at: str | None = None
     reason: str | None = None
 
@@ -65,11 +66,14 @@ class QuestRuntime:
                 started_at = item.get("started_at")
                 if not all(isinstance(v, str) and v for v in (name, status, started_at)):
                     continue
+                raw_origin = item.get("origin")
+                origin = raw_origin if raw_origin in {"intrinsic", "external"} else "external"
                 out.append(
                     QuestRecord(
                         name=name,
                         status=status,
                         started_at=started_at,
+                        origin=origin,
                         completed_at=item.get("completed_at") if isinstance(item.get("completed_at"), str) else None,
                         reason=item.get("reason") if isinstance(item.get("reason"), str) else None,
                     )
@@ -163,6 +167,7 @@ class QuestRuntime:
                         name=spec.name,
                         status="active",
                         started_at=self._now().isoformat(),
+                        origin=spec.origin,
                     )
                 )
                 add_episode(
@@ -270,6 +275,7 @@ class QuestRuntime:
                         name=spec.name,
                         status="success",
                         started_at=record.started_at,
+                        origin=record.origin,
                         completed_at=self._now().isoformat(),
                     )
                 )
@@ -292,6 +298,7 @@ class QuestRuntime:
                         name=spec.name,
                         status="failure",
                         started_at=record.started_at,
+                        origin=record.origin,
                         completed_at=self._now().isoformat(),
                         reason="timeout",
                     )
