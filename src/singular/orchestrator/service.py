@@ -22,13 +22,20 @@ from singular.events import (
 from singular.goals import IntrinsicGoals
 from singular.governance.policy import MutationGovernancePolicy
 from singular.life.loop import WorldState, run_tick
-from singular.memory import _atomic_write_text, get_base_dir, get_mem_dir
+from singular.memory import (
+    _atomic_write_text,
+    get_base_dir,
+    get_mem_dir,
+    read_episodes,
+    read_psyche,
+)
 from singular.orchestrator.lifecycle_clock import (
     LifecycleClockConfig,
     load_lifecycle_clock_config,
 )
 from singular.perception import capture_signals
 from singular.psyche import Psyche
+from singular.self_narrative import summarize_long, summarize_short, update_from_signals
 from singular.resource_manager import ResourceManager
 from singular.quests import QuestRuntime
 from singular.sensors import load_host_sensor_thresholds
@@ -129,6 +136,7 @@ class OrchestratorService:
         self._tick_count = 0
         self._latest_signals: dict[str, Any] = {}
         self._failure_streak_by_task: dict[str, int] = {}
+        self._introspection_tick_count = 0
         self._host_thresholds = load_host_sensor_thresholds()
 
         self._subscribe_external_stimuli()
@@ -248,6 +256,107 @@ class OrchestratorService:
         self.state.last_watch_mtime = latest_watch
 
         return self._wake_requested or run_changed or watch_changed
+
+    def _load_recent_run_events(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        runs_dir = self.base_dir / "runs"
+        if not runs_dir.exists():
+            return []
+        candidates = sorted(
+            runs_dir.rglob("*.jsonl"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        collected: list[dict[str, Any]] = []
+        for path in candidates[:5]:
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+            for line in lines[-limit:]:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(payload, dict):
+                    collected.append(payload)
+        return collected[-limit:]
+
+    def _refresh_self_narrative(self) -> dict[str, Any]:
+        episodes = read_episodes(self.mem_dir / "episodic.jsonl")
+        recent_episodes = episodes[-10:]
+        psyche_state = read_psyche(self.mem_dir / "psyche.json")
+        goal_history = self.goals.history()[-10:]
+        run_events = self._load_recent_run_events(limit=20)
+        last_events = self.state.last_events[-20:]
+
+        latest_goal = goal_history[-1] if goal_history else {}
+        latest_weights = latest_goal.get("weights", {}) if isinstance(latest_goal, dict) else {}
+        strategy = self.goals.derive_execution_strategy(self._latest_signals)
+        dominant_goal = None
+        if isinstance(latest_weights, dict) and latest_weights:
+            dominant_goal = max(latest_weights.items(), key=lambda item: float(item[1]))[0]
+
+        heading_parts: list[str] = []
+        if dominant_goal:
+            heading_parts.append(f"Renforcer {dominant_goal}.")
+        mode = str(strategy.get("mode", "")).strip()
+        if mode:
+            heading_parts.append(f"Mode {mode}.")
+        if isinstance(psyche_state, dict) and psyche_state.get("last_mood"):
+            heading_parts.append(f"Humeur {psyche_state['last_mood']}.")
+        current_heading = " ".join(heading_parts).strip() or "Clarifier ma prochaine étape utile."
+
+        successes = [str(ep.get("event")) for ep in recent_episodes if ep.get("status") == "success"]
+        failures = [str(ep.get("event")) for ep in recent_episodes if ep.get("status") == "failure"]
+        def _trait_value(name: str) -> float:
+            try:
+                return float(psyche_state.get(name, 0.5))
+            except (TypeError, ValueError):
+                return 0.5
+
+        narrative = update_from_signals(
+            {
+                "current_heading": current_heading,
+                "trait_trends": {
+                    "curiosity": {"value": _trait_value("curiosity"), "trend": "stable"},
+                    "patience": {"value": _trait_value("patience"), "trend": "stable"},
+                    "playfulness": {"value": _trait_value("playfulness"), "trend": "stable"},
+                    "optimism": {"value": _trait_value("optimism"), "trend": "stable"},
+                    "resilience": {"value": _trait_value("resilience"), "trend": "stable"},
+                },
+                "regrets_and_pride": {
+                    "significant_successes": successes[-3:],
+                    "significant_failures": failures[-3:],
+                    "costly_incidents": [str(event.get("phase")) for event in last_events[-3:]],
+                },
+            },
+            self.mem_dir / "self_narrative.json",
+        )
+        summary_short = summarize_short(narrative=narrative)
+        summary_long = summarize_long(narrative=narrative)
+        payload = {
+            "event_type": "self_narrative.updated",
+            "tick": self._tick_count,
+            "introspection_tick": self._introspection_tick_count,
+            "episodes_loaded": len(recent_episodes),
+            "goals_history_loaded": len(goal_history),
+            "run_events_loaded": len(run_events),
+            "short_summary": summary_short,
+            "long_summary": summary_long,
+        }
+        self.bus.publish("self_narrative.updated", payload, payload_version=1)
+        self.state.last_events.append(
+            {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "phase": LifecyclePhase.INTROSPECTION.value,
+                "details": payload,
+            }
+        )
+        self.state.last_events = self.state.last_events[-100:]
+        return payload
 
     def _run_phase(self, phase: LifecyclePhase) -> None:
         if phase is LifecyclePhase.VEILLE:
@@ -400,12 +509,22 @@ class OrchestratorService:
             return
 
         if phase is LifecyclePhase.INTROSPECTION:
-            if self._tick_count % self.config.introspection_frequency_ticks != 0:
+            self._introspection_tick_count += 1
+            if self._introspection_tick_count % self.config.introspection_frequency_ticks != 0:
                 self._push_event(phase, {"skipped": True, "reason": "frequency_gate"})
                 return
             mood = self.psyche.update_from_resource_manager(self.resource_manager)
             self.psyche.save_state()
-            self._push_event(phase, {"mood": mood.value, "energy": self.psyche.energy})
+            narrative_update = self._refresh_self_narrative()
+            self._push_event(
+                phase,
+                {
+                    "mood": mood.value,
+                    "energy": self.psyche.energy,
+                    "self_narrative_event": narrative_update["event_type"],
+                    "self_narrative_short": narrative_update["short_summary"],
+                },
+            )
             return
 
         self.psyche.sleep_tick()
