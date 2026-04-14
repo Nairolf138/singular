@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 import json
 
 import pytest
@@ -125,6 +126,63 @@ def test_policy_safe_mode_blocks_writes(tmp_path: Path) -> None:
     assert decision.allowed is False
     assert decision.severity == "high"
     assert "safe-mode" in decision.reason
+
+
+def test_policy_blocks_blacklisted_runtime_capability(tmp_path: Path) -> None:
+    policy = MutationGovernancePolicy(
+        runtime_blacklisted_capabilities=("network",),
+        safe_mode=False,
+    )
+    decision = policy.evaluate_skill_execution(
+        skill_name="network.fetch",
+        capability="network",
+    )
+    assert decision.allowed is False
+    assert decision.level == AUTH_BLOCKED
+    assert "blacklisted" in decision.reason
+
+
+def test_skill_circuit_breaker_cooldown_and_reactivation_controlled(tmp_path: Path) -> None:
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    clock = {"now": start}
+    policy = MutationGovernancePolicy(
+        skill_circuit_breaker_failure_threshold=2,
+        skill_circuit_breaker_cooldown_seconds=30.0,
+        auto_rollback_failure_threshold=2,
+        safe_mode=False,
+    )
+    policy._now = lambda: clock["now"]  # type: ignore[method-assign]
+    skill = "math.addition"
+
+    first = policy.evaluate_skill_execution(skill_name=skill, capability="compute")
+    assert first.allowed is True
+    policy.record_skill_execution(skill_name=skill, success=False, operation_cost=0.5)
+    policy.record_skill_execution(skill_name=skill, success=False, operation_cost=0.5)
+
+    blocked = policy.evaluate_skill_execution(skill_name=skill, capability="compute")
+    assert blocked.allowed is False
+    assert "circuit-breaker active" in blocked.reason
+    assert policy.skill_reactivation_allowed(skill) is False
+
+    clock["now"] = start + timedelta(seconds=31)
+    allowed = policy.evaluate_skill_execution(skill_name=skill, capability="compute")
+    assert allowed.allowed is True
+    assert policy.skill_reactivation_allowed(skill) is True
+
+
+def test_policy_safe_mode_requires_review_for_sensitive_skill_family(tmp_path: Path) -> None:
+    policy = MutationGovernancePolicy(
+        safe_mode=True,
+        safe_mode_review_required_skill_families=("network", "shell"),
+        runtime_blacklisted_capabilities=(),
+    )
+    decision = policy.evaluate_skill_execution(
+        skill_name="network.fetch",
+        capability="compute",
+    )
+    assert decision.allowed is False
+    assert decision.level == "review-required"
+    assert "safe-mode requires manual review" in decision.reason
 
 
 def test_cli_values_show_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys) -> None:
