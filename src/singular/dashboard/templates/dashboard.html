@@ -6,9 +6,21 @@
       color-scheme: light;
       font-family: Inter, system-ui, -apple-system, sans-serif;
     }
-    body { margin: 20px; }
+    body { margin: 20px; background:#f8fafc; color:#101828; }
     nav { margin-bottom: 16px; }
+    nav a { text-decoration:none; font-weight:600; color:#175cd3; }
+    nav a:hover { text-decoration:underline; }
     section { margin-bottom: 24px; }
+    h1, h2 { margin-bottom:8px; }
+    .intro-box {
+      background:#ecf3ff;
+      border:1px solid #b2ccff;
+      border-radius:10px;
+      padding:12px;
+      margin:12px 0 16px;
+    }
+    .intro-steps { margin:8px 0 0 18px; padding:0; }
+    .intro-steps li { margin:4px 0; }
     .cards-grid {
       display:grid;
       grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
@@ -37,7 +49,15 @@
       border-radius:10px;
       padding:12px;
       background:#fff;
+      box-shadow:0 1px 2px rgba(16,24,40,0.04);
     }
+    .section-help {
+      color:#344054;
+      margin:0 0 10px;
+      font-size:0.95rem;
+    }
+    table th { background:#f2f4f7; }
+    table td, table th { vertical-align:top; }
     .technical-toggle { margin-top:8px; }
     pre {
       max-height:220px;
@@ -60,9 +80,19 @@
   <a href="#logs-live">Logs</a> ·
   <a href="#parametres">Paramètres</a>
 </nav>
+<div class='intro-box'>
+  <strong>Guide de lecture rapide (humain)</strong>
+  <ol class='intro-steps'>
+    <li><strong>Cockpit</strong> : regardez d’abord le statut global, puis la prochaine action recommandée.</li>
+    <li><strong>Alertes et risques</strong> : vérifiez les zones en orange/rouge pour prioriser.</li>
+    <li><strong>Timeline</strong> : cliquez un événement pour comprendre le “pourquoi” d’une mutation.</li>
+    <li><strong>Vies</strong> : comparez les organismes pour décider quoi conserver, corriger ou archiver.</li>
+  </ol>
+</div>
 
 <section id="cockpit">
   <h2>Cockpit</h2>
+  <p class='section-help'>Vue de synthèse : utilisez cette section pour décider en moins de 30 secondes si l’organisme est stable, en risque, ou en régression.</p>
   <div id='cockpit-status' class='card card-value'>Statut global: n/a</div>
   <p><strong>Qu’est-ce que ce score ?</strong> Le score de santé agrège stabilité sandbox, tendance récente et signal d’acceptation des mutations.</p>
 
@@ -89,6 +119,7 @@
   </div>
 
   <h3>Métriques d’autonomie</h3>
+  <p class='section-help'>Ces indicateurs montrent si Singular agit seul de façon utile (et non juste active).</p>
   <div class='cards-grid'>
     <div class='card'><div class='card-label'>Taux d’initiatives proactives</div><div id='kpi-autonomy-proactive' class='card-value'>n/a</div></div>
     <div class='card'><div class='card-label'>Stabilité long terme</div><div id='kpi-autonomy-stability' class='card-value'>n/a</div></div>
@@ -97,6 +128,7 @@
     <div class='card'><div class='card-label'>Coût ressources par gain</div><div id='kpi-autonomy-cost' class='card-value'>n/a</div></div>
   </div>
   <h3>Timeline vitale</h3>
+  <p class='section-help'>Âge + risque + causes terminales vous aident à estimer la probabilité d’une extinction à court terme.</p>
   <div class='cards-grid'>
     <div class='card'><div class='card-label'>Âge</div><div id='kpi-vital-age' class='card-value'>0</div></div>
     <div class='card'><div class='card-label'>Risque</div><div id='kpi-vital-risk' class='card-value'>n/a</div></div>
@@ -137,6 +169,7 @@
 
   <div class='panel' id='competences-quotidien'>
     <h3 style='margin-top:0;'>Compétences du quotidien</h3>
+    <p class='section-help'>Concentrez-vous sur les skills réellement utilisées et leur taux de réussite pour éviter les métriques “bruit”.</p>
     <div class='cards-grid'>
       <div class='card'><div class='card-label'>Fréquence (24h)</div><div id='daily-skill-uses-24h' class='card-value'>0</div></div>
       <div class='card'><div class='card-label'>Fréquence (7j)</div><div id='daily-skill-uses-7d' class='card-value'>0</div></div>
@@ -168,6 +201,7 @@
 
   <div class='panel'>
     <h3 style='margin-top:0;'>Dernière mutation notable</h3>
+    <p class='section-help'>Cette mutation est le meilleur “indice explicatif” de la trajectoire actuelle.</p>
     <div id='kpi-notable-summary'>Aucune mutation notable</div>
     <h4>Actions suggérées</h4>
     <ul id='kpi-actions' style='margin-top:6px;'></ul>
@@ -185,6 +219,7 @@
 
 <section id="parametres">
   <h2>Paramètres</h2>
+  <p class='section-help'>Section de diagnostic : utile surtout si vous suspectez un problème de configuration, de policy ou de registre.</p>
   <div class='panel' style='margin-bottom:12px;'>
     <h3 style='margin-top:0;'>Contexte registre</h3>
     <div><strong>Registre courant (SINGULAR_ROOT)</strong> : <code id='ctx-root'>n/a</code></div>
@@ -206,6 +241,7 @@
 
 <section id="timeline-section">
   <h2>Timeline des événements</h2>
+  <p class='section-help'>Objectif : passer du “quoi s’est passé” au “pourquoi cette décision”. Cliquez un événement de mutation pour inspecter impact + diff.</p>
   <div id='timeline' style='display:flex;gap:8px;overflow:auto;white-space:nowrap;'></div>
   <h3>Détail mutation</h3>
   <p id='timeline-summary'>Cliquez sur un événement de mutation.</p>
@@ -215,6 +251,7 @@
 
 <section id="reflections-section">
   <h2>Timeline des réflexions</h2>
+  <p class='section-help'>Filtrez par objectif/humeur/succès pour relier la qualité des décisions à l’état interne.</p>
   <div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center;'>
     <label>Objectif
       <select id='reflection-objective'>
@@ -240,6 +277,7 @@
 </section>
 
 <section id="vies"><h2>Vies · Tableau comparatif</h2>
+  <p class='section-help'>Comparez plusieurs vies sur la même fenêtre temporelle pour choisir la plus robuste, pas seulement la plus performante à court terme.</p>
   <div style='display:flex;gap:12px;align-items:center;flex-wrap:wrap;'>
     <label><input id='filter-active' type='checkbox'/> Statut registre: active</label>
     <label><input id='filter-degrading' type='checkbox'/> Seulement en dégradation</label>
@@ -289,6 +327,7 @@
 </section>
 
 <section id="actions"><h2>Actions rapides</h2><pre id='action-result'>Aucune exécution</pre>
+  <p class='section-help'>Utilisez cette section pour agir immédiatement sans quitter le dashboard (créer, parler, lancer une boucle, archiver).</p>
   <div class='panel' style='display:flex;flex-direction:column;gap:8px;max-width:680px;'>
     <label>Jeton dashboard <input id='action-token' type='password' placeholder='optionnel'/></label>
     <label>Nom de vie (créer/utiliser) <input id='action-life-name' placeholder='Nouvelle vie'/></label>
@@ -308,6 +347,7 @@
 </section>
 
 <section id="logs-live"><h2>Logs en direct</h2>
+  <p class='section-help'>Flux opérationnel en temps réel. Si vous investiguez un incident, mettez en pause puis relisez les derniers événements.</p>
   <div style='display:flex;gap:8px;align-items:center;flex-wrap:wrap;'>
     <button id='live-toggle'>Pause</button>
     <label><input id='live-autoscroll' type='checkbox' checked/> Défilement automatique</label>
