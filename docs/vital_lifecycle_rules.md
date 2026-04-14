@@ -64,3 +64,18 @@ Sinon `false`.
 - Si aucune donnée de santé n’est disponible, on n’applique pas la règle `current_health`.
 - Si aucune donnée de réussite/échec n’est disponible, on n’applique pas la règle `failure_rate`.
 - L’extinction observée domine toujours les autres états.
+
+## Contrats de persistance (JSON)
+
+Les règles déterministes de cycle vital s'appuient sur des artefacts JSON versionnés/tolérants.
+
+Voir la spécification détaillée: [`docs/technical_memory_artifacts.md`](./technical_memory_artifacts.md).
+
+Points à retenir:
+
+- `autopsy.json` porte la causalité terminale technique + comportementale.
+- `world_state.json` porte les contraintes écologiques/relatives influençant le risque.
+- `self_narrative.json` porte la continuité identitaire et les inflexions narratives.
+- la trajectoire des objectifs est calculée depuis `quests_state.json` + runs + `goals.json`.
+
+Tout changement de seuil métier qui modifie la structure ou l'interprétation de ces artefacts doit être accompagné d'un plan de migration backward-compatible.
