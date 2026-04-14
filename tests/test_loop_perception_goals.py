@@ -7,6 +7,7 @@ from singular.goals.intrinsic import GoalWeights
 
 class _CaptureGoals:
     last_perception_signals = None
+    last_skill_reputation = None
 
     def __init__(self, *args, **kwargs):
         pass
@@ -26,7 +27,8 @@ class _CaptureGoals:
             for h in hypotheses
         ]
 
-    def influence_operator_scores(self, operator_stats):
+    def influence_operator_scores(self, operator_stats, skill_reputation=None):
+        _CaptureGoals.last_skill_reputation = skill_reputation
         return {name: 0.0 for name in operator_stats}
 
 
@@ -64,3 +66,39 @@ def test_run_passes_capture_signals_to_intrinsic_goals(tmp_path: Path, monkeypat
     assert _CaptureGoals.last_perception_signals is not None
     assert "artifact_events" in _CaptureGoals.last_perception_signals
     assert _CaptureGoals.last_perception_signals["artifact_events"][0]["type"] == "artifact.tech_debt.simple"
+    assert isinstance(_CaptureGoals.last_skill_reputation, dict)
+
+
+def test_choose_skill_prioritizes_frequent_low_quality_skills(tmp_path: Path) -> None:
+    org_dir = tmp_path / "org" / "skills"
+    org_dir.mkdir(parents=True)
+    low_quality = org_dir / "high_use_low_quality.py"
+    low_quality.write_text("result = 1", encoding="utf-8")
+    healthy = org_dir / "healthy.py"
+    healthy.write_text("result = 1", encoding="utf-8")
+
+    organisms = {"org": life_loop.Organism(org_dir)}
+    reputation = {
+        "high_use_low_quality": {
+            "use_count": 12,
+            "mean_quality": 0.2,
+            "success_rate": 0.4,
+            "recent_failures": 3,
+        },
+        "healthy": {
+            "use_count": 4,
+            "mean_quality": 0.8,
+            "success_rate": 0.9,
+            "recent_failures": 0,
+        },
+    }
+
+    selections = [
+        life_loop._choose_skill(
+            random.Random(seed),
+            organisms,
+            skill_reputation=reputation,
+        )[1].stem
+        for seed in range(25)
+    ]
+    assert selections.count("high_use_low_quality") > selections.count("healthy")

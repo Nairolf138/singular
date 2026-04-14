@@ -121,11 +121,37 @@ class IntrinsicGoals:
         food = _clamp(float((resources or {}).get("food", 50.0)) / 100.0)
         warmth = _clamp(float((resources or {}).get("warmth", 50.0)) / 100.0)
         resource_stability = (energy + food + warmth) / 3.0
+        telemetry_efficiency_penalty = 0.0
+        telemetry_quality_pressure = 0.0
+        telemetry_failure_pressure = 0.0
+        skill_reputation = (perception_signals or {}).get("skill_reputation")
+        if isinstance(skill_reputation, Mapping) and skill_reputation:
+            sample_count = 0.0
+            total_cost = 0.0
+            total_quality = 0.0
+            total_failures = 0.0
+            for raw_stats in skill_reputation.values():
+                if not isinstance(raw_stats, Mapping):
+                    continue
+                sample_count += 1.0
+                total_cost += float(raw_stats.get("mean_cost", 0.0))
+                total_quality += float(raw_stats.get("mean_quality", 0.5))
+                total_failures += float(raw_stats.get("recent_failures", 0.0))
+            if sample_count > 0:
+                mean_cost = total_cost / sample_count
+                mean_quality = total_quality / sample_count
+                mean_failures = total_failures / sample_count
+                telemetry_efficiency_penalty = _clamp(mean_cost / 200.0, 0.0, 1.0)
+                telemetry_quality_pressure = _clamp(1.0 - mean_quality, 0.0, 1.0)
+                telemetry_failure_pressure = _clamp(mean_failures / 3.0, 0.0, 1.0)
 
         base_weights = GoalWeights(
-            coherence=0.2 + 0.35 * patience + 0.25 * resilience,
-            robustesse=0.2 + 0.35 * (1.0 - health_norm) + 0.25 * (1.0 - resource_stability),
-            efficacite=0.2 + 0.45 * health_norm + 0.2 * optimism,
+            coherence=0.2 + 0.35 * patience + 0.25 * resilience + 0.2 * telemetry_quality_pressure,
+            robustesse=0.2
+            + 0.35 * (1.0 - health_norm)
+            + 0.25 * (1.0 - resource_stability)
+            + 0.2 * telemetry_failure_pressure,
+            efficacite=0.2 + 0.45 * health_norm + 0.2 * optimism + 0.2 * telemetry_efficiency_penalty,
             exploration=0.2 + 0.45 * curiosity + 0.2 * playfulness + 0.1 * (1.0 - energy),
         )
         modulation = apply_perception_rules(perception_signals)
@@ -217,14 +243,31 @@ class IntrinsicGoals:
             )
         return adjusted
 
-    def influence_operator_scores(self, operator_stats: Mapping[str, Mapping[str, float]]) -> dict[str, float]:
-        """Return per-operator biases for selector integration."""
+    def influence_operator_scores(
+        self,
+        operator_stats: Mapping[str, Mapping[str, float]],
+        skill_reputation: Mapping[str, Mapping[str, float | int]] | None = None,
+    ) -> dict[str, float]:
+        """Return per-operator biases using objective weights and usage telemetry."""
 
         if not operator_stats:
             return {}
         max_count = max(float(stats.get("count", 0.0)) for stats in operator_stats.values())
         if max_count <= 0.0:
             max_count = 1.0
+        reputation_cost = 0.0
+        reputation_failures = 0.0
+        reputation_quality = 0.0
+        reputation_samples = 0.0
+        if skill_reputation:
+            for stats in skill_reputation.values():
+                reputation_cost += float(stats.get("mean_cost", 0.0))
+                reputation_failures += float(stats.get("recent_failures", 0.0))
+                reputation_quality += float(stats.get("mean_quality", 0.0))
+                reputation_samples += 1.0
+        mean_reputation_cost = reputation_cost / reputation_samples if reputation_samples else 0.0
+        mean_reputation_quality = reputation_quality / reputation_samples if reputation_samples else 0.5
+        reputation_failure_penalty = _clamp(reputation_failures / max(reputation_samples, 1.0) / 3.0, 0.0, 1.0)
 
         biases: dict[str, float] = {}
         for name, stats in operator_stats.items():
@@ -233,10 +276,13 @@ class IntrinsicGoals:
             mean_reward = reward / count if count > 0 else 0.0
             exploration_signal = 1.0 - (count / max_count)
             efficiency_signal = _clamp(mean_reward + 0.5, 0.0, 1.0)
+            telemetry_alignment = _clamp(
+                mean_reputation_quality * 0.7 + (1.0 - reputation_failure_penalty) * 0.3
+            )
             biases[name] = self.objective_arbitration(
                 expected_gain=mean_reward,
-                sandbox_risk=0.0,
-                resource_cost=count / max_count,
+                sandbox_risk=reputation_failure_penalty,
+                resource_cost=_clamp((count / max_count) * 0.6 + mean_reputation_cost * 0.4),
                 novelty=exploration_signal,
-            ) + self.state.weights.efficacite * efficiency_signal
+            ) + self.state.weights.efficacite * efficiency_signal + self.state.weights.coherence * telemetry_alignment
         return biases

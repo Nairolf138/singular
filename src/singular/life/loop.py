@@ -353,6 +353,10 @@ def manage_resources(
     return resource_manager.mood()
 
 
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
 def log_mutation(
     logger: RunLogger,
     iteration: int,
@@ -393,6 +397,18 @@ def log_mutation(
         score_base=base_score,
         score_new=mutated_score,
     )
+    reward_delta = base_score - mutated_score
+    perceived_quality = _clamp01(0.5 + (reward_delta * 0.5))
+    user_satisfaction = _clamp01(
+        (0.65 if accepted else 0.15) + (0.35 * perceived_quality)
+    )
+    usage_metrics = {
+        "success": accepted,
+        "latency_ms": ms_new,
+        "resource_cost": ms_base + ms_new,
+        "perceived_quality": perceived_quality,
+        "user_satisfaction": user_satisfaction,
+    }
     logger.log(
         key,
         op_name,
@@ -408,6 +424,7 @@ def log_mutation(
         human_summary=human_summary,
         loop_modifications=loop_modifications,
         health=health,
+        usage_metrics=usage_metrics,
     )
 
 
@@ -481,19 +498,55 @@ def _compute_loop_modifications(original: str, mutated: str) -> dict[str, int]:
 
 
 def _choose_skill(
-    rng: random.Random, organisms: Dict[str, Organism]
+    rng: random.Random,
+    organisms: Dict[str, Organism],
+    skill_reputation: Mapping[str, Mapping[str, float | int]] | None = None,
 ) -> tuple[str, Path]:
-    """Randomly choose an organism and one of its skills."""
+    """Choose a skill with utility-aware priority and exploration fallback."""
 
     if not organisms:
         raise RuntimeError("no organisms available")
 
-    org_name = rng.choice(list(organisms.keys()))
-    org = organisms[org_name]
-    available = list(org.skills_dir.glob("*.py"))
-    if not available:
-        raise RuntimeError(f"no skills available for organism {org_name}")
-    return org_name, rng.choice(available)
+    candidates: list[tuple[str, Path]] = []
+    for org_name, org in organisms.items():
+        available = list(org.skills_dir.glob("*.py"))
+        for skill_path in available:
+            candidates.append((org_name, skill_path))
+    if not candidates:
+        raise RuntimeError("no skills available for any organism")
+
+    def priority(org_name: str, skill_path: Path) -> float:
+        key = (
+            f"{org_name}:{skill_path.stem}"
+            if len(organisms) > 1
+            else skill_path.stem
+        )
+        rep = dict((skill_reputation or {}).get(key, {}))
+        quality = float(rep.get("mean_quality", 0.5))
+        use_count = float(rep.get("use_count", 0.0))
+        success_rate = float(rep.get("success_rate", 0.5))
+        recent_failures = float(rep.get("recent_failures", 0.0))
+        # Trigger rule: frequently used + low quality => targeted mutation.
+        targeted_mutation = 1.5 if use_count >= 5.0 and quality <= 0.45 else 0.0
+        return (
+            1.0
+            + (1.0 - quality) * 0.8
+            + use_count * 0.03
+            + recent_failures * 0.1
+            + (1.0 - success_rate) * 0.4
+            + targeted_mutation
+        )
+
+    weighted = [(org_name, skill_path, max(0.01, priority(org_name, skill_path))) for org_name, skill_path in candidates]
+    total = sum(weight for _, _, weight in weighted)
+    pick = rng.random() * total
+    cumulative = 0.0
+    for org_name, skill_path, weight in weighted:
+        cumulative += weight
+        if cumulative >= pick:
+            return org_name, skill_path
+    fallback_org, fallback_skill, _ = weighted[-1]
+    return fallback_org, fallback_skill
 
 
 def _pick_crossover_parents(rng: random.Random, world: WorldState) -> tuple[str, str]:
@@ -653,6 +706,7 @@ def run(
             signals = capture_signals(bus=event_bus)
             temp = get_temperature()
             signals["temperature"] = temp
+            signals["skill_reputation"] = logger.skill_reputation()
             resource_manager.update_from_environment(temp)
             state.iteration += 1
 
@@ -661,7 +715,11 @@ def run(
                 _, org_name, skill_path = heapq.heappop(delayed)
                 decision = Psyche.Decision.ACCEPT
             else:
-                org_name, skill_path = _choose_skill(rng, world.organisms)
+                org_name, skill_path = _choose_skill(
+                    rng,
+                    world.organisms,
+                    skill_reputation=logger.skill_reputation(),
+                )
                 decision = Psyche.Decision.ACCEPT
                 if hasattr(psyche, "irrational_decision"):
                     decision = psyche.irrational_decision(rng)
@@ -815,7 +873,10 @@ def run(
             )
             score_by_index = {index: score for index, _, score in reflection.alternative_scores}
             belief_bias = belief_store.operator_preference_bias(operators.keys())
-            combined_bias = intrinsic_goals.influence_operator_scores(stats)
+            combined_bias = intrinsic_goals.influence_operator_scores(
+                stats,
+                skill_reputation=logger.skill_reputation(),
+            )
             psyche_bias = getattr(psyche, "operator_bias", lambda names: {})(list(operators.keys()))
             for operator_name, extra_bias in belief_bias.items():
                 combined_bias[operator_name] = combined_bias.get(operator_name, 0.0) + extra_bias
@@ -1123,6 +1184,7 @@ def run(
                 "diff": diff,
                 "impacted_file": skill_path.name,
                 "timing_ms": {"base": ms_base, "new": ms_new},
+                "skill_reputation": logger.skill_reputation().get(key, {}),
             }
             event_bus.publish(
                 "mutation.applied" if accepted else "mutation.rejected",
