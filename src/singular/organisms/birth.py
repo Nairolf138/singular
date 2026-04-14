@@ -289,12 +289,11 @@ def birth(
 
     refresh_skill_catalog(skills_dir=skills_dir, mem_dir=home / "mem")
 
-    if seed is not None:
-        random.seed(seed)
+    rng = random.Random(seed)
 
     # Generate a random name and soulseed for the new identity
-    name = f"organism-{random.randint(0, 999999):06d}"
-    soulseed = "".join(random.choices(string.ascii_lowercase + string.digits, k=16))
+    name = f"organism-{rng.randint(0, 999999):06d}"
+    soulseed = "".join(rng.choices(string.ascii_lowercase + string.digits, k=16))
 
     # Create the identity file and persist a base profile
     identity = create_identity(name, soulseed, path=home / "id.json")
