@@ -1,0 +1,85 @@
+{
+  "world_clock": 0,
+  "map": {
+    "spaces": [
+      {
+        "id": "core",
+        "kind": "hub",
+        "stability": 0.9
+      },
+      {
+        "id": "wilds",
+        "kind": "exploration",
+        "stability": 0.7
+      }
+    ],
+    "niches": [
+      {
+        "id": "craft",
+        "space_id": "core",
+        "specialization": "fabrication"
+      },
+      {
+        "id": "research",
+        "space_id": "core",
+        "specialization": "insight"
+      },
+      {
+        "id": "forage",
+        "space_id": "wilds",
+        "specialization": "biomass"
+      }
+    ]
+  },
+  "resources": {
+    "renewable": {
+      "solar": {
+        "amount": 70.0,
+        "regen_rate": 5.0,
+        "capacity": 100.0
+      },
+      "biomass": {
+        "amount": 45.0,
+        "regen_rate": 3.0,
+        "capacity": 75.0
+      }
+    },
+    "non_renewable": {
+      "ore": {
+        "amount": 80.0
+      },
+      "rare_earth": {
+        "amount": 20.0
+      }
+    }
+  },
+  "external": {
+    "entities": [
+      {
+        "id": "trader-01",
+        "type": "merchant",
+        "stance": "neutral"
+      },
+      {
+        "id": "observer-01",
+        "type": "monitor",
+        "stance": "supportive"
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "relay",
+        "kind": "communication",
+        "integrity": 0.95
+      }
+    ]
+  },
+  "global_health": {
+    "score": 82.0,
+    "trend": "stable",
+    "signals": {
+      "resource_pressure": 0.2,
+      "cohesion": 0.85
+    }
+  }
+}
