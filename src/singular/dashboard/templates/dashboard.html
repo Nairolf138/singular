@@ -106,6 +106,15 @@
   </div>
 
   <div class='panel'>
+    <h3 style='margin-top:0;'>Cycle de vie des skills</h3>
+    <div class='cards-grid'>
+      <div class='card'><div class='card-label'>Skills actives</div><div id='kpi-skills-active' class='card-value'>0</div></div>
+      <div class='card'><div class='card-label'>Skills dormantes</div><div id='kpi-skills-dormant' class='card-value'>0</div></div>
+      <div class='card'><div class='card-label'>Skills archivées</div><div id='kpi-skills-archived' class='card-value'>0</div></div>
+    </div>
+  </div>
+
+  <div class='panel'>
     <h3 style='margin-top:0;'>Énergie / ressources & génération de code</h3>
     <div class='cards-grid'>
       <div class='card'><div class='card-label'>Énergie totale</div><div id='kpi-energy-total' class='card-value'>0</div></div>
@@ -286,6 +295,10 @@ const loadContext=()=>fetch('/dashboard/context').then(r=>r.json()).then(ctx=>{
   impactList.innerHTML='';
   for(const item of (ctx.policy_impact||[])){const li=document.createElement('li');li.textContent=String(item);impactList.appendChild(li);}
   if(!(ctx.policy_impact||[]).length){const li=document.createElement('li');li.textContent='Aucun impact disponible.';impactList.appendChild(li);}
+  const lifecycle=ctx.skills_lifecycle||{};
+  document.getElementById('kpi-skills-active').textContent=String(lifecycle.active||0);
+  document.getElementById('kpi-skills-dormant').textContent=String(lifecycle.dormant||0);
+  document.getElementById('kpi-skills-archived').textContent=String(lifecycle.archived||0);
 });
 
 const loadEco=()=>Promise.all([fetch(withScope('/ecosystem')).then(r=>r.json()),fetch(withScope('/lives/comparison?sort_by=last_activity&sort_order=desc')).then(r=>r.json())]).then(([eco,lives])=>{
@@ -349,6 +362,7 @@ const loadCockpit=()=>fetch(withScope('/api/cockpit')).then(r=>r.json()).then(d=
   document.getElementById('kpi-autonomy-latency').textContent=fmtNum(autonomy.perception_to_action_latency_ms,' ms');
   document.getElementById('kpi-autonomy-cost').textContent=fmtNum(autonomy.resource_cost_per_gain);
   const vital=d.vital_timeline||{};
+  const skillLifecycle=d.skills_lifecycle||{};
   const vitalMetrics=d.vital_metrics||{};
   const objectives=vitalMetrics.active_objectives||{};
   const energyResources=vitalMetrics.energy_resources||{};
@@ -365,6 +379,9 @@ const loadCockpit=()=>fetch(withScope('/api/cockpit')).then(r=>r.json()).then(d=
   document.getElementById('kpi-resources-total').textContent=fmtNum(energyResources.total_resources);
   document.getElementById('kpi-code-progression').textContent=String(codeGeneration.progression||'n/a');
   document.getElementById('kpi-code-risks').textContent=risks.length?risks.join(', '):String(codeGeneration.risk_level||'n/a');
+  document.getElementById('kpi-skills-active').textContent=String(skillLifecycle.active||0);
+  document.getElementById('kpi-skills-dormant').textContent=String(skillLifecycle.dormant||0);
+  document.getElementById('kpi-skills-archived').textContent=String(skillLifecycle.archived||0);
   const objectivesList=document.getElementById('kpi-active-objectives-list');
   objectivesList.innerHTML='';
   for(const item of (objectives.items||[])){

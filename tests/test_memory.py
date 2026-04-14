@@ -6,7 +6,17 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from typing import Any
 
-from singular.memory import add_episode, update_trait, update_score, update_note
+from singular.memory import (
+    add_episode,
+    apply_skill_maintenance,
+    controlled_delete_skill,
+    restore_skill,
+    temporarily_disable_skill,
+    update_note,
+    update_score,
+    update_trait,
+    record_skill_metric,
+)
 import singular.memory as memory
 from singular.organisms.birth import birth
 
@@ -159,3 +169,59 @@ def test_values_helpers_without_yaml(
     # Writing values should raise an informative ImportError
     with pytest.raises(ImportError):
         memory.write_values({"a": 1}, values_path)
+
+
+def test_record_skill_metric_persists_longitudinal_fields(tmp_path: Path) -> None:
+    skills_path = tmp_path / "mem" / "skills.json"
+    update_score("alpha", 1.5, path=skills_path)
+
+    record_skill_metric("alpha", gain=0.4, cost=12.0, success=True, path=skills_path)
+    record_skill_metric("alpha", gain=-0.1, cost=8.0, success=False, path=skills_path)
+
+    payload = json.loads(skills_path.read_text(encoding="utf-8"))
+    metrics = payload["alpha"]["metrics"]
+    assert metrics["usage_count"] == 2
+    assert metrics["failure_count"] == 1
+    assert metrics["average_gain"] == pytest.approx(0.15)
+    assert metrics["average_cost"] == pytest.approx(10.0)
+    assert isinstance(metrics["last_used_at"], str)
+
+
+def test_skill_maintenance_archive_and_restore_is_lossless(tmp_path: Path) -> None:
+    skills_path = tmp_path / "mem" / "skills.json"
+    update_score("beta", 2.0, path=skills_path)
+    record_skill_metric("beta", gain=0.6, cost=4.0, success=True, path=skills_path)
+
+    data = json.loads(skills_path.read_text(encoding="utf-8"))
+    data["beta"]["metrics"]["last_used_at"] = "2020-01-01T00:00:00+00:00"
+    skills_path.parent.mkdir(parents=True, exist_ok=True)
+    skills_path.write_text(json.dumps(data), encoding="utf-8")
+
+    apply_skill_maintenance(dormant_after_days=5, archive_after_days=30, path=skills_path)
+    archived = json.loads(skills_path.read_text(encoding="utf-8"))
+    assert archived["beta"]["lifecycle"]["state"] == "archived"
+    assert archived["beta"]["metrics"]["usage_count"] == 1
+    assert archived["beta"]["metrics"]["average_gain"] == pytest.approx(0.6)
+
+    restore_skill("beta", path=skills_path)
+    restored = json.loads(skills_path.read_text(encoding="utf-8"))
+    assert restored["beta"]["lifecycle"]["state"] == "active"
+    assert restored["beta"]["metrics"]["usage_count"] == 1
+    assert restored["beta"]["metrics"]["average_gain"] == pytest.approx(0.6)
+
+
+def test_skill_temporary_disable_and_controlled_delete(tmp_path: Path) -> None:
+    skills_path = tmp_path / "mem" / "skills.json"
+    update_score("gamma", 0.2, path=skills_path)
+
+    temporarily_disable_skill("gamma", duration_hours=2, reason="cooldown", path=skills_path)
+    disabled = json.loads(skills_path.read_text(encoding="utf-8"))
+    assert disabled["gamma"]["lifecycle"]["state"] == "temporarily_disabled"
+    assert disabled["gamma"]["lifecycle"]["disabled_until"] is not None
+
+    controlled_delete_skill("gamma", reason="governance_cleanup", path=skills_path)
+    deleted = json.loads(skills_path.read_text(encoding="utf-8"))
+    assert deleted["gamma"]["lifecycle"]["state"] == "deleted"
+    snapshot = deleted["gamma"]["lifecycle"]["snapshot_path"]
+    assert isinstance(snapshot, str)
+    assert Path(snapshot).exists()

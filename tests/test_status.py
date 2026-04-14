@@ -145,3 +145,38 @@ def test_status_exposes_quest_counts(tmp_path, monkeypatch, capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert len(payload["quests"]["active"]) == 1
     assert len(payload["quests"]["completed"]) == 1
+
+
+def test_status_exposes_skill_lifecycle_counts(tmp_path, monkeypatch, capsys) -> None:
+    mem_dir = tmp_path / "mem"
+    mem_dir.mkdir()
+    (mem_dir / "skills.json").write_text(
+        json.dumps(
+            {
+                "alpha": {"score": 0.1, "lifecycle": {"state": "active"}},
+                "beta": {"score": 0.2, "lifecycle": {"state": "dormant"}},
+                "gamma": {"score": 0.3, "lifecycle": {"state": "archived"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class DummyPsyche:
+        last_mood = None
+        curiosity = 0.5
+        patience = 0.5
+        playfulness = 0.5
+        optimism = 0.5
+        resilience = 0.5
+
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    monkeypatch.setattr(status_mod, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(
+        status_mod.Psyche, "load_state", staticmethod(lambda: DummyPsyche())
+    )
+
+    status_mod.status(output_format="json")
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["skills_lifecycle"]["active"] == 1
+    assert payload["skills_lifecycle"]["dormant"] == 1
+    assert payload["skills_lifecycle"]["archived"] == 1
