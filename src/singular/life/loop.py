@@ -13,10 +13,11 @@ import heapq
 import hashlib
 import os
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, Iterable, Mapping
 
-from singular.cognition.reflect import ActionHypothesis, reflect_action
+from singular.cognition.reflect import ActionHypothesis, ReflectionDecision, reflect_action
 from singular.beliefs.store import BeliefStore
 from singular.beliefs.meta_learning import (
     extract_run_features,
@@ -40,6 +41,7 @@ from singular.environment.reputation import ReputationSystem
 from singular.environment.world_resources import CompetitorIntent, WorldResourcePool
 from singular.goals import IntrinsicGoals
 from singular.resource_manager import ResourceManager
+from singular.lives import load_registry, set_life_status
 
 from . import sandbox
 from .death import DeathMonitor
@@ -141,6 +143,97 @@ ACTION_TYPE_FROM_LOOP_EVENT: dict[str, str] = {
 CHECKPOINT_VERSION = 1
 HEALTH_HISTORY_FINE_WINDOW = 500
 HEALTH_HISTORY_AGGREGATE_EVERY = 10
+
+
+def _resolve_current_life_slug() -> str | None:
+    """Resolve current life slug from ``SINGULAR_HOME`` and the lives registry."""
+
+    life_home = Path(os.environ.get("SINGULAR_HOME", ".")).resolve()
+    registry = load_registry()
+    lives = registry.get("lives", {})
+    if not isinstance(lives, dict):
+        return None
+    for slug, metadata in lives.items():
+        life_path = getattr(metadata, "path", None)
+        if life_path is None:
+            continue
+        try:
+            if Path(life_path).resolve() == life_home:
+                return str(slug)
+        except OSError:
+            continue
+    return None
+
+
+def _write_json(path: Path, payload: Mapping[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _build_final_biography(*, reason: str, state: Checkpoint, psyche: Psyche) -> dict[str, object]:
+    mood = getattr(getattr(psyche, "last_mood", None), "value", None)
+    if mood is None and getattr(psyche, "last_mood", None) is not None:
+        mood = str(getattr(psyche, "last_mood"))
+    return {
+        "schema_version": 1,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "periods": [
+            {
+                "name": "émergence",
+                "start_iteration": 0,
+                "end_iteration": min(state.iteration, 10),
+            },
+            {
+                "name": "exploration",
+                "start_iteration": min(state.iteration, 11),
+                "end_iteration": max(state.iteration - 1, 0),
+            },
+            {
+                "name": "crépuscule",
+                "start_iteration": state.iteration,
+                "end_iteration": state.iteration,
+            },
+        ],
+        "turning_points": [
+            f"Extinction déclenchée à l'itération {state.iteration}: {reason}",
+        ],
+        "regrets_and_pride": {
+            "regrets": [f"Cause terminale: {reason}"],
+            "pride": [f"Dernière humeur observée: {mood or 'inconnue'}"],
+        },
+    }
+
+
+def _build_autopsy_report(
+    *,
+    reason: str,
+    state: Checkpoint,
+    health_snapshot: Mapping[str, float | int] | None,
+    reflection: ReflectionDecision,
+    psyche: Psyche,
+) -> dict[str, object]:
+    technical_causes = [f"monitor:{reason}"]
+    if health_snapshot:
+        health_score = health_snapshot.get("health_score")
+        if isinstance(health_score, (int, float)):
+            technical_causes.append(f"health_score={float(health_score):.3f}")
+    behavioral_causes = [f"decision_reason:{reflection.decision_reason}"]
+    mutation_policy = getattr(psyche, "mutation_policy", None)
+    if callable(mutation_policy):
+        try:
+            behavioral_causes.append(f"mutation_policy:{mutation_policy()}")
+        except TypeError:
+            pass
+    return {
+        "schema_version": 1,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "iteration": state.iteration,
+        "technical_causes": technical_causes,
+        "behavioral_causes": behavioral_causes,
+    }
 
 
 def _aggregate_health_bucket(
@@ -1380,18 +1473,61 @@ def run(
                 state.iteration, psyche, mutated_score <= base_score, org.resources
             )
             if dead:
-                logger.log_death(reason or "unknown", age=state.iteration)
+                death_reason = reason or "unknown"
+                logger.log_death(death_reason, age=state.iteration)
                 logger.log_interaction(
                     INTERACTION_EXTINCTION,
                     organism=org_name,
-                    reason=reason or "unknown",
+                    reason=death_reason,
                     alive=False,
                 )
-                org.energy = max(org.energy, 1.0)
-                org.resources = max(org.resources, 1.0)
-                org.monitor = DeathMonitor()
+                mem_dir = Path(os.environ.get("SINGULAR_HOME", ".")) / "mem"
+                autopsy_payload = _build_autopsy_report(
+                    reason=death_reason,
+                    state=state,
+                    health_snapshot=health_snapshot.to_dict(),
+                    reflection=reflection,
+                    psyche=psyche,
+                )
+                autopsy_path = mem_dir / "autopsy.json"
+                _write_json(autopsy_path, autopsy_payload)
+
+                biography_payload = _build_final_biography(
+                    reason=death_reason,
+                    state=state,
+                    psyche=psyche,
+                )
+                biography_path = mem_dir / "biography.final.json"
+                _write_json(biography_path, biography_payload)
+
+                stop_payload = {
+                    "stop": True,
+                    "reason": "life_extinction_detected",
+                    "life": org_name,
+                    "requested_at": datetime.now(timezone.utc).isoformat(),
+                }
+                _write_json(mem_dir / "orchestrator.stop.json", stop_payload)
+
+                life_slug = _resolve_current_life_slug()
+                if life_slug:
+                    set_life_status(life_slug, "extinct")
+
+                event_bus.publish(
+                    "life.terminated",
+                    {
+                        "life": life_slug or org_name,
+                        "status": "extinct",
+                        "reason": death_reason,
+                        "iteration": state.iteration,
+                        "autopsy_path": str(autopsy_path),
+                        "biography_path": str(biography_path),
+                        "orchestrator_stop_path": str(mem_dir / "orchestrator.stop.json"),
+                    },
+                    payload_version=1,
+                )
+                save_checkpoint(checkpoint_path, state)
                 tick_count += 1
-                continue
+                break
 
             # Remove organisms with depleted stores
             to_remove = [

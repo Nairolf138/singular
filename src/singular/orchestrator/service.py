@@ -113,6 +113,7 @@ class OrchestratorService:
         self.base_dir = base_dir or get_base_dir()
         self.mem_dir = get_mem_dir()
         self.state_path = self.mem_dir / "orchestrator_state.json"
+        self.stop_signal_path = self.mem_dir / "orchestrator.stop.json"
         self.checkpoint_path = self.base_dir / "life_checkpoint.json"
         self.skills_dir = self.base_dir / "skills"
         self.resources_path = self.base_dir / "resources.json"
@@ -680,6 +681,10 @@ class OrchestratorService:
 
         try:
             while self._running:
+                if self.stop_signal_path.exists():
+                    log.info("orchestrator stop requested via %s", self.stop_signal_path)
+                    self._running = False
+                    break
                 self.tick()
                 if self._external_stimulus_detected():
                     continue
