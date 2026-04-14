@@ -60,3 +60,16 @@ En phase `action`, le budget tick effectif est plafonné par la fenêtre de muta
 1. Respect de la fenêtre de mutation.
 2. Respect de la fréquence d'introspection.
 3. Ralentissement adaptatif en fatigue.
+
+## Artefacts techniques JSON du cycle de vie
+
+Référence normative complémentaire: [`docs/technical_memory_artifacts.md`](./technical_memory_artifacts.md).
+
+Ce document précise, pour `self_narrative.json`, `world_state.json`, `autopsy.json` et la trajectoire des objectifs:
+
+- les champs obligatoires,
+- des exemples JSON minimaux,
+- la compatibilité backward (`read-old/write-new`),
+- la stratégie de migration.
+
+Règle opérationnelle: toute évolution de schéma impactant un de ces artefacts doit mettre à jour **les deux** documents (`technical_life_status.md` et `technical_memory_artifacts.md`) dans le même changement.
