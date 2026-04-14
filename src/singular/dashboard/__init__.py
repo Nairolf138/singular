@@ -18,6 +18,7 @@ from singular.memory import read_skills
 
 from singular.dashboard.actions import DashboardActionService
 from singular.governance.policy import load_runtime_policy
+from singular.skills_daily import build_daily_skills_snapshot
 from fastapi.responses import HTMLResponse
 
 from singular.schedulers.reevaluation import alerts_from_records
@@ -467,6 +468,7 @@ def create_app(
                     extinction_seen=False,
                 ),
                 "skills_lifecycle": _skill_lifecycle_summary(),
+                "daily_skills": build_daily_skills_snapshot([]),
             }
             return empty
 
@@ -638,6 +640,7 @@ def create_app(
             },
             "vital_timeline": vital_timeline,
             "skills_lifecycle": _skill_lifecycle_summary(),
+            "daily_skills": build_daily_skills_snapshot(records),
         }
 
 
