@@ -41,6 +41,22 @@ singular report --format plain
 singular dashboard
 ```
 
+### Profils de naissance (traits initiaux)
+
+Le parser `birth` accepte des overrides bornés `[0,1]` pour les traits initiaux
+du psyche : `--curiosity`, `--patience`, `--playfulness`, `--optimism`,
+`--resilience`. Les valeurs sont persistées dans `mem/psyche.json`.
+
+```bash
+# Profil prudent : stabilité, patience, faible prise de risque
+singular birth --name "Prudent" \
+  --curiosity 0.20 --patience 0.90 --playfulness 0.15 --optimism 0.55 --resilience 0.90
+
+# Profil explorateur : curiosité et jeu plus élevés, patience plus basse
+singular birth --name "Explorateur" \
+  --curiosity 0.92 --patience 0.35 --playfulness 0.85 --optimism 0.75 --resilience 0.70
+```
+
 Par défaut, ``talk`` ouvre une session interactive. Pour obtenir une réponse
 unique et quitter immédiatement :
 

@@ -5,7 +5,9 @@ from __future__ import annotations
 import os
 import random
 import string
+from math import isfinite
 from pathlib import Path
+from typing import Any
 
 from ..governance.values import ValueWeights
 from ..identity import create_identity
@@ -13,7 +15,38 @@ from ..memory import ensure_memory_structure, update_score, write_profile
 from ..psyche import Psyche
 
 
-def birth(seed: int | None = None, home: Path | None = None) -> None:
+_PSYCHE_TRAITS = ("curiosity", "patience", "playfulness", "optimism", "resilience")
+_PSYCHE_DEFAULTS = {trait: 0.5 for trait in _PSYCHE_TRAITS}
+
+
+def _resolve_psyche_overrides(
+    overrides: dict[str, Any] | None,
+) -> dict[str, float]:
+    """Validate and normalize optional psyche trait overrides."""
+
+    if not overrides:
+        return {}
+
+    normalized: dict[str, float] = {}
+    for key, raw_value in overrides.items():
+        if key not in _PSYCHE_DEFAULTS:
+            raise ValueError(f"unsupported psyche trait override: {key}")
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"invalid psyche trait override for {key}: {raw_value!r}") from exc
+        if not isfinite(value) or value < 0.0 or value > 1.0:
+            raise ValueError(f"psyche trait override out of range for {key}: {value!r}")
+        normalized[key] = value
+    return normalized
+
+
+def birth(
+    seed: int | None = None,
+    home: Path | None = None,
+    *,
+    psyche_overrides: dict[str, Any] | None = None,
+) -> None:
     """Handle the ``birth`` subcommand.
 
     Parameters
@@ -87,6 +120,9 @@ def birth(seed: int | None = None, home: Path | None = None) -> None:
     identity = create_identity(name, soulseed, path=home / "id.json")
     write_profile(identity.__dict__, path=home / "mem" / "profile.json")
 
-    # Initialize the psyche with default traits and save its state
-    psyche = Psyche()
+    resolved_overrides = _resolve_psyche_overrides(psyche_overrides)
+    initial_traits = {**_PSYCHE_DEFAULTS, **resolved_overrides}
+
+    # Initialize the psyche with validated traits and save its state
+    psyche = Psyche(**initial_traits)
     psyche.save_state(path=home / "mem" / "psyche.json")

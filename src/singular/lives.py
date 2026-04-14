@@ -269,14 +269,19 @@ def resolve_life(name: str | None) -> Path | None:
     return target.path
 
 
-def bootstrap_life(name: str, seed: int | None = None) -> LifeMetadata:
+def bootstrap_life(
+    name: str,
+    seed: int | None = None,
+    *,
+    psyche_overrides: dict[str, float] | None = None,
+) -> LifeMetadata:
     """Create and initialise a life."""
 
     metadata = create_life(name)
 
     from .organisms.birth import birth  # Imported lazily to avoid cycles.
 
-    birth(seed=seed, home=metadata.path)
+    birth(seed=seed, home=metadata.path, psyche_overrides=psyche_overrides)
     registry = load_registry()
     lives: dict[str, LifeMetadata] = registry.get("lives", {})
     return lives.get(metadata.slug, metadata)
