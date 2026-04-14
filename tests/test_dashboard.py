@@ -33,6 +33,7 @@ def test_dashboard_endpoints(tmp_path: Path, monkeypatch) -> None:
     context = client.get("/dashboard/context").json()
     assert context["policy"]["version"] == 1
     assert isinstance(context["policy_impact"], list)
+    assert "skills_lifecycle" in context
 
 
 def test_dashboard_quests_endpoint(tmp_path: Path, monkeypatch) -> None:
@@ -203,6 +204,7 @@ def test_dashboard_cockpit_endpoint_schema(tmp_path: Path) -> None:
     assert "energy_resources" in payload["vital_metrics"]
     assert "code_generation" in payload["vital_metrics"]
     assert "risks" in payload["vital_metrics"]
+    assert "skills_lifecycle" in payload
 
 
 def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
@@ -244,6 +246,7 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "Nombre de vies détectées" in body
     assert "Quêtes" in body
     assert "Cycle circadien & objectifs actifs" in body
+    assert "Cycle de vie des skills" in body
     assert "Énergie / ressources & génération de code" in body
     assert "Fenêtre temporelle" in body
     assert "Comparer vies (CSV)" in body

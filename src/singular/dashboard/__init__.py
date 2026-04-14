@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from singular.lives import get_registry_root, load_registry, set_life_status
 from singular.life.vital import compute_vital_timeline
 from singular.metrics.autonomy import compute_autonomy_metrics
+from singular.memory import read_skills
 
 from singular.dashboard.actions import DashboardActionService
 from singular.governance.policy import load_runtime_policy
@@ -235,6 +236,21 @@ def create_app(
             },
         }
 
+    def _skill_lifecycle_summary() -> dict[str, int]:
+        payload = {"active": 0, "dormant": 0, "archived": 0, "temporarily_disabled": 0, "deleted": 0, "total": 0}
+        for raw_entry in read_skills().values():
+            payload["total"] += 1
+            state = "active"
+            if isinstance(raw_entry, dict):
+                lifecycle = raw_entry.get("lifecycle")
+                if isinstance(lifecycle, dict) and isinstance(lifecycle.get("state"), str):
+                    state = lifecycle["state"]
+            if state in payload:
+                payload[state] += 1
+            else:
+                payload["active"] += 1
+        return payload
+
     def _iter_run_files(current_life_only: bool = False) -> list[Path]:
         files: list[Path] = []
         for directory in _runs_dirs(current_life_only=current_life_only):
@@ -450,6 +466,7 @@ def create_app(
                     failure_streak=0,
                     extinction_seen=False,
                 ),
+                "skills_lifecycle": _skill_lifecycle_summary(),
             }
             return empty
 
@@ -620,6 +637,7 @@ def create_app(
                 "risks": [str(alert.get("kind", "")) for alert in critical_alerts],
             },
             "vital_timeline": vital_timeline,
+            "skills_lifecycle": _skill_lifecycle_summary(),
         }
 
 
@@ -872,6 +890,7 @@ def create_app(
             "registry_lives_count": len(_registry_lives_paths()),
             "policy": policy.to_payload(),
             "policy_impact": policy.impact_summary(),
+            "skills_lifecycle": _skill_lifecycle_summary(),
         }
 
     @app.get("/timeline")

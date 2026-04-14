@@ -10,6 +10,7 @@ from ..life.vital import compute_vital_timeline
 from ..metrics.autonomy import compute_autonomy_metrics
 from ..psyche import Psyche
 from ..memory import get_mem_dir
+from ..memory import read_skills
 from ..runs.logger import RUNS_DIR
 from ..schedulers.reevaluation import alerts_from_records
 
@@ -59,6 +60,30 @@ def _read_quest_status() -> dict[str, object]:
     completed = payload.get("completed") if isinstance(payload.get("completed"), list) else []
     return {"active": active, "completed": completed[-20:]}
 
+
+def _read_skill_lifecycle_status() -> dict[str, object]:
+    skills = read_skills()
+    summary = {
+        "active": 0,
+        "dormant": 0,
+        "archived": 0,
+        "temporarily_disabled": 0,
+        "deleted": 0,
+        "total": 0,
+    }
+    for raw_entry in skills.values():
+        summary["total"] += 1
+        state = "active"
+        if isinstance(raw_entry, dict):
+            lifecycle = raw_entry.get("lifecycle")
+            if isinstance(lifecycle, dict) and isinstance(lifecycle.get("state"), str):
+                state = lifecycle["state"]
+        if state in summary:
+            summary[state] += 1
+        else:
+            summary["active"] += 1
+    return summary
+
 def status(*, verbose: bool = False, output_format: str = "plain") -> None:
     """Display basic metrics and current psyche state."""
 
@@ -74,6 +99,14 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         "traits": {},
         "autonomy_metrics": {},
         "quests": {"active": [], "completed": []},
+        "skills_lifecycle": {
+            "active": 0,
+            "dormant": 0,
+            "archived": 0,
+            "temporarily_disabled": 0,
+            "deleted": 0,
+            "total": 0,
+        },
         "vital_timeline": {
             "age": 0,
             "state": "mature",
@@ -160,6 +193,7 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
     mood = psyche.last_mood.value if psyche.last_mood else "neutral"
     payload["mood"] = mood
     payload["quests"] = _read_quest_status()
+    payload["skills_lifecycle"] = _read_skill_lifecycle_status()
     payload["traits"] = {
         "curiosity": round(psyche.curiosity, 2),
         "patience": round(psyche.patience, 2),
@@ -207,6 +241,9 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             ["Mood", str(payload.get("mood"))],
             ["Quêtes actives", str(len((payload.get("quests") or {}).get("active", [])))],
             ["Quêtes terminées", str(len((payload.get("quests") or {}).get("completed", [])))],
+            ["Skills actives", str((payload.get("skills_lifecycle") or {}).get("active", 0))],
+            ["Skills dormantes", str((payload.get("skills_lifecycle") or {}).get("dormant", 0))],
+            ["Skills archivées", str((payload.get("skills_lifecycle") or {}).get("archived", 0))],
             ["Âge vital", str((payload.get("vital_timeline") or {}).get("age", 0))],
             ["État vital", str((payload.get("vital_timeline") or {}).get("state", "n/a"))],
             ["Risque vital", str((payload.get("vital_timeline") or {}).get("risk_level", "n/a"))],
@@ -278,6 +315,10 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
     quests = payload.get("quests") if isinstance(payload.get("quests"), dict) else {"active": [], "completed": []}
     print(f"Quêtes actives: {len(quests.get("active", []))}")
     print(f"Quêtes terminées: {len(quests.get("completed", []))}")
+    lifecycle = payload.get("skills_lifecycle") if isinstance(payload.get("skills_lifecycle"), dict) else {}
+    print(f"Skills actives: {lifecycle.get('active', 0)}")
+    print(f"Skills dormantes: {lifecycle.get('dormant', 0)}")
+    print(f"Skills archivées: {lifecycle.get('archived', 0)}")
     print("Traits:")
     for trait, value in payload["traits"].items():
         print(f"  {trait}: {value:.2f}")
