@@ -9,6 +9,17 @@ import tempfile
 import time
 from collections import defaultdict, deque
 
+from singular.events import (
+    HELP_ACCEPTED,
+    HELP_COMPLETED,
+    HELP_OFFERED,
+    HELP_REQUESTED,
+    EventBus,
+    build_help_event_payload,
+)
+from singular.governance.policy import AUTH_AUTO, AUTH_FORCED, MutationGovernancePolicy
+from singular.life import sandbox
+
 if os.name == "nt":
     import msvcrt
 else:
@@ -45,6 +56,10 @@ class AgentMessage:
         "resource_negotiation",
         "sub_problem",
         "answer",
+        "help.requested",
+        "help.offered",
+        "help.accepted",
+        "help.completed",
     ]
     task: str
     evidence: list[str]
@@ -265,6 +280,217 @@ class OrchestrationScenario:
         if self.memory is not None:
             self.memory.append({"kind": "merge", "payload": merged})
         return merged
+
+
+@dataclass(slots=True)
+class HelpTransferResult:
+    status: str
+    decision: str
+    requester_before: float
+    requester_after: float
+    helper_before: float
+    helper_after: float
+    requester_gain: float
+    helper_gain: float
+
+
+@dataclass(slots=True)
+class HelpExchangeCoordinator:
+    """Coordinate cross-life help events and controlled skill sharing."""
+
+    transport: MessageTransport
+    policy: MutationGovernancePolicy
+    bus: EventBus | None = None
+    memory: CollectiveMemory | None = None
+    success_window: int = 20
+    _outcomes: dict[tuple[str, str], deque[int]] = field(default_factory=dict)
+
+    def register_outcome(self, *, life_id: str, task: str, success: bool) -> None:
+        key = (life_id, task)
+        bucket = self._outcomes.setdefault(key, deque(maxlen=max(1, self.success_window)))
+        bucket.append(1 if success else 0)
+
+    def success_rate(self, *, life_id: str, task: str) -> float:
+        bucket = self._outcomes.get((life_id, task))
+        if not bucket:
+            return 0.0
+        return sum(bucket) / len(bucket)
+
+    def emit_help_requested(self, *, requester_life: str, task: str, attempts: int) -> None:
+        payload = build_help_event_payload(
+            requester_life=requester_life,
+            helper_life=None,
+            task=task,
+            attempts=attempts,
+            metadata={"source": "orchestrator"},
+        )
+        self.transport.send(
+            AgentMessage(
+                intent=HELP_REQUESTED,
+                task=task,
+                evidence=[f"requester:{requester_life}", f"attempts:{attempts}"],
+                confidence=1.0,
+                agent_id=requester_life,
+                payload=payload,
+                version=2,
+            )
+        )
+        if self.bus is not None:
+            self.bus.publish(HELP_REQUESTED, payload, payload_version=1)
+
+    def transfer_skill(
+        self,
+        *,
+        requester_life: str,
+        helper_life: str,
+        task: str,
+        helper_skill_path: Path,
+        requester_skills_dir: Path,
+        merge: bool = True,
+    ) -> HelpTransferResult:
+        requester_before = self.success_rate(life_id=requester_life, task=task)
+        helper_before = self.success_rate(life_id=helper_life, task=task)
+        skill_name = helper_skill_path.stem
+        receiver_target = requester_skills_dir / helper_skill_path.name
+
+        offered = build_help_event_payload(
+            requester_life=requester_life,
+            helper_life=helper_life,
+            task=task,
+            attempts=0,
+            metadata={"skill": skill_name},
+        )
+        if self.bus is not None:
+            self.bus.publish(HELP_OFFERED, offered, payload_version=1)
+        self.transport.send(
+            AgentMessage(
+                intent=HELP_OFFERED,
+                task=task,
+                evidence=[f"helper:{helper_life}", f"skill:{skill_name}"],
+                confidence=1.0,
+                agent_id=helper_life,
+                payload=offered,
+                version=2,
+            )
+        )
+
+        helper_code = helper_skill_path.read_text(encoding="utf-8")
+        merged_code = helper_code
+        if merge and receiver_target.exists():
+            local_code = receiver_target.read_text(encoding="utf-8")
+            if local_code.strip() != helper_code.strip():
+                merged_code = (
+                    f"{local_code.rstrip()}\n\n"
+                    f"# --- merged_help_from:{helper_life}:{skill_name} ---\n"
+                    f"{helper_code.lstrip()}"
+                )
+
+        # Sandbox validation before governance-authorized write.
+        sandbox.run(f"{merged_code}\nresult = True")
+        decision = self.policy.enforce_write(
+            receiver_target,
+            merged_code,
+            root=requester_skills_dir.parent,
+            operation="skill_creation",
+        )
+        if not decision.allowed:
+            return HelpTransferResult(
+                status="blocked",
+                decision=decision.level,
+                requester_before=requester_before,
+                requester_after=requester_before,
+                helper_before=helper_before,
+                helper_after=helper_before,
+                requester_gain=0.0,
+                helper_gain=0.0,
+            )
+        if decision.level not in {AUTH_AUTO, AUTH_FORCED}:
+            return HelpTransferResult(
+                status="review_required",
+                decision=decision.level,
+                requester_before=requester_before,
+                requester_after=requester_before,
+                helper_before=helper_before,
+                helper_after=helper_before,
+                requester_gain=0.0,
+                helper_gain=0.0,
+            )
+
+        accepted_payload = build_help_event_payload(
+            requester_life=requester_life,
+            helper_life=helper_life,
+            task=task,
+            attempts=0,
+            metadata={"skill": skill_name, "decision": decision.level},
+        )
+        if self.bus is not None:
+            self.bus.publish(HELP_ACCEPTED, accepted_payload, payload_version=1)
+        self.transport.send(
+            AgentMessage(
+                intent=HELP_ACCEPTED,
+                task=task,
+                evidence=[f"requester:{requester_life}", f"skill:{skill_name}"],
+                confidence=1.0,
+                agent_id=requester_life,
+                payload=accepted_payload,
+                version=2,
+            )
+        )
+
+        self.register_outcome(life_id=requester_life, task=task, success=True)
+        self.register_outcome(life_id=helper_life, task=task, success=True)
+        requester_after = self.success_rate(life_id=requester_life, task=task)
+        helper_after = self.success_rate(life_id=helper_life, task=task)
+        requester_gain = requester_after - requester_before
+        helper_gain = helper_after - helper_before
+        completed_payload = build_help_event_payload(
+            requester_life=requester_life,
+            helper_life=helper_life,
+            task=task,
+            attempts=0,
+            metadata={
+                "skill": skill_name,
+                "decision": decision.level,
+                "requester_gain": requester_gain,
+                "helper_gain": helper_gain,
+            },
+        )
+        if self.bus is not None:
+            self.bus.publish(HELP_COMPLETED, completed_payload, payload_version=1)
+        self.transport.send(
+            AgentMessage(
+                intent=HELP_COMPLETED,
+                task=task,
+                evidence=[f"requester_gain:{requester_gain:.3f}", f"helper_gain:{helper_gain:.3f}"],
+                confidence=1.0,
+                agent_id=helper_life,
+                payload=completed_payload,
+                version=2,
+            )
+        )
+        if self.memory is not None:
+            self.memory.append(
+                {
+                    "kind": "help_transfer",
+                    "task": task,
+                    "requester_life": requester_life,
+                    "helper_life": helper_life,
+                    "skill": skill_name,
+                    "decision": decision.level,
+                    "requester_gain": requester_gain,
+                    "helper_gain": helper_gain,
+                }
+            )
+        return HelpTransferResult(
+            status="completed",
+            decision=decision.level,
+            requester_before=requester_before,
+            requester_after=requester_after,
+            helper_before=helper_before,
+            helper_after=helper_after,
+            requester_gain=requester_gain,
+            helper_gain=helper_gain,
+        )
 
 
 def _atomic_write_text(path: Path, data: str) -> None:
