@@ -45,6 +45,9 @@ def _default_policy_payload() -> dict[str, Any]:
             "safe_mode": False,
             "mutation_quota_per_window": 25,
             "mutation_quota_window_seconds": 300.0,
+            "skill_creation_quota_per_window": 3,
+            "skill_creation_quota_window_seconds": 900.0,
+            "file_creation_review_required": False,
             "circuit_breaker_threshold": 3,
             "circuit_breaker_window_seconds": 180.0,
             "circuit_breaker_cooldown_seconds": 300.0,
@@ -109,6 +112,9 @@ class RuntimePolicy:
     safe_mode: bool
     mutation_quota_per_window: int
     mutation_quota_window_seconds: float
+    skill_creation_quota_per_window: int
+    skill_creation_quota_window_seconds: float
+    file_creation_review_required: bool
     circuit_breaker_threshold: int
     circuit_breaker_window_seconds: float
     circuit_breaker_cooldown_seconds: float
@@ -131,6 +137,9 @@ class RuntimePolicy:
                 "safe_mode": self.safe_mode,
                 "mutation_quota_per_window": self.mutation_quota_per_window,
                 "mutation_quota_window_seconds": self.mutation_quota_window_seconds,
+                "skill_creation_quota_per_window": self.skill_creation_quota_per_window,
+                "skill_creation_quota_window_seconds": self.skill_creation_quota_window_seconds,
+                "file_creation_review_required": self.file_creation_review_required,
                 "circuit_breaker_threshold": self.circuit_breaker_threshold,
                 "circuit_breaker_window_seconds": self.circuit_breaker_window_seconds,
                 "circuit_breaker_cooldown_seconds": self.circuit_breaker_cooldown_seconds,
@@ -147,7 +156,14 @@ class RuntimePolicy:
             )
             + f" max_episodic_entries={self.forgetting_max_episodic_entries}.",
             f"Permissions: {len(self.modifiable_paths)} zones auto, {len(self.review_required_paths)} zones review, {len(self.forbidden_paths)} zones interdites.",
-            f"Autonomie: quota={self.mutation_quota_per_window}/{self.mutation_quota_window_seconds:.0f}s, circuit={self.circuit_breaker_threshold} violations/{self.circuit_breaker_window_seconds:.0f}s, safe_mode={'on' if self.safe_mode else 'off'}.",
+            (
+                "Autonomie: "
+                f"quota-mutation={self.mutation_quota_per_window}/{self.mutation_quota_window_seconds:.0f}s, "
+                f"quota-creation={self.skill_creation_quota_per_window}/{self.skill_creation_quota_window_seconds:.0f}s, "
+                f"review-creation={'on' if self.file_creation_review_required else 'off'}, "
+                f"circuit={self.circuit_breaker_threshold} violations/{self.circuit_breaker_window_seconds:.0f}s, "
+                f"safe_mode={'on' if self.safe_mode else 'off'}."
+            ),
         ]
 
 
@@ -169,7 +185,12 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
     memory = payload["memory"]
     forgetting = payload["forgetting"]
     permissions = payload["permissions"]
-    autonomy = payload["autonomy"]
+    autonomy_raw = payload["autonomy"]
+    autonomy = dict(autonomy_raw) if isinstance(autonomy_raw, Mapping) else autonomy_raw
+    if isinstance(autonomy, dict):
+        autonomy.setdefault("skill_creation_quota_per_window", 3)
+        autonomy.setdefault("skill_creation_quota_window_seconds", 900.0)
+        autonomy.setdefault("file_creation_review_required", False)
     for section_name, section in (
         ("memory", memory),
         ("forgetting", forgetting),
@@ -191,6 +212,9 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
         "safe_mode",
         "mutation_quota_per_window",
         "mutation_quota_window_seconds",
+        "skill_creation_quota_per_window",
+        "skill_creation_quota_window_seconds",
+        "file_creation_review_required",
         "circuit_breaker_threshold",
         "circuit_breaker_window_seconds",
         "circuit_breaker_cooldown_seconds",
@@ -228,6 +252,17 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
         safe_mode=_coerce_bool(autonomy, "safe_mode"),
         mutation_quota_per_window=_coerce_int(autonomy, "mutation_quota_per_window", minimum=1),
         mutation_quota_window_seconds=_coerce_float(autonomy, "mutation_quota_window_seconds", minimum=1.0),
+        skill_creation_quota_per_window=_coerce_int(
+            autonomy,
+            "skill_creation_quota_per_window",
+            minimum=1,
+        ),
+        skill_creation_quota_window_seconds=_coerce_float(
+            autonomy,
+            "skill_creation_quota_window_seconds",
+            minimum=1.0,
+        ),
+        file_creation_review_required=_coerce_bool(autonomy, "file_creation_review_required"),
         circuit_breaker_threshold=_coerce_int(autonomy, "circuit_breaker_threshold", minimum=1),
         circuit_breaker_window_seconds=_coerce_float(autonomy, "circuit_breaker_window_seconds", minimum=1.0),
         circuit_breaker_cooldown_seconds=_coerce_float(autonomy, "circuit_breaker_cooldown_seconds", minimum=1.0),
@@ -321,6 +356,9 @@ class MutationGovernancePolicy:
         value_weights: ValueWeights | None = None,
         mutation_quota_per_window: int = 25,
         mutation_quota_window_seconds: float = 300.0,
+        skill_creation_quota_per_window: int = 3,
+        skill_creation_quota_window_seconds: float = 900.0,
+        file_creation_review_required: bool = False,
         circuit_breaker_threshold: int = 3,
         circuit_breaker_window_seconds: float = 180.0,
         circuit_breaker_cooldown_seconds: float = 300.0,
@@ -349,6 +387,23 @@ class MutationGovernancePolicy:
             ),
             1.0,
         )
+        self.skill_creation_quota_per_window = max(
+            int(
+                skill_creation_quota_per_window
+                or runtime_policy.skill_creation_quota_per_window
+            ),
+            1,
+        )
+        self.skill_creation_quota_window_seconds = max(
+            float(
+                skill_creation_quota_window_seconds
+                or runtime_policy.skill_creation_quota_window_seconds
+            ),
+            1.0,
+        )
+        self.file_creation_review_required = bool(
+            file_creation_review_required or runtime_policy.file_creation_review_required
+        )
         self.circuit_breaker_threshold = max(
             int(circuit_breaker_threshold or runtime_policy.circuit_breaker_threshold), 1
         )
@@ -369,6 +424,7 @@ class MutationGovernancePolicy:
         self.safe_mode = bool(safe_mode or runtime_policy.safe_mode)
         self.memory_preserve_threshold = runtime_policy.memory_preserve_threshold
         self._mutation_timestamps: deque[datetime] = deque()
+        self._skill_creation_timestamps: deque[datetime] = deque()
         self._violation_timestamps: deque[datetime] = deque()
         self._circuit_open_until: datetime | None = None
 
@@ -401,6 +457,12 @@ class MutationGovernancePolicy:
         violation_cutoff = now - timedelta(seconds=self.circuit_breaker_window_seconds)
         while self._violation_timestamps and self._violation_timestamps[0] < violation_cutoff:
             self._violation_timestamps.popleft()
+        creation_cutoff = now - timedelta(seconds=self.skill_creation_quota_window_seconds)
+        while (
+            self._skill_creation_timestamps
+            and self._skill_creation_timestamps[0] < creation_cutoff
+        ):
+            self._skill_creation_timestamps.popleft()
 
     def record_violation(self, *, category: str, severity: str = "high") -> None:
         self._prune_history()
@@ -429,7 +491,13 @@ class MutationGovernancePolicy:
         rel_txt = rel.as_posix()
         return any(rel_txt == p or rel_txt.startswith(f"{p}/") for p in prefixes)
 
-    def simulate_write(self, target: Path, *, root: Path | None = None) -> GovernanceDecision:
+    def simulate_write(
+        self,
+        target: Path,
+        *,
+        root: Path | None = None,
+        operation: str = "mutation_write",
+    ) -> GovernanceDecision:
         """Simulate authorization before a filesystem write."""
 
         self._prune_history()
@@ -458,6 +526,19 @@ class MutationGovernancePolicy:
                     f"({self.mutation_quota_per_window}/{self.mutation_quota_window_seconds:.0f}s)"
                 ),
                 corrective_action="wait for quota window reset or reduce mutation frequency",
+                severity="medium",
+            )
+        if operation == "skill_creation" and (
+            len(self._skill_creation_timestamps) >= self.skill_creation_quota_per_window
+        ):
+            return GovernanceDecision(
+                level=AUTH_BLOCKED,
+                allowed=False,
+                reason=(
+                    "skill-creation quota exceeded "
+                    f"({self.skill_creation_quota_per_window}/{self.skill_creation_quota_window_seconds:.0f}s)"
+                ),
+                corrective_action="wait for quota reset or reduce automatic skill genesis attempts",
                 severity="medium",
             )
 
@@ -512,6 +593,14 @@ class MutationGovernancePolicy:
             )
 
         if self._matches(rel, self.modifiable_paths):
+            if operation == "skill_creation" and self.file_creation_review_required:
+                return GovernanceDecision(
+                    level=AUTH_REVIEW_REQUIRED,
+                    allowed=False,
+                    reason=f"file creation for '{rel.as_posix()}' requires manual review",
+                    corrective_action="request human review for this file creation",
+                    severity="medium",
+                )
             return GovernanceDecision(
                 level=AUTH_AUTO,
                 allowed=True,
@@ -528,10 +617,17 @@ class MutationGovernancePolicy:
             severity="medium",
         )
 
-    def enforce_write(self, target: Path, content: str, *, root: Path | None = None) -> GovernanceDecision:
+    def enforce_write(
+        self,
+        target: Path,
+        content: str,
+        *,
+        root: Path | None = None,
+        operation: str = "mutation_write",
+    ) -> GovernanceDecision:
         """Enforce policy with mandatory simulation before writing."""
 
-        decision = self.simulate_write(target, root=root)
+        decision = self.simulate_write(target, root=root, operation=operation)
         if not decision.allowed:
             self.record_violation(category="governance_violation", severity=decision.severity)
             log.warning(
@@ -579,6 +675,8 @@ class MutationGovernancePolicy:
         target.write_text(content, encoding="utf-8")
         self._prune_history()
         self._mutation_timestamps.append(self._now())
+        if operation == "skill_creation":
+            self._skill_creation_timestamps.append(self._now())
         if decision.level == AUTH_FORCED:
             self._journal_decision(
                 decision=decision,
