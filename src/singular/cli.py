@@ -17,6 +17,18 @@ from typing import Any, Callable
 __all__ = ["main"]
 
 
+def _bounded_trait_value(raw: str) -> float:
+    """Parse a psyche trait override constrained to ``[0, 1]``."""
+
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError("doit être un nombre entre 0 et 1") from exc
+    if value < 0.0 or value > 1.0:
+        raise argparse.ArgumentTypeError("doit être compris entre 0 et 1")
+    return value
+
+
 def _extract_talk_life_alias(argv: list[str] | None) -> str | None:
     """Extract ``talk --life/--live`` value from raw argv when present."""
 
@@ -561,6 +573,36 @@ def main(argv: list[str] | None = None) -> int:
         default="New life",
         help="Human readable name for the life",
     )
+    birth_parser.add_argument(
+        "--curiosity",
+        type=_bounded_trait_value,
+        default=None,
+        help="Trait initial borné dans [0,1]",
+    )
+    birth_parser.add_argument(
+        "--patience",
+        type=_bounded_trait_value,
+        default=None,
+        help="Trait initial borné dans [0,1]",
+    )
+    birth_parser.add_argument(
+        "--playfulness",
+        type=_bounded_trait_value,
+        default=None,
+        help="Trait initial borné dans [0,1]",
+    )
+    birth_parser.add_argument(
+        "--optimism",
+        type=_bounded_trait_value,
+        default=None,
+        help="Trait initial borné dans [0,1]",
+    )
+    birth_parser.add_argument(
+        "--resilience",
+        type=_bounded_trait_value,
+        default=None,
+        help="Trait initial borné dans [0,1]",
+    )
 
     spawn_parser = subparsers.add_parser(
         "spawn", help="Create child organism from two parents"
@@ -953,8 +995,23 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["SINGULAR_SAFE_MODE"] = "1"
 
     if args.command == "birth":
+        psyche_overrides = {
+            trait: getattr(args, trait)
+            for trait in (
+                "curiosity",
+                "patience",
+                "playfulness",
+                "optimism",
+                "resilience",
+            )
+            if getattr(args, trait, None) is not None
+        }
         name = args.name or "New life"
-        metadata = bootstrap_life(name, seed=args.seed)
+        metadata = bootstrap_life(
+            name,
+            seed=args.seed,
+            psyche_overrides=psyche_overrides or None,
+        )
         registry_root = get_registry_root()
         os.environ["SINGULAR_HOME"] = str(metadata.path)
         print(f"Vie créée: {metadata.name} ({metadata.slug}) → {metadata.path}")
