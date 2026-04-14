@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from singular.events import EventBus, get_global_event_bus
+from singular.sensors import collect_host_metrics
 
 
 def _read_optional_file() -> dict[str, Any]:
@@ -155,6 +156,61 @@ def _build_perception_event(
     }
 
 
+
+
+def _collect_host_signals() -> dict[str, float | None] | None:
+    """Collect host metrics in a backward-compatible best-effort mode."""
+
+    try:
+        return collect_host_metrics()
+    except Exception:
+        return None
+
+
+def _derive_host_events(host_metrics: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Emit normalized host events when predefined thresholds are exceeded."""
+
+    if not isinstance(host_metrics, dict):
+        return []
+
+    events: list[dict[str, Any]] = []
+
+    cpu_percent = host_metrics.get("cpu_percent")
+    if isinstance(cpu_percent, (int, float)) and float(cpu_percent) >= 90.0:
+        events.append(
+            _build_perception_event(
+                event_type="host.cpu.high",
+                source="host_metrics",
+                confidence=0.92,
+                data={"cpu_percent": float(cpu_percent), "threshold": 90.0},
+            )
+        )
+
+    ram_used_percent = host_metrics.get("ram_used_percent")
+    if isinstance(ram_used_percent, (int, float)) and float(ram_used_percent) >= 85.0:
+        events.append(
+            _build_perception_event(
+                event_type="host.memory.pressure",
+                source="host_metrics",
+                confidence=0.9,
+                data={"ram_used_percent": float(ram_used_percent), "threshold": 85.0},
+            )
+        )
+
+    host_temperature_c = host_metrics.get("host_temperature_c")
+    if isinstance(host_temperature_c, (int, float)) and float(host_temperature_c) >= 80.0:
+        events.append(
+            _build_perception_event(
+                event_type="host.thermal.warning",
+                source="host_metrics",
+                confidence=0.88,
+                data={"host_temperature_c": float(host_temperature_c), "threshold": 80.0},
+            )
+        )
+
+    return events
+
+
 def _collect_artifact_signals(root: Path, state: _ArtifactScanState) -> list[dict[str, Any]]:
     files_mtime = _list_sandbox_files(root)
     previous_files = state.files_mtime
@@ -257,20 +313,36 @@ def capture_signals(
     signals.update(_read_optional_file())
     signals.update(_query_optional_weather_api())
 
+    host_metrics = _collect_host_signals()
+    if host_metrics is not None:
+        signals["host_metrics"] = host_metrics
+
     root = _resolve_sandbox_root(sandbox_root)
     state = artifact_state or _ARTIFACT_STATE
     filter_instance = noise_filter or _NOISE_FILTER
     artifact_events = _collect_artifact_signals(root, state)
-    filtered_events = [event for event in artifact_events if filter_instance.allow(event)]
+    host_events = _derive_host_events(host_metrics)
+    candidate_events = [*artifact_events, *host_events]
+    filtered_events = [event for event in candidate_events if filter_instance.allow(event)]
     if filtered_events:
-        signals["artifact_events"] = filtered_events
+        signals["artifact_events"] = [
+            event for event in filtered_events if str(event.get("type", "")).startswith("artifact.")
+        ]
+        signals["host_events"] = [
+            event for event in filtered_events if str(event.get("type", "")).startswith("host.")
+        ]
+        if not signals["artifact_events"]:
+            signals.pop("artifact_events")
+        if not signals["host_events"]:
+            signals.pop("host_events")
 
     if publish_event:
         emitter = bus or get_global_event_bus()
         emitter.publish("signal.captured", {"signals": dict(signals)}, payload_version=1)
         for event in filtered_events:
+            topic = "artifact.perception" if str(event.get("type", "")).startswith("artifact.") else "host.perception"
             emitter.publish(
-                "artifact.perception",
+                topic,
                 {"version": "1.0", "event": event},
                 payload_version=1,
             )

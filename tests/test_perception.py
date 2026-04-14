@@ -87,3 +87,59 @@ def test_capture_signals_publishes_normalized_artifact_events(tmp_path):
         assert set(normalized) >= {"type", "source", "confidence", "timestamp"}
 
     assert "artifact_events" in signals
+
+
+def test_capture_signals_integrates_host_metrics_and_publishes_host_events(tmp_path, monkeypatch):
+    reset_perception_state()
+
+    monkeypatch.setattr(
+        "singular.perception.collect_host_metrics",
+        lambda: {
+            "cpu_percent": 95.0,
+            "cpu_load_1m": 4.0,
+            "ram_used_percent": 90.0,
+            "ram_available_mb": 512.0,
+            "disk_used_percent": 50.0,
+            "disk_free_gb": 100.0,
+            "host_temperature_c": 85.0,
+            "process_cpu_percent": 40.0,
+            "process_rss_mb": 128.0,
+        },
+    )
+
+    sandbox = tmp_path / "sandbox"
+    sandbox.mkdir()
+    (sandbox / "app.py").write_text("print('ok')\n", encoding="utf-8")
+
+    bus = EventBus(mode="sync")
+    captured = []
+    bus.subscribe("host.perception", lambda event: captured.append(event))
+
+    signals = capture_signals(bus=bus, sandbox_root=sandbox)
+
+    assert "host_metrics" in signals
+    assert signals["host_metrics"]["cpu_percent"] == 95.0
+    assert "host_events" in signals
+    event_types = {event["type"] for event in signals["host_events"]}
+    assert {"host.cpu.high", "host.memory.pressure", "host.thermal.warning"}.issubset(event_types)
+
+    assert any(evt.payload["event"]["type"] == "host.cpu.high" for evt in captured)
+    assert any(evt.payload["event"]["type"] == "host.memory.pressure" for evt in captured)
+    assert any(evt.payload["event"]["type"] == "host.thermal.warning" for evt in captured)
+
+    for event in captured:
+        payload = event.payload["event"]
+        assert set(payload) >= {"type", "source", "confidence", "timestamp"}
+
+
+def test_capture_signals_skips_host_metrics_when_sensor_unavailable(monkeypatch):
+    reset_perception_state()
+
+    def _boom():
+        raise RuntimeError("sensor unavailable")
+
+    monkeypatch.setattr("singular.perception.collect_host_metrics", _boom)
+
+    signals = capture_signals()
+
+    assert "host_metrics" not in signals
