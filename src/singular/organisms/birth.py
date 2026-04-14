@@ -6,10 +6,14 @@ import os
 import random
 import string
 import json
+import hashlib
+from datetime import datetime, timezone
 from math import isfinite
 from pathlib import Path
 from typing import Any
 
+from ..environment.sim_world import default_world_state, save_world_state
+from ..goals.intrinsic import GoalState
 from ..governance.values import ValueWeights
 from ..identity import create_identity
 from ..memory import ensure_memory_structure, update_score, write_profile
@@ -20,6 +24,7 @@ from ..life.skill_catalog import refresh_skill_catalog
 _PSYCHE_TRAITS = ("curiosity", "patience", "playfulness", "optimism", "resilience")
 _PSYCHE_DEFAULTS = {trait: 0.5 for trait in _PSYCHE_TRAITS}
 _DEFAULT_STARTER_PROFILE = "minimal"
+_BIRTH_SCHEMA_VERSION = 1
 _STARTER_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "starter_skills.yaml"
 _DEFAULT_STARTER_PROFILES: dict[str, list[str]] = {
     "minimal": ["addition", "subtraction", "multiplication"],
@@ -188,6 +193,47 @@ def _resolve_starter_skills(
     return ordered
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _append_jsonl(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as file:
+        file.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def _build_birth_snapshot(
+    *,
+    identity_payload: dict[str, Any],
+    psyche_payload: dict[str, Any],
+    values_payload: dict[str, Any],
+    goals_payload: dict[str, Any],
+    world_payload: dict[str, Any],
+) -> tuple[dict[str, Any], str]:
+    initial_state = {
+        "identity": identity_payload,
+        "psyche": psyche_payload,
+        "values": values_payload,
+        "goals": goals_payload,
+        "world": world_payload,
+    }
+    canonical = json.dumps(initial_state, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    checksum = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    snapshot = {
+        "schema_version": _BIRTH_SCHEMA_VERSION,
+        "created_at": _now_iso(),
+        "initial_state_checksum": checksum,
+        "initial_state": initial_state,
+    }
+    return snapshot, checksum
+
+
 def birth(
     seed: int | None = None,
     home: Path | None = None,
@@ -260,3 +306,56 @@ def birth(
     # Initialize the psyche with validated traits and save its state
     psyche = Psyche(**initial_traits)
     psyche.save_state(path=home / "mem" / "psyche.json")
+
+    birth_time = _now_iso()
+    mem_dir = home / "mem"
+    values_defaults = ValueWeights().to_dict()
+    goals_init = GoalState().to_dict()
+    world_init = default_world_state()
+    save_world_state(world_init, path=mem_dir / "world_state.json")
+    _atomic_write_json(mem_dir / "world_effects.json", {"schema_version": 1, "events": []})
+
+    snapshot_payload, initial_checksum = _build_birth_snapshot(
+        identity_payload=identity.__dict__,
+        psyche_payload=json.loads((mem_dir / "psyche.json").read_text(encoding="utf-8")),
+        values_payload={"values": values_defaults},
+        goals_payload={"schema_version": 1, **goals_init},
+        world_payload={"schema_version": 1, **world_init},
+    )
+    _atomic_write_json(mem_dir / "initial_snapshot.json", snapshot_payload)
+
+    summary_text = (
+        f"Naissance: {identity.name} initialisé·e avec une psyché stable, "
+        "des objectifs intrinsèques équilibrés et un monde de départ prêt."
+    )
+    birth_certificate = {
+        "schema_version": _BIRTH_SCHEMA_VERSION,
+        "event_type": "birth_certificate",
+        "issued_at": birth_time,
+        "identity": {"id": identity.id, "name": identity.name, "soulseed": identity.soulseed},
+        "artifacts": {
+            "initial_snapshot": "mem/initial_snapshot.json",
+            "psyche_state": "mem/psyche.json",
+            "profile": "mem/profile.json",
+            "world_state": "mem/world_state.json",
+        },
+        "self_summary": {"title": "naissance", "text": summary_text},
+        "initial_state_checksum": initial_checksum,
+    }
+    _append_jsonl(mem_dir / "life_events.jsonl", birth_certificate)
+
+    biography_payload = {
+        "schema_version": _BIRTH_SCHEMA_VERSION,
+        "identity": {"id": identity.id, "name": identity.name},
+        "birth_certificate": birth_certificate,
+        "self_summaries": [
+            {
+                "schema_version": _BIRTH_SCHEMA_VERSION,
+                "title": "naissance",
+                "text": summary_text,
+                "created_at": birth_time,
+                "initial_state_checksum": initial_checksum,
+            }
+        ],
+    }
+    _atomic_write_json(mem_dir / "biography.json", biography_payload)
