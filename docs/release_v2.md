@@ -11,6 +11,18 @@ Ce document définit les garde-fous de sortie pour publier **v2** en réduisant 
   - `tests` (pytest)
 - Aucun merge si un job échoue.
 
+## 1 bis) Correspondance exacte « critère release ↔ check pipeline »
+
+| Critère release | Check pipeline (GitHub Actions) | Condition de succès |
+|---|---|---|
+| Pipeline vert obligatoire (Python 3.10/3.11/3.12) | Jobs `lint`, `typecheck`, `tests` avec `strategy.matrix.python-version: ["3.10", "3.11", "3.12"]` | Les 9 exécutions (3 jobs × 3 versions) sont vertes |
+| Lint obligatoire | Job `lint` (`ruff check .` + `black --check --target-version py310 --fast .`) | Aucune violation Ruff/Black |
+| Typage statique obligatoire | Job `typecheck` (`mypy src`) | Aucune erreur mypy |
+| Tests obligatoires | Job `tests` (`pytest ...`) | Suite de tests verte |
+| Couverture globale `src/singular >= 85%` | Job `tests` avec `pytest --cov=src/singular --cov-fail-under=85 --cov-report=xml:coverage.xml` | Le job échoue si la couverture totale passe sous 85% |
+| Couverture modules critiques `cli.py`/`lives.py >= 90%` | Script de post-traitement `python scripts/check_coverage_thresholds.py --coverage-xml coverage.xml --threshold src/singular/cli.py=90 --threshold src/singular/lives.py=90` | Le job échoue si un des deux fichiers est < 90% |
+| Blocage du merge si échec | Job `build` dépendant de `needs: [lint, typecheck, tests]` | `build` échoue si un job amont échoue/est annulé |
+
 ## 2) Couverture de tests
 
 - **Seuil global minimal**: `>= 85%` sur `src/singular`.
