@@ -532,14 +532,19 @@ def main(argv: list[str] | None = None) -> int:
     _preparse_environment(argv_list)
 
     from .lives import (
+        ally_lives,
         archive_life,
         bootstrap_life,
         clone_life,
         delete_life,
         get_registry_root,
+        list_relations,
         load_registry,
         memorialize_life,
+        reconcile_lives,
         resolve_life,
+        rival_lives,
+        set_proximity,
         uninstall_singular,
     )
 
@@ -875,6 +880,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     lives_clone.add_argument("name", help="Slug or name of the source life")
     lives_clone.add_argument("--new-name", default=None, help="Nom de la nouvelle vie")
+    lives_relations = lives_subparsers.add_parser("relations", help="Afficher relations d'une vie")
+    lives_relations.add_argument("--name", default=None, help="Vie ciblée (sinon vie active)")
+    lives_ally = lives_subparsers.add_parser("ally", help="Déclarer deux vies alliées")
+    lives_ally.add_argument("name", help="Vie source")
+    lives_ally.add_argument("other", help="Vie alliée")
+    lives_rival = lives_subparsers.add_parser("rival", help="Déclarer deux vies rivales")
+    lives_rival.add_argument("name", help="Vie source")
+    lives_rival.add_argument("other", help="Vie rivale")
+    lives_reconcile = lives_subparsers.add_parser("reconcile", help="Réconcilier deux vies")
+    lives_reconcile.add_argument("name", help="Vie source")
+    lives_reconcile.add_argument("other", help="Vie à réconcilier")
+    lives_proximity = lives_subparsers.add_parser("proximity", help="Ajuster score proximité")
+    lives_proximity.add_argument("name", help="Vie ciblée")
+    lives_proximity.add_argument("--score", type=float, required=True, help="Score [0..1]")
 
     values_parser = subparsers.add_parser("values", help="Inspecter les poids de valeurs")
     values_subparsers = values_parser.add_subparsers(dest="values_command", required=True)
@@ -1325,6 +1344,46 @@ def main(argv: list[str] | None = None) -> int:
             os.environ["SINGULAR_HOME"] = str(metadata.path)
             print(f"Vie clonée: {metadata.name} ({metadata.slug}) → {metadata.path}")
             print("Conseil: exécutez `singular status --verbose` puis `singular loop --budget-seconds 10`.")
+        elif args.lives_command == "relations":
+            try:
+                payload = list_relations(args.name)
+            except KeyError as exc:
+                raise SystemExit(f"Vie introuvable: {args.name or 'active'}") from exc
+            if args.output_format == "json":
+                print(json.dumps(payload, ensure_ascii=False))
+            else:
+                focus = payload["focus"]
+                print(f"Relations pour {focus['name']} ({focus['slug']})")
+                print(f"  Parents: {', '.join(focus['parents']) or '-'}")
+                print(f"  Enfants: {', '.join(focus['children']) or '-'}")
+                print(f"  Alliés: {', '.join(focus['allies']) or '-'}")
+                print(f"  Rivaux: {', '.join(focus['rivals']) or '-'}")
+                print(f"  Score proximité: {float(focus['proximity_score']):.2f}")
+                print(f"Conflits actifs: {len(payload.get('active_conflicts', []))}")
+        elif args.lives_command == "ally":
+            try:
+                meta, other = ally_lives(args.name, args.other)
+            except (KeyError, ValueError, PermissionError) as exc:
+                raise SystemExit(str(exc)) from exc
+            print(f"Alliance enregistrée: {meta.slug} ↔ {other.slug}")
+        elif args.lives_command == "rival":
+            try:
+                meta, other = rival_lives(args.name, args.other)
+            except (KeyError, ValueError, PermissionError) as exc:
+                raise SystemExit(str(exc)) from exc
+            print(f"Rivalité enregistrée: {meta.slug} ⚔ {other.slug}")
+        elif args.lives_command == "reconcile":
+            try:
+                meta, other = reconcile_lives(args.name, args.other)
+            except (KeyError, ValueError, PermissionError) as exc:
+                raise SystemExit(str(exc)) from exc
+            print(f"Réconciliation enregistrée: {meta.slug} ↔ {other.slug}")
+        elif args.lives_command == "proximity":
+            try:
+                meta = set_proximity(args.name, args.score)
+            except (KeyError, ValueError, PermissionError) as exc:
+                raise SystemExit(str(exc)) from exc
+            print(f"Score proximité mis à jour: {meta.slug} = {meta.proximity_score:.2f}")
 
     elif args.command == "values":
         _ensure_active_life(resolve_life, args.life)

@@ -5,10 +5,15 @@ from pathlib import Path
 import pytest
 
 from singular.lives import (
+    ally_lives,
     bootstrap_life,
     get_registry_root,
+    list_relations,
     load_registry,
+    reconcile_lives,
     resolve_life,
+    rival_lives,
+    set_proximity,
     set_life_status,
 )
 from singular.organisms.birth import birth
@@ -140,3 +145,23 @@ def test_load_registry_handles_partial_payload(
     registry = load_registry()
 
     assert registry == {"active": None, "lives": {}}
+
+
+def test_relations_support_allies_rivals_children_and_proximity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    alpha = bootstrap_life("Alpha")
+    beta = bootstrap_life("Beta")
+    gamma = bootstrap_life("Gamma")
+
+    ally_lives(alpha.slug, beta.slug)
+    rival_lives(alpha.slug, gamma.slug)
+    set_proximity(alpha.slug, 0.83)
+    reconcile_lives(alpha.slug, gamma.slug)
+
+    payload = list_relations(alpha.slug)
+    assert payload["focus"]["allies"] == [beta.slug]
+    assert payload["focus"]["rivals"] == []
+    assert payload["focus"]["proximity_score"] == 0.83
+    assert any(node["slug"] == alpha.slug for node in payload["social"]["nodes"])
