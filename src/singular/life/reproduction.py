@@ -27,12 +27,17 @@ from pathlib import Path
 from typing import Any, Tuple
 
 from singular.governance.policy import MutationGovernancePolicy
+from singular.social.graph import SocialGraph
 
 
 __all__ = [
     "ReproductionVariationPolicy",
     "InheritanceRules",
+    "ReproductionDecisionPolicy",
+    "ReproductionDecision",
     "compute_parent_compatibility",
+    "compute_reproduction_compatibility",
+    "decide_reproduction",
     "inherit_psyche",
     "inherit_values",
     "inherit_episodic_memory",
@@ -57,6 +62,135 @@ class InheritanceRules:
 
     inherit_partial_memory: bool = True
     memory_episode_limit: int = 50
+
+
+@dataclass(frozen=True)
+class ReproductionDecisionPolicy:
+    """Thresholds and weights for autonomous reproduction decisions."""
+
+    compatibility_threshold: float = 0.6
+    social_weight: float = 0.35
+    skills_weight: float = 0.30
+    viability_weight: float = 0.25
+    governance_weight: float = 0.10
+    min_parent_health: float = 0.35
+    cooldown_ticks: int = 5
+
+
+@dataclass(frozen=True)
+class ReproductionDecision:
+    """Outcome of an autonomous reproduction decision."""
+
+    accepted: bool
+    score: float
+    reasons: list[str]
+    components: dict[str, float]
+
+
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def _skills_complementarity(parent_a_skills: Path, parent_b_skills: Path) -> float:
+    skills_a = {path.stem for path in Path(parent_a_skills).glob("*.py")}
+    skills_b = {path.stem for path in Path(parent_b_skills).glob("*.py")}
+    if not skills_a and not skills_b:
+        return 0.0
+    union = skills_a | skills_b
+    if not union:
+        return 0.0
+    overlap = skills_a & skills_b
+    return 1.0 - (len(overlap) / len(union))
+
+
+def compute_reproduction_compatibility(
+    *,
+    parent_a: str,
+    parent_b: str,
+    parent_a_skills: Path,
+    parent_b_skills: Path,
+    parent_a_health: float,
+    parent_b_health: float,
+    governance_allowed: bool,
+    social_graph: SocialGraph | None = None,
+    policy: ReproductionDecisionPolicy | None = None,
+) -> tuple[float, dict[str, float]]:
+    """Compute a weighted compatibility score for two reproduction candidates."""
+
+    policy = policy or ReproductionDecisionPolicy()
+    graph = social_graph or SocialGraph()
+    relation = graph.get_relation(parent_a, parent_b)
+    affinity = _clamp01(float(relation.get("affinity", 0.5)))
+    trust = _clamp01(float(relation.get("trust", 0.5)))
+    rivalry = _clamp01(float(relation.get("rivalry", 0.0)))
+    social_score = _clamp01((0.5 * affinity) + (0.4 * trust) + (0.1 * (1.0 - rivalry)))
+    skills_score = _clamp01(_skills_complementarity(parent_a_skills, parent_b_skills))
+    viability_score = _clamp01((float(parent_a_health) + float(parent_b_health)) / 2.0)
+    governance_score = 1.0 if governance_allowed else 0.0
+
+    score = _clamp01(
+        (policy.social_weight * social_score)
+        + (policy.skills_weight * skills_score)
+        + (policy.viability_weight * viability_score)
+        + (policy.governance_weight * governance_score)
+    )
+    components = {
+        "social_affinity": round(social_score, 4),
+        "skills_complementarity": round(skills_score, 4),
+        "viability": round(viability_score, 4),
+        "governance": round(governance_score, 4),
+    }
+    return round(score, 4), components
+
+
+def decide_reproduction(
+    *,
+    parent_a: str,
+    parent_b: str,
+    parent_a_skills: Path,
+    parent_b_skills: Path,
+    parent_a_health: float,
+    parent_b_health: float,
+    governance_allowed: bool,
+    social_graph: SocialGraph | None = None,
+    policy: ReproductionDecisionPolicy | None = None,
+) -> ReproductionDecision:
+    """Return an autonomous accept/refuse decision with auditable reasons."""
+
+    policy = policy or ReproductionDecisionPolicy()
+    score, components = compute_reproduction_compatibility(
+        parent_a=parent_a,
+        parent_b=parent_b,
+        parent_a_skills=parent_a_skills,
+        parent_b_skills=parent_b_skills,
+        parent_a_health=parent_a_health,
+        parent_b_health=parent_b_health,
+        governance_allowed=governance_allowed,
+        social_graph=social_graph,
+        policy=policy,
+    )
+    reasons: list[str] = []
+    if score < policy.compatibility_threshold:
+        reasons.append(
+            f"compatibility_score_below_threshold:{score:.3f}<"
+            f"{policy.compatibility_threshold:.3f}"
+        )
+    if min(parent_a_health, parent_b_health) < policy.min_parent_health:
+        reasons.append(
+            f"parent_health_below_min:{min(parent_a_health, parent_b_health):.3f}<"
+            f"{policy.min_parent_health:.3f}"
+        )
+    if not governance_allowed:
+        reasons.append("governance_constraints_block_reproduction")
+    accepted = not reasons
+    if accepted:
+        reasons.append("accepted:compatibility_viability_governance_ok")
+    return ReproductionDecision(
+        accepted=accepted,
+        score=score,
+        reasons=reasons,
+        components=components,
+    )
 
 
 

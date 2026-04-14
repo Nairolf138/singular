@@ -7,10 +7,13 @@ from singular.organisms.spawn import spawn
 from singular.governance.policy import MutationGovernancePolicy
 from singular.life.reproduction import (
     InheritanceRules,
+    ReproductionDecisionPolicy,
     ReproductionVariationPolicy,
     authorize_reproduction_write,
+    decide_reproduction,
     crossover,
 )
+from singular.social.graph import SocialGraph
 
 
 def test_reproduction(tmp_path: Path):
@@ -186,3 +189,65 @@ def test_authorize_reproduction_write_blocked(tmp_path: Path):
     assert not ok
     assert "corrective_action" in reason
     assert not target.exists()
+
+
+def test_reproduction_decision_refuses_incompatible_pair(tmp_path: Path):
+    skills_a = tmp_path / "a" / "skills"
+    skills_b = tmp_path / "b" / "skills"
+    skills_a.mkdir(parents=True)
+    skills_b.mkdir(parents=True)
+    (skills_a / "sum.py").write_text("def sum_it(x):\n    return x\n", encoding="utf-8")
+    (skills_b / "sum.py").write_text("def sum_it(x):\n    return x + 1\n", encoding="utf-8")
+
+    social = SocialGraph(path=tmp_path / "mem" / "social_graph.json")
+    for _ in range(8):
+        social.update_relation("org-a", "org-b", "resource_conflict")
+
+    decision = decide_reproduction(
+        parent_a="org-a",
+        parent_b="org-b",
+        parent_a_skills=skills_a,
+        parent_b_skills=skills_b,
+        parent_a_health=0.2,
+        parent_b_health=0.3,
+        governance_allowed=True,
+        social_graph=social,
+        policy=ReproductionDecisionPolicy(
+            compatibility_threshold=0.7,
+            min_parent_health=0.4,
+        ),
+    )
+
+    assert decision.accepted is False
+    assert any("compatibility_score_below_threshold" in reason for reason in decision.reasons)
+    assert any("parent_health_below_min" in reason for reason in decision.reasons)
+
+
+def test_reproduction_decision_accepts_high_affinity_and_viability(tmp_path: Path):
+    skills_a = tmp_path / "a" / "skills"
+    skills_b = tmp_path / "b" / "skills"
+    skills_a.mkdir(parents=True)
+    skills_b.mkdir(parents=True)
+    (skills_a / "vision.py").write_text("def solve(x):\n    return x\n", encoding="utf-8")
+    (skills_b / "planning.py").write_text("def solve(x):\n    return x + 2\n", encoding="utf-8")
+
+    social = SocialGraph(path=tmp_path / "mem" / "social_graph.json")
+    for _ in range(6):
+        social.update_relation("org-a", "org-b", "successful_assistance")
+
+    decision = decide_reproduction(
+        parent_a="org-a",
+        parent_b="org-b",
+        parent_a_skills=skills_a,
+        parent_b_skills=skills_b,
+        parent_a_health=0.9,
+        parent_b_health=0.85,
+        governance_allowed=True,
+        social_graph=social,
+        policy=ReproductionDecisionPolicy(compatibility_threshold=0.6),
+    )
+
+    assert decision.accepted is True
+    assert decision.score >= 0.6
+    assert decision.components["social_affinity"] > 0.7
+    assert decision.components["viability"] > 0.8
