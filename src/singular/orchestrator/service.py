@@ -24,6 +24,7 @@ from singular.psyche import Psyche
 from singular.resource_manager import ResourceManager
 from singular.quests import QuestRuntime
 from singular.skills.runtime import SkillRuntime
+from singular.routines import RoutinesOrchestrator
 
 
 class LifecyclePhase(Enum):
@@ -107,6 +108,7 @@ class OrchestratorService:
             bus=self.bus,
         )
         self.governance_policy = MutationGovernancePolicy(safe_mode=self.config.safe_mode)
+        self.routines = RoutinesOrchestrator(state_path=self.mem_dir / "routines_state.json")
         self._running = False
         self._wake_requested = False
         self._pending_events: list[dict[str, Any]] = []
@@ -253,15 +255,21 @@ class OrchestratorService:
             if mood.value == "fatigue":
                 tick_budget *= max(fatigue_slowdown, 1.0)
             skill_execution = None
+            routine_executions: list[dict[str, Any]] = []
             if not self.config.dry_run:
+                action_context = {
+                    "phase": phase.value,
+                    "mood": mood.value,
+                    "energy": self.resource_manager.energy,
+                    "food": self.resource_manager.food,
+                }
                 skill_execution = self.skill_runtime.execute_best_skill(
                     task={"name": "orchestrator.action", "capabilities": []},
-                    context={
-                        "phase": phase.value,
-                        "mood": mood.value,
-                        "energy": self.resource_manager.energy,
-                        "food": self.resource_manager.food,
-                    },
+                    context=action_context,
+                )
+                routine_executions = self.routines.execute_with_runtime(
+                    skill_runtime=self.skill_runtime,
+                    base_context=action_context,
                 )
                 run_tick(
                     skills_dirs=self.skills_dir,
@@ -286,6 +294,7 @@ class OrchestratorService:
                     "tick_budget_seconds": tick_budget,
                     "allowed_actions": behavior.get("allowed_actions", []),
                     "quests": quest_outcomes,
+                    "routines": routine_executions,
                     "skill_execution": (
                         {
                             "skill": skill_execution.skill,
