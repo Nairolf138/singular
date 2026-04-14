@@ -30,7 +30,18 @@ def test_birth_creates_memory_files(tmp_path: Path) -> None:
     birth(home=tmp_path)
     mem = tmp_path / "mem"
     assert mem.is_dir()
-    for name in ["profile.json", "values.yaml", "episodic.jsonl", "skills.json", "skill_catalog.json"]:
+    for name in [
+        "profile.json",
+        "values.yaml",
+        "episodic.jsonl",
+        "skills.json",
+        "skill_catalog.json",
+        "initial_snapshot.json",
+        "life_events.jsonl",
+        "biography.json",
+        "world_state.json",
+        "world_effects.json",
+    ]:
         assert (mem / name).exists()
 
 
@@ -46,15 +57,37 @@ def test_birth_initializes_identity_profile_and_psyche(tmp_path: Path) -> None:
     psyche_data = json.loads(
         (tmp_path / "mem" / "psyche.json").read_text(encoding="utf-8")
     )
-    assert psyche_data == {
-        "curiosity": 0.5,
-        "patience": 0.5,
-        "playfulness": 0.5,
-        "optimism": 0.5,
-        "resilience": 0.5,
-        "energy": 100.0,
-        "last_mood": None,
-    }
+    assert psyche_data["curiosity"] == 0.5
+    assert psyche_data["patience"] == 0.5
+    assert psyche_data["playfulness"] == 0.5
+    assert psyche_data["optimism"] == 0.5
+    assert psyche_data["resilience"] == 0.5
+    assert psyche_data["energy"] == 100.0
+    assert psyche_data["last_mood"] is None
+    assert psyche_data["schema_version"] >= 1
+
+
+def test_birth_writes_auditable_snapshot_certificate_and_summary(tmp_path: Path) -> None:
+    birth(seed=7, home=tmp_path)
+    mem_dir = tmp_path / "mem"
+
+    snapshot = json.loads((mem_dir / "initial_snapshot.json").read_text(encoding="utf-8"))
+    assert snapshot["schema_version"] == 1
+    assert snapshot["initial_state_checksum"]
+    assert set(snapshot["initial_state"]) == {"identity", "psyche", "values", "goals", "world"}
+
+    life_events = (mem_dir / "life_events.jsonl").read_text(encoding="utf-8").splitlines()
+    assert life_events
+    birth_event = json.loads(life_events[-1])
+    assert birth_event["schema_version"] == 1
+    assert birth_event["event_type"] == "birth_certificate"
+    assert birth_event["initial_state_checksum"] == snapshot["initial_state_checksum"]
+    assert birth_event["self_summary"]["title"] == "naissance"
+
+    biography = json.loads((mem_dir / "biography.json").read_text(encoding="utf-8"))
+    assert biography["schema_version"] == 1
+    assert biography["birth_certificate"]["event_type"] == "birth_certificate"
+    assert biography["self_summaries"][0]["title"] == "naissance"
 
 
 def test_add_episode(tmp_path: Path) -> None:
