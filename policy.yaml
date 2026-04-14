@@ -7,6 +7,31 @@
     "enabled": true,
     "max_episodic_entries": 5000
   },
+  "sensors": {
+    "allowed": ["host_metrics", "artifact_scan", "virtual_environment"],
+    "blocked": [],
+    "max_export_granularity": "standard",
+    "anonymization": {
+      "enabled": true,
+      "block_sensitive_by_default": true,
+      "allow_sensitive_metrics_opt_in": false,
+      "redact_machine_user_info": true,
+      "sensitive_metric_keys_blocklist": [
+        "hostname",
+        "host_name",
+        "fqdn",
+        "cwd",
+        "cwd_path",
+        "path",
+        "paths",
+        "user",
+        "username",
+        "home",
+        "mount_path",
+        "absolute_path"
+      ]
+    }
+  },
   "permissions": {
     "modifiable_paths": ["skills"],
     "review_required_paths": ["skills/experimental"],

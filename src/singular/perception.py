@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from singular.events import EventBus, get_global_event_bus
+from singular.governance.policy import MutationGovernancePolicy
 from singular.sensors import collect_host_metrics, load_host_sensor_thresholds
 
 
@@ -162,7 +163,23 @@ def _collect_host_signals() -> dict[str, float | None] | None:
     """Collect host metrics in a backward-compatible best-effort mode."""
 
     try:
-        return collect_host_metrics()
+        policy = MutationGovernancePolicy()
+        if not policy.allow_sensor("host_metrics"):
+            return None
+        metrics = collect_host_metrics()
+        opt_in = os.getenv("SINGULAR_SENSOR_SENSITIVE_OPT_IN", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        sanitized = policy.sanitize_sensor_metrics(
+            sensor_name="host_metrics",
+            metrics=metrics,
+            requested_granularity="detailed",
+            explicit_sensitive_opt_in=opt_in,
+        )
+        return sanitized or None
     except Exception:
         return None
 
