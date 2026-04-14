@@ -52,16 +52,123 @@ def _fmt_number(value: object, unit: str = "") -> str:
 def _read_quest_status() -> dict[str, object]:
     path = get_mem_dir() / "quests_state.json"
     if not path.exists():
-        return {"active": [], "completed": []}
+        return {"active": [], "paused": [], "completed": []}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {"active": [], "completed": []}
+        return {"active": [], "paused": [], "completed": []}
     if not isinstance(payload, dict):
-        return {"active": [], "completed": []}
+        return {"active": [], "paused": [], "completed": []}
     active = payload.get("active") if isinstance(payload.get("active"), list) else []
+    paused = payload.get("paused") if isinstance(payload.get("paused"), list) else []
     completed = payload.get("completed") if isinstance(payload.get("completed"), list) else []
-    return {"active": active, "completed": completed[-20:]}
+    return {"active": active, "paused": paused, "completed": completed[-20:]}
+
+
+def _extract_objective_priorities(record: dict[str, object]) -> dict[str, float]:
+    candidates = (
+        record.get("objective_priorities"),
+        record.get("objective_weights"),
+        record.get("objectives"),
+    )
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        parsed: dict[str, float] = {}
+        for key, value in candidate.items():
+            if not isinstance(key, str):
+                continue
+            if isinstance(value, (int, float)):
+                parsed[key] = float(value)
+            elif isinstance(value, dict):
+                nested_priority = value.get("priority")
+                if isinstance(nested_priority, (int, float)):
+                    parsed[key] = float(nested_priority)
+        if parsed:
+            return parsed
+    return {}
+
+
+def _build_trajectory_payload(
+    *,
+    records: list[dict[str, object]],
+    quests: dict[str, object],
+) -> dict[str, object]:
+    active = quests.get("active") if isinstance(quests.get("active"), list) else []
+    paused = quests.get("paused") if isinstance(quests.get("paused"), list) else []
+    completed = quests.get("completed") if isinstance(quests.get("completed"), list) else []
+
+    objective_status: dict[str, str] = {}
+    for item in active:
+        if isinstance(item, dict) and isinstance(item.get("name"), str):
+            objective_status[item["name"]] = "in_progress"
+    for item in paused:
+        if isinstance(item, dict) and isinstance(item.get("name"), str):
+            objective_status[item["name"]] = "abandoned"
+    for item in completed:
+        if isinstance(item, dict) and isinstance(item.get("name"), str):
+            objective_status[item["name"]] = "completed"
+
+    objective_counts = {
+        "in_progress": sum(1 for status in objective_status.values() if status == "in_progress"),
+        "abandoned": sum(1 for status in objective_status.values() if status == "abandoned"),
+        "completed": sum(1 for status in objective_status.values() if status == "completed"),
+    }
+
+    previous: dict[str, float] = {}
+    priority_changes: list[dict[str, object]] = []
+    for record in records:
+        priorities = _extract_objective_priorities(record)
+        if not priorities:
+            continue
+        ts = record.get("ts")
+        for objective, new_value in priorities.items():
+            old_value = previous.get(objective)
+            if old_value is None:
+                previous[objective] = new_value
+                continue
+            if abs(new_value - old_value) >= 0.01:
+                priority_changes.append(
+                    {
+                        "objective": objective,
+                        "at": ts if isinstance(ts, str) else None,
+                        "from": round(old_value, 4),
+                        "to": round(new_value, 4),
+                        "delta": round(new_value - old_value, 4),
+                    }
+                )
+                previous[objective] = new_value
+
+    narrative_links: list[dict[str, object]] = []
+    major_events = {"death", "interaction", "quest", "quest_triggered", "quest_resolved", "consciousness"}
+    for record in records:
+        event = record.get("event")
+        if not isinstance(event, str):
+            continue
+        if event not in major_events and not isinstance(record.get("self_narrative_event"), str):
+            continue
+        objective = record.get("objective")
+        if not isinstance(objective, str):
+            continue
+        narrative_links.append(
+            {
+                "objective": objective,
+                "event": record.get("self_narrative_event", event),
+                "at": record.get("ts") if isinstance(record.get("ts"), str) else None,
+                "run": record.get("_run_file") if isinstance(record.get("_run_file"), str) else None,
+            }
+        )
+
+    return {
+        "objectives": {
+            "counts": objective_counts,
+            "in_progress": [name for name, status in objective_status.items() if status == "in_progress"],
+            "abandoned": [name for name, status in objective_status.items() if status == "abandoned"],
+            "completed": [name for name, status in objective_status.items() if status == "completed"],
+        },
+        "priority_changes": priority_changes[-40:],
+        "objective_narrative_links": narrative_links[-40:],
+    }
 
 
 def _read_skill_lifecycle_status() -> dict[str, object]:
@@ -101,7 +208,17 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         "mood": None,
         "traits": {},
         "autonomy_metrics": {},
-        "quests": {"active": [], "completed": []},
+        "quests": {"active": [], "paused": [], "completed": []},
+        "trajectory": {
+            "objectives": {
+                "counts": {"in_progress": 0, "abandoned": 0, "completed": 0},
+                "in_progress": [],
+                "abandoned": [],
+                "completed": [],
+            },
+            "priority_changes": [],
+            "objective_narrative_links": [],
+        },
         "skills_lifecycle": {
             "active": 0,
             "dormant": 0,
@@ -131,11 +248,11 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         "aggregates": host_aggregates,
         "impact": summarize_environmental_impact(host_aggregates),
     }
+    all_records: list[dict[str, object]] = []
     runs_dir = Path(RUNS_DIR)
     files = sorted(runs_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
     if files:
         latest = files[-1]
-        all_records: list[dict[str, object]] = []
         for run_file in files:
             with run_file.open(encoding="utf-8") as fh:
                 for line in fh:
@@ -215,6 +332,10 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
     mood = psyche.last_mood.value if psyche.last_mood else "neutral"
     payload["mood"] = mood
     payload["quests"] = _read_quest_status()
+    payload["trajectory"] = _build_trajectory_payload(
+        records=all_records if "all_records" in locals() else [],
+        quests=payload["quests"] if isinstance(payload["quests"], dict) else {},
+    )
     payload["skills_lifecycle"] = _read_skill_lifecycle_status()
     payload["traits"] = {
         "curiosity": round(psyche.curiosity, 2),

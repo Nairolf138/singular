@@ -159,6 +159,21 @@
   </div>
 
   <div class='panel'>
+    <h3 style='margin-top:0;'>Trajectory des objectifs</h3>
+    <div class='cards-grid'>
+      <div class='card'><div class='card-label'>En cours</div><div id='kpi-trajectory-in-progress' class='card-value'>0</div></div>
+      <div class='card'><div class='card-label'>Abandonnés</div><div id='kpi-trajectory-abandoned' class='card-value'>0</div></div>
+      <div class='card'><div class='card-label'>Complétés</div><div id='kpi-trajectory-completed' class='card-value'>0</div></div>
+      <div class='card'><div class='card-label'>Changements priorité</div><div id='kpi-trajectory-priority-count' class='card-value'>0</div></div>
+      <div class='card'><div class='card-label'>Liens narratifs</div><div id='kpi-trajectory-links-count' class='card-value'>0</div></div>
+    </div>
+    <h4 style='margin-bottom:6px;'>Derniers changements de priorité</h4>
+    <ul id='kpi-priority-changes-list' style='margin-top:0;'></ul>
+    <h4 style='margin-bottom:6px;'>Liens objectifs ↔ événements majeurs</h4>
+    <ul id='kpi-objective-links-list' style='margin-top:0;'></ul>
+  </div>
+
+  <div class='panel'>
     <h3 style='margin-top:0;'>Cycle de vie des skills</h3>
     <div class='cards-grid'>
       <div class='card'><div class='card-label'>Skills actives</div><div id='kpi-skills-active' class='card-value'>0</div></div>
@@ -556,6 +571,11 @@ const loadCockpit=()=>fetch(withScope('/api/cockpit')).then(r=>r.json()).then(d=
   const skillLifecycle=d.skills_lifecycle||{};
   const vitalMetrics=d.vital_metrics||{};
   const objectives=vitalMetrics.active_objectives||{};
+  const trajectory=d.trajectory||{};
+  const trajectoryObjectives=trajectory.objectives||{};
+  const trajectoryCounts=trajectoryObjectives.counts||{};
+  const priorityChanges=trajectory.priority_changes||[];
+  const objectiveLinks=trajectory.objective_narrative_links||[];
   const energyResources=vitalMetrics.energy_resources||{};
   const codeGeneration=vitalMetrics.code_generation||{};
   const risks=vitalMetrics.risks||[];
@@ -582,6 +602,27 @@ const loadCockpit=()=>fetch(withScope('/api/cockpit')).then(r=>r.json()).then(d=
     objectivesList.appendChild(li);
   }
   if(!(objectives.items||[]).length){const li=document.createElement('li');li.textContent='Aucun objectif actif';objectivesList.appendChild(li);}
+  document.getElementById('kpi-trajectory-in-progress').textContent=String(trajectoryCounts.in_progress||0);
+  document.getElementById('kpi-trajectory-abandoned').textContent=String(trajectoryCounts.abandoned||0);
+  document.getElementById('kpi-trajectory-completed').textContent=String(trajectoryCounts.completed||0);
+  document.getElementById('kpi-trajectory-priority-count').textContent=String(priorityChanges.length||0);
+  document.getElementById('kpi-trajectory-links-count').textContent=String(objectiveLinks.length||0);
+  const priorityList=document.getElementById('kpi-priority-changes-list');
+  priorityList.innerHTML='';
+  for(const change of priorityChanges.slice(-5).reverse()){
+    const li=document.createElement('li');
+    li.textContent=`${change.objective||'objectif'} · ${change.from??'n/a'} → ${change.to??'n/a'} (${change.at||'n/a'})`;
+    priorityList.appendChild(li);
+  }
+  if(!priorityChanges.length){const li=document.createElement('li');li.textContent='Aucun changement détecté';priorityList.appendChild(li);}
+  const linksList=document.getElementById('kpi-objective-links-list');
+  linksList.innerHTML='';
+  for(const link of objectiveLinks.slice(-5).reverse()){
+    const li=document.createElement('li');
+    li.textContent=`${link.objective||'objectif'} ↔ ${link.event||'événement'} (${link.at||'n/a'})`;
+    linksList.appendChild(li);
+  }
+  if(!objectiveLinks.length){const li=document.createElement('li');li.textContent='Aucun lien narratif détecté';linksList.appendChild(li);}
   setStatusTone(document.getElementById('kpi-trend'),trend==='amélioration'?'good':(trend==='dégradation'?'bad':'warn'));
 
   const notable=d.last_notable_mutation;

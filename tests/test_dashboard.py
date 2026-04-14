@@ -205,6 +205,10 @@ def test_dashboard_cockpit_endpoint_schema(tmp_path: Path) -> None:
     assert "code_generation" in payload["vital_metrics"]
     assert "risks" in payload["vital_metrics"]
     assert "skills_lifecycle" in payload
+    assert "trajectory" in payload
+    assert "objectives" in payload["trajectory"]
+    assert "priority_changes" in payload["trajectory"]
+    assert "objective_narrative_links" in payload["trajectory"]
 
 
 def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
@@ -246,6 +250,9 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "Nombre de vies détectées" in body
     assert "Quêtes" in body
     assert "Cycle circadien & objectifs actifs" in body
+    assert "Trajectory des objectifs" in body
+    assert "kpi-trajectory-in-progress" in body
+    assert "kpi-priority-changes-list" in body
     assert "Cycle de vie des skills" in body
     assert "Énergie / ressources & génération de code" in body
     assert "Fenêtre temporelle" in body

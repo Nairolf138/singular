@@ -123,6 +123,7 @@ def test_status_exposes_quest_counts(tmp_path, monkeypatch, capsys) -> None:
         json.dumps(
             {
                 "active": [{"name": "q1", "status": "active", "started_at": "2026-01-01T00:00:00+00:00"}],
+                "paused": [{"name": "q2", "status": "paused", "started_at": "2026-01-01T00:00:00+00:00"}],
                 "completed": [{"name": "q0", "status": "success", "started_at": "2026-01-01T00:00:00+00:00", "completed_at": "2026-01-01T00:01:00+00:00"}],
             }
         ),
@@ -146,7 +147,58 @@ def test_status_exposes_quest_counts(tmp_path, monkeypatch, capsys) -> None:
     status_mod.status(output_format="json")
     payload = json.loads(capsys.readouterr().out)
     assert len(payload["quests"]["active"]) == 1
+    assert len(payload["quests"]["paused"]) == 1
     assert len(payload["quests"]["completed"]) == 1
+    assert payload["trajectory"]["objectives"]["counts"]["in_progress"] == 1
+    assert payload["trajectory"]["objectives"]["counts"]["abandoned"] == 1
+    assert payload["trajectory"]["objectives"]["counts"]["completed"] == 1
+
+
+def test_status_exposes_trajectory_priority_and_narrative_links(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    run_file = tmp_path / "demo.jsonl"
+    with run_file.open("w", encoding="utf-8") as fh:
+        fh.write(
+            json.dumps(
+                {
+                    "ts": "2026-04-12T10:00:00+00:00",
+                    "objective_weights": {"coherence": 0.4},
+                }
+            )
+            + "\n"
+        )
+        fh.write(
+            json.dumps(
+                {
+                    "ts": "2026-04-12T10:05:00+00:00",
+                    "objective_weights": {"coherence": 0.7},
+                    "event": "consciousness",
+                    "objective": "coherence",
+                }
+            )
+            + "\n"
+        )
+
+    class DummyPsyche:
+        last_mood = None
+        curiosity = 0.5
+        patience = 0.5
+        playfulness = 0.5
+        optimism = 0.5
+        resilience = 0.5
+
+    monkeypatch.setattr(status_mod, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(
+        status_mod.Psyche, "load_state", staticmethod(lambda: DummyPsyche())
+    )
+
+    status_mod.status(output_format="json")
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["trajectory"]["priority_changes"]
+    assert payload["trajectory"]["priority_changes"][0]["objective"] == "coherence"
+    assert payload["trajectory"]["objective_narrative_links"]
+    assert payload["trajectory"]["objective_narrative_links"][0]["objective"] == "coherence"
 
 
 def test_status_exposes_skill_lifecycle_counts(tmp_path, monkeypatch, capsys) -> None:
