@@ -12,11 +12,15 @@ concurrency:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - name: Install lint dependencies
         run: |
           python -m pip install --upgrade pip
@@ -28,11 +32,15 @@ jobs:
 
   typecheck:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - name: Install typecheck dependencies
         run: |
           python -m pip install --upgrade pip
@@ -42,18 +50,27 @@ jobs:
 
   tests:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
           pip install . pytest pytest-cov
-      - name: Pytest
-        run: pytest --cov=src/singular --cov-report=term-missing
-
+      - name: Pytest with global coverage guardrail
+        run: pytest --cov=src/singular --cov-fail-under=85 --cov-report=term-missing --cov-report=xml:coverage.xml
+      - name: Validate critical modules coverage >= 90%
+        run: |
+          python scripts/check_coverage_thresholds.py \
+            --coverage-xml coverage.xml \
+            --threshold src/singular/cli.py=90 \
+            --threshold src/singular/lives.py=90
 
   build:
     name: build
