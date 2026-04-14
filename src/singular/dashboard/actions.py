@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from singular.lives import get_registry_root
+from singular.sensors import load_host_sensor_thresholds
 from singular.skills_daily import build_daily_skills_snapshot
 
 
@@ -45,11 +46,13 @@ class DashboardActionService:
         current_home = Path(os.environ.get("SINGULAR_HOME", str(self.home)))
         runs_dir = current_home / "runs"
         vital_metrics = self._consolidated_vital_metrics(runs_dir=runs_dir)
+        host_metrics = self._consolidated_host_metrics(runs_dir=runs_dir)
         daily_skills = build_daily_skills_snapshot(self._read_run_records(runs_dir=runs_dir))
         return {
             "registry_root": str(self.root),
             "current_life_home": str(current_home),
             "vital_metrics": vital_metrics,
+            "host_metrics": host_metrics,
             "daily_skills": daily_skills,
         }
 
@@ -144,6 +147,124 @@ class DashboardActionService:
             "accepted_mutation_rate": accepted_rate,
             "circadian_phase": circadian_phase,
             "risk_level": risk_level,
+        }
+
+    @staticmethod
+    def _host_metric_risk(
+        metric: str,
+        value: float | None,
+        thresholds: Any,
+    ) -> str:
+        if value is None:
+            return "unsupported"
+        if metric == "cpu":
+            if value >= float(thresholds.cpu_critical_percent):
+                return "critical"
+            if value >= float(thresholds.cpu_warning_percent):
+                return "warn"
+            return "ok"
+        if metric == "ram":
+            if value >= float(thresholds.ram_critical_percent):
+                return "critical"
+            if value >= float(thresholds.ram_warning_percent):
+                return "warn"
+            return "ok"
+        if metric == "temperature":
+            if value >= float(thresholds.temperature_critical_c):
+                return "critical"
+            if value >= float(thresholds.temperature_warning_c):
+                return "warn"
+            return "ok"
+        if metric == "disk":
+            if value >= float(thresholds.disk_critical_percent):
+                return "critical"
+            return "ok"
+        return "unsupported"
+
+    @staticmethod
+    def _extract_host_metrics(record: dict[str, Any]) -> dict[str, Any] | None:
+        host_metrics = record.get("host_metrics")
+        if isinstance(host_metrics, dict):
+            return host_metrics
+        signals = record.get("signals")
+        if isinstance(signals, dict):
+            candidate = signals.get("host_metrics")
+            if isinstance(candidate, dict):
+                return candidate
+        payload = record.get("payload")
+        if isinstance(payload, dict):
+            candidate = payload.get("host_metrics")
+            if isinstance(candidate, dict):
+                return candidate
+        return None
+
+    def _consolidated_host_metrics(self, *, runs_dir: Path) -> dict[str, Any]:
+        thresholds = load_host_sensor_thresholds()
+        records = self._read_run_records(runs_dir=runs_dir)
+        recent = records[-120:]
+        history_map: dict[str, list[dict[str, Any]]] = {"cpu": [], "ram": [], "temperature": [], "disk": []}
+        latest_values: dict[str, float | None] = {"cpu": None, "ram": None, "temperature": None, "disk": None}
+        latest_adaptation: dict[str, Any] | None = None
+        for record in recent:
+            ts = record.get("ts")
+            host_metrics = self._extract_host_metrics(record)
+            if isinstance(host_metrics, dict):
+                metric_map = {
+                    "cpu": host_metrics.get("cpu_percent"),
+                    "ram": host_metrics.get("ram_used_percent"),
+                    "temperature": host_metrics.get("host_temperature_c"),
+                    "disk": host_metrics.get("disk_used_percent"),
+                }
+                for metric_name, raw_value in metric_map.items():
+                    if not isinstance(raw_value, (int, float)):
+                        continue
+                    value = float(raw_value)
+                    latest_values[metric_name] = value
+                    history_map[metric_name].append(
+                        {
+                            "ts": ts if isinstance(ts, str) else None,
+                            "value": value,
+                            "risk": self._host_metric_risk(metric_name, value, thresholds),
+                        }
+                    )
+            event = record.get("event")
+            adaptation_payload: dict[str, Any] | None = None
+            if event == "orchestrator.adaptation" and isinstance(record.get("payload"), dict):
+                adaptation_payload = record["payload"]
+            elif isinstance(record.get("adaptation"), dict):
+                adaptation_payload = record["adaptation"]
+            if isinstance(adaptation_payload, dict):
+                latest_adaptation = {
+                    "ts": ts if isinstance(ts, str) else None,
+                    "triggered_rules": adaptation_payload.get("triggered_rules", []),
+                    "cpu_budget_percent": adaptation_payload.get("cpu_budget_percent"),
+                    "skip_action_tick": bool(adaptation_payload.get("skip_action_tick", False)),
+                    "safe_mode": adaptation_payload.get("safe_mode"),
+                }
+
+        metrics_payload: dict[str, dict[str, Any]] = {}
+        risk_priority = {"unsupported": -1, "ok": 0, "warn": 1, "critical": 2}
+        global_status = "ok"
+        for metric_name in ("cpu", "ram", "temperature", "disk"):
+            value = latest_values[metric_name]
+            risk = self._host_metric_risk(metric_name, value, thresholds)
+            trend_history = history_map[metric_name][-8:]
+            supported = value is not None
+            metrics_payload[metric_name] = {
+                "supported": supported,
+                "value": value,
+                "risk": risk,
+                "history": trend_history,
+            }
+            if risk_priority.get(risk, -1) > risk_priority.get(global_status, 0):
+                global_status = risk
+        if all(not metrics_payload[name]["supported"] for name in metrics_payload):
+            global_status = "unsupported"
+
+        return {
+            "global_status": global_status,
+            "metrics": metrics_payload,
+            "latest_sensor_adaptation": latest_adaptation,
         }
 
     def validate_token(self, token: str | None) -> None:
