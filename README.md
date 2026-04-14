@@ -42,6 +42,46 @@ singular report --format plain
 singular dashboard
 ```
 
+## 🧭 Guide d’utilisation clair (pas à pas)
+
+Si vous débutez, suivez **exactement** ces étapes :
+
+1. **Créer une vie**
+   ```bash
+   singular birth --name Lumen
+   ```
+2. **Envoyer un premier message**
+   ```bash
+   singular talk --prompt "Bonjour, qui es-tu ?"
+   ```
+3. **Lancer une courte phase d’évolution**
+   ```bash
+   singular loop --budget-seconds 10
+   ```
+4. **Vérifier l’état de la vie**
+   ```bash
+   singular status --format table
+   singular report --format plain
+   ```
+5. **Ouvrir le dashboard (lecture visuelle)**
+   ```bash
+   singular dashboard
+   ```
+
+### Comment lire le dashboard rapidement
+
+- **1) Cockpit** : regardez `Statut global`, `Score de santé`, puis `Prochaine action`.
+- **2) Alertes** : priorisez les indicateurs en orange/rouge.
+- **3) Timeline des événements** : cliquez une mutation pour comprendre l’impact réel et le diff.
+- **4) Vies comparées** : filtrez (24h / 7j / 30j) pour comparer robustesse et stabilité.
+- **5) Actions rapides** : lancez un test (`Boucle`) ou une interaction (`Discuter`) sans quitter la page.
+
+### Erreurs fréquentes (et solution immédiate)
+
+- **“Je ne vois aucune vie”** → vérifiez le root utilisé (`--root`) et la vie active (`singular lives list` puis `singular lives use <nom>`).
+- **“Le dashboard est vide”** → exécutez au moins une boucle (`singular loop --budget-seconds 10`) pour générer des runs.
+- **“Je ne comprends pas les métriques”** → commencez uniquement par trois champs: `Statut global`, `Alertes critiques`, `Prochaine action`.
+
 À la naissance, Singular initialise un **starter-pack de skills utilitaires** dans `skills/` :
 
 - `validation.py` : vérifications simples d’entrées (ex. texte non vide).
@@ -205,6 +245,45 @@ Exemple de démarrage:
 ```bash
 singular orchestrate run --lifecycle-config configs/lifecycle.yaml
 ```
+
+### ▶️ Orchestrateur : comment le lancer et l’utiliser (clair)
+
+Si vous voulez un mode **autonome en continu** (au lieu d’exécuter `loop` à la main), utilisez l’orchestrateur.
+
+1. **Préparer une vie active**
+   ```bash
+   singular birth --name Lumen
+   singular lives use lumen
+   ```
+2. **Démarrer l’orchestrateur**
+   ```bash
+   singular orchestrate run --lifecycle-config configs/lifecycle.yaml
+   ```
+3. **Observer ce qu’il fait**
+   - Dans un autre terminal :
+     ```bash
+     singular dashboard
+     ```
+   - Ou en CLI :
+     ```bash
+     singular status --format table
+     singular report --format plain
+     ```
+
+#### Options utiles de `orchestrate run`
+
+- `--dry-run` : exécute les phases sans appliquer de mutation (mode démonstration/sécurité).
+- `--tick-budget <secondes>` : limite le temps max alloué à un tick.
+- `--veille-seconds`, `--action-seconds`, `--introspection-seconds`, `--sommeil-seconds` : surcharge rapide des durées sans modifier le YAML.
+- `--poll-interval <secondes>` : fréquence de polling du daemon.
+
+Exemple “safe” pour valider la configuration :
+
+```bash
+singular orchestrate run --lifecycle-config configs/lifecycle.yaml --dry-run
+```
+
+Pour arrêter l’orchestrateur, utilisez `Ctrl+C` dans le terminal où il tourne.
 
 ### ⚙️ Fonctionnement interne
 
