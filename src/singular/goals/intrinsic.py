@@ -7,6 +7,7 @@ import json
 
 from singular.governance.values import ValueWeights
 from singular.memory import _atomic_write_text, get_mem_dir
+from singular.goals.perception_rules import apply_perception_rules
 
 
 OBJECTIVE_CATALOGUE = ("coherence", "robustesse", "efficacite", "exploration")
@@ -105,6 +106,7 @@ class IntrinsicGoals:
         psyche: Any | None,
         health_score: float | None,
         resources: Mapping[str, float] | None,
+        perception_signals: Mapping[str, Any] | None = None,
     ) -> GoalWeights:
         """Update dynamic weights from psyche/health/resources for one tick."""
 
@@ -120,11 +122,19 @@ class IntrinsicGoals:
         warmth = _clamp(float((resources or {}).get("warmth", 50.0)) / 100.0)
         resource_stability = (energy + food + warmth) / 3.0
 
-        weights = GoalWeights(
+        base_weights = GoalWeights(
             coherence=0.2 + 0.35 * patience + 0.25 * resilience,
             robustesse=0.2 + 0.35 * (1.0 - health_norm) + 0.25 * (1.0 - resource_stability),
             efficacite=0.2 + 0.45 * health_norm + 0.2 * optimism,
             exploration=0.2 + 0.45 * curiosity + 0.2 * playfulness + 0.1 * (1.0 - energy),
+        )
+        modulation = apply_perception_rules(perception_signals)
+        deltas = modulation["deltas"]
+        weights = GoalWeights(
+            coherence=base_weights.coherence + float(deltas["coherence"]),
+            robustesse=base_weights.robustesse + float(deltas["robustesse"]),
+            efficacite=base_weights.efficacite + float(deltas["efficacite"]),
+            exploration=base_weights.exploration + float(deltas["exploration"]),
         ).normalized()
 
         self.state.tick = int(tick)
@@ -141,7 +151,10 @@ class IntrinsicGoals:
                     "resilience": resilience,
                     "optimism": optimism,
                     "playfulness": playfulness,
+                    "perception_rules_version": modulation["version"],
+                    "perception_rule_count": len(modulation["applied_rules"]),
                 },
+                "perception_rules": modulation,
             }
         )
         if len(self.state.history) > self.history_limit:
