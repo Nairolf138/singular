@@ -200,3 +200,38 @@ def test_capture_signals_sanitizes_sensitive_host_metrics(monkeypatch):
     assert "hostname" not in host_metrics
     assert "cwd_path" not in host_metrics
     assert "username" not in host_metrics
+
+
+def test_capture_signals_publishes_host_star_events_on_host_perception_topic(monkeypatch):
+    reset_perception_state()
+    monkeypatch.setattr(
+        "singular.perception.collect_host_metrics",
+        lambda: {
+            "cpu_percent": 90.0,
+            "cpu_load_1m": 2.0,
+            "ram_used_percent": 81.0,
+            "ram_available_mb": 2048.0,
+            "disk_used_percent": 96.0,
+            "disk_free_gb": 10.0,
+            "host_temperature_c": 76.0,
+            "process_cpu_percent": 10.0,
+            "process_rss_mb": 64.0,
+        },
+    )
+
+    bus = EventBus(mode="sync")
+    captured = []
+    bus.subscribe("host.perception", lambda event: captured.append(event))
+
+    signals = capture_signals(bus=bus)
+
+    assert "host_events" in signals
+    emitted_types = {evt.payload["event"]["type"] for evt in captured}
+    assert emitted_types == {
+        "host.cpu.warning",
+        "host.memory.warning",
+        "host.thermal.warning",
+        "host.disk.critical",
+    }
+    assert all(event_type.startswith("host.") for event_type in emitted_types)
+    assert all(signal_event["type"] in emitted_types for signal_event in signals["host_events"])
