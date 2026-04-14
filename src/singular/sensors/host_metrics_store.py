@@ -8,7 +8,7 @@ from typing import Any
 import json
 import os
 
-from singular.memory import _append_jsonl_line, get_mem_dir
+from singular.memory import append_jsonl_line_safe, get_mem_dir
 
 _DEFAULT_RETENTION_SAMPLES = 2000
 _DEFAULT_WINDOWS = (5, 20, 60)
@@ -72,7 +72,7 @@ def append_host_metrics_sample(metrics: dict[str, Any]) -> None:
         "ts": _utc_now_iso(),
         "metrics": {key: _safe_float(metrics.get(key)) for key in _METRICS_KEYS},
     }
-    _append_jsonl_line(path, payload)
+    append_jsonl_line_safe(path, payload)
     _trim_retention(path=path, retention=_retention_samples())
 
 
