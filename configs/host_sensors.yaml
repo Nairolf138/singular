@@ -1,0 +1,12 @@
+host_sensors:
+  cpu:
+    warning_percent: 85
+    critical_percent: 95
+  ram:
+    warning_percent: 80
+    critical_percent: 92
+  temperature:
+    warning_c: 75
+    critical_c: 85
+  disk:
+    critical_percent: 95

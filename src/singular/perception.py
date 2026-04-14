@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from singular.events import EventBus, get_global_event_bus
-from singular.sensors import collect_host_metrics
+from singular.sensors import collect_host_metrics, load_host_sensor_thresholds
 
 
 def _read_optional_file() -> dict[str, Any]:
@@ -173,38 +173,111 @@ def _derive_host_events(host_metrics: dict[str, Any] | None) -> list[dict[str, A
     if not isinstance(host_metrics, dict):
         return []
 
+    thresholds = load_host_sensor_thresholds()
     events: list[dict[str, Any]] = []
 
     cpu_percent = host_metrics.get("cpu_percent")
-    if isinstance(cpu_percent, (int, float)) and float(cpu_percent) >= 90.0:
+    if isinstance(cpu_percent, (int, float)) and float(cpu_percent) >= thresholds.cpu_critical_percent:
         events.append(
             _build_perception_event(
-                event_type="host.cpu.high",
+                event_type="host.cpu.critical",
                 source="host_metrics",
-                confidence=0.92,
-                data={"cpu_percent": float(cpu_percent), "threshold": 90.0},
+                confidence=0.95,
+                data={
+                    "cpu_percent": float(cpu_percent),
+                    "severity": "critical",
+                    "threshold": thresholds.cpu_critical_percent,
+                },
+            )
+        )
+    elif isinstance(cpu_percent, (int, float)) and float(cpu_percent) >= thresholds.cpu_warning_percent:
+        events.append(
+            _build_perception_event(
+                event_type="host.cpu.warning",
+                source="host_metrics",
+                confidence=0.9,
+                data={
+                    "cpu_percent": float(cpu_percent),
+                    "severity": "warning",
+                    "threshold": thresholds.cpu_warning_percent,
+                },
             )
         )
 
     ram_used_percent = host_metrics.get("ram_used_percent")
-    if isinstance(ram_used_percent, (int, float)) and float(ram_used_percent) >= 85.0:
+    if isinstance(ram_used_percent, (int, float)) and float(ram_used_percent) >= thresholds.ram_critical_percent:
         events.append(
             _build_perception_event(
-                event_type="host.memory.pressure",
+                event_type="host.memory.critical",
                 source="host_metrics",
-                confidence=0.9,
-                data={"ram_used_percent": float(ram_used_percent), "threshold": 85.0},
+                confidence=0.94,
+                data={
+                    "ram_used_percent": float(ram_used_percent),
+                    "severity": "critical",
+                    "threshold": thresholds.ram_critical_percent,
+                },
+            )
+        )
+    elif isinstance(ram_used_percent, (int, float)) and float(ram_used_percent) >= thresholds.ram_warning_percent:
+        events.append(
+            _build_perception_event(
+                event_type="host.memory.warning",
+                source="host_metrics",
+                confidence=0.89,
+                data={
+                    "ram_used_percent": float(ram_used_percent),
+                    "severity": "warning",
+                    "threshold": thresholds.ram_warning_percent,
+                },
             )
         )
 
     host_temperature_c = host_metrics.get("host_temperature_c")
-    if isinstance(host_temperature_c, (int, float)) and float(host_temperature_c) >= 80.0:
+    if (
+        isinstance(host_temperature_c, (int, float))
+        and float(host_temperature_c) >= thresholds.temperature_critical_c
+    ):
+        events.append(
+            _build_perception_event(
+                event_type="host.thermal.critical",
+                source="host_metrics",
+                confidence=0.93,
+                data={
+                    "host_temperature_c": float(host_temperature_c),
+                    "severity": "critical",
+                    "threshold": thresholds.temperature_critical_c,
+                },
+            )
+        )
+    elif (
+        isinstance(host_temperature_c, (int, float))
+        and float(host_temperature_c) >= thresholds.temperature_warning_c
+    ):
         events.append(
             _build_perception_event(
                 event_type="host.thermal.warning",
                 source="host_metrics",
                 confidence=0.88,
-                data={"host_temperature_c": float(host_temperature_c), "threshold": 80.0},
+                data={
+                    "host_temperature_c": float(host_temperature_c),
+                    "severity": "warning",
+                    "threshold": thresholds.temperature_warning_c,
+                },
+            )
+        )
+
+    disk_used_percent = host_metrics.get("disk_used_percent")
+    if isinstance(disk_used_percent, (int, float)) and float(disk_used_percent) >= thresholds.disk_critical_percent:
+        events.append(
+            _build_perception_event(
+                event_type="host.disk.critical",
+                source="host_metrics",
+                confidence=0.91,
+                data={
+                    "disk_used_percent": float(disk_used_percent),
+                    "severity": "critical",
+                    "threshold": thresholds.disk_critical_percent,
+                },
             )
         )
 
