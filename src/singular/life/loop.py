@@ -48,6 +48,7 @@ from singular.governance.values import load_value_weights
 from .reproduction import authorize_reproduction_write, crossover
 from .map_elites import MapElites
 from .test_coevolution import LivingTestPool, propose_test_candidates
+from .skill_genesis import create_skill
 
 # mypy: ignore-errors
 
@@ -58,6 +59,9 @@ log = logging.getLogger(__name__)
 # ``SLEEP_TICKS`` iterations where no mutations are attempted.
 SLEEP_THRESHOLD = 10.0
 SLEEP_TICKS = 5
+SKILL_GENESIS_TECH_DEBT_THRESHOLD = 8
+SKILL_GENESIS_FAILURE_STREAK_THRESHOLD = 3
+SKILL_GENESIS_COVERAGE_GAP_THRESHOLD = 0.6
 
 
 @dataclass
@@ -158,6 +162,48 @@ def _retain_health_history(
         retained.append(_aggregate_health_bucket(bucket))
     retained.extend(recent)
     return retained
+
+
+def _should_trigger_skill_genesis(
+    *,
+    signals: Mapping[str, object],
+    health_counters: Mapping[str, float | int],
+) -> tuple[bool, str, dict[str, float]]:
+    tech_debt_markers = 0.0
+    artifact_events = signals.get("artifact_events")
+    if isinstance(artifact_events, list):
+        for event in artifact_events:
+            if not isinstance(event, Mapping):
+                continue
+            if event.get("type") != "artifact.tech_debt.simple":
+                continue
+            data = event.get("data")
+            if not isinstance(data, Mapping):
+                continue
+            try:
+                tech_debt_markers = float(data.get("markers", 0.0))
+            except (TypeError, ValueError):
+                tech_debt_markers = 0.0
+            break
+    repeated_failures = float(health_counters.get("consecutive_failures", 0.0))
+    total = max(float(health_counters.get("total", 0.0)), 1.0)
+    accepted = float(health_counters.get("accepted", 0.0))
+    coverage_gap = 1.0 - (accepted / total)
+    functional_gap_signal = signals.get("functional_coverage_gap")
+    if isinstance(functional_gap_signal, (int, float)):
+        coverage_gap = max(coverage_gap, float(functional_gap_signal))
+    snapshot = {
+        "tech_debt_markers": tech_debt_markers,
+        "repeated_failures": repeated_failures,
+        "coverage_gap": coverage_gap,
+    }
+    if tech_debt_markers >= SKILL_GENESIS_TECH_DEBT_THRESHOLD:
+        return True, "tech_debt", snapshot
+    if repeated_failures >= SKILL_GENESIS_FAILURE_STREAK_THRESHOLD:
+        return True, "repeated_failures", snapshot
+    if coverage_gap >= SKILL_GENESIS_COVERAGE_GAP_THRESHOLD:
+        return True, "coverage_gap", snapshot
+    return False, "", snapshot
 
 
 def _migrate_checkpoint_data(data: Mapping[str, object]) -> dict[str, object]:
@@ -619,6 +665,32 @@ def run(
                 decision = Psyche.Decision.ACCEPT
                 if hasattr(psyche, "irrational_decision"):
                     decision = psyche.irrational_decision(rng)
+            trigger_genesis, trigger_name, trigger_snapshot = _should_trigger_skill_genesis(
+                signals=signals,
+                health_counters=state.health_counters,
+            )
+            if trigger_genesis:
+                mem_dir = Path(os.environ.get("SINGULAR_HOME", ".")) / "mem"
+                genesis = create_skill(
+                    skills_dir=world.organisms[org_name].skills_dir,
+                    mem_dir=mem_dir,
+                    governance_policy=governance_policy,
+                    trigger=trigger_name,
+                    signal_snapshot=trigger_snapshot,
+                )
+                logger.log_interaction(
+                    "skill_genesis",
+                    organism=org_name,
+                    accepted=genesis.accepted,
+                    skill=genesis.skill_name,
+                    target=str(genesis.target),
+                    policy_level=genesis.policy_level,
+                    reason=genesis.reason,
+                    rolled_back=genesis.rolled_back,
+                    trigger=trigger_name,
+                    trigger_snapshot=trigger_snapshot,
+                    alive=True,
+                )
 
             original = skill_path.read_text(encoding="utf-8")
             if not governance_policy.mutations_enabled():
