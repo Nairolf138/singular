@@ -100,6 +100,66 @@ def birth(
                 '    """Return the product of ``a`` and ``b``."""\n'
                 "    return a * b\n"
             ),
+            "validation.py": (
+                '"""Validation helpers for basic input checks."""\n\n'
+                "def validate_non_empty_text(text: str) -> bool:\n"
+                '    """Return ``True`` when ``text`` contains non-whitespace characters."""\n'
+                "    return bool(text.strip())\n"
+            ),
+            "summary.py": (
+                '"""Summary helpers for short text snippets."""\n\n'
+                "def summarize_preview(text: str, max_words: int = 12) -> str:\n"
+                '    """Return the first ``max_words`` words from ``text`` for quick previews."""\n'
+                "    words = text.split()\n"
+                "    return \" \".join(words[:max_words])\n"
+            ),
+            "intent_classification.py": (
+                '"""Intent classification helper using simple keyword heuristics."""\n\n'
+                "def classify_intent(message: str) -> str:\n"
+                '    """Return ``question``, ``request`` or ``statement`` from ``message``."""\n'
+                "    lowered = message.strip().lower()\n"
+                "    if not lowered:\n"
+                '        return "statement"\n'
+                "    if lowered.endswith(\"?\"):\n"
+                '        return "question"\n'
+                "    request_markers = (\"please\", \"peux-tu\", \"merci de\", \"fais\")\n"
+                "    if any(marker in lowered for marker in request_markers):\n"
+                '        return "request"\n'
+                '    return "statement"\n'
+            ),
+            "entity_extraction.py": (
+                '"""Entity extraction helper for lightweight token detection."""\n\n'
+                "def extract_capitalized_entities(text: str) -> list[str]:\n"
+                '    """Return unique capitalized tokens found in ``text`` preserving order."""\n'
+                "    entities: list[str] = []\n"
+                "    seen: set[str] = set()\n"
+                "    for token in text.split():\n"
+                "        cleaned = token.strip(\".,;:!?()[]{}\\\"'\")\n"
+                "        if cleaned and cleaned[0].isupper() and cleaned not in seen:\n"
+                "            entities.append(cleaned)\n"
+                "            seen.add(cleaned)\n"
+                "    return entities\n"
+            ),
+            "planning.py": (
+                '"""Planning helper to build a simple ordered checklist."""\n\n'
+                "def build_plan(goal: str, steps: list[str]) -> dict[str, object]:\n"
+                '    """Return a normalized plan payload for ``goal`` and ordered ``steps``."""\n'
+                "    cleaned_steps = [step.strip() for step in steps if step.strip()]\n"
+                "    return {\n"
+                '        "goal": goal.strip(),\n'
+                '        "steps": cleaned_steps,\n'
+                '        "total_steps": len(cleaned_steps),\n'
+                "    }\n"
+            ),
+            "metrics.py": (
+                '"""Metrics helper to compute simple completion ratios."""\n\n'
+                "def completion_ratio(completed: int, total: int) -> float:\n"
+                '    """Return a bounded completion ratio in ``[0.0, 1.0]``."""\n'
+                "    if total <= 0:\n"
+                "        return 0.0\n"
+                "    ratio = completed / total\n"
+                "    return max(0.0, min(1.0, ratio))\n"
+            ),
         }
         for filename, code in default_skills.items():
             (skills_dir / filename).write_text(code, encoding="utf-8")

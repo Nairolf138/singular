@@ -11,6 +11,7 @@ Chaque instance est **singulière** : deux personnes qui font naître un organis
 
 - **Naissance** : une commande génère un nouvel organisme avec une identité unique (*seed*, traits de personnalité, valeurs).  
 - **Corps** : ses *skills* (petites fonctions de code) représentent ses muscles et organes.  
+- **Starter-pack de skills** : dès la naissance, il reçoit un socle utilitaire (validation, résumé, intention, entités, planification, métriques) prêt à être muté.  
 - **Esprit** : mémoire, traits de caractère, humeur et valeurs éthiques évolutives.  
 - **Évolution** : il modifie son propre code par petites mutations, teste les résultats en sandbox, et conserve ce qui fonctionne mieux.  
 - **Apprentissage** : il peut acquérir de nouvelles compétences en relevant des *quêtes* (spécifications JSON).  
@@ -40,6 +41,17 @@ singular status --format table
 singular report --format plain
 singular dashboard
 ```
+
+À la naissance, Singular initialise un **starter-pack de skills utilitaires** dans `skills/` :
+
+- `validation.py` : vérifications simples d’entrées (ex. texte non vide).
+- `summary.py` : résumé court par extraction des premiers mots.
+- `intent_classification.py` : classification heuristique (`question`, `request`, `statement`).
+- `entity_extraction.py` : extraction légère d’entités via tokens capitalisés.
+- `planning.py` : construction d’un plan structuré à partir d’un objectif et de steps.
+- `metrics.py` : métrique de progression (`completion_ratio`) bornée entre `0.0` et `1.0`.
+
+Ce pack complète les skills arithmétiques historiques (`addition`, `subtraction`, `multiplication`) pour donner, dès les premiers ticks, des briques cognitives prêtes à l’emploi.
 
 ### Profils de naissance (traits initiaux)
 

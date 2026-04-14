@@ -111,18 +111,24 @@ def test_birth_initializes_default_skills(tmp_path: Path) -> None:
     birth(home=tmp_path)
 
     skills_dir = tmp_path / "skills"
-    assert (skills_dir / "addition.py").exists()
-    assert (skills_dir / "subtraction.py").exists()
-    assert (skills_dir / "multiplication.py").exists()
+    expected_skill_names = [
+        "addition",
+        "subtraction",
+        "multiplication",
+        "validation",
+        "summary",
+        "intent_classification",
+        "entity_extraction",
+        "planning",
+        "metrics",
+    ]
+    for name in expected_skill_names:
+        assert (skills_dir / f"{name}.py").exists()
 
     skills_data = json.loads(
         (tmp_path / "mem" / "skills.json").read_text(encoding="utf-8")
     )
-    assert skills_data == {
-        "addition": {"score": 0.0},
-        "subtraction": {"score": 0.0},
-        "multiplication": {"score": 0.0},
-    }
+    assert skills_data == {name: {"score": 0.0} for name in expected_skill_names}
 
 
 def test_values_helpers_without_yaml(
