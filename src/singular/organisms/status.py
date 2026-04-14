@@ -203,6 +203,7 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         "success_rate": None,
         "mutation_success_rate": None,
         "mutation_count": 0,
+        "invalid_lines": 0,
         "health": None,
         "alerts": [],
         "mood": None,
@@ -249,6 +250,7 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         "impact": summarize_environmental_impact(host_aggregates),
     }
     all_records: list[dict[str, object]] = []
+    invalid_lines = 0
     runs_dir = Path(RUNS_DIR)
     files = sorted(runs_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
     if files:
@@ -258,13 +260,20 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
                 for line in fh:
                     line = line.strip()
                     if line:
-                        all_records.append(json.loads(line))
+                        try:
+                            all_records.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            invalid_lines += 1
         records = []
         with latest.open(encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
                 if line:
-                    records.append(json.loads(line))
+                    try:
+                        records.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        invalid_lines += 1
+        payload["invalid_lines"] = invalid_lines
         payload["daily_skills"] = build_daily_skills_snapshot(records=all_records)
         if records:
             last = records[-1]
