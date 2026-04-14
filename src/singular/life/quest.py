@@ -42,6 +42,7 @@ class Spec:
     penalty: dict[str, Any] = field(default_factory=dict)
     cooldown: int = 0
     success: dict[str, Any] = field(default_factory=dict)
+    origin: str = "external"
 
 
 def load(path: Path) -> Spec:
@@ -114,6 +115,10 @@ def load(path: Path) -> Spec:
     if not isinstance(success, dict):
         raise SpecValidationError("'success' must be an object")
 
+    origin = data.get("origin", "external")
+    if origin not in {"intrinsic", "external"}:
+        raise SpecValidationError("'origin' must be 'intrinsic' or 'external'")
+
     constraints = Constraints(pure=True, no_import=True, time_ms_max=time_ms_max)
 
     return Spec(
@@ -126,4 +131,5 @@ def load(path: Path) -> Spec:
         penalty=penalty,
         cooldown=cooldown,
         success=success,
+        origin=origin,
     )
