@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 import json
+import logging
 import signal
 import time
 from pathlib import Path
@@ -24,8 +25,11 @@ from singular.perception import capture_signals
 from singular.psyche import Psyche
 from singular.resource_manager import ResourceManager
 from singular.quests import QuestRuntime
+from singular.sensors import load_host_sensor_thresholds
 from singular.skills.runtime import SkillRuntime
 from singular.routines import RoutinesOrchestrator
+
+log = logging.getLogger(__name__)
 
 
 class LifecyclePhase(Enum):
@@ -116,6 +120,7 @@ class OrchestratorService:
         self._pending_events: list[dict[str, Any]] = []
         self._tick_count = 0
         self._latest_signals: dict[str, Any] = {}
+        self._host_thresholds = load_host_sensor_thresholds()
 
         self._subscribe_external_stimuli()
 
@@ -258,12 +263,54 @@ class OrchestratorService:
             )
             if mood.value == "fatigue":
                 tick_budget *= max(fatigue_slowdown, 1.0)
+            adaptation = self._compute_runtime_adaptation()
+            tick_budget *= adaptation["tick_budget_scale"]
+            tick_budget = max(0.01, min(tick_budget, self.config.mutation_window_seconds))
+            cpu_budget_percent *= adaptation["cpu_budget_scale"]
+            previous_safe_mode = bool(self.governance_policy.safe_mode)
+            self.governance_policy.safe_mode = bool(adaptation["enforce_prudent_mode"])
+            if (
+                adaptation["rule_triggers"]
+                or previous_safe_mode != self.governance_policy.safe_mode
+                or bool(adaptation["allow_aggressive_exploration"])
+            ):
+                audit_payload = {
+                    "phase": phase.value,
+                    "tick_count": self._tick_count,
+                    "triggered_rules": adaptation["rule_triggers"],
+                    "host_metrics": adaptation["host_metrics"],
+                    "resource_snapshot": adaptation["resource_snapshot"],
+                    "tick_budget_seconds": tick_budget,
+                    "cpu_budget_percent": cpu_budget_percent,
+                    "safe_mode": self.governance_policy.safe_mode,
+                    "aggressive_exploration": adaptation["allow_aggressive_exploration"],
+                    "skip_action_tick": adaptation["skip_action_tick"],
+                }
+                self.bus.publish("orchestrator.adaptation", audit_payload, payload_version=1)
+                log.info("orchestrator adaptation applied: %s", audit_payload)
+                self._push_event(phase, {"adaptation": audit_payload})
+            if adaptation["skip_action_tick"]:
+                self.psyche.sleep_tick()
+                self.psyche.sleeping = True
+                self._push_event(
+                    phase,
+                    {
+                        "skipped": True,
+                        "reason": "thermal_guard",
+                        "tick_budget_seconds": tick_budget,
+                        "safe_mode": self.governance_policy.safe_mode,
+                    },
+                )
+                return
             skill_execution = None
             execution_strategy: dict[str, Any] | None = None
             routine_executions: list[dict[str, Any]] = []
             if not self.config.dry_run:
                 strategy = self.goals.derive_execution_strategy(self._latest_signals)
                 execution_strategy = dict(strategy)
+                if adaptation["allow_aggressive_exploration"]:
+                    execution_strategy["exploration_intensity"] = "aggressive"
+                    execution_strategy["adaptation_source"] = "stable_resources"
                 routine_specs = [
                     {"id": spec.id, "prompt": spec.prompt, "priority": spec.priority}
                     for spec in self.routines.specs
@@ -282,7 +329,7 @@ class OrchestratorService:
                     "mood": mood.value,
                     "energy": self.resource_manager.energy,
                     "food": self.resource_manager.food,
-                    "execution_strategy": strategy,
+                    "execution_strategy": execution_strategy,
                 }
                 skill_execution = self.skill_runtime.execute_best_skill(
                     task={"name": "orchestrator.action", "capabilities": []},
@@ -314,6 +361,7 @@ class OrchestratorService:
                     "mood": mood.value,
                     "cpu_budget_percent": cpu_budget_percent,
                     "tick_budget_seconds": tick_budget,
+                    "safe_mode": self.governance_policy.safe_mode,
                     "allowed_actions": behavior.get("allowed_actions", []),
                     "quests": quest_outcomes,
                     "routines": routine_executions,
@@ -345,6 +393,88 @@ class OrchestratorService:
         self.psyche.sleeping = True
         self.psyche.save_state()
         self._push_event(phase, {"energy": self.psyche.energy})
+
+    def _compute_runtime_adaptation(self) -> dict[str, Any]:
+        host_metrics = self._latest_signals.get("host_metrics", {})
+        if not isinstance(host_metrics, dict):
+            host_metrics = {}
+
+        cpu_percent = float(host_metrics.get("cpu_percent", 0.0) or 0.0)
+        ram_used_percent = float(host_metrics.get("ram_used_percent", 0.0) or 0.0)
+        host_temperature_c = host_metrics.get("host_temperature_c")
+        if not isinstance(host_temperature_c, (int, float)):
+            host_temperature_c = self._latest_signals.get("temperature")
+        if not isinstance(host_temperature_c, (int, float)):
+            host_temperature_c = 0.0
+        host_temperature_c = float(host_temperature_c)
+
+        tick_budget_scale = 1.0
+        cpu_budget_scale = 1.0
+        enforce_prudent_mode = bool(self.config.safe_mode)
+        skip_action_tick = False
+        allow_aggressive_exploration = False
+        rule_triggers: list[str] = []
+
+        # Explicit rule 1: high CPU => reduce action frequency/tick budget.
+        if cpu_percent >= self._host_thresholds.cpu_critical_percent:
+            tick_budget_scale *= 0.45
+            cpu_budget_scale *= 0.55
+            rule_triggers.append("cpu_high_critical")
+        elif cpu_percent >= self._host_thresholds.cpu_warning_percent:
+            tick_budget_scale *= 0.65
+            cpu_budget_scale *= 0.75
+            rule_triggers.append("cpu_high_warning")
+
+        # Explicit rule 2: RAM pressure => limit costly mutations.
+        if ram_used_percent >= self._host_thresholds.ram_critical_percent:
+            tick_budget_scale *= 0.5
+            enforce_prudent_mode = True
+            rule_triggers.append("ram_pressure_critical")
+        elif ram_used_percent >= self._host_thresholds.ram_warning_percent:
+            tick_budget_scale *= 0.75
+            rule_triggers.append("ram_pressure_warning")
+
+        # Explicit rule 3: high temperature => prudent mode / sleep.
+        if host_temperature_c >= self._host_thresholds.temperature_critical_c:
+            enforce_prudent_mode = True
+            skip_action_tick = True
+            rule_triggers.append("thermal_critical_sleep")
+        elif host_temperature_c >= self._host_thresholds.temperature_warning_c:
+            enforce_prudent_mode = True
+            tick_budget_scale *= 0.8
+            rule_triggers.append("thermal_warning_prudent")
+
+        # Explicit rule 4: stable resources => allow more aggressive exploration.
+        resources_stable = (
+            cpu_percent < (self._host_thresholds.cpu_warning_percent * 0.6)
+            and ram_used_percent < (self._host_thresholds.ram_warning_percent * 0.7)
+            and host_temperature_c < (self._host_thresholds.temperature_warning_c - 10.0)
+            and self.resource_manager.energy >= 60.0
+            and self.resource_manager.food >= 40.0
+        )
+        if resources_stable and not enforce_prudent_mode:
+            tick_budget_scale *= 1.25
+            allow_aggressive_exploration = True
+            rule_triggers.append("resources_stable_explore")
+
+        return {
+            "tick_budget_scale": tick_budget_scale,
+            "cpu_budget_scale": cpu_budget_scale,
+            "enforce_prudent_mode": enforce_prudent_mode,
+            "skip_action_tick": skip_action_tick,
+            "allow_aggressive_exploration": allow_aggressive_exploration,
+            "rule_triggers": rule_triggers,
+            "host_metrics": {
+                "cpu_percent": cpu_percent,
+                "ram_used_percent": ram_used_percent,
+                "host_temperature_c": host_temperature_c,
+            },
+            "resource_snapshot": {
+                "energy": self.resource_manager.energy,
+                "food": self.resource_manager.food,
+                "warmth": self.resource_manager.warmth,
+            },
+        }
 
     def tick(self) -> LifecyclePhase:
         self._tick_count += 1
