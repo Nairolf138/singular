@@ -360,6 +360,23 @@ class HelpExchangeCoordinator:
             attempts=0,
             metadata={"skill": skill_name},
         )
+        social_gate = self.policy.record_interlife_interaction(
+            source_life=helper_life,
+            target_life=requester_life,
+            interaction="help.transfer",
+            influence_delta=0.05,
+        )
+        if not social_gate.allowed:
+            return HelpTransferResult(
+                status="blocked" if social_gate.level == "blocked" else "review_required",
+                decision=social_gate.level,
+                requester_before=requester_before,
+                requester_after=requester_before,
+                helper_before=helper_before,
+                helper_after=helper_before,
+                requester_gain=0.0,
+                helper_gain=0.0,
+            )
         if self.bus is not None:
             self.bus.publish(HELP_OFFERED, offered, payload_version=1)
         self.transport.send(

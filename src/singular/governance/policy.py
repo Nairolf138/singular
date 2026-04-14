@@ -85,6 +85,24 @@ def _default_policy_payload() -> dict[str, Any]:
             "skill_circuit_breaker_cost_threshold": 5.0,
             "skill_circuit_breaker_cooldown_seconds": 600.0,
         },
+        "social": {
+            "max_influence_per_life": 0.35,
+            "blocked_hostile_behaviors": [
+                "threat.explicit",
+                "harassment.explicit",
+                "sabotage.explicit",
+                "abuse.explicit",
+            ],
+            "conflict_events": [
+                "conflict.explicit",
+                "betrayal",
+                "resource_conflict",
+            ],
+            "conflict_mediation_threshold": 3,
+            "conflict_window_seconds": 900.0,
+            "mediation_cooldown_seconds": 600.0,
+            "prudent_mode_on_mediation": True,
+        },
     }
 
 
@@ -185,6 +203,13 @@ class RuntimePolicy:
     skill_circuit_breaker_failure_threshold: int
     skill_circuit_breaker_cost_threshold: float
     skill_circuit_breaker_cooldown_seconds: float
+    social_max_influence_per_life: float
+    social_blocked_hostile_behaviors: tuple[str, ...]
+    social_conflict_events: tuple[str, ...]
+    social_conflict_mediation_threshold: int
+    social_conflict_window_seconds: float
+    social_mediation_cooldown_seconds: float
+    social_prudent_mode_on_mediation: bool
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -235,6 +260,15 @@ class RuntimePolicy:
                 "skill_circuit_breaker_cost_threshold": self.skill_circuit_breaker_cost_threshold,
                 "skill_circuit_breaker_cooldown_seconds": self.skill_circuit_breaker_cooldown_seconds,
             },
+            "social": {
+                "max_influence_per_life": self.social_max_influence_per_life,
+                "blocked_hostile_behaviors": list(self.social_blocked_hostile_behaviors),
+                "conflict_events": list(self.social_conflict_events),
+                "conflict_mediation_threshold": self.social_conflict_mediation_threshold,
+                "conflict_window_seconds": self.social_conflict_window_seconds,
+                "mediation_cooldown_seconds": self.social_mediation_cooldown_seconds,
+                "prudent_mode_on_mediation": self.social_prudent_mode_on_mediation,
+            },
         }
 
     def impact_summary(self) -> list[str]:
@@ -262,8 +296,9 @@ class RuntimePolicy:
 def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
     mutable_payload = dict(payload)
     mutable_payload.setdefault("sensors", _default_policy_payload()["sensors"])
+    mutable_payload.setdefault("social", _default_policy_payload()["social"])
     payload = mutable_payload
-    root_keys = {"version", "memory", "forgetting", "sensors", "permissions", "autonomy"}
+    root_keys = {"version", "memory", "forgetting", "sensors", "permissions", "autonomy", "social"}
     unexpected = sorted(set(payload.keys()) - root_keys)
     if unexpected:
         raise PolicySchemaError(f"unexpected root keys: {', '.join(unexpected)}")
@@ -282,6 +317,7 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
     sensors = payload["sensors"]
     permissions = payload["permissions"]
     autonomy_raw = payload["autonomy"]
+    social = payload["social"]
     autonomy = dict(autonomy_raw) if isinstance(autonomy_raw, Mapping) else autonomy_raw
     if isinstance(autonomy, dict):
         autonomy.setdefault("skill_creation_quota_per_window", 3)
@@ -304,6 +340,7 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
         ("permissions", permissions),
         ("sensors", sensors),
         ("autonomy", autonomy),
+        ("social", social),
     ):
         if not isinstance(section, Mapping):
             raise PolicySchemaError(f"section '{section_name}' must be a mapping")
@@ -343,12 +380,22 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
         "skill_circuit_breaker_cost_threshold",
         "skill_circuit_breaker_cooldown_seconds",
     }
+    expected_social = {
+        "max_influence_per_life",
+        "blocked_hostile_behaviors",
+        "conflict_events",
+        "conflict_mediation_threshold",
+        "conflict_window_seconds",
+        "mediation_cooldown_seconds",
+        "prudent_mode_on_mediation",
+    }
     for name, section, expected in (
         ("memory", memory, expected_memory),
         ("forgetting", forgetting, expected_forgetting),
         ("permissions", permissions, expected_permissions),
         ("sensors", sensors, expected_sensors),
         ("autonomy", autonomy, expected_autonomy),
+        ("social", social, expected_social),
     ):
         section_unexpected = sorted(set(section.keys()) - expected)
         if section_unexpected:
@@ -378,6 +425,9 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
     preserve_threshold = _coerce_float(memory, "preserve_threshold", minimum=0.0)
     if preserve_threshold > 1.0:
         raise PolicySchemaError("'preserve_threshold' must be <= 1.0")
+    max_influence = _coerce_float(social, "max_influence_per_life", minimum=0.0)
+    if max_influence > 1.0:
+        raise PolicySchemaError("'max_influence_per_life' must be <= 1.0")
 
     return RuntimePolicy(
         version=version,
@@ -451,6 +501,19 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
             "skill_circuit_breaker_cooldown_seconds",
             minimum=1.0,
         ),
+        social_max_influence_per_life=max_influence,
+        social_blocked_hostile_behaviors=_coerce_string_list(social, "blocked_hostile_behaviors"),
+        social_conflict_events=_coerce_string_list(social, "conflict_events"),
+        social_conflict_mediation_threshold=_coerce_int(
+            social, "conflict_mediation_threshold", minimum=1
+        ),
+        social_conflict_window_seconds=_coerce_float(
+            social, "conflict_window_seconds", minimum=1.0
+        ),
+        social_mediation_cooldown_seconds=_coerce_float(
+            social, "mediation_cooldown_seconds", minimum=1.0
+        ),
+        social_prudent_mode_on_mediation=_coerce_bool(social, "prudent_mode_on_mediation"),
     )
 
 
@@ -681,6 +744,26 @@ class MutationGovernancePolicy:
             for item in runtime_policy.sensors_sensitive_metric_keys_blocklist
             if item.strip()
         )
+        self.social_max_influence_per_life = max(
+            float(runtime_policy.social_max_influence_per_life),
+            0.0,
+        )
+        self.social_blocked_hostile_behaviors = frozenset(
+            item.strip().lower() for item in runtime_policy.social_blocked_hostile_behaviors if item.strip()
+        )
+        self.social_conflict_events = frozenset(
+            item.strip().lower() for item in runtime_policy.social_conflict_events if item.strip()
+        )
+        self.social_conflict_mediation_threshold = max(
+            int(runtime_policy.social_conflict_mediation_threshold), 1
+        )
+        self.social_conflict_window_seconds = max(
+            float(runtime_policy.social_conflict_window_seconds), 1.0
+        )
+        self.social_mediation_cooldown_seconds = max(
+            float(runtime_policy.social_mediation_cooldown_seconds), 1.0
+        )
+        self.social_prudent_mode_on_mediation = bool(runtime_policy.social_prudent_mode_on_mediation)
         self._mutation_timestamps: deque[datetime] = deque()
         self._skill_creation_timestamps: deque[datetime] = deque()
         self._violation_timestamps: deque[datetime] = deque()
@@ -689,6 +772,10 @@ class MutationGovernancePolicy:
         self._skill_failure_timestamps: dict[str, deque[datetime]] = {}
         self._skill_cost_totals: dict[str, float] = {}
         self._skill_circuit_open_until: dict[str, datetime] = {}
+        self._social_influence: dict[tuple[str, str], float] = {}
+        self._social_conflict_timestamps: dict[tuple[str, str], deque[datetime]] = {}
+        self._social_mediation_until: dict[tuple[str, str], datetime] = {}
+        self._social_prudent_until: datetime | None = None
 
     def allow_sensor(self, sensor_name: str) -> bool:
         name = sensor_name.strip().lower()
@@ -825,6 +912,17 @@ class MutationGovernancePolicy:
         for skill_name, open_until in list(self._skill_circuit_open_until.items()):
             if now >= open_until:
                 self._skill_circuit_open_until.pop(skill_name, None)
+        social_cutoff = now - timedelta(seconds=self.social_conflict_window_seconds)
+        for pair, timestamps in list(self._social_conflict_timestamps.items()):
+            while timestamps and timestamps[0] < social_cutoff:
+                timestamps.popleft()
+            if not timestamps:
+                self._social_conflict_timestamps.pop(pair, None)
+        for pair, open_until in list(self._social_mediation_until.items()):
+            if now >= open_until:
+                self._social_mediation_until.pop(pair, None)
+        if self._social_prudent_until is not None and now >= self._social_prudent_until:
+            self._social_prudent_until = None
 
     def record_violation(self, *, category: str, severity: str = "high") -> None:
         self._prune_history()
@@ -856,6 +954,167 @@ class MutationGovernancePolicy:
     def _skill_circuit_open(self, skill_name: str) -> bool:
         open_until = self._skill_circuit_open_until.get(skill_name)
         return open_until is not None and self._now() < open_until
+
+    @staticmethod
+    def _pair_key(life_a: str, life_b: str) -> tuple[str, str]:
+        return tuple(sorted((life_a.strip().lower(), life_b.strip().lower())))
+
+    def social_prudent_mode_enabled(self) -> bool:
+        self._prune_history()
+        return self._social_prudent_until is not None and self._now() < self._social_prudent_until
+
+    def evaluate_interlife_interaction(
+        self,
+        *,
+        source_life: str,
+        target_life: str,
+        interaction: str,
+        influence_delta: float = 0.0,
+    ) -> GovernanceDecision:
+        self._prune_history()
+        interaction_key = interaction.strip().lower()
+        pair = self._pair_key(source_life, target_life)
+        if not pair[0] or not pair[1] or pair[0] == pair[1]:
+            decision = GovernanceDecision(
+                level=AUTH_BLOCKED,
+                allowed=False,
+                reason="inter-life interaction requires two distinct lives",
+                corrective_action="retry with distinct source_life and target_life identifiers",
+                severity="medium",
+            )
+            self._journal_decision(
+                decision=decision,
+                target=Path(f"interaction://{source_life}->{target_life}/{interaction_key or 'unknown'}"),
+                justification="Décision bloquée: interaction inter-vies invalide (identifiants incohérents).",
+                category="inter_life",
+            )
+            return decision
+        if interaction_key in self.social_blocked_hostile_behaviors:
+            decision = GovernanceDecision(
+                level=AUTH_BLOCKED,
+                allowed=False,
+                reason=f"explicit hostile behavior '{interaction_key}' is blocked by policy",
+                corrective_action="remove hostile behavior and retry with neutral collaboration protocol",
+                severity="critical",
+            )
+            self._journal_decision(
+                decision=decision,
+                target=Path(f"interaction://{pair[0]}->{pair[1]}/{interaction_key}"),
+                justification="Décision bloquée: comportement hostile explicite détecté entre vies.",
+                category="inter_life",
+            )
+            return decision
+        mediation_until = self._social_mediation_until.get(pair)
+        if mediation_until is not None and self._now() < mediation_until:
+            decision = GovernanceDecision(
+                level=AUTH_BLOCKED,
+                allowed=False,
+                reason="interaction paused by active mediation cooldown for this life pair",
+                corrective_action="wait for mediation cooldown expiry before resuming interactions",
+                severity="high",
+            )
+            self._journal_decision(
+                decision=decision,
+                target=Path(f"interaction://{pair[0]}->{pair[1]}/{interaction_key}"),
+                justification="Décision bloquée: médiation active, interactions conflictuelles en pause.",
+                category="inter_life",
+            )
+            return decision
+        if self.social_prudent_mode_enabled():
+            decision = GovernanceDecision(
+                level=AUTH_REVIEW_REQUIRED,
+                allowed=False,
+                reason="global prudent mode active after social mediation escalation",
+                corrective_action="wait for prudent window expiry or request manual supervision",
+                severity="medium",
+            )
+            self._journal_decision(
+                decision=decision,
+                target=Path(f"interaction://{pair[0]}->{pair[1]}/{interaction_key}"),
+                justification="Décision prudente: mode prudent global actif suite à une médiation.",
+                category="inter_life",
+            )
+            return decision
+        projected_influence = self._social_influence.get(pair, 0.0) + float(influence_delta)
+        if abs(projected_influence) > self.social_max_influence_per_life:
+            decision = GovernanceDecision(
+                level=AUTH_REVIEW_REQUIRED,
+                allowed=False,
+                reason=(
+                    "inter-life influence cap exceeded: "
+                    f"|{projected_influence:.3f}|>{self.social_max_influence_per_life:.3f}"
+                ),
+                corrective_action="reduce influence transfer or trigger supervised negotiation",
+                severity="medium",
+            )
+            self._journal_decision(
+                decision=decision,
+                target=Path(f"interaction://{pair[0]}->{pair[1]}/{interaction_key}"),
+                justification="Décision prudente: plafond d'influence inter-vies dépassé.",
+                category="inter_life",
+            )
+            return decision
+        return GovernanceDecision(
+            level=AUTH_AUTO,
+            allowed=True,
+            reason=f"inter-life interaction '{interaction_key}' authorized",
+            corrective_action="none",
+            severity="info",
+        )
+
+    def record_interlife_interaction(
+        self,
+        *,
+        source_life: str,
+        target_life: str,
+        interaction: str,
+        influence_delta: float = 0.0,
+    ) -> GovernanceDecision:
+        decision = self.evaluate_interlife_interaction(
+            source_life=source_life,
+            target_life=target_life,
+            interaction=interaction,
+            influence_delta=influence_delta,
+        )
+        pair = self._pair_key(source_life, target_life)
+        interaction_key = interaction.strip().lower()
+        if not decision.allowed:
+            return decision
+        self._social_influence[pair] = self._social_influence.get(pair, 0.0) + float(influence_delta)
+        if interaction_key in self.social_conflict_events:
+            now = self._now()
+            timestamps = self._social_conflict_timestamps.setdefault(pair, deque())
+            timestamps.append(now)
+            if len(timestamps) >= self.social_conflict_mediation_threshold:
+                self._social_mediation_until[pair] = now + timedelta(
+                    seconds=self.social_mediation_cooldown_seconds
+                )
+                if self.social_prudent_mode_on_mediation:
+                    self._social_prudent_until = now + timedelta(
+                        seconds=self.social_mediation_cooldown_seconds
+                    )
+                mediation_decision = GovernanceDecision(
+                    level=AUTH_BLOCKED,
+                    allowed=False,
+                    reason=(
+                        "conflict threshold reached: automatic mediation/cooldown activated "
+                        f"({len(timestamps)}/{self.social_conflict_mediation_threshold})"
+                    ),
+                    corrective_action=(
+                        "pause conflicting interactions; resume with prudent mode and manual reconciliation"
+                    ),
+                    severity="high",
+                )
+                self._journal_decision(
+                    decision=mediation_decision,
+                    target=Path(f"interaction://{pair[0]}->{pair[1]}/mediation"),
+                    justification=(
+                        "Médiation automatique déclenchée: seuil de conflit atteint, "
+                        "interactions conflictuelles suspendues."
+                    ),
+                    category="inter_life",
+                )
+        return decision
 
     def evaluate_skill_execution(
         self,
@@ -1152,7 +1411,12 @@ class MutationGovernancePolicy:
         return decision
 
     def _journal_decision(
-        self, *, decision: GovernanceDecision, target: Path, justification: str
+        self,
+        *,
+        decision: GovernanceDecision,
+        target: Path,
+        justification: str,
+        category: str = "governance",
     ) -> None:
         home = Path(os.environ.get("SINGULAR_HOME", "."))
         journal = home / "mem" / _POLICY_DECISIONS_LOG
@@ -1162,6 +1426,7 @@ class MutationGovernancePolicy:
             "decision": decision.level,
             "allowed": decision.allowed,
             "target": str(target),
+            "category": category,
             "severity": decision.severity,
             "reason": decision.reason,
             "corrective_action": decision.corrective_action,
