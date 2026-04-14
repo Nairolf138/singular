@@ -21,6 +21,8 @@ class ResourceManager:
     energy: float = 100.0
     food: float = 50.0
     warmth: float = 50.0
+    ecological_debt: float = 0.0
+    relational_debt: float = 0.0
     path: Path = Path("resources.json")
     energy_threshold: float = 20.0
     food_threshold: float = 20.0
@@ -32,7 +34,7 @@ class ResourceManager:
                 data = json.loads(self.path.read_text(encoding="utf-8"))
             except Exception:
                 return
-            for field in ("energy", "food", "warmth"):
+            for field in ("energy", "food", "warmth", "ecological_debt", "relational_debt"):
                 if field in data:
                     setattr(self, field, float(data[field]))
 
@@ -41,9 +43,17 @@ class ResourceManager:
         self.energy = max(0.0, min(100.0, self.energy))
         self.food = max(0.0, min(100.0, self.food))
         self.warmth = max(0.0, min(100.0, self.warmth))
+        self.ecological_debt = max(0.0, min(100.0, self.ecological_debt))
+        self.relational_debt = max(0.0, min(100.0, self.relational_debt))
 
     def _save(self) -> None:
-        data = {"energy": self.energy, "food": self.food, "warmth": self.warmth}
+        data = {
+            "energy": self.energy,
+            "food": self.food,
+            "warmth": self.warmth,
+            "ecological_debt": self.ecological_debt,
+            "relational_debt": self.relational_debt,
+        }
         _atomic_write_text(self.path, json.dumps(data))
 
     # mutation methods -----------------------------------------------------
@@ -63,7 +73,8 @@ class ResourceManager:
         self._save()
 
     def add_food(self, amount: float) -> None:
-        self.food += amount
+        effective = amount * max(0.2, 1.0 - (self.ecological_debt / 150.0))
+        self.food += effective
         self._clamp()
         self._save()
 
@@ -75,8 +86,9 @@ class ResourceManager:
         is persisted.
         """
 
-        self.food -= rate
-        self.energy += rate * 2
+        eco_penalty = self.ecological_debt / 100.0
+        self.food -= rate * (1.0 + (0.35 * eco_penalty))
+        self.energy += (rate * 2) * max(0.2, 1.0 - (0.5 * eco_penalty))
         self._clamp()
         self._save()
 
@@ -86,7 +98,38 @@ class ResourceManager:
         self._save()
 
     def add_warmth(self, amount: float) -> None:
-        self.warmth += amount
+        effective = amount * max(0.25, 1.0 - (self.relational_debt / 140.0))
+        self.warmth += effective
+        self._clamp()
+        self._save()
+
+    def apply_world_state(self, world_state: dict[str, object] | None) -> None:
+        """Project world debts into local resources to model indirect mortality pressure."""
+
+        if not isinstance(world_state, dict):
+            return
+        dynamics = world_state.get("dynamics")
+        signals = (
+            world_state.get("global_health", {}).get("signals", {})
+            if isinstance(world_state.get("global_health"), dict)
+            else {}
+        )
+        eco_norm = 0.0
+        rel_norm = 0.0
+        delayed_risk = 0.0
+        if isinstance(dynamics, dict):
+            eco_norm = max(0.0, min(1.0, float(dynamics.get("ecological_debt", 0.0)) / 100.0))
+            rel_norm = max(0.0, min(1.0, float(dynamics.get("relational_debt", 0.0)) / 100.0))
+        if isinstance(signals, dict):
+            delayed_risk = max(0.0, min(1.0, float(signals.get("delayed_risk", 0.0))))
+
+        self.ecological_debt = (self.ecological_debt * 0.7) + (eco_norm * 100.0 * 0.3)
+        self.relational_debt = (self.relational_debt * 0.7) + (rel_norm * 100.0 * 0.3)
+
+        stress_factor = (eco_norm * 0.6) + (rel_norm * 0.4) + (delayed_risk * 0.5)
+        self.energy -= stress_factor * 1.8
+        self.food -= (eco_norm + delayed_risk) * 0.9
+        self.warmth -= (rel_norm * 1.0) + (delayed_risk * 0.4)
         self._clamp()
         self._save()
 
@@ -118,6 +161,10 @@ class ResourceManager:
             moods.append("angry")
         if self.warmth < self.warmth_threshold:
             moods.append("cold")
+        if self.relational_debt >= 55.0:
+            moods.append("tense")
+        if self.ecological_debt >= 60.0:
+            moods.append("strained")
         if not moods:
             moods.append("content")
         return moods

@@ -837,6 +837,8 @@ def run(
                     "energy": resource_manager.energy,
                     "food": resource_manager.food,
                     "warmth": resource_manager.warmth,
+                    "ecological_debt": resource_manager.ecological_debt,
+                    "relational_debt": resource_manager.relational_debt,
                 },
                 perception_signals=signals,
             )
@@ -1366,11 +1368,12 @@ def run(
 
             world_state_path = Path(os.environ.get("SINGULAR_HOME", ".")) / "mem" / "world_state.json"
             world_effects_path = Path(os.environ.get("SINGULAR_HOME", ".")) / "mem" / "world_effects.json"
-            sim_world.apply_action_effects(
+            updated_world_state = sim_world.apply_action_effects(
                 world_effects,
                 state_path=world_state_path,
                 effects_path=world_effects_path,
             )
+            resource_manager.apply_world_state(updated_world_state)
             save_checkpoint(checkpoint_path, state)
 
             dead, reason = org.monitor.check(

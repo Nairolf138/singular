@@ -84,3 +84,17 @@ def test_apply_action_effects_writes_atomic_cumulative_effects(tmp_path: Path) -
     assert "global_health" in updated
     ledger = effects_path.read_text(encoding="utf-8")
     assert '"last_effect_count": 2' in ledger
+
+
+def test_overexploitation_schedules_and_triggers_delayed_crisis(tmp_path: Path) -> None:
+    path = tmp_path / "mem" / "world_state.json"
+    state = load_world_state(path)
+    over = map_action_type_to_effect("resource.overexploitation")
+    updated = apply_action(over, state=state, state_path=path)
+    assert updated["dynamics"]["ecological_debt"] > 0.0
+    assert updated["dynamics"]["delayed_events"]
+
+    ticked = tick_world(state=updated, state_path=path, steps=2)
+    fired = ticked["global_health"].get("delayed_events_fired", [])
+    assert any(entry.get("kind") == "crisis" for entry in fired)
+    assert ticked["global_health"]["signals"]["delayed_risk"] >= 0.0
