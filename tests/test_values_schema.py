@@ -185,6 +185,53 @@ def test_policy_safe_mode_requires_review_for_sensitive_skill_family(tmp_path: P
     assert "safe-mode requires manual review" in decision.reason
 
 
+def test_policy_blocks_explicit_hostile_interlife_behavior(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    policy = MutationGovernancePolicy()
+
+    decision = policy.record_interlife_interaction(
+        source_life="alpha",
+        target_life="beta",
+        interaction="threat.explicit",
+        influence_delta=0.1,
+    )
+
+    assert decision.allowed is False
+    assert decision.level == AUTH_BLOCKED
+    journal = tmp_path / "mem" / "policy_decisions.jsonl"
+    lines = journal.read_text(encoding="utf-8").strip().splitlines()
+    assert lines
+    payload = json.loads(lines[-1])
+    assert payload["category"] == "inter_life"
+    assert "hostile behavior" in payload["reason"]
+
+
+def test_policy_conflict_threshold_triggers_mediation_and_prudent_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    policy = MutationGovernancePolicy()
+
+    for _ in range(policy.social_conflict_mediation_threshold):
+        decision = policy.record_interlife_interaction(
+            source_life="alpha",
+            target_life="beta",
+            interaction="resource_conflict",
+            influence_delta=0.0,
+        )
+        assert decision.allowed is True
+
+    blocked = policy.record_interlife_interaction(
+        source_life="alpha",
+        target_life="beta",
+        interaction="help.transfer",
+        influence_delta=0.01,
+    )
+    assert blocked.allowed is False
+    assert "mediation cooldown" in blocked.reason
+    assert policy.social_prudent_mode_enabled() is True
+
+
 def test_cli_values_show_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys) -> None:
     root = tmp_path / "root"
     monkeypatch.delenv("SINGULAR_ROOT", raising=False)
