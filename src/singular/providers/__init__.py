@@ -200,8 +200,13 @@ def _load_provider_contract(name: str) -> LLMProviderContract | None:
                 cost_estimate=cost_estimate,
                 max_retries=retries,
             )
-    except ModuleNotFoundError:
-        pass
+    except ModuleNotFoundError as exc:
+        if exc.name == module_name:
+            pass
+        else:
+            raise ProviderMisconfiguredError(
+                f"Provider '{name}' imports missing dependency '{exc.name}'"
+            ) from exc
 
     for ep in entry_points(group="singular.llm"):
         if ep.name != name:
