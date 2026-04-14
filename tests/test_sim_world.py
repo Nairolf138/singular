@@ -1,6 +1,12 @@
 from pathlib import Path
 
-from singular.environment.sim_world import apply_action, load_world_state, tick_world
+from singular.environment.sim_world import (
+    apply_action,
+    apply_action_effects,
+    load_world_state,
+    map_action_type_to_effect,
+    tick_world,
+)
 
 
 def test_load_world_state_creates_default_when_missing(tmp_path: Path) -> None:
@@ -63,3 +69,18 @@ def test_tick_world_regenerates_and_updates_health(tmp_path: Path) -> None:
     assert ticked["resources"]["renewable"]["biomass"]["amount"] == 16.0
     assert ticked["global_health"]["trend"] == "degrading"
     assert 0.0 <= ticked["global_health"]["signals"]["resource_pressure"] <= 1.0
+
+
+def test_apply_action_effects_writes_atomic_cumulative_effects(tmp_path: Path) -> None:
+    state_path = tmp_path / "mem" / "world_state.json"
+    effects_path = tmp_path / "mem" / "world_effects.json"
+    _ = load_world_state(state_path)
+    effects = [
+        map_action_type_to_effect("mutation.applied"),
+        map_action_type_to_effect("resource.conflict"),
+    ]
+    updated = apply_action_effects(effects, state_path=state_path, effects_path=effects_path)
+    assert effects_path.exists()
+    assert "global_health" in updated
+    ledger = effects_path.read_text(encoding="utf-8")
+    assert '"last_effect_count": 2' in ledger

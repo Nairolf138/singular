@@ -235,3 +235,25 @@ def test_capture_signals_publishes_host_star_events_on_host_perception_topic(mon
     }
     assert all(event_type.startswith("host.") for event_type in emitted_types)
     assert all(signal_event["type"] in emitted_types for signal_event in signals["host_events"])
+
+
+def test_capture_signals_derives_world_events(monkeypatch):
+    reset_perception_state()
+    monkeypatch.setattr(
+        "singular.perception.load_world_state",
+        lambda: {
+            "global_health": {"trend": "degrading", "score": 40.0},
+            "resources": {
+                "renewable": {
+                    "solar": {"amount": 10.0, "capacity": 100.0},
+                    "biomass": {"amount": 90.0, "capacity": 100.0},
+                }
+            },
+        },
+    )
+    signals = capture_signals()
+    assert "world_events" in signals
+    event_types = {event["type"] for event in signals["world_events"]}
+    assert "world.health.degradation" in event_types
+    assert "world.resource.scarcity" in event_types
+    assert "world.opportunity.window" in event_types

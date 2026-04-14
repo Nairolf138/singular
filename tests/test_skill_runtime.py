@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from singular.events import EventBus
 from singular.skills.runtime import SkillRuntime
@@ -149,3 +150,25 @@ def test_execute_best_skill_cautious_strategy_prefers_reliable_skill(monkeypatch
     )
     assert result.status == "succeeded"
     assert result.skill == "safe"
+
+
+def test_execute_best_skill_persists_world_effects(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("singular.skills.runtime.sandbox.run", lambda code: {"ok": True})
+    life = tmp_path / "life"
+    skills = life / "skills"
+    mem = life / "mem"
+    skills.mkdir(parents=True)
+    mem.mkdir(parents=True)
+    (skills / "good.py").write_text("def run(context=None):\n    return {'ok': True}\n", encoding="utf-8")
+    (mem / "skills.json").write_text('{"good": {"capabilities": ["assist"], "risk": 0.1}}', encoding="utf-8")
+
+    runtime = SkillRuntime(skills_dir=skills, mem_dir=mem)
+    result = runtime.execute_best_skill(
+        task={"name": "assist", "capabilities": ["assist"]},
+        context={},
+    )
+
+    assert result.status == "succeeded"
+    effects = json.loads((mem / "world_effects.json").read_text(encoding="utf-8"))
+    assert effects["last_effect_count"] == 1
+    assert effects["cumulative_effect"]["health_delta"] > 0

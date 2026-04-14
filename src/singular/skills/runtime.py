@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from singular.environment import sim_world
 from singular.events import EventBus, get_global_event_bus
 from singular.life import sandbox
 from singular.life.skill_catalog import read_skill_catalog, refresh_skill_catalog
@@ -58,6 +59,7 @@ class SkillRuntime:
         candidates = self._compatible_candidates(task_dict, skills_state, catalog, strategy=strategy)
         if not candidates:
             result = SkillExecutionResult(skill=None, status="failed", reason="no_compatible_skill")
+            self._apply_world_effect("skill.execution.no_compatible")
             self.bus.publish(
                 "skill.execution.failed",
                 {
@@ -95,6 +97,7 @@ class SkillRuntime:
                     "output": output,
                 },
             )
+            self._apply_world_effect("skill.execution.succeeded")
             return result
         except Exception as exc:
             result = SkillExecutionResult(
@@ -112,7 +115,28 @@ class SkillRuntime:
                     "reason": str(exc),
                 },
             )
+            self._apply_world_effect("skill.execution.failed")
             return result
+
+    def _apply_world_effect(self, action_type: str) -> None:
+        effect = sim_world.map_action_type_to_effect(action_type)
+        if not effect:
+            return
+        state_path = self.mem_dir / "world_state.json"
+        effects_path = self.mem_dir / "world_effects.json"
+        sim_world.apply_action_effects(
+            [effect],
+            state_path=state_path,
+            effects_path=effects_path,
+        )
+        self.bus.publish(
+            "world.effect.applied",
+            {
+                "action_type": action_type,
+                "effect": effect,
+            },
+            payload_version=1,
+        )
 
     def _compatible_candidates(
         self,

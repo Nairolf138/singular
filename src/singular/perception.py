@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from singular.environment.sim_world import load_world_state
 from singular.events import EventBus, get_global_event_bus
 from singular.governance.policy import MutationGovernancePolicy
 from singular.sensors import (
@@ -357,6 +358,59 @@ def _collect_artifact_signals(root: Path, state: _ArtifactScanState) -> list[dic
     return events
 
 
+def _derive_world_events(world_state: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(world_state, dict):
+        return []
+    events: list[dict[str, Any]] = []
+    health = world_state.get("global_health", {}) if isinstance(world_state.get("global_health"), dict) else {}
+    trend = str(health.get("trend", "stable"))
+    score = float(health.get("score", 50.0) or 50.0)
+    if trend == "degrading" or score < 45.0:
+        events.append(
+            _build_perception_event(
+                event_type="world.health.degradation",
+                source="world_state",
+                confidence=0.9,
+                data={"trend": trend, "score": score},
+            )
+        )
+
+    resources = world_state.get("resources", {}) if isinstance(world_state.get("resources"), dict) else {}
+    renewable = resources.get("renewable", {}) if isinstance(resources.get("renewable"), dict) else {}
+    scarcity: list[dict[str, float | str]] = []
+    opportunities: list[dict[str, float | str]] = []
+    for name, payload in renewable.items():
+        if not isinstance(payload, dict):
+            continue
+        amount = float(payload.get("amount", 0.0) or 0.0)
+        capacity = max(float(payload.get("capacity", 0.0) or 0.0), 0.0)
+        coverage = (amount / capacity) if capacity else 0.0
+        if coverage <= 0.2:
+            scarcity.append({"resource": str(name), "coverage": round(coverage, 3)})
+        if coverage >= 0.8:
+            opportunities.append({"resource": str(name), "coverage": round(coverage, 3)})
+
+    if scarcity:
+        events.append(
+            _build_perception_event(
+                event_type="world.resource.scarcity",
+                source="world_state",
+                confidence=0.92,
+                data={"resources": scarcity},
+            )
+        )
+    if opportunities:
+        events.append(
+            _build_perception_event(
+                event_type="world.opportunity.window",
+                source="world_state",
+                confidence=0.85,
+                data={"resources": opportunities},
+            )
+        )
+    return events
+
+
 
 def reset_perception_state() -> None:
     """Reset in-memory artifact scan and anti-noise state (tests/helpers)."""
@@ -398,6 +452,7 @@ def capture_signals(
     sandbox_root: str | Path | None = None,
     noise_filter: PerceptionNoiseFilter | None = None,
     artifact_state: _ArtifactScanState | None = None,
+    world_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Collect sensory signals and optionally publish perception events."""
     signals: dict[str, Any] = {
@@ -422,7 +477,14 @@ def capture_signals(
     filter_instance = noise_filter or _NOISE_FILTER
     artifact_events = _collect_artifact_signals(root, state)
     host_events = _derive_host_events(host_metrics)
-    candidate_events = [*artifact_events, *host_events]
+    resolved_world_state = world_state
+    if resolved_world_state is None:
+        try:
+            resolved_world_state = load_world_state()
+        except Exception:
+            resolved_world_state = None
+    world_events = _derive_world_events(resolved_world_state)
+    candidate_events = [*artifact_events, *host_events, *world_events]
     filtered_events = [event for event in candidate_events if filter_instance.allow(event)]
     if filtered_events:
         signals["artifact_events"] = [
@@ -435,12 +497,23 @@ def capture_signals(
             signals.pop("artifact_events")
         if not signals["host_events"]:
             signals.pop("host_events")
+        signals["world_events"] = [
+            event for event in filtered_events if str(event.get("type", "")).startswith("world.")
+        ]
+        if not signals["world_events"]:
+            signals.pop("world_events")
 
     if publish_event:
         emitter = bus or get_global_event_bus()
         emitter.publish("signal.captured", {"signals": dict(signals)}, payload_version=1)
         for event in filtered_events:
-            topic = "artifact.perception" if str(event.get("type", "")).startswith("artifact.") else "host.perception"
+            topic = (
+                "artifact.perception"
+                if str(event.get("type", "")).startswith("artifact.")
+                else "host.perception"
+                if str(event.get("type", "")).startswith("host.")
+                else "world.perception"
+            )
             emitter.publish(
                 topic,
                 {"version": "1.0", "event": event},

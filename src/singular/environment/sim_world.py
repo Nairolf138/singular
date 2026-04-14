@@ -10,11 +10,50 @@ import json
 import os
 import tempfile
 from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 _BASE_DIR = Path(os.environ.get("SINGULAR_HOME", "."))
 DEFAULT_WORLD_STATE_PATH = _BASE_DIR / "mem" / "world_state.json"
+DEFAULT_WORLD_EFFECTS_PATH = _BASE_DIR / "mem" / "world_effects.json"
+
+ACTION_TYPE_TO_WORLD_EFFECT: dict[str, dict[str, Any]] = {
+    "mutation.applied": {
+        "produce_resources": {"renewable": {"biomass": 1.0}},
+        "health_delta": 0.4,
+    },
+    "mutation.rejected": {
+        "consume_resources": {"renewable": {"solar": 0.8}},
+        "health_delta": -0.4,
+    },
+    "resource.competition.granted": {
+        "consume_resources": {"renewable": {"solar": 0.5}},
+        "health_delta": 0.1,
+    },
+    "resource.competition.denied": {
+        "health_delta": -0.2,
+    },
+    "resource.cooperation": {
+        "produce_resources": {"renewable": {"solar": 0.6}},
+        "health_delta": 0.3,
+    },
+    "resource.conflict": {
+        "consume_resources": {"renewable": {"biomass": 0.7}},
+        "health_delta": -0.5,
+    },
+    "skill.execution.succeeded": {
+        "produce_resources": {"renewable": {"solar": 0.4}},
+        "health_delta": 0.2,
+    },
+    "skill.execution.failed": {
+        "consume_resources": {"renewable": {"solar": 0.4}},
+        "health_delta": -0.3,
+    },
+    "skill.execution.no_compatible": {
+        "health_delta": -0.1,
+    },
+}
 
 
 def default_world_state() -> dict[str, Any]:
@@ -105,21 +144,7 @@ def _clamp(value: float, minimum: float = 0.0, maximum: float = 100.0) -> float:
     return max(minimum, min(maximum, value))
 
 
-def apply_action(
-    action: dict[str, Any],
-    *,
-    state: dict[str, Any] | None = None,
-    state_path: Path | str | None = None,
-) -> dict[str, Any]:
-    """Apply a generic action payload to the world and persist it.
-
-    Supported keys include ``consume_resources``, ``produce_resources``,
-    ``health_delta``, ``entities`` and ``artifacts`` (with ``add``/``remove``),
-    and ``map_updates`` for adding spaces/niches.
-    """
-
-    next_state = deepcopy(state) if state is not None else load_world_state(state_path)
-
+def _apply_action_to_state(next_state: dict[str, Any], action: dict[str, Any]) -> dict[str, Any]:
     resources = next_state.setdefault("resources", {})
     renewable = resources.setdefault("renewable", {})
     non_renewable = resources.setdefault("non_renewable", {})
@@ -165,6 +190,84 @@ def apply_action(
     niches = map_data.setdefault("niches", [])
     spaces.extend(action.get("map_updates", {}).get("add_spaces", []))
     niches.extend(action.get("map_updates", {}).get("add_niches", []))
+    return next_state
+
+
+def map_action_type_to_effect(action_type: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    template = deepcopy(ACTION_TYPE_TO_WORLD_EFFECT.get(action_type, {}))
+    if not payload:
+        return template
+    for key in ("consume_resources", "produce_resources", "entities", "artifacts", "map_updates"):
+        incoming = payload.get(key)
+        if not isinstance(incoming, dict):
+            continue
+        existing = template.setdefault(key, {})
+        if isinstance(existing, dict):
+            for subkey, subvalue in incoming.items():
+                existing[subkey] = subvalue
+    if "health_delta" in payload:
+        template["health_delta"] = float(payload["health_delta"])
+    return template
+
+
+def _merge_action_effect(total: dict[str, Any], effect: dict[str, Any]) -> dict[str, Any]:
+    merged = deepcopy(total)
+    merged["health_delta"] = float(merged.get("health_delta", 0.0)) + float(effect.get("health_delta", 0.0))
+    for family in ("consume_resources", "produce_resources"):
+        family_dst = merged.setdefault(family, {})
+        family_src = effect.get(family, {})
+        if not isinstance(family_src, dict):
+            continue
+        for resource_type, payload in family_src.items():
+            if not isinstance(payload, dict):
+                continue
+            dst_payload = family_dst.setdefault(resource_type, {})
+            for name, amount in payload.items():
+                dst_payload[name] = float(dst_payload.get(name, 0.0)) + float(amount)
+    return merged
+
+
+def apply_action_effects(
+    effects: list[dict[str, Any]],
+    *,
+    state: dict[str, Any] | None = None,
+    state_path: Path | str | None = None,
+    effects_path: Path | str | None = None,
+) -> dict[str, Any]:
+    next_state = deepcopy(state) if state is not None else load_world_state(state_path)
+    cumulative: dict[str, Any] = {"health_delta": 0.0}
+    for effect in effects:
+        _apply_action_to_state(next_state, effect)
+        cumulative = _merge_action_effect(cumulative, effect)
+    save_world_state(next_state, state_path)
+
+    ledger_path = Path(effects_path) if effects_path is not None else DEFAULT_WORLD_EFFECTS_PATH
+    ledger = {
+        "version": 1,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "cumulative_effect": cumulative,
+        "last_effect_count": len(effects),
+    }
+    _atomic_write_json(ledger_path, ledger)
+    return next_state
+
+
+def apply_action(
+    action: dict[str, Any],
+    *,
+    state: dict[str, Any] | None = None,
+    state_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Apply a generic action payload to the world and persist it.
+
+    Supported keys include ``consume_resources``, ``produce_resources``,
+    ``health_delta``, ``entities`` and ``artifacts`` (with ``add``/``remove``),
+    and ``map_updates`` for adding spaces/niches.
+    """
+
+    next_state = deepcopy(state) if state is not None else load_world_state(state_path)
+
+    _apply_action_to_state(next_state, action)
 
     save_world_state(next_state, state_path)
     return next_state
