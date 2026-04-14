@@ -56,3 +56,35 @@ def test_add_episode_enriches_semantic_memory(tmp_path, monkeypatch):
     texts = [entry["text"] for entry in lines]
     assert "lives in paris" in texts
     assert "coffee" in texts
+
+
+def test_memory_layer_service_rebuilds_when_root_changes(tmp_path, monkeypatch):
+    from singular import memory
+
+    home_a = tmp_path / "home-a"
+    home_b = tmp_path / "home-b"
+
+    monkeypatch.setenv("SINGULAR_HOME", str(home_a))
+    service_a = memory.get_memory_layer_service()
+    memory.add_episode({"event": "root-a", "summary": "alpha"})
+
+    monkeypatch.setenv("SINGULAR_HOME", str(home_b))
+    service_b = memory.get_memory_layer_service()
+    memory.add_episode({"event": "root-b", "summary": "beta"})
+
+    assert service_a is not service_b
+
+    short_a = home_a / "mem" / "layers" / "short_term.jsonl"
+    short_b = home_b / "mem" / "layers" / "short_term.jsonl"
+
+    lines_a = short_a.read_text(encoding="utf-8").splitlines()
+    lines_b = short_b.read_text(encoding="utf-8").splitlines()
+
+    payloads_a = [json.loads(line) for line in lines_a if line]
+    payloads_b = [json.loads(line) for line in lines_b if line]
+
+    assert len(payloads_a) == 1
+    assert payloads_a[0]["text"] == "alpha"
+
+    assert len(payloads_b) == 1
+    assert payloads_b[0]["text"] == "beta"

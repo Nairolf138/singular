@@ -22,6 +22,7 @@ from .events import Event, EventBus
 from .memory_layers import MemoryLayerService, build_backend
 
 _MEMORY_LAYER_SERVICE: MemoryLayerService | None = None
+_MEMORY_LAYER_SERVICE_ROOT: Path | None = None
 
 
 def get_base_dir() -> Path:
@@ -135,13 +136,15 @@ def ensure_memory_structure(mem_dir: Path | str | None = None) -> None:
 
 
 def get_memory_layer_service() -> MemoryLayerService:
-    """Return the singleton memory layer service."""
+    """Return the memory layer service for the current memory root."""
 
-    global _MEMORY_LAYER_SERVICE
-    if _MEMORY_LAYER_SERVICE is None:
+    global _MEMORY_LAYER_SERVICE, _MEMORY_LAYER_SERVICE_ROOT
+    root = get_memory_layers_dir().resolve()
+    if _MEMORY_LAYER_SERVICE is None or _MEMORY_LAYER_SERVICE_ROOT != root:
         _MEMORY_LAYER_SERVICE = MemoryLayerService(
-            build_backend(root=get_memory_layers_dir())
+            build_backend(root=root)
         )
+        _MEMORY_LAYER_SERVICE_ROOT = root
     return _MEMORY_LAYER_SERVICE
 
 
