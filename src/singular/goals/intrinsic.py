@@ -131,6 +131,8 @@ class IntrinsicGoals:
         telemetry_efficiency_penalty = 0.0
         telemetry_quality_pressure = 0.0
         telemetry_failure_pressure = 0.0
+        host_environmental_pressure = 0.0
+        host_environmental_variance = 0.0
         skill_reputation = (perception_signals or {}).get("skill_reputation")
         if isinstance(skill_reputation, Mapping) and skill_reputation:
             sample_count = 0.0
@@ -152,13 +154,50 @@ class IntrinsicGoals:
                 telemetry_quality_pressure = _clamp(1.0 - mean_quality, 0.0, 1.0)
                 telemetry_failure_pressure = _clamp(mean_failures / 3.0, 0.0, 1.0)
 
+        host_aggregates = (perception_signals or {}).get("host_metrics_aggregates")
+        if isinstance(host_aggregates, Mapping):
+            rolling = host_aggregates.get("rolling_means", {})
+            variance = host_aggregates.get("variance", {})
+            if isinstance(rolling, Mapping):
+                cpu_roll = rolling.get("cpu_percent")
+                ram_roll = rolling.get("ram_used_percent")
+                temp_roll = rolling.get("host_temperature_c")
+                cpu_pressure = (
+                    _clamp(_as_float(cpu_roll.get("20", cpu_roll.get("5", 0.0))) / 100.0)
+                    if isinstance(cpu_roll, Mapping)
+                    else 0.0
+                )
+                ram_pressure = (
+                    _clamp(_as_float(ram_roll.get("20", ram_roll.get("5", 0.0))) / 100.0)
+                    if isinstance(ram_roll, Mapping)
+                    else 0.0
+                )
+                thermal_pressure = (
+                    _clamp(_as_float(temp_roll.get("20", temp_roll.get("5", 0.0))) / 95.0)
+                    if isinstance(temp_roll, Mapping)
+                    else 0.0
+                )
+                host_environmental_pressure = _clamp(
+                    (cpu_pressure * 0.45) + (ram_pressure * 0.35) + (thermal_pressure * 0.2)
+                )
+            if isinstance(variance, Mapping):
+                cpu_variance = _clamp(_as_float(variance.get("cpu_percent", 0.0)) / 400.0)
+                ram_variance = _clamp(_as_float(variance.get("ram_used_percent", 0.0)) / 400.0)
+                host_environmental_variance = _clamp((cpu_variance + ram_variance) / 2.0)
+
         base_weights = GoalWeights(
             coherence=0.2 + 0.35 * patience + 0.25 * resilience + 0.2 * telemetry_quality_pressure,
             robustesse=0.2
             + 0.35 * (1.0 - health_norm)
             + 0.25 * (1.0 - resource_stability)
-            + 0.2 * telemetry_failure_pressure,
-            efficacite=0.2 + 0.45 * health_norm + 0.2 * optimism + 0.2 * telemetry_efficiency_penalty,
+            + 0.2 * telemetry_failure_pressure
+            + 0.25 * host_environmental_pressure
+            + 0.1 * host_environmental_variance,
+            efficacite=0.2
+            + 0.45 * health_norm
+            + 0.2 * optimism
+            + 0.35 * telemetry_efficiency_penalty
+            + 0.2 * (1.0 - host_environmental_pressure),
             exploration=0.2 + 0.45 * curiosity + 0.2 * playfulness + 0.1 * (1.0 - energy),
         )
         modulation = apply_perception_rules(perception_signals)
@@ -184,6 +223,8 @@ class IntrinsicGoals:
                     "resilience": resilience,
                     "optimism": optimism,
                     "playfulness": playfulness,
+                    "host_environmental_pressure": host_environmental_pressure,
+                    "host_environmental_variance": host_environmental_variance,
                     "perception_rules_version": modulation["version"],
                     "perception_rule_count": len(modulation["applied_rules"]),
                 },

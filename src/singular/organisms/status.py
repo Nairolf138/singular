@@ -13,6 +13,7 @@ from ..memory import get_mem_dir
 from ..memory import read_skills
 from ..runs.logger import RUNS_DIR
 from ..schedulers.reevaluation import alerts_from_records
+from ..sensors import compute_host_metrics_aggregates, summarize_environmental_impact
 from ..skills_daily import build_daily_skills_snapshot
 
 
@@ -118,6 +119,15 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             "reproduction_eligible": False,
             "thresholds": {},
         },
+        "host_environment": {
+            "aggregates": {},
+            "impact": {},
+        },
+    }
+    host_aggregates = compute_host_metrics_aggregates()
+    payload["host_environment"] = {
+        "aggregates": host_aggregates,
+        "impact": summarize_environmental_impact(host_aggregates),
     }
     runs_dir = Path(RUNS_DIR)
     files = sorted(runs_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
@@ -280,6 +290,14 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             ["Âge vital", str((payload.get("vital_timeline") or {}).get("age", 0))],
             ["État vital", str((payload.get("vital_timeline") or {}).get("state", "n/a"))],
             ["Risque vital", str((payload.get("vital_timeline") or {}).get("risk_level", "n/a"))],
+            [
+                "Impact environnement hôte",
+                str(((payload.get("host_environment") or {}).get("impact") or {}).get("impact_level", "low")),
+            ],
+            [
+                "Biais décisionnel hôte",
+                str(((payload.get("host_environment") or {}).get("impact") or {}).get("decision_bias", "balanced")),
+            ],
         ]
         _print_table(["Metric", "Value"], run_rows)
         if verbose:
@@ -323,6 +341,10 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         print(f"Âge vital: {vital.get('age', 0)}")
         print(f"État vital: {vital.get('state', 'n/a')}")
         print(f"Risque vital: {vital.get('risk_level', 'n/a')}")
+        host_environment = payload.get("host_environment") if isinstance(payload.get("host_environment"), dict) else {}
+        host_impact = host_environment.get("impact") if isinstance(host_environment.get("impact"), dict) else {}
+        print(f"Impact environnement hôte: {host_impact.get('impact_level', 'low')}")
+        print(f"Biais décisionnel hôte: {host_impact.get('decision_bias', 'balanced')}")
         causes = vital.get("causes")
         if isinstance(causes, list) and causes:
             print(f"Causes observées: {', '.join(str(c) for c in causes)}")
