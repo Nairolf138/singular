@@ -13,12 +13,13 @@ sys.path.append(str(root_dir))
 sys.path.append(str(root_dir / "src"))
 
 import singular.life.loop as life_loop  # noqa: E402
-from singular.life.loop import run, load_checkpoint  # noqa: E402
+from singular.life.loop import EcosystemRules, run, load_checkpoint  # noqa: E402
 from singular.life.health import detect_health_state  # noqa: E402
 from singular.life.test_coevolution import LivingTestPool, TestCandidate  # noqa: E402
 from singular.resource_manager import ResourceManager  # noqa: E402
 from singular.psyche import Psyche, Mood  # noqa: E402
 from singular.governance.policy import MutationGovernancePolicy  # noqa: E402
+from singular.life.reproduction import ReproductionDecisionPolicy  # noqa: E402
 
 
 def _inc_operator(tree: ast.AST, rng=None) -> ast.AST:
@@ -197,6 +198,57 @@ def test_load_checkpoint_ignores_extra_keys(tmp_path: Path):
     assert state.version == life_loop.CHECKPOINT_VERSION
     assert state.iteration == 3
     assert not hasattr(state, "unexpected")
+
+
+def test_reproduction_decision_is_logged_with_cooldown(tmp_path: Path, monkeypatch):
+    org_a = tmp_path / "org_a" / "skills"
+    org_b = tmp_path / "org_b" / "skills"
+    org_a.mkdir(parents=True)
+    org_b.mkdir(parents=True)
+    (org_a / "a.py").write_text("def f(x):\n    return x\n", encoding="utf-8")
+    (org_b / "b.py").write_text("def f(x):\n    return x + 1\n", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+
+    from singular.runs.logger import RunLogger as RL
+
+    monkeypatch.setattr(
+        life_loop, "RunLogger", functools.partial(RL, root=tmp_path / "logs")
+    )
+
+    world = life_loop.WorldState(
+        organisms={
+            "org_a": life_loop.Organism(org_a, energy=4.8),
+            "org_b": life_loop.Organism(org_b, energy=4.7),
+        }
+    )
+    world.reproduction_cooldowns["org_a"] = 2
+
+    run(
+        {"org_a": org_a, "org_b": org_b},
+        checkpoint,
+        budget_seconds=0.2,
+        max_iterations=1,
+        rng=random.Random(0),
+        run_id="repro-loop",
+        operators={"dec": _dec_operator},
+        world=world,
+        ecosystem_rules=EcosystemRules(
+            crossover_interval=1,
+            reproduction_policy=ReproductionDecisionPolicy(compatibility_threshold=0.2),
+        ),
+    )
+
+    events_path = tmp_path / "logs" / "repro-loop" / "events.jsonl"
+    events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
+    decisions = [
+        e["payload"]
+        for e in events
+        if e.get("event_type") == "interaction"
+        and e.get("payload", {}).get("interaction") == "reproduction_decision"
+    ]
+    assert decisions
+    assert decisions[0]["accepted"] is False
+    assert any("cooldown_active" in reason for reason in decisions[0]["reasons"])
 
 
 def test_run_with_legacy_checkpoint_continues_without_crash(tmp_path: Path):

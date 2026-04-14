@@ -46,7 +46,12 @@ from .health import HealthTracker
 from singular.governance.policy import MutationGovernancePolicy
 from singular.governance.values import load_value_weights
 
-from .reproduction import authorize_reproduction_write, crossover
+from .reproduction import (
+    ReproductionDecisionPolicy,
+    authorize_reproduction_write,
+    crossover,
+    decide_reproduction,
+)
 from .map_elites import MapElites
 from .test_coevolution import LivingTestPool, propose_test_candidates
 from .skill_genesis import create_skill
@@ -95,6 +100,7 @@ class WorldState:
     resource_pool: float = 100.0
     reputation: ReputationSystem = field(default_factory=ReputationSystem)
     world_resources: WorldResourcePool = field(default_factory=WorldResourcePool)
+    reproduction_cooldowns: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -109,6 +115,9 @@ class EcosystemRules:
     competition_bid_ceiling: float = 5.0
     reputation_action_weights: dict[str, float] = field(
         default_factory=lambda: {"share": 0.2, "steal": -0.2}
+    )
+    reproduction_policy: ReproductionDecisionPolicy = field(
+        default_factory=ReproductionDecisionPolicy
     )
 
 
@@ -1353,36 +1362,93 @@ def run(
                 and len(world.organisms) >= 2
             ):
                 parent_names = list(_pick_crossover_parents(rng, world))
+                cooldown_remaining = max(
+                    world.reproduction_cooldowns.get(parent_names[0], 0),
+                    world.reproduction_cooldowns.get(parent_names[1], 0),
+                )
                 pa = world.organisms[parent_names[0]].skills_dir
                 pb = world.organisms[parent_names[1]].skills_dir
                 child_dir = pa.parent / f"child_{state.iteration}"
                 child_skills_dir = child_dir / "skills"
                 child_skills_dir.mkdir(parents=True, exist_ok=True)
-                fname, code = crossover(pa, pb, rng)
-                target = child_skills_dir / fname
-                authorized, reason = authorize_reproduction_write(
-                    target,
-                    code,
-                    governance_policy=governance_policy,
+                target = child_skills_dir / "candidate_hybrid.py"
+                root = target.parent.parent if target.parent.name == "skills" else target.parent
+                simulated_governance = governance_policy.simulate_write(target, root=root)
+                decision = decide_reproduction(
+                    parent_a=parent_names[0],
+                    parent_b=parent_names[1],
+                    parent_a_skills=pa,
+                    parent_b_skills=pb,
+                    parent_a_health=min(1.0, world.organisms[parent_names[0]].energy / 5.0),
+                    parent_b_health=min(1.0, world.organisms[parent_names[1]].energy / 5.0),
+                    governance_allowed=simulated_governance.allowed,
+                    policy=ecosystem_rules.reproduction_policy,
                 )
-                if not authorized:
-                    logger.log_interaction(
-                        "governance_violation",
-                        parents=parent_names,
-                        target=str(target),
-                        reason=reason,
-                        corrective_action="write under allowlisted skills/ directory",
-                        alive=True,
+                if cooldown_remaining > 0:
+                    decision = decision.__class__(
+                        accepted=False,
+                        score=decision.score,
+                        reasons=[f"cooldown_active:{cooldown_remaining}"] + decision.reasons,
+                        components=decision.components,
+                    )
+                logger.log_interaction(
+                    "reproduction_decision",
+                    parents=parent_names,
+                    proposed_child=child_dir.name,
+                    accepted=decision.accepted,
+                    score=decision.score,
+                    reasons=decision.reasons,
+                    components=decision.components,
+                    cooldown_remaining=cooldown_remaining,
+                    alive=True,
+                )
+                if not decision.accepted:
+                    world.reproduction_cooldowns[parent_names[0]] = max(
+                        world.reproduction_cooldowns.get(parent_names[0], 0),
+                        ecosystem_rules.reproduction_policy.cooldown_ticks,
+                    )
+                    world.reproduction_cooldowns[parent_names[1]] = max(
+                        world.reproduction_cooldowns.get(parent_names[1], 0),
+                        ecosystem_rules.reproduction_policy.cooldown_ticks,
                     )
                 else:
-                    world.organisms[child_dir.name] = Organism(child_skills_dir)
-                    logger.log_interaction(
-                        INTERACTION_CROSSOVER,
-                        parents=parent_names,
-                        child=child_dir.name,
-                        child_skills_dir=str(child_dir),
-                        alive=True,
+                    fname, code = crossover(pa, pb, rng)
+                    target = child_skills_dir / fname
+                    authorized, reason = authorize_reproduction_write(
+                        target,
+                        code,
+                        governance_policy=governance_policy,
                     )
+                    if not authorized:
+                        logger.log_interaction(
+                            "governance_violation",
+                            parents=parent_names,
+                            target=str(target),
+                            reason=reason,
+                            corrective_action="write under allowlisted skills/ directory",
+                            alive=True,
+                        )
+                    else:
+                        world.organisms[child_dir.name] = Organism(child_skills_dir)
+                        world.reproduction_cooldowns[parent_names[0]] = (
+                            ecosystem_rules.reproduction_policy.cooldown_ticks
+                        )
+                        world.reproduction_cooldowns[parent_names[1]] = (
+                            ecosystem_rules.reproduction_policy.cooldown_ticks
+                        )
+                        logger.log_interaction(
+                            INTERACTION_CROSSOVER,
+                            parents=parent_names,
+                            child=child_dir.name,
+                            child_skills_dir=str(child_dir),
+                            alive=True,
+                        )
+            for name in list(world.reproduction_cooldowns):
+                remaining = int(world.reproduction_cooldowns[name]) - 1
+                if remaining <= 0:
+                    world.reproduction_cooldowns.pop(name, None)
+                else:
+                    world.reproduction_cooldowns[name] = remaining
             tick_count += 1
 
     for org in world.organisms.values():
