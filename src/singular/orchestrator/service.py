@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from singular.events import Event, EventBus, get_global_event_bus
+from singular.goals import IntrinsicGoals
 from singular.governance.policy import MutationGovernancePolicy
 from singular.life.loop import run_tick
 from singular.memory import _atomic_write_text, get_base_dir, get_mem_dir
@@ -109,10 +110,12 @@ class OrchestratorService:
         )
         self.governance_policy = MutationGovernancePolicy(safe_mode=self.config.safe_mode)
         self.routines = RoutinesOrchestrator(state_path=self.mem_dir / "routines_state.json")
+        self.goals = IntrinsicGoals(path=self.mem_dir / "goals.json")
         self._running = False
         self._wake_requested = False
         self._pending_events: list[dict[str, Any]] = []
         self._tick_count = 0
+        self._latest_signals: dict[str, Any] = {}
 
         self._subscribe_external_stimuli()
 
@@ -235,6 +238,7 @@ class OrchestratorService:
     def _run_phase(self, phase: LifecyclePhase) -> None:
         if phase is LifecyclePhase.VEILLE:
             signals = capture_signals(bus=self.bus)
+            self._latest_signals = dict(signals)
             activated = self.quest_runtime.evaluate_triggers(signals)
             self._push_event(
                 phase,
@@ -255,13 +259,30 @@ class OrchestratorService:
             if mood.value == "fatigue":
                 tick_budget *= max(fatigue_slowdown, 1.0)
             skill_execution = None
+            execution_strategy: dict[str, Any] | None = None
             routine_executions: list[dict[str, Any]] = []
             if not self.config.dry_run:
+                strategy = self.goals.derive_execution_strategy(self._latest_signals)
+                execution_strategy = dict(strategy)
+                routine_specs = [
+                    {"id": spec.id, "prompt": spec.prompt, "priority": spec.priority}
+                    for spec in self.routines.specs
+                ]
+                adjusted_routines = self.goals.adjust_routine_priorities(
+                    routine_specs,
+                    perception_signals=self._latest_signals,
+                )
+                priority_overrides = {
+                    item["id"]: int(item["priority"])
+                    for item in adjusted_routines
+                    if "id" in item
+                }
                 action_context = {
                     "phase": phase.value,
                     "mood": mood.value,
                     "energy": self.resource_manager.energy,
                     "food": self.resource_manager.food,
+                    "execution_strategy": strategy,
                 }
                 skill_execution = self.skill_runtime.execute_best_skill(
                     task={"name": "orchestrator.action", "capabilities": []},
@@ -270,6 +291,7 @@ class OrchestratorService:
                 routine_executions = self.routines.execute_with_runtime(
                     skill_runtime=self.skill_runtime,
                     base_context=action_context,
+                    priority_overrides=priority_overrides,
                 )
                 run_tick(
                     skills_dirs=self.skills_dir,
@@ -305,6 +327,7 @@ class OrchestratorService:
                         if skill_execution is not None
                         else None
                     ),
+                    "execution_strategy": execution_strategy,
                 },
             )
             return

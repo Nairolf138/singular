@@ -17,6 +17,13 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return max(low, min(high, value))
 
 
+def _as_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 @dataclass
 class GoalWeights:
     """Weights for the intrinsic objective catalogue."""
@@ -190,6 +197,81 @@ class IntrinsicGoals:
 
     def history(self) -> list[dict[str, Any]]:
         return list(self.state.history)
+
+    def derive_execution_strategy(
+        self, perception_signals: Mapping[str, Any] | None
+    ) -> dict[str, Any]:
+        """Build runtime strategy knobs from structured feedback signals."""
+
+        memory = (perception_signals or {}).get("episode_memory", {})
+        structured = memory.get("structured_feedback", {}) if isinstance(memory, Mapping) else {}
+        frustration = _clamp(_as_float(structured.get("frustration", 0.0))) if isinstance(structured, Mapping) else 0.0
+        satisfaction = _clamp(_as_float(structured.get("satisfaction", 0.0))) if isinstance(structured, Mapping) else 0.0
+        urgency = _clamp(_as_float(structured.get("urgency", 0.0))) if isinstance(structured, Mapping) else 0.0
+        theme = str(structured.get("theme", "general")) if isinstance(structured, Mapping) else "general"
+        negative_streak = int(memory.get("negative_feedback_streak", 0)) if isinstance(memory, Mapping) else 0
+
+        mode = "balanced"
+        if frustration >= 0.6 or negative_streak >= 2:
+            mode = "cautious"
+        elif urgency >= 0.6:
+            mode = "utility_focused"
+        elif satisfaction >= 0.75:
+            mode = "exploratory"
+
+        return {
+            "mode": mode,
+            "frustration": frustration,
+            "satisfaction": satisfaction,
+            "urgency": urgency,
+            "theme": theme,
+            "negative_feedback_streak": negative_streak,
+        }
+
+    def adjust_routine_priorities(
+        self,
+        routines: list[dict[str, Any]],
+        *,
+        perception_signals: Mapping[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        """Adjust routine priorities in-place for the next ACTION window."""
+
+        strategy = self.derive_execution_strategy(perception_signals)
+        mode = strategy["mode"]
+        theme = str(strategy["theme"])
+        urgency = float(strategy["urgency"])
+        frustration = float(strategy["frustration"])
+
+        adjusted: list[dict[str, Any]] = []
+        for routine in routines:
+            payload = dict(routine)
+            base = int(payload.get("priority", 50))
+            priority = base
+            routine_id = str(payload.get("id", "")).lower()
+            prompt = str(payload.get("prompt", "")).lower()
+            if mode == "cautious":
+                priority += int(10 + frustration * 20)
+                if any(token in routine_id or token in prompt for token in ("check", "verify", "monitor", "safety")):
+                    priority += 8
+                if any(token in routine_id or token in prompt for token in ("help", "user", "support", "respond")):
+                    priority += int(12 + urgency * 12)
+                elif urgency >= 0.6:
+                    priority -= int(8 + urgency * 18)
+            elif mode == "utility_focused":
+                priority += int(6 + urgency * 18)
+                if any(token in routine_id or token in prompt for token in ("help", "user", "support", "respond")):
+                    priority += 12
+            elif mode == "exploratory":
+                if any(token in routine_id or token in prompt for token in ("research", "explore", "discover")):
+                    priority += 14
+                else:
+                    priority -= 4
+            if theme != "general" and theme in f"{routine_id} {prompt}":
+                priority += 10
+            payload["priority"] = max(0, priority)
+            adjusted.append(payload)
+        adjusted.sort(key=lambda item: -int(item.get("priority", 0)))
+        return adjusted
 
     def objective_arbitration(
         self,

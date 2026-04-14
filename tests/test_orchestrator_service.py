@@ -7,6 +7,8 @@ from singular.orchestrator.service import (
     OrchestratorService,
     SchedulerConfig,
 )
+from singular.routines import RoutinesOrchestrator
+from singular.skills.runtime import SkillExecutionResult
 
 
 def test_orchestrator_tick_persists_state(monkeypatch, tmp_path: Path) -> None:
@@ -123,3 +125,62 @@ def test_orchestrator_action_executes_skill_runtime(monkeypatch, tmp_path: Path)
     task, context = calls[0]
     assert task["name"] == "orchestrator.action"
     assert context["phase"] == "action"
+
+
+def test_orchestrator_repeated_negative_feedback_reprioritizes_action_routines(monkeypatch, tmp_path: Path) -> None:
+    life = tmp_path / "life"
+    (life / "skills").mkdir(parents=True)
+    (life / "mem").mkdir(parents=True)
+    (life / "skills" / "a.py").write_text("result = 1", encoding="utf-8")
+    routines_config = tmp_path / "routines.yaml"
+    routines_config.write_text(
+        """
+routines:
+  - id: deep_research
+    prompt: "explore roadmap"
+    interval_minutes: 5
+    priority: 90
+  - id: user_support
+    prompt: "help user quickly"
+    interval_minutes: 5
+    priority: 40
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SINGULAR_HOME", str(life))
+    monkeypatch.setattr("singular.orchestrator.service.run_tick", lambda **kwargs: None)
+    monkeypatch.setattr(
+        "singular.orchestrator.service.capture_signals",
+        lambda bus: {
+            "episode_memory": {
+                "structured_feedback": {
+                    "frustration": 0.9,
+                    "satisfaction": 0.1,
+                    "urgency": 0.8,
+                    "theme": "support",
+                },
+                "negative_feedback_streak": 3,
+            }
+        },
+    )
+
+    calls: list[dict[str, object]] = []
+
+    def _fake_execute(task, context):
+        calls.append({"task": task, "context": context})
+        return SkillExecutionResult(skill="a", status="succeeded", score=0.9)
+
+    service = OrchestratorService(config=OrchestratorConfig(dry_run=False), bus=EventBus())
+    service.routines = RoutinesOrchestrator(
+        config_path=routines_config,
+        state_path=life / "mem" / "routines_state.json",
+    )
+    monkeypatch.setattr(service.skill_runtime, "execute_best_skill", _fake_execute)
+
+    service.tick()  # VEILLE
+    service.tick()  # ACTION
+
+    routine_tasks = [entry["task"] for entry in calls if str(entry["task"].get("name", "")).startswith("routine.")]
+    assert routine_tasks
+    assert routine_tasks[0]["name"] == "routine.user_support"
+    assert routine_tasks[0]["priority"] > 90
