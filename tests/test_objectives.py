@@ -80,3 +80,30 @@ def test_intrinsic_goals_adjust_coherence_and_efficacite_from_user_friction(tmp_
 
     assert high_friction.coherence > low_friction.coherence
     assert high_friction.efficacite > low_friction.efficacite
+
+
+def test_intrinsic_goals_uses_skill_reputation_telemetry(tmp_path) -> None:
+    goals = IntrinsicGoals(path=tmp_path / "goals.json")
+    psyche = Psyche()
+
+    baseline = goals.update_tick(
+        tick=1,
+        psyche=psyche,
+        health_score=80.0,
+        resources={"energy": 80.0, "food": 80.0, "warmth": 80.0},
+        perception_signals={},
+    )
+    with_telemetry = goals.update_tick(
+        tick=2,
+        psyche=psyche,
+        health_score=80.0,
+        resources={"energy": 80.0, "food": 80.0, "warmth": 80.0},
+        perception_signals={
+            "skill_reputation": {
+                "skill_a": {"mean_cost": 180.0, "mean_quality": 0.25, "recent_failures": 4},
+            }
+        },
+    )
+
+    assert with_telemetry.efficacite > baseline.efficacite
+    assert with_telemetry.coherence > baseline.coherence

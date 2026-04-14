@@ -8,7 +8,7 @@ from pathlib import Path
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, Mapping
 
 from ..psyche import Psyche
 from ..memory import add_episode, add_procedural_memory
@@ -21,6 +21,8 @@ RUNS_DIR = _BASE_DIR / "runs"
 # Number of run logs to retain
 MAX_RUN_LOGS = int(os.environ.get("SINGULAR_RUNS_KEEP", "20"))
 EVENT_SCHEMA_VERSION = 1
+USAGE_REPUTATION_SCHEMA_VERSION = 1
+DEFAULT_REPUTATION_UPDATE_EVERY = int(os.environ.get("SINGULAR_REPUTATION_UPDATE_EVERY", "5"))
 
 # ---------------------------------------------------------------------------
 # Mood style helpers
@@ -120,6 +122,7 @@ class RunLogger:
     run_id: str
     root: Path = RUNS_DIR
     psyche: Psyche = field(default_factory=Psyche.load_state)
+    reputation_update_every: int = DEFAULT_REPUTATION_UPDATE_EVERY
 
     def __post_init__(self) -> None:
         self.root = Path(self.root)
@@ -132,6 +135,10 @@ class RunLogger:
         self._events_file = self.events_path.open("a", encoding="utf-8")
         self.consciousness_path = self.run_dir / "consciousness.jsonl"
         self._consciousness_file = self.consciousness_path.open("a", encoding="utf-8")
+        self.skill_reputation_path = self.run_dir / "skill_reputation.json"
+        self._skill_telemetry: dict[str, dict[str, float | int]] = {}
+        self._skill_reputation: dict[str, dict[str, float | int]] = {}
+        self._load_skill_reputation()
 
         # Resume from existing temporary file if present
         tmp_pattern = f"{self.run_id}-*.jsonl.tmp"
@@ -150,6 +157,103 @@ class RunLogger:
             self.tmp_path = self.path.with_suffix(self.path.suffix + ".tmp")
             _ensure_dir(self.tmp_path)
             self._file = self.tmp_path.open("a", encoding="utf-8")
+
+    def _load_skill_reputation(self) -> None:
+        if not self.skill_reputation_path.exists():
+            return
+        try:
+            payload = json.loads(self.skill_reputation_path.read_text(encoding="utf-8"))
+        except (OSError, TypeError, json.JSONDecodeError):
+            return
+        if not isinstance(payload, Mapping):
+            return
+        skills = payload.get("skills")
+        if isinstance(skills, Mapping):
+            for skill_name, raw in skills.items():
+                if isinstance(raw, Mapping):
+                    self._skill_reputation[str(skill_name)] = {
+                        "success_rate": float(raw.get("success_rate", 0.0)),
+                        "mean_cost": float(raw.get("mean_cost", 0.0)),
+                        "recent_failures": int(raw.get("recent_failures", 0)),
+                        "mean_quality": float(raw.get("mean_quality", 0.0)),
+                        "mean_satisfaction": float(raw.get("mean_satisfaction", 0.0)),
+                        "use_count": int(raw.get("use_count", 0)),
+                    }
+
+    def _append_skill_telemetry(
+        self,
+        *,
+        skill: str,
+        success: bool,
+        latency_ms: float,
+        resource_cost: float,
+        perceived_quality: float,
+        user_satisfaction: float,
+    ) -> None:
+        telemetry = self._skill_telemetry.setdefault(
+            skill,
+            {
+                "count": 0,
+                "successes": 0,
+                "total_latency_ms": 0.0,
+                "total_resource_cost": 0.0,
+                "total_quality": 0.0,
+                "total_satisfaction": 0.0,
+                "recent_failures": 0,
+            },
+        )
+        telemetry["count"] = int(telemetry["count"]) + 1
+        telemetry["successes"] = int(telemetry["successes"]) + int(bool(success))
+        telemetry["total_latency_ms"] = float(telemetry["total_latency_ms"]) + float(latency_ms)
+        telemetry["total_resource_cost"] = float(telemetry["total_resource_cost"]) + float(resource_cost)
+        telemetry["total_quality"] = float(telemetry["total_quality"]) + float(perceived_quality)
+        telemetry["total_satisfaction"] = float(telemetry["total_satisfaction"]) + float(user_satisfaction)
+        telemetry["recent_failures"] = (
+            0 if success else min(int(telemetry["recent_failures"]) + 1, 1000)
+        )
+
+    def _maybe_update_skill_reputation(self, *, force: bool = False) -> None:
+        pending = sum(int(skill_data.get("count", 0)) for skill_data in self._skill_telemetry.values())
+        threshold = max(1, int(self.reputation_update_every))
+        if not force and pending < threshold:
+            return
+        if pending <= 0:
+            return
+
+        for skill_name, telemetry in self._skill_telemetry.items():
+            count = max(1, int(telemetry.get("count", 0)))
+            success_rate = float(telemetry.get("successes", 0)) / count
+            mean_cost = float(telemetry.get("total_resource_cost", 0.0)) / count
+            recent_failures = int(telemetry.get("recent_failures", 0))
+            mean_quality = float(telemetry.get("total_quality", 0.0)) / count
+            mean_satisfaction = float(telemetry.get("total_satisfaction", 0.0)) / count
+
+            previous = self._skill_reputation.get(skill_name, {})
+            previous_count = int(previous.get("use_count", 0))
+            blend = 0.0 if previous_count <= 0 else min(0.8, previous_count / (previous_count + count))
+            self._skill_reputation[skill_name] = {
+                "success_rate": (float(previous.get("success_rate", success_rate)) * blend)
+                + (success_rate * (1.0 - blend)),
+                "mean_cost": (float(previous.get("mean_cost", mean_cost)) * blend)
+                + (mean_cost * (1.0 - blend)),
+                "recent_failures": recent_failures,
+                "mean_quality": (float(previous.get("mean_quality", mean_quality)) * blend)
+                + (mean_quality * (1.0 - blend)),
+                "mean_satisfaction": (float(previous.get("mean_satisfaction", mean_satisfaction)) * blend)
+                + (mean_satisfaction * (1.0 - blend)),
+                "use_count": previous_count + count,
+            }
+
+        payload = {
+            "version": USAGE_REPUTATION_SCHEMA_VERSION,
+            "updated_at": datetime.utcnow().isoformat(timespec="seconds"),
+            "skills": self._skill_reputation,
+        }
+        self.skill_reputation_path.write_text(json.dumps(payload), encoding="utf-8")
+        self._skill_telemetry.clear()
+
+    def skill_reputation(self) -> dict[str, dict[str, float | int]]:
+        return {name: dict(stats) for name, stats in self._skill_reputation.items()}
 
     def _write_record(self, record: dict[str, Any]) -> None:
         self._file.write(json.dumps(record) + "\n")
@@ -217,6 +321,7 @@ class RunLogger:
         human_summary: str | None = None,
         loop_modifications: dict[str, int] | None = None,
         health: dict[str, float | int] | None = None,
+        usage_metrics: Mapping[str, float | bool] | None = None,
     ) -> None:
         """Append a mutation record to the log file."""
 
@@ -238,9 +343,20 @@ class RunLogger:
             "human_summary": human_summary,
             "loop_modifications": loop_modifications or {},
             "health": health or {},
+            "usage_metrics": dict(usage_metrics or {}),
         }
         self._write_record(record)
         self._write_event("mutation", record, ts)
+        if usage_metrics:
+            self._append_skill_telemetry(
+                skill=skill,
+                success=bool(usage_metrics.get("success", ok)),
+                latency_ms=float(usage_metrics.get("latency_ms", ms_new)),
+                resource_cost=float(usage_metrics.get("resource_cost", 0.0)),
+                perceived_quality=float(usage_metrics.get("perceived_quality", 0.0)),
+                user_satisfaction=float(usage_metrics.get("user_satisfaction", 0.0)),
+            )
+            self._maybe_update_skill_reputation()
 
         self.psyche.process_run_record(record)
         mood = getattr(self.psyche, "last_mood", None)
@@ -359,6 +475,7 @@ class RunLogger:
             os.fsync(self._events_file.fileno())
             self._events_file.close()
         if not self._file.closed:
+            self._maybe_update_skill_reputation(force=True)
             self._file.flush()
             os.fsync(self._file.fileno())
             self._file.close()

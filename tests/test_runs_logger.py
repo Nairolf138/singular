@@ -126,3 +126,50 @@ def test_human_summary_quality_minimum() -> None:
     assert "rejetée" in summary
     assert "score" in summary
     assert "perf" in summary
+
+
+def test_run_logger_aggregates_skill_reputation_from_usage_metrics(tmp_path: Path) -> None:
+    logger = RunLogger("telemetry", root=tmp_path, reputation_update_every=1)
+    logger.log(
+        "skill_x",
+        "op_a",
+        "diff",
+        True,
+        2.0,
+        3.0,
+        0.4,
+        0.2,
+        usage_metrics={
+            "success": True,
+            "latency_ms": 3.0,
+            "resource_cost": 5.0,
+            "perceived_quality": 0.9,
+            "user_satisfaction": 0.8,
+        },
+    )
+    logger.log(
+        "skill_x",
+        "op_b",
+        "diff",
+        False,
+        2.0,
+        6.0,
+        0.2,
+        0.5,
+        usage_metrics={
+            "success": False,
+            "latency_ms": 6.0,
+            "resource_cost": 8.0,
+            "perceived_quality": 0.2,
+            "user_satisfaction": 0.1,
+        },
+    )
+    logger.close()
+
+    reputation_path = tmp_path / "telemetry" / "skill_reputation.json"
+    payload = json.loads(reputation_path.read_text(encoding="utf-8"))
+    stats = payload["skills"]["skill_x"]
+    assert stats["use_count"] == 2
+    assert 0.0 <= stats["success_rate"] <= 1.0
+    assert stats["mean_cost"] > 0.0
+    assert stats["recent_failures"] >= 1
