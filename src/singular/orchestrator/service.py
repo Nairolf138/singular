@@ -23,6 +23,7 @@ from singular.perception import capture_signals
 from singular.psyche import Psyche
 from singular.resource_manager import ResourceManager
 from singular.quests import QuestRuntime
+from singular.skills.runtime import SkillRuntime
 
 
 class LifecyclePhase(Enum):
@@ -100,6 +101,11 @@ class OrchestratorService:
         self.resource_manager = ResourceManager(path=self.resources_path)
         self.psyche = Psyche.load_state()
         self.quest_runtime = QuestRuntime(base_dir=self.base_dir, mem_dir=self.mem_dir)
+        self.skill_runtime = SkillRuntime(
+            skills_dir=self.skills_dir,
+            mem_dir=self.mem_dir,
+            bus=self.bus,
+        )
         self.governance_policy = MutationGovernancePolicy(safe_mode=self.config.safe_mode)
         self._running = False
         self._wake_requested = False
@@ -246,7 +252,17 @@ class OrchestratorService:
             )
             if mood.value == "fatigue":
                 tick_budget *= max(fatigue_slowdown, 1.0)
+            skill_execution = None
             if not self.config.dry_run:
+                skill_execution = self.skill_runtime.execute_best_skill(
+                    task={"name": "orchestrator.action", "capabilities": []},
+                    context={
+                        "phase": phase.value,
+                        "mood": mood.value,
+                        "energy": self.resource_manager.energy,
+                        "food": self.resource_manager.food,
+                    },
+                )
                 run_tick(
                     skills_dirs=self.skills_dir,
                     checkpoint_path=self.checkpoint_path,
@@ -270,6 +286,16 @@ class OrchestratorService:
                     "tick_budget_seconds": tick_budget,
                     "allowed_actions": behavior.get("allowed_actions", []),
                     "quests": quest_outcomes,
+                    "skill_execution": (
+                        {
+                            "skill": skill_execution.skill,
+                            "status": skill_execution.status,
+                            "score": skill_execution.score,
+                            "reason": skill_execution.reason,
+                        }
+                        if skill_execution is not None
+                        else None
+                    ),
                 },
             )
             return
