@@ -26,6 +26,12 @@
     .status-good { background:#dcfae6; color:#067647; }
     .status-warn { background:#fff4e5; color:#b54708; }
     .status-bad { background:#fee4e2; color:#b42318; }
+    .status-muted { background:#f2f4f7; color:#475467; }
+    .sparkline {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      letter-spacing: 1px;
+      font-size: 0.95rem;
+    }
     .panel {
       border:1px solid #d0d5dd;
       border-radius:10px;
@@ -66,6 +72,20 @@
     <div class='card'><div class='card-label'>Taux de mutations acceptées</div><div id='kpi-accepted' class='card-value'>n/a</div></div>
     <div class='card'><div class='card-label'>Alertes critiques</div><div id='kpi-alerts' class='card-value'>0</div></div>
     <div class='card'><div class='card-label'>Prochaine action</div><div id='kpi-next-action' class='card-value'>n/a</div></div>
+  </div>
+  <div class='panel'>
+    <h3 style='margin-top:0;'>Santé hôte consolidée</h3>
+    <div class='cards-grid'>
+      <div class='card'><div class='card-label'>CPU</div><div id='host-cpu' class='card-value'>n/a</div><div id='host-cpu-trend' class='sparkline'>·</div></div>
+      <div class='card'><div class='card-label'>RAM</div><div id='host-ram' class='card-value'>n/a</div><div id='host-ram-trend' class='sparkline'>·</div></div>
+      <div class='card'><div class='card-label'>Température</div><div id='host-temp' class='card-value'>n/a</div><div id='host-temp-trend' class='sparkline'>·</div></div>
+      <div class='card'><div class='card-label'>Disque</div><div id='host-disk' class='card-value'>n/a</div><div id='host-disk-trend' class='sparkline'>·</div></div>
+      <div class='card'><div class='card-label'>État global</div><div id='host-global' class='card-value'>n/a</div></div>
+    </div>
+    <div id='host-adaptation' style='margin-top:8px;'>Dernière adaptation capteur: n/a</div>
+    <div id='host-fallback' class='status-muted' style='display:none;margin-top:8px;padding:8px;border-radius:8px;'>
+      Certains capteurs hôte ne sont pas supportés sur cette plateforme (ou aucune donnée récente n’est disponible).
+    </div>
   </div>
 
   <h3>Métriques d’autonomie</h3>
@@ -326,6 +346,88 @@ const renderDailySkills=(dailySkills)=>{
     body.appendChild(tr);
   }
 };
+const HOST_SENSORS_THRESHOLD={cpuWarn:85,cpuCritical:95,ramWarn:80,ramCritical:92,tempWarn:75,tempCritical:85,diskCritical:95};
+const hostRisk=(name,value)=>{
+  if(value===null||value===undefined||Number.isNaN(Number(value))){return 'unsupported';}
+  const v=Number(value);
+  if(name==='cpu'){if(v>=HOST_SENSORS_THRESHOLD.cpuCritical){return 'critical';}if(v>=HOST_SENSORS_THRESHOLD.cpuWarn){return 'warn';}return 'ok';}
+  if(name==='ram'){if(v>=HOST_SENSORS_THRESHOLD.ramCritical){return 'critical';}if(v>=HOST_SENSORS_THRESHOLD.ramWarn){return 'warn';}return 'ok';}
+  if(name==='temperature'){if(v>=HOST_SENSORS_THRESHOLD.tempCritical){return 'critical';}if(v>=HOST_SENSORS_THRESHOLD.tempWarn){return 'warn';}return 'ok';}
+  if(name==='disk'){if(v>=HOST_SENSORS_THRESHOLD.diskCritical){return 'critical';}return 'ok';}
+  return 'unsupported';
+};
+const sparkline=(values)=>{
+  if(!values.length){return '·';}
+  const ticks='▁▂▃▄▅▆▇█';
+  const min=Math.min(...values);
+  const max=Math.max(...values);
+  if(max-min<0.0001){return '▅'.repeat(values.length);}
+  return values.map(v=>ticks[Math.min(ticks.length-1,Math.max(0,Math.round(((v-min)/(max-min))*(ticks.length-1))))]).join('');
+};
+const toneByRisk=(el,risk)=>{
+  el.classList.remove('status-good','status-warn','status-bad','status-muted');
+  if(risk==='ok'){el.classList.add('status-good');return;}
+  if(risk==='warn'){el.classList.add('status-warn');return;}
+  if(risk==='critical'){el.classList.add('status-bad');return;}
+  el.classList.add('status-muted');
+};
+const extractHostMetrics=(record)=>{
+  if(record&&typeof record.host_metrics==='object'&&record.host_metrics){return record.host_metrics;}
+  if(record&&typeof record.signals==='object'&&record.signals&&typeof record.signals.host_metrics==='object'){return record.signals.host_metrics;}
+  if(record&&typeof record.payload==='object'&&record.payload&&typeof record.payload.host_metrics==='object'){return record.payload.host_metrics;}
+  return null;
+};
+const renderHostMetrics=(records)=>{
+  const metricDef=[
+    {key:'cpu',label:'host-cpu',trend:'host-cpu-trend',raw:'cpu_percent',suffix:'%'},
+    {key:'ram',label:'host-ram',trend:'host-ram-trend',raw:'ram_used_percent',suffix:'%'},
+    {key:'temperature',label:'host-temp',trend:'host-temp-trend',raw:'host_temperature_c',suffix:'°C'},
+    {key:'disk',label:'host-disk',trend:'host-disk-trend',raw:'disk_used_percent',suffix:'%'},
+  ];
+  const hist={cpu:[],ram:[],temperature:[],disk:[]};
+  let latestAdaptation=null;
+  for(const record of (records||[]).slice(-160)){
+    const host=extractHostMetrics(record);
+    if(host){
+      for(const def of metricDef){
+        const val=host[def.raw];
+        if(typeof val==='number'&&!Number.isNaN(val)){hist[def.key].push(Number(val));}
+      }
+    }
+    const event=record?.event;
+    let adaptation=null;
+    if(event==='orchestrator.adaptation'&&record?.payload&&typeof record.payload==='object'){adaptation=record.payload;}
+    else if(record?.adaptation&&typeof record.adaptation==='object'){adaptation=record.adaptation;}
+    if(adaptation){latestAdaptation={ts:record?.ts||null,payload:adaptation};}
+  }
+  const riskWeight={unsupported:-1,ok:0,warn:1,critical:2};
+  let global='ok';
+  let unsupportedCount=0;
+  for(const def of metricDef){
+    const values=hist[def.key];
+    const latest=values.length?values[values.length-1]:null;
+    const risk=hostRisk(def.key,latest);
+    if(riskWeight[risk]>riskWeight[global]){global=risk;}
+    if(risk==='unsupported'){unsupportedCount+=1;}
+    const el=document.getElementById(def.label);
+    const trendEl=document.getElementById(def.trend);
+    el.textContent=latest===null?'non supporté':`${latest.toFixed(1)}${def.suffix} · ${risk}`;
+    trendEl.textContent=sparkline(values.slice(-12));
+    toneByRisk(el,risk);
+  }
+  if(unsupportedCount===metricDef.length){global='unsupported';}
+  const globalEl=document.getElementById('host-global');
+  globalEl.textContent=global;
+  toneByRisk(globalEl,global);
+  document.getElementById('host-fallback').style.display=unsupportedCount>0?'block':'none';
+  const adaptationEl=document.getElementById('host-adaptation');
+  if(latestAdaptation){
+    const rules=Array.isArray(latestAdaptation.payload?.triggered_rules)?latestAdaptation.payload.triggered_rules:[];
+    adaptationEl.textContent=`Dernière adaptation capteur: ${latestAdaptation.ts||'n/a'} · règles=${rules.join(', ')||'n/a'} · prudent=${latestAdaptation.payload?.safe_mode===true?'oui':'non'}`;
+  }else{
+    adaptationEl.textContent='Dernière adaptation capteur: aucune adaptation trouvée';
+  }
+};
 
 const loadContext=()=>fetch('/dashboard/context').then(r=>r.json()).then(ctx=>{
   document.getElementById('ctx-root').textContent=ctx.singular_root||'n/a';
@@ -381,6 +483,7 @@ const loadEco=()=>Promise.all([fetch(withScope('/ecosystem')).then(r=>r.json()),
 
 
 const loadQuests=()=>fetch('/quests').then(r=>r.json()).then(data=>{document.getElementById('quests').textContent=JSON.stringify(data,null,2);});
+const loadHostVitals=()=>fetch(withScope('/runs/latest')).then(r=>r.json()).then(data=>{renderHostMetrics(data?.records||[]);}).catch(()=>{renderHostMetrics([]);});
 const loadCockpit=()=>fetch(withScope('/api/cockpit')).then(r=>r.json()).then(d=>{
   const statusBox=document.getElementById('cockpit-status');
   statusBox.textContent=`Statut global: ${d.global_status||'unknown'}`;
@@ -493,6 +596,7 @@ const loadTimeline=()=>fetch(withScope('/runs/latest')).then(r=>r.json()).then(m
 const loadReflections=()=>fetch(withScope('/runs/latest')).then(r=>r.json()).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}const q=new URLSearchParams();const objective=document.getElementById('reflection-objective').value;const mood=document.getElementById('reflection-mood').value;const success=document.getElementById('reflection-success').value;if(objective){q.set('objective',objective);}if(mood){q.set('mood',mood);}if(success){q.set('success',success);}if(scopeState.currentLifeOnly){q.set('current_life_only','true');}const suffix=q.toString()?`?${q.toString()}`:'';return fetch(`/api/runs/${meta.run}/consciousness${suffix}`).then(r=>r.ok?r.json():{run_id:meta.run,items:[]});}).then(data=>{const wrap=document.getElementById('reflections-timeline');const detail=document.getElementById('reflections-detail');wrap.innerHTML='';for(const item of data.items||[]){const row=document.createElement('div');row.style.display='inline-flex';row.style.gap='4px';const btn=document.createElement('button');const mood=item.emotional_state?.mood||'n/a';const objective=item.objective||'n/a';btn.textContent=`${item.ts||'n/a'} · ${objective} · ${mood}`;btn.style.padding='6px';btn.onclick=()=>{detail.textContent=JSON.stringify(item,null,2);};row.appendChild(btn);wrap.appendChild(row);}if(!(data.items||[]).length){detail.textContent='Aucune réflexion disponible pour ces filtres.';}});
 document.getElementById('reflection-apply').onclick=()=>loadReflections();
 loadContext();loadEco();loadCockpit();loadTimeline();loadLivesBoard();loadGenealogy();loadQuests();setInterval(()=>{loadContext();loadEco();loadCockpit();loadTimeline();loadLivesBoard();loadGenealogy();loadQuests();},500);
+loadHostVitals();setInterval(()=>{loadHostVitals();},1200);
 loadReflections();setInterval(()=>{loadReflections();},800);
 updateLiveStatus();
 ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);return;}if(m.type==='quests'){document.getElementById('quests').textContent=JSON.stringify(m.data,null,2);return;}if(typeof m.run_id==='string'&&typeof m.event==='string'){liveState.events.push({type:m.type,run_id:m.run_id,event:m.event,ts:m.ts||null});if(!liveState.paused){renderLiveEvents();}}};
