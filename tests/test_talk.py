@@ -216,6 +216,59 @@ def test_talk_logs_provider_events(monkeypatch, tmp_path):
     assert events[0]["error_category"] is None
 
 
+def test_talk_injects_self_narrative_in_provider_prompt(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    inputs = iter(["bonjour", "quit"])
+    captured: dict[str, str] = {}
+
+    def fake_generate(prompt: str, *, timeout: float = 8.0) -> str:
+        del timeout
+        captured["prompt"] = prompt
+        return "ok"
+
+    client = LLMProviderClient(name="openai", generate=fake_generate)
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", lambda _name: client)
+    monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
+    monkeypatch.setattr("builtins.print", lambda _msg: None)
+
+    talk(provider="openai")
+
+    sent = captured["prompt"]
+    assert "Contexte identitaire:" in sent
+    assert "cap:" in sent
+    assert "si une information demandée est inconnue" in sent
+    assert "Utilisateur: bonjour" in sent
+
+
+def test_talk_bounds_context_budget_and_logs_narrative_version(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    inputs = iter(["hello", "quit"])
+    captured: dict[str, str] = {}
+
+    def fake_generate(prompt: str, *, timeout: float = 8.0) -> str:
+        del timeout
+        captured["prompt"] = prompt
+        return "ok"
+
+    client = LLMProviderClient(name="openai", generate=fake_generate)
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", lambda _name: client)
+    monkeypatch.setattr(
+        "singular.organisms.talk.summarize_short",
+        lambda *_args, **_kwargs: "x" * 2000,
+    )
+    monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
+    monkeypatch.setattr("builtins.print", lambda _msg: None)
+
+    talk(provider="openai")
+
+    assert len(captured["prompt"].split("Utilisateur:")[0]) <= 425
+    assistant_episodes = [e for e in read_episodes() if e.get("role") == "assistant"]
+    assert assistant_episodes
+    assert assistant_episodes[-1]["context"]["self_narrative_version"] == 1
+
+
 def test_talk_subcommand_life_argument_has_priority(monkeypatch, tmp_path):
     root = tmp_path / "world"
     monkeypatch.delenv("SINGULAR_HOME", raising=False)

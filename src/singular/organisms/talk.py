@@ -10,6 +10,7 @@ import re
 from ..memory import add_episode, ensure_memory_structure, read_episodes
 from ..perception import capture_signals
 from ..psyche import Mood, Psyche
+from ..self_narrative import load as load_self_narrative, summarize_short
 from ..providers import (
     LLMProviderError,
     ProviderMisconfiguredError,
@@ -20,6 +21,11 @@ from ..providers import (
     load_llm_client,
 )
 from ..runs.logger import log_provider_event
+
+_CONTEXT_BUDGET_CHARS = 420
+_UNKNOWN_GUARD = (
+    "Garde anti-hallucination: si une information demandée est inconnue, réponds explicitement \"inconnu\"."
+)
 
 
 def _default_reply(prompt: str, rng: random.Random) -> str:
@@ -121,6 +127,34 @@ def _extract_structured_signals(text: str) -> dict[str, object]:
     }
 
 
+def _trim_for_budget(text: str, budget: int) -> str:
+    cleaned = " ".join(text.split())
+    if budget <= 3:
+        return cleaned[:budget]
+    if len(cleaned) <= budget:
+        return cleaned
+    return f"{cleaned[: budget - 3]}..."
+
+
+def _build_system_preamble(
+    *,
+    narrative_summary: str,
+    last_event: str | None,
+    mood_event: str | None,
+) -> str:
+    available_for_summary = max(0, _CONTEXT_BUDGET_CHARS - len(_UNKNOWN_GUARD) - 120)
+    summary = _trim_for_budget(narrative_summary, available_for_summary)
+    event_fragment = _trim_for_budget(last_event or "inconnu", 80)
+    mood_fragment = _trim_for_budget(mood_event or "inconnu", 40)
+    preamble = (
+        f"Contexte identitaire: {summary}\n"
+        f"Dernier événement utilisateur: {event_fragment}\n"
+        f"Humeur récente: {mood_fragment}\n"
+        f"{_UNKNOWN_GUARD}"
+    )
+    return _trim_for_budget(preamble, _CONTEXT_BUDGET_CHARS)
+
+
 def talk(
     provider: str | None = None,
     seed: int | None = None,
@@ -208,11 +242,19 @@ def talk(
         last_failure: dict | None,
         mood_event: str | None,
         perf_msg: str | None,
+        self_narrative_summary: str,
+        self_narrative_version: int,
     ) -> None:
         user_signals = _extract_structured_signals(user_input)
         add_episode({"role": "user", "text": user_input, "structured_signals": user_signals})
         mood = psyche.feel(Mood.NEUTRAL)
         mood_report = mood_event or mood.value
+        system_preamble = _build_system_preamble(
+            narrative_summary=self_narrative_summary,
+            last_event=last_event,
+            mood_event=mood_event,
+        )
+        provider_prompt = f"{system_preamble}\n\nUtilisateur: {user_input}"
 
         start = time.perf_counter()
         fallback_used = client is None
@@ -222,7 +264,7 @@ def talk(
             reply = _default_reply(user_input, rng)
         else:
             try:
-                reply = client.generate_reply(user_input)
+                reply = client.generate_reply(provider_prompt)
             except LLMProviderError as err:
                 fallback_used = True
                 error_category = getattr(err, "category", "provider_error")
@@ -260,6 +302,12 @@ def talk(
                 "raw_reply": reply,
                 "mood": mood.value,
                 "structured_signals": user_signals,
+                "context": {
+                    "self_narrative_version": self_narrative_version,
+                    "self_narrative_summary": _trim_for_budget(
+                        self_narrative_summary, 180
+                    ),
+                },
             }
         )
         psyche.gain()
@@ -267,11 +315,18 @@ def talk(
 
     if prompt is not None:
         context = gather_context()
-        respond(prompt, *context)
+        self_narrative = load_self_narrative()
+        respond(
+            prompt,
+            *context,
+            summarize_short(self_narrative),
+            self_narrative.schema_version,
+        )
         return
 
     while True:
         context = gather_context()
+        self_narrative = load_self_narrative()
         try:
             user_input = input("you: ")
         except EOFError:
@@ -283,4 +338,9 @@ def talk(
         if user_input.strip().lower() in {"exit", "quit"}:
             break
 
-        respond(user_input, *context)
+        respond(
+            user_input,
+            *context,
+            summarize_short(self_narrative),
+            self_narrative.schema_version,
+        )
