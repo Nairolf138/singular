@@ -17,8 +17,19 @@
     "safe_mode": false,
     "mutation_quota_per_window": 25,
     "mutation_quota_window_seconds": 300.0,
+    "runtime_call_quota_per_hour": 240,
+    "runtime_blacklisted_capabilities": [],
+    "auto_rollback_failure_threshold": 5,
+    "auto_rollback_cost_threshold": 10.0,
+    "safe_mode_review_required_skill_families": ["network", "shell", "filesystem"],
     "circuit_breaker_threshold": 3,
     "circuit_breaker_window_seconds": 180.0,
-    "circuit_breaker_cooldown_seconds": 300.0
+    "circuit_breaker_cooldown_seconds": 300.0,
+    "skill_creation_quota_per_window": 3,
+    "skill_creation_quota_window_seconds": 900.0,
+    "file_creation_review_required": false,
+    "skill_circuit_breaker_failure_threshold": 3,
+    "skill_circuit_breaker_cost_threshold": 5.0,
+    "skill_circuit_breaker_cooldown_seconds": 600.0
   }
 }

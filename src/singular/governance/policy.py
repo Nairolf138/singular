@@ -45,12 +45,20 @@ def _default_policy_payload() -> dict[str, Any]:
             "safe_mode": False,
             "mutation_quota_per_window": 25,
             "mutation_quota_window_seconds": 300.0,
+            "runtime_call_quota_per_hour": 240,
+            "runtime_blacklisted_capabilities": [],
+            "auto_rollback_failure_threshold": 5,
+            "auto_rollback_cost_threshold": 10.0,
             "skill_creation_quota_per_window": 3,
             "skill_creation_quota_window_seconds": 900.0,
             "file_creation_review_required": False,
+            "safe_mode_review_required_skill_families": ["network", "shell", "filesystem"],
             "circuit_breaker_threshold": 3,
             "circuit_breaker_window_seconds": 180.0,
             "circuit_breaker_cooldown_seconds": 300.0,
+            "skill_circuit_breaker_failure_threshold": 3,
+            "skill_circuit_breaker_cost_threshold": 5.0,
+            "skill_circuit_breaker_cooldown_seconds": 600.0,
         },
     }
 
@@ -97,6 +105,15 @@ def _coerce_path_list(payload: Mapping[str, Any], key: str) -> tuple[str, ...]:
     return tuple(item.strip("/ ") for item in raw if item.strip("/ "))
 
 
+def _coerce_string_list(payload: Mapping[str, Any], key: str) -> tuple[str, ...]:
+    if key not in payload:
+        raise PolicySchemaError(f"missing required key: {key}")
+    raw = payload[key]
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise PolicySchemaError(f"'{key}' must be a list of strings")
+    return tuple(item.strip() for item in raw if item.strip())
+
+
 @dataclass(frozen=True)
 class RuntimePolicy:
     """Strict, versioned governance policy loaded from ``policy.yaml``."""
@@ -115,9 +132,17 @@ class RuntimePolicy:
     skill_creation_quota_per_window: int
     skill_creation_quota_window_seconds: float
     file_creation_review_required: bool
+    runtime_call_quota_per_hour: int
+    runtime_blacklisted_capabilities: tuple[str, ...]
+    auto_rollback_failure_threshold: int
+    auto_rollback_cost_threshold: float
+    safe_mode_review_required_skill_families: tuple[str, ...]
     circuit_breaker_threshold: int
     circuit_breaker_window_seconds: float
     circuit_breaker_cooldown_seconds: float
+    skill_circuit_breaker_failure_threshold: int
+    skill_circuit_breaker_cost_threshold: float
+    skill_circuit_breaker_cooldown_seconds: float
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -137,12 +162,22 @@ class RuntimePolicy:
                 "safe_mode": self.safe_mode,
                 "mutation_quota_per_window": self.mutation_quota_per_window,
                 "mutation_quota_window_seconds": self.mutation_quota_window_seconds,
+                "runtime_call_quota_per_hour": self.runtime_call_quota_per_hour,
+                "runtime_blacklisted_capabilities": list(self.runtime_blacklisted_capabilities),
+                "auto_rollback_failure_threshold": self.auto_rollback_failure_threshold,
+                "auto_rollback_cost_threshold": self.auto_rollback_cost_threshold,
                 "skill_creation_quota_per_window": self.skill_creation_quota_per_window,
                 "skill_creation_quota_window_seconds": self.skill_creation_quota_window_seconds,
                 "file_creation_review_required": self.file_creation_review_required,
+                "safe_mode_review_required_skill_families": list(
+                    self.safe_mode_review_required_skill_families
+                ),
                 "circuit_breaker_threshold": self.circuit_breaker_threshold,
                 "circuit_breaker_window_seconds": self.circuit_breaker_window_seconds,
                 "circuit_breaker_cooldown_seconds": self.circuit_breaker_cooldown_seconds,
+                "skill_circuit_breaker_failure_threshold": self.skill_circuit_breaker_failure_threshold,
+                "skill_circuit_breaker_cost_threshold": self.skill_circuit_breaker_cost_threshold,
+                "skill_circuit_breaker_cooldown_seconds": self.skill_circuit_breaker_cooldown_seconds,
             },
         }
 
@@ -159,6 +194,7 @@ class RuntimePolicy:
             (
                 "Autonomie: "
                 f"quota-mutation={self.mutation_quota_per_window}/{self.mutation_quota_window_seconds:.0f}s, "
+                f"quota-runtime={self.runtime_call_quota_per_hour}/h, "
                 f"quota-creation={self.skill_creation_quota_per_window}/{self.skill_creation_quota_window_seconds:.0f}s, "
                 f"review-creation={'on' if self.file_creation_review_required else 'off'}, "
                 f"circuit={self.circuit_breaker_threshold} violations/{self.circuit_breaker_window_seconds:.0f}s, "
@@ -191,6 +227,17 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
         autonomy.setdefault("skill_creation_quota_per_window", 3)
         autonomy.setdefault("skill_creation_quota_window_seconds", 900.0)
         autonomy.setdefault("file_creation_review_required", False)
+        autonomy.setdefault("runtime_call_quota_per_hour", 240)
+        autonomy.setdefault("runtime_blacklisted_capabilities", [])
+        autonomy.setdefault("auto_rollback_failure_threshold", 5)
+        autonomy.setdefault("auto_rollback_cost_threshold", 10.0)
+        autonomy.setdefault(
+            "safe_mode_review_required_skill_families",
+            ["network", "shell", "filesystem"],
+        )
+        autonomy.setdefault("skill_circuit_breaker_failure_threshold", 3)
+        autonomy.setdefault("skill_circuit_breaker_cost_threshold", 5.0)
+        autonomy.setdefault("skill_circuit_breaker_cooldown_seconds", 600.0)
     for section_name, section in (
         ("memory", memory),
         ("forgetting", forgetting),
@@ -212,12 +259,20 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
         "safe_mode",
         "mutation_quota_per_window",
         "mutation_quota_window_seconds",
+        "runtime_call_quota_per_hour",
+        "runtime_blacklisted_capabilities",
+        "auto_rollback_failure_threshold",
+        "auto_rollback_cost_threshold",
         "skill_creation_quota_per_window",
         "skill_creation_quota_window_seconds",
         "file_creation_review_required",
+        "safe_mode_review_required_skill_families",
         "circuit_breaker_threshold",
         "circuit_breaker_window_seconds",
         "circuit_breaker_cooldown_seconds",
+        "skill_circuit_breaker_failure_threshold",
+        "skill_circuit_breaker_cost_threshold",
+        "skill_circuit_breaker_cooldown_seconds",
     }
     for name, section, expected in (
         ("memory", memory, expected_memory),
@@ -252,6 +307,17 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
         safe_mode=_coerce_bool(autonomy, "safe_mode"),
         mutation_quota_per_window=_coerce_int(autonomy, "mutation_quota_per_window", minimum=1),
         mutation_quota_window_seconds=_coerce_float(autonomy, "mutation_quota_window_seconds", minimum=1.0),
+        runtime_call_quota_per_hour=_coerce_int(autonomy, "runtime_call_quota_per_hour", minimum=1),
+        runtime_blacklisted_capabilities=_coerce_string_list(
+            autonomy,
+            "runtime_blacklisted_capabilities",
+        ),
+        auto_rollback_failure_threshold=_coerce_int(
+            autonomy, "auto_rollback_failure_threshold", minimum=1
+        ),
+        auto_rollback_cost_threshold=_coerce_float(
+            autonomy, "auto_rollback_cost_threshold", minimum=0.0
+        ),
         skill_creation_quota_per_window=_coerce_int(
             autonomy,
             "skill_creation_quota_per_window",
@@ -263,9 +329,28 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
             minimum=1.0,
         ),
         file_creation_review_required=_coerce_bool(autonomy, "file_creation_review_required"),
+        safe_mode_review_required_skill_families=_coerce_string_list(
+            autonomy,
+            "safe_mode_review_required_skill_families",
+        ),
         circuit_breaker_threshold=_coerce_int(autonomy, "circuit_breaker_threshold", minimum=1),
         circuit_breaker_window_seconds=_coerce_float(autonomy, "circuit_breaker_window_seconds", minimum=1.0),
         circuit_breaker_cooldown_seconds=_coerce_float(autonomy, "circuit_breaker_cooldown_seconds", minimum=1.0),
+        skill_circuit_breaker_failure_threshold=_coerce_int(
+            autonomy,
+            "skill_circuit_breaker_failure_threshold",
+            minimum=1,
+        ),
+        skill_circuit_breaker_cost_threshold=_coerce_float(
+            autonomy,
+            "skill_circuit_breaker_cost_threshold",
+            minimum=0.0,
+        ),
+        skill_circuit_breaker_cooldown_seconds=_coerce_float(
+            autonomy,
+            "skill_circuit_breaker_cooldown_seconds",
+            minimum=1.0,
+        ),
     )
 
 
@@ -356,12 +441,20 @@ class MutationGovernancePolicy:
         value_weights: ValueWeights | None = None,
         mutation_quota_per_window: int = 25,
         mutation_quota_window_seconds: float = 300.0,
+        runtime_call_quota_per_hour: int = 240,
+        runtime_blacklisted_capabilities: tuple[str, ...] | None = None,
+        auto_rollback_failure_threshold: int = 5,
+        auto_rollback_cost_threshold: float = 10.0,
         skill_creation_quota_per_window: int = 3,
         skill_creation_quota_window_seconds: float = 900.0,
         file_creation_review_required: bool = False,
+        safe_mode_review_required_skill_families: tuple[str, ...] | None = None,
         circuit_breaker_threshold: int = 3,
         circuit_breaker_window_seconds: float = 180.0,
         circuit_breaker_cooldown_seconds: float = 300.0,
+        skill_circuit_breaker_failure_threshold: int = 3,
+        skill_circuit_breaker_cost_threshold: float = 5.0,
+        skill_circuit_breaker_cooldown_seconds: float = 600.0,
         safe_mode: bool = False,
     ) -> None:
         runtime_policy = load_runtime_policy()
@@ -387,6 +480,26 @@ class MutationGovernancePolicy:
             ),
             1.0,
         )
+        self.runtime_call_quota_per_hour = max(
+            int(runtime_call_quota_per_hour or runtime_policy.runtime_call_quota_per_hour),
+            1,
+        )
+        blacklisted_capabilities = (
+            runtime_blacklisted_capabilities
+            if runtime_blacklisted_capabilities is not None
+            else runtime_policy.runtime_blacklisted_capabilities
+        )
+        self.runtime_blacklisted_capabilities = frozenset(
+            item.strip().lower() for item in blacklisted_capabilities if item.strip()
+        )
+        self.auto_rollback_failure_threshold = max(
+            int(auto_rollback_failure_threshold or runtime_policy.auto_rollback_failure_threshold),
+            1,
+        )
+        self.auto_rollback_cost_threshold = max(
+            float(auto_rollback_cost_threshold or runtime_policy.auto_rollback_cost_threshold),
+            0.0,
+        )
         self.skill_creation_quota_per_window = max(
             int(
                 skill_creation_quota_per_window
@@ -403,6 +516,14 @@ class MutationGovernancePolicy:
         )
         self.file_creation_review_required = bool(
             file_creation_review_required or runtime_policy.file_creation_review_required
+        )
+        required_skill_families = (
+            safe_mode_review_required_skill_families
+            if safe_mode_review_required_skill_families is not None
+            else runtime_policy.safe_mode_review_required_skill_families
+        )
+        self.safe_mode_review_required_skill_families = frozenset(
+            item.strip().lower() for item in required_skill_families if item.strip()
         )
         self.circuit_breaker_threshold = max(
             int(circuit_breaker_threshold or runtime_policy.circuit_breaker_threshold), 1
@@ -421,12 +542,37 @@ class MutationGovernancePolicy:
             ),
             1.0,
         )
+        self.skill_circuit_breaker_failure_threshold = max(
+            int(
+                skill_circuit_breaker_failure_threshold
+                or runtime_policy.skill_circuit_breaker_failure_threshold
+            ),
+            1,
+        )
+        self.skill_circuit_breaker_cost_threshold = max(
+            float(
+                skill_circuit_breaker_cost_threshold
+                or runtime_policy.skill_circuit_breaker_cost_threshold
+            ),
+            0.0,
+        )
+        self.skill_circuit_breaker_cooldown_seconds = max(
+            float(
+                skill_circuit_breaker_cooldown_seconds
+                or runtime_policy.skill_circuit_breaker_cooldown_seconds
+            ),
+            1.0,
+        )
         self.safe_mode = bool(safe_mode or runtime_policy.safe_mode)
         self.memory_preserve_threshold = runtime_policy.memory_preserve_threshold
         self._mutation_timestamps: deque[datetime] = deque()
         self._skill_creation_timestamps: deque[datetime] = deque()
         self._violation_timestamps: deque[datetime] = deque()
         self._circuit_open_until: datetime | None = None
+        self._runtime_call_timestamps: deque[datetime] = deque()
+        self._skill_failure_timestamps: dict[str, deque[datetime]] = {}
+        self._skill_cost_totals: dict[str, float] = {}
+        self._skill_circuit_open_until: dict[str, datetime] = {}
 
     @staticmethod
     def _now() -> datetime:
@@ -463,6 +609,19 @@ class MutationGovernancePolicy:
             and self._skill_creation_timestamps[0] < creation_cutoff
         ):
             self._skill_creation_timestamps.popleft()
+        runtime_cutoff = now - timedelta(hours=1)
+        while self._runtime_call_timestamps and self._runtime_call_timestamps[0] < runtime_cutoff:
+            self._runtime_call_timestamps.popleft()
+        for skill_name, failures in list(self._skill_failure_timestamps.items()):
+            failure_cutoff = now - timedelta(seconds=self.skill_circuit_breaker_cooldown_seconds)
+            while failures and failures[0] < failure_cutoff:
+                failures.popleft()
+            if not failures:
+                self._skill_failure_timestamps.pop(skill_name, None)
+                self._skill_cost_totals.pop(skill_name, None)
+        for skill_name, open_until in list(self._skill_circuit_open_until.items()):
+            if now >= open_until:
+                self._skill_circuit_open_until.pop(skill_name, None)
 
     def record_violation(self, *, category: str, severity: str = "high") -> None:
         self._prune_history()
@@ -490,6 +649,107 @@ class MutationGovernancePolicy:
     def _matches(rel: Path, prefixes: tuple[str, ...]) -> bool:
         rel_txt = rel.as_posix()
         return any(rel_txt == p or rel_txt.startswith(f"{p}/") for p in prefixes)
+
+    def _skill_circuit_open(self, skill_name: str) -> bool:
+        open_until = self._skill_circuit_open_until.get(skill_name)
+        return open_until is not None and self._now() < open_until
+
+    def evaluate_skill_execution(
+        self,
+        *,
+        skill_name: str,
+        capability: str | None = None,
+        operation_cost: float = 0.0,
+    ) -> GovernanceDecision:
+        self._prune_history()
+        normalized_capability = (capability or "").strip().lower()
+        normalized_skill = skill_name.strip().lower()
+        skill_family = normalized_skill.split(".", 1)[0]
+        if normalized_capability in self.runtime_blacklisted_capabilities:
+            return GovernanceDecision(
+                level=AUTH_BLOCKED,
+                allowed=False,
+                reason=f"capability '{normalized_capability}' blacklisted by runtime policy",
+                corrective_action="remove blacklisted capability or request manual authorization",
+                severity="high",
+            )
+        if self._skill_circuit_open(normalized_skill):
+            return GovernanceDecision(
+                level=AUTH_BLOCKED,
+                allowed=False,
+                reason=f"skill circuit-breaker active for '{normalized_skill}'",
+                corrective_action="wait cooldown before re-enabling this skill",
+                severity="critical",
+            )
+        if len(self._runtime_call_timestamps) >= self.runtime_call_quota_per_hour:
+            return GovernanceDecision(
+                level=AUTH_BLOCKED,
+                allowed=False,
+                reason=f"runtime call quota exceeded ({self.runtime_call_quota_per_hour}/h)",
+                corrective_action="wait for hourly window reset",
+                severity="medium",
+            )
+        if self.safe_mode and skill_family in self.safe_mode_review_required_skill_families:
+            return GovernanceDecision(
+                level=AUTH_REVIEW_REQUIRED,
+                allowed=False,
+                reason=(
+                    f"safe-mode requires manual review for skill family '{skill_family}'"
+                ),
+                corrective_action="request human approval before executing this skill family",
+                severity="high",
+            )
+        if operation_cost >= self.skill_circuit_breaker_cost_threshold:
+            return GovernanceDecision(
+                level=AUTH_BLOCKED,
+                allowed=False,
+                reason=(
+                    "skill execution blocked: operation cost exceeds "
+                    f"threshold ({operation_cost:.2f}>={self.skill_circuit_breaker_cost_threshold:.2f})"
+                ),
+                corrective_action="reduce execution cost or split task before retry",
+                severity="high",
+            )
+        return GovernanceDecision(
+            level=AUTH_AUTO,
+            allowed=True,
+            reason=f"skill '{normalized_skill}' authorized for runtime execution",
+            corrective_action="none",
+            severity="info",
+        )
+
+    def record_skill_execution(
+        self,
+        *,
+        skill_name: str,
+        success: bool,
+        operation_cost: float = 0.0,
+    ) -> None:
+        self._prune_history()
+        now = self._now()
+        normalized_skill = skill_name.strip().lower()
+        self._runtime_call_timestamps.append(now)
+        if success:
+            self._skill_failure_timestamps.pop(normalized_skill, None)
+            self._skill_cost_totals.pop(normalized_skill, None)
+            return
+        failures = self._skill_failure_timestamps.setdefault(normalized_skill, deque())
+        failures.append(now)
+        self._skill_cost_totals[normalized_skill] = (
+            self._skill_cost_totals.get(normalized_skill, 0.0) + max(operation_cost, 0.0)
+        )
+        if (
+            len(failures) >= self.skill_circuit_breaker_failure_threshold
+            or self._skill_cost_totals[normalized_skill] >= self.auto_rollback_cost_threshold
+            or len(failures) >= self.auto_rollback_failure_threshold
+        ):
+            self._skill_circuit_open_until[normalized_skill] = now + timedelta(
+                seconds=self.skill_circuit_breaker_cooldown_seconds
+            )
+
+    def skill_reactivation_allowed(self, skill_name: str) -> bool:
+        self._prune_history()
+        return not self._skill_circuit_open(skill_name.strip().lower())
 
     def simulate_write(
         self,

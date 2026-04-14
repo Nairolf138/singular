@@ -334,9 +334,20 @@ _POLICY_SETTERS: dict[str, tuple[str, str]] = {
     "autonomy.safe_mode": ("bool", "safe_mode"),
     "autonomy.mutation_quota_per_window": ("int", "mutation_quota_per_window"),
     "autonomy.mutation_quota_window_seconds": ("float", "mutation_quota_window_seconds"),
+    "autonomy.runtime_call_quota_per_hour": ("int", "runtime_call_quota_per_hour"),
+    "autonomy.runtime_blacklisted_capabilities": ("strings", "runtime_blacklisted_capabilities"),
+    "autonomy.auto_rollback_failure_threshold": ("int", "auto_rollback_failure_threshold"),
+    "autonomy.auto_rollback_cost_threshold": ("float", "auto_rollback_cost_threshold"),
+    "autonomy.safe_mode_review_required_skill_families": (
+        "strings",
+        "safe_mode_review_required_skill_families",
+    ),
     "autonomy.circuit_breaker_threshold": ("int", "circuit_breaker_threshold"),
     "autonomy.circuit_breaker_window_seconds": ("float", "circuit_breaker_window_seconds"),
     "autonomy.circuit_breaker_cooldown_seconds": ("float", "circuit_breaker_cooldown_seconds"),
+    "autonomy.skill_circuit_breaker_failure_threshold": ("int", "skill_circuit_breaker_failure_threshold"),
+    "autonomy.skill_circuit_breaker_cost_threshold": ("float", "skill_circuit_breaker_cost_threshold"),
+    "autonomy.skill_circuit_breaker_cooldown_seconds": ("float", "skill_circuit_breaker_cooldown_seconds"),
     "permissions.modifiable_paths": ("paths", "modifiable_paths"),
     "permissions.review_required_paths": ("paths", "review_required_paths"),
     "permissions.forbidden_paths": ("paths", "forbidden_paths"),
@@ -363,6 +374,13 @@ def _parse_policy_value(expected_type: str, raw: str) -> object:
         parts = [part.strip().strip("/") for part in value.split(",")]
         if any(not part for part in parts):
             raise ValueError("empty path entry is not allowed")
+        return tuple(parts)
+    if expected_type == "strings":
+        if not value:
+            return tuple()
+        parts = [part.strip() for part in value.split(",")]
+        if any(not part for part in parts):
+            raise ValueError("empty entry is not allowed")
         return tuple(parts)
     raise ValueError(f"unsupported policy type: {expected_type}")
 
