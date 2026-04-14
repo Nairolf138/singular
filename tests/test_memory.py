@@ -30,7 +30,7 @@ def test_birth_creates_memory_files(tmp_path: Path) -> None:
     birth(home=tmp_path)
     mem = tmp_path / "mem"
     assert mem.is_dir()
-    for name in ["profile.json", "values.yaml", "episodic.jsonl", "skills.json"]:
+    for name in ["profile.json", "values.yaml", "episodic.jsonl", "skills.json", "skill_catalog.json"]:
         assert (mem / name).exists()
 
 
@@ -139,6 +139,9 @@ def test_birth_initializes_default_skills(tmp_path: Path) -> None:
         (tmp_path / "mem" / "skills.json").read_text(encoding="utf-8")
     )
     assert skills_data == {name: {"score": 0.0} for name in expected_skill_names}
+
+    catalog = json.loads((tmp_path / "mem" / "skill_catalog.json").read_text(encoding="utf-8"))
+    assert set(catalog) >= set(expected_skill_names)
 
 
 def test_values_helpers_without_yaml(

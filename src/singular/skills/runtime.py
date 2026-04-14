@@ -8,6 +8,7 @@ from typing import Any
 
 from singular.events import EventBus, get_global_event_bus
 from singular.life import sandbox
+from singular.life.skill_catalog import read_skill_catalog, refresh_skill_catalog
 from singular.memory import read_skills
 
 
@@ -49,7 +50,11 @@ class SkillRuntime:
 
         task_dict = self._normalize_task(task)
         skills_state = read_skills(self.mem_dir / "skills.json")
-        candidates = self._compatible_candidates(task_dict, skills_state)
+        catalog = read_skill_catalog(self.mem_dir)
+        if not catalog:
+            catalog = refresh_skill_catalog(skills_dir=self.skills_dir, mem_dir=self.mem_dir)
+
+        candidates = self._compatible_candidates(task_dict, skills_state, catalog)
         if not candidates:
             result = SkillExecutionResult(skill=None, status="failed", reason="no_compatible_skill")
             self.bus.publish(
@@ -112,71 +117,99 @@ class SkillRuntime:
         self,
         task: dict[str, Any],
         skills_state: dict[str, Any],
+        catalog: dict[str, dict[str, Any]],
     ) -> list[_ScoredCandidate]:
         required_signature = task.get("signature")
         required_capabilities = set(task.get("capabilities", []))
+        required_preconditions = set(task.get("preconditions", []))
+        required_input = task.get("input_format")
+        required_output = task.get("output_format")
         max_risk = float(task.get("max_risk", 1.0))
 
         candidates: list[_ScoredCandidate] = []
-        for path in sorted(self.skills_dir.glob("*.py")):
-            key = path.stem
-            raw_metadata = skills_state.get(key)
+        for skill, descriptor in sorted(catalog.items()):
+            path = self.skills_dir / f"{skill}.py"
+            if not path.exists():
+                continue
+            if descriptor.get("annotation_valid") is False:
+                continue
+
+            raw_metadata = skills_state.get(skill)
             metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
             lifecycle = metadata.get("lifecycle") if isinstance(metadata.get("lifecycle"), dict) else {}
             if lifecycle.get("state") in {"archived", "deleted", "temporarily_disabled"}:
                 continue
-            signature = metadata.get("signature")
+
+            signature = metadata.get("signature") if isinstance(metadata.get("signature"), str) else None
             if isinstance(required_signature, str) and isinstance(signature, str) and signature != required_signature:
                 continue
-            capabilities = metadata.get("capabilities") if isinstance(metadata.get("capabilities"), list) else []
-            if required_capabilities and not required_capabilities.issubset(set(capabilities)):
+
+            descriptor_caps = descriptor.get("capability_tags") if isinstance(descriptor.get("capability_tags"), list) else []
+            metadata_caps = metadata.get("capabilities") if isinstance(metadata.get("capabilities"), list) else []
+            capability_tags = {str(cap) for cap in [*descriptor_caps, *metadata_caps]}
+            if required_capabilities and not required_capabilities.issubset(capability_tags):
                 continue
-            risk = self._estimated_risk(metadata)
+
+            preconditions = set(descriptor.get("preconditions", []))
+            if required_preconditions and not required_preconditions.issubset(preconditions):
+                continue
+
+            if isinstance(required_input, str) and descriptor.get("input_format") not in {required_input, "unknown"}:
+                continue
+            if isinstance(required_output, str) and descriptor.get("output_format") not in {required_output, "unknown"}:
+                continue
+
+            risk = self._estimated_risk(metadata, descriptor)
             if risk > max_risk:
                 continue
             candidates.append(
                 _ScoredCandidate(
-                    skill=key,
+                    skill=skill,
                     path=path,
-                    metadata=metadata,
-                    score=self._score_candidate(metadata),
+                    metadata={"state": metadata, "catalog": descriptor},
+                    score=self._score_candidate(metadata, descriptor),
                 )
             )
         return candidates
 
-    def _score_candidate(self, metadata: dict[str, Any]) -> float:
+    def _score_candidate(self, metadata: dict[str, Any], descriptor: dict[str, Any]) -> float:
         metrics = metadata.get("metrics") if isinstance(metadata.get("metrics"), dict) else {}
         usage_count = max(int(metrics.get("usage_count", 0) or 0), 0)
         average_gain = float(metrics.get("average_gain", 0.0) or 0.0)
-        average_cost = float(metrics.get("average_cost", 0.0) or 0.0)
+        average_cost = float(metrics.get("average_cost", descriptor.get("estimated_cost", 0.5)) or 0.0)
         failure_count = max(int(metrics.get("failure_count", 0) or 0), 0)
 
-        success_rate = 0.5
+        success_rate = float(descriptor.get("reliability", 0.5) or 0.5)
         if usage_count > 0:
-            success_rate = max(0.0, min(1.0, 1.0 - (failure_count / usage_count)))
+            historical_success = max(0.0, min(1.0, 1.0 - (failure_count / usage_count)))
+            success_rate = (success_rate * 0.4) + (historical_success * 0.6)
 
         expected_utility = average_gain
         resource_cost = max(0.0, average_cost)
-        risk = self._estimated_risk(metadata)
+        risk = self._estimated_risk(metadata, descriptor)
 
         return (expected_utility * 0.45) + (success_rate * 0.35) - (resource_cost * 0.1) - (risk * 0.1)
 
-    def _estimated_risk(self, metadata: dict[str, Any]) -> float:
+    def _estimated_risk(self, metadata: dict[str, Any], descriptor: dict[str, Any]) -> float:
         metrics = metadata.get("metrics") if isinstance(metadata.get("metrics"), dict) else {}
         usage_count = max(int(metrics.get("usage_count", 0) or 0), 0)
         failure_count = max(int(metrics.get("failure_count", 0) or 0), 0)
         historical_risk = (failure_count / usage_count) if usage_count else 0.5
-        declared_risk = float(metadata.get("risk", historical_risk) or historical_risk)
+        declared_risk = float(metadata.get("risk", 1.0 - float(descriptor.get("reliability", 0.5))) or historical_risk)
         return max(0.0, min(1.0, declared_risk))
 
     def _normalize_task(self, task: str | dict[str, Any]) -> dict[str, Any]:
         if isinstance(task, str):
-            return {"name": task, "capabilities": [], "max_risk": 1.0}
+            return {"name": task, "capabilities": [], "preconditions": [], "max_risk": 1.0}
         capabilities = task.get("capabilities") if isinstance(task.get("capabilities"), list) else []
+        preconditions = task.get("preconditions") if isinstance(task.get("preconditions"), list) else []
         normalized = {
             "name": str(task.get("name") or "task"),
             "signature": task.get("signature") if isinstance(task.get("signature"), str) else None,
             "capabilities": [str(cap) for cap in capabilities],
+            "preconditions": [str(pre) for pre in preconditions],
+            "input_format": task.get("input_format") if isinstance(task.get("input_format"), str) else None,
+            "output_format": task.get("output_format") if isinstance(task.get("output_format"), str) else None,
             "max_risk": float(task.get("max_risk", 1.0) or 1.0),
         }
         return normalized
