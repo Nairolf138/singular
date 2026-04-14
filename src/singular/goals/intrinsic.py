@@ -11,6 +11,7 @@ from singular.goals.perception_rules import apply_perception_rules
 
 
 OBJECTIVE_CATALOGUE = ("coherence", "robustesse", "efficacite", "exploration")
+INTRINSIC_MODULATION_VERSION = "intrinsic-mod-v2"
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -22,6 +23,15 @@ def _as_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _mean_mapping_value(values: Any) -> float:
+    if not isinstance(values, Mapping) or not values:
+        return 0.0
+    sample = [_clamp(_as_float(raw)) for raw in values.values()]
+    if not sample:
+        return 0.0
+    return sum(sample) / len(sample)
 
 
 @dataclass
@@ -115,7 +125,16 @@ class IntrinsicGoals:
         resources: Mapping[str, float] | None,
         perception_signals: Mapping[str, Any] | None = None,
     ) -> GoalWeights:
-        """Update dynamic weights from psyche/health/resources for one tick."""
+        """Update dynamic objective weights for one tick.
+
+        Expected `perception_signals` additions (modulation v2):
+        - `narrative_indicators.risk_aversion_by_action_family`: dict[str, float] in [0,1]
+        - `narrative_indicators.accumulated_confidence_by_action_family`: dict[str, float] in [0,1]
+        - `narrative_indicators.accumulated_confidence`: float in [0,1] (fallback when no per-family map)
+        - `execution_history.recent_injuries`: float/int count
+        - `execution_history.recent_successes`: float/int count
+        - `execution_history.repeated_failure_pressure`: float in [0,1]
+        """
 
         curiosity = _clamp(float(getattr(psyche, "curiosity", 0.5))) if psyche else 0.5
         patience = _clamp(float(getattr(psyche, "patience", 0.5))) if psyche else 0.5
@@ -133,6 +152,27 @@ class IntrinsicGoals:
         telemetry_failure_pressure = 0.0
         host_environmental_pressure = 0.0
         host_environmental_variance = 0.0
+        narrative = (perception_signals or {}).get("narrative_indicators")
+        execution_history = (perception_signals or {}).get("execution_history")
+        risk_aversion = 0.0
+        accumulated_confidence = 0.5
+        injuries_pressure = 0.0
+        success_boost = 0.0
+        repeated_failure_pressure = 0.0
+        if isinstance(narrative, Mapping):
+            risk_aversion = _mean_mapping_value(narrative.get("risk_aversion_by_action_family"))
+            confidence_map = narrative.get("accumulated_confidence_by_action_family")
+            if isinstance(confidence_map, Mapping) and confidence_map:
+                accumulated_confidence = _mean_mapping_value(confidence_map)
+            else:
+                accumulated_confidence = _clamp(_as_float(narrative.get("accumulated_confidence", 0.5), default=0.5))
+        if isinstance(execution_history, Mapping):
+            injuries_pressure = _clamp(_as_float(execution_history.get("recent_injuries", 0.0)) / 5.0)
+            success_boost = _clamp(_as_float(execution_history.get("recent_successes", 0.0)) / 6.0)
+            repeated_failure_pressure = _clamp(
+                _as_float(execution_history.get("repeated_failure_pressure", 0.0), default=0.0)
+            )
+
         skill_reputation = (perception_signals or {}).get("skill_reputation")
         if isinstance(skill_reputation, Mapping) and skill_reputation:
             sample_count = 0.0
@@ -186,19 +226,35 @@ class IntrinsicGoals:
                 host_environmental_variance = _clamp((cpu_variance + ram_variance) / 2.0)
 
         base_weights = GoalWeights(
-            coherence=0.2 + 0.35 * patience + 0.25 * resilience + 0.2 * telemetry_quality_pressure,
+            coherence=0.2
+            + 0.35 * patience
+            + 0.25 * resilience
+            + 0.2 * telemetry_quality_pressure
+            + 0.15 * (1.0 - repeated_failure_pressure),
             robustesse=0.2
             + 0.35 * (1.0 - health_norm)
             + 0.25 * (1.0 - resource_stability)
             + 0.2 * telemetry_failure_pressure
             + 0.25 * host_environmental_pressure
-            + 0.1 * host_environmental_variance,
+            + 0.1 * host_environmental_variance
+            + 0.25 * injuries_pressure
+            + 0.18 * risk_aversion
+            + 0.2 * repeated_failure_pressure,
             efficacite=0.2
             + 0.45 * health_norm
             + 0.2 * optimism
             + 0.35 * telemetry_efficiency_penalty
-            + 0.2 * (1.0 - host_environmental_pressure),
-            exploration=0.2 + 0.45 * curiosity + 0.2 * playfulness + 0.1 * (1.0 - energy),
+            + 0.2 * (1.0 - host_environmental_pressure)
+            + 0.22 * success_boost
+            + 0.15 * accumulated_confidence
+            - 0.12 * repeated_failure_pressure,
+            exploration=0.2
+            + 0.45 * curiosity
+            + 0.2 * playfulness
+            + 0.1 * (1.0 - energy)
+            + 0.18 * accumulated_confidence
+            - 0.25 * risk_aversion
+            - 0.18 * repeated_failure_pressure,
         )
         modulation = apply_perception_rules(perception_signals)
         deltas = modulation["deltas"]
@@ -225,6 +281,12 @@ class IntrinsicGoals:
                     "playfulness": playfulness,
                     "host_environmental_pressure": host_environmental_pressure,
                     "host_environmental_variance": host_environmental_variance,
+                    "narrative_risk_aversion": risk_aversion,
+                    "narrative_accumulated_confidence": accumulated_confidence,
+                    "injuries_pressure": injuries_pressure,
+                    "success_boost": success_boost,
+                    "repeated_failure_pressure": repeated_failure_pressure,
+                    "intrinsic_modulation_version": INTRINSIC_MODULATION_VERSION,
                     "perception_rules_version": modulation["version"],
                     "perception_rule_count": len(modulation["applied_rules"]),
                 },
@@ -242,22 +304,43 @@ class IntrinsicGoals:
     def derive_execution_strategy(
         self, perception_signals: Mapping[str, Any] | None
     ) -> dict[str, Any]:
-        """Build runtime strategy knobs from structured feedback signals."""
+        """Build runtime strategy knobs from structured + narrative feedback signals.
+
+        Additional `perception_signals` keys (modulation v2):
+        - `narrative_indicators.risk_aversion_by_action_family`
+        - `narrative_indicators.accumulated_confidence[_by_action_family]`
+        - `execution_history.repeated_failure_pressure`
+        """
 
         memory = (perception_signals or {}).get("episode_memory", {})
         structured = memory.get("structured_feedback", {}) if isinstance(memory, Mapping) else {}
+        narrative = (perception_signals or {}).get("narrative_indicators")
+        execution_history = (perception_signals or {}).get("execution_history")
         frustration = _clamp(_as_float(structured.get("frustration", 0.0))) if isinstance(structured, Mapping) else 0.0
         satisfaction = _clamp(_as_float(structured.get("satisfaction", 0.0))) if isinstance(structured, Mapping) else 0.0
         urgency = _clamp(_as_float(structured.get("urgency", 0.0))) if isinstance(structured, Mapping) else 0.0
         theme = str(structured.get("theme", "general")) if isinstance(structured, Mapping) else "general"
         negative_streak = int(memory.get("negative_feedback_streak", 0)) if isinstance(memory, Mapping) else 0
+        risk_aversion = _mean_mapping_value(narrative.get("risk_aversion_by_action_family")) if isinstance(narrative, Mapping) else 0.0
+        confidence = 0.5
+        if isinstance(narrative, Mapping):
+            confidence_map = narrative.get("accumulated_confidence_by_action_family")
+            if isinstance(confidence_map, Mapping) and confidence_map:
+                confidence = _mean_mapping_value(confidence_map)
+            else:
+                confidence = _clamp(_as_float(narrative.get("accumulated_confidence", 0.5), default=0.5))
+        repeated_failure_penalty = (
+            _clamp(_as_float(execution_history.get("repeated_failure_pressure", 0.0)))
+            if isinstance(execution_history, Mapping)
+            else 0.0
+        )
 
         mode = "balanced"
-        if frustration >= 0.6 or negative_streak >= 2:
+        if frustration >= 0.6 or negative_streak >= 2 or repeated_failure_penalty >= 0.5 or risk_aversion >= 0.7:
             mode = "cautious"
-        elif urgency >= 0.6:
+        elif urgency >= 0.6 and repeated_failure_penalty < 0.45:
             mode = "utility_focused"
-        elif satisfaction >= 0.75:
+        elif satisfaction >= 0.75 and confidence >= 0.55:
             mode = "exploratory"
 
         return {
@@ -267,6 +350,10 @@ class IntrinsicGoals:
             "urgency": urgency,
             "theme": theme,
             "negative_feedback_streak": negative_streak,
+            "risk_aversion": risk_aversion,
+            "confidence": confidence,
+            "repeated_failure_penalty": repeated_failure_penalty,
+            "intrinsic_modulation_version": INTRINSIC_MODULATION_VERSION,
         }
 
     def adjust_routine_priorities(
