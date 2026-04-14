@@ -7,6 +7,7 @@ from pathlib import Path
 import singular.life.loop as life_loop
 from singular.life.loop import run
 from singular.life.death import DeathMonitor
+from singular.events import EventBus
 
 
 def _inc_operator(tree: ast.AST, rng=None) -> ast.AST:
@@ -86,7 +87,7 @@ def test_death_by_age(tmp_path: Path, monkeypatch):
 
     assert state.iteration >= 2
     log = _read_log(tmp_path)
-    assert log[-1]["event"] == "death"
+    assert any(entry.get("event") == "death" for entry in log)
     episodes = episodic.read_text().splitlines()
     assert any(json.loads(line)["event"] == "death" for line in episodes)
 
@@ -110,7 +111,7 @@ def test_death_by_failures(tmp_path: Path, monkeypatch):
 
     assert state.iteration >= 2
     log = _read_log(tmp_path)
-    assert log[-1]["event"] == "death"
+    assert any(entry.get("event") == "death" for entry in log)
 
 
 def test_death_by_traits(tmp_path: Path, monkeypatch):
@@ -151,4 +152,70 @@ def test_death_by_traits(tmp_path: Path, monkeypatch):
 
     assert state.iteration == 1
     log = _read_log(tmp_path)
-    assert log[-1]["event"] == "death"
+    assert any(entry.get("event") == "death" for entry in log)
+
+
+def test_extinction_generates_terminal_artifacts_and_status(tmp_path: Path, monkeypatch):
+    skills_dir, ckpt = _setup(tmp_path)
+    _patch_logger(monkeypatch, tmp_path)
+    _patch_memory(monkeypatch, tmp_path)
+
+    life_home = tmp_path / "life-home"
+    (life_home / "mem").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("SINGULAR_HOME", str(life_home))
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+
+    registry_dir = tmp_path / "lives"
+    registry_dir.mkdir(parents=True, exist_ok=True)
+    (registry_dir / "registry.json").write_text(
+        json.dumps(
+            {
+                "active": "life-a",
+                "lives": {
+                    "life-a": {
+                        "name": "Life A",
+                        "slug": "life-a",
+                        "path": str(life_home),
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "status": "active",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    bus = EventBus()
+    terminal_events: list[dict[str, object]] = []
+    bus.subscribe("life.terminated", lambda event: terminal_events.append(event.payload))
+
+    monitor = DeathMonitor(max_age=1, max_failures=99, min_trait=0.0)
+    run(
+        skills_dir,
+        ckpt,
+        budget_seconds=10.0,
+        rng=random.Random(0),
+        run_id="loop",
+        operators={"inc": _inc_operator},
+        mortality=monitor,
+        event_bus=bus,
+    )
+
+    autopsy = json.loads((life_home / "mem" / "autopsy.json").read_text(encoding="utf-8"))
+    assert autopsy["technical_causes"]
+    assert autopsy["behavioral_causes"]
+
+    biography = json.loads((life_home / "mem" / "biography.final.json").read_text(encoding="utf-8"))
+    assert biography["periods"]
+    assert biography["turning_points"]
+    assert biography["regrets_and_pride"]["regrets"]
+    assert biography["regrets_and_pride"]["pride"]
+
+    stop_signal = json.loads((life_home / "mem" / "orchestrator.stop.json").read_text(encoding="utf-8"))
+    assert stop_signal["stop"] is True
+
+    updated_registry = json.loads((registry_dir / "registry.json").read_text(encoding="utf-8"))
+    assert updated_registry["lives"]["life-a"]["status"] == "extinct"
+
+    assert terminal_events
+    assert terminal_events[-1]["status"] == "extinct"

@@ -250,6 +250,23 @@ routines:
     assert routine_tasks[0]["priority"] > 90
 
 
+def test_orchestrator_run_forever_stops_on_stop_signal(monkeypatch, tmp_path: Path) -> None:
+    life = tmp_path / "life"
+    (life / "skills").mkdir(parents=True)
+    (life / "mem").mkdir(parents=True)
+    monkeypatch.setenv("SINGULAR_HOME", str(life))
+
+    service = OrchestratorService(config=OrchestratorConfig(dry_run=True), bus=EventBus())
+    service.stop_signal_path.write_text('{"stop": true}', encoding="utf-8")
+
+    called = {"tick": 0}
+    monkeypatch.setattr(service, "tick", lambda: called.__setitem__("tick", called["tick"] + 1))
+
+    service.run_forever()
+
+    assert called["tick"] == 0
+
+
 def test_orchestrator_introspection_refreshes_self_narrative(monkeypatch, tmp_path: Path) -> None:
     life = tmp_path / "life"
     (life / "skills").mkdir(parents=True)
