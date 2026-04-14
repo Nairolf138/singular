@@ -682,6 +682,7 @@ def run(
                     "food": resource_manager.food,
                     "warmth": resource_manager.warmth,
                 },
+                perception_signals=signals,
             )
             baseline_failure_risk = (
                 float(state.health_counters.get("sandbox_failures", 0))
