@@ -12,8 +12,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
+from .governance.policy import MutationGovernancePolicy
+
 _REGISTRY_DIRNAME = "lives"
 _REGISTRY_FILENAME = "registry.json"
+_RELATIONS_JOURNAL = "lives_relations.jsonl"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,6 +31,10 @@ class LifeMetadata:
     created_at: str
     status: str = "active"
     parents: tuple[str, ...] = ()
+    children: tuple[str, ...] = ()
+    allies: tuple[str, ...] = ()
+    rivals: tuple[str, ...] = ()
+    proximity_score: float = 0.5
     lineage_depth: int = 0
 
     def to_payload(self) -> Dict[str, Any]:
@@ -39,12 +46,19 @@ class LifeMetadata:
             "created_at": self.created_at,
             "status": self.status,
             "parents": list(self.parents),
+            "children": list(self.children),
+            "allies": list(self.allies),
+            "rivals": list(self.rivals),
+            "proximity_score": self.proximity_score,
             "lineage_depth": self.lineage_depth,
         }
 
     @classmethod
     def from_payload(cls, data: Dict[str, Any]) -> "LifeMetadata":
         """Build metadata from a registry payload."""
+        proximity_score = data.get("proximity_score", 0.5)
+        if not isinstance(proximity_score, (int, float)):
+            proximity_score = 0.5
         return cls(
             name=str(data["name"]),
             slug=str(data["slug"]),
@@ -52,6 +66,10 @@ class LifeMetadata:
             created_at=str(data["created_at"]),
             status=str(data.get("status", "active")),
             parents=tuple(str(item) for item in data.get("parents", []) if isinstance(item, str)),
+            children=tuple(str(item) for item in data.get("children", []) if isinstance(item, str)),
+            allies=tuple(str(item) for item in data.get("allies", []) if isinstance(item, str)),
+            rivals=tuple(str(item) for item in data.get("rivals", []) if isinstance(item, str)),
+            proximity_score=max(0.0, min(1.0, float(proximity_score))),
             lineage_depth=max(0, int(data.get("lineage_depth", 0))),
         )
 
@@ -59,6 +77,36 @@ class LifeMetadata:
 def _registry_path(root: Path | None = None) -> Path:
     root = root or get_registry_root()
     return root / _REGISTRY_DIRNAME / _REGISTRY_FILENAME
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _relations_journal_path() -> Path:
+    return get_registry_root() / "mem" / _RELATIONS_JOURNAL
+
+
+def _log_relations_event(event: str, *, actor: str, target: str | None = None, details: dict[str, Any] | None = None) -> None:
+    journal = _relations_journal_path()
+    journal.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "ts": _now_iso(),
+        "event": event,
+        "actor": actor,
+        "target": target,
+        "details": details or {},
+    }
+    with journal.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def _govern_relation_operation(op_name: str) -> None:
+    policy = MutationGovernancePolicy()
+    decision = policy.evaluate_skill_execution(skill_name=f"lives.{op_name}", capability="filesystem.write")
+    policy.record_skill_execution(skill_name=f"lives.{op_name}", success=decision.allowed)
+    if not decision.allowed:
+        raise PermissionError(f"opération bloquée par la gouvernance: {decision.reason}")
 
 
 def get_registry_root() -> Path:
@@ -72,9 +120,6 @@ def get_registry_root() -> Path:
     cwd = Path.cwd()
     registry_path = cwd / _REGISTRY_DIRNAME / _REGISTRY_FILENAME
 
-    # CWD fallback is allowed only when an explicit, valid registry marker
-    # exists. This avoids accidental detection based on unrelated directories
-    # such as a plain ``mem/`` folder.
     if registry_path.exists():
         try:
             payload = json.loads(registry_path.read_text(encoding="utf-8"))
@@ -136,20 +181,14 @@ def save_registry(registry: dict[str, Any]) -> None:
 
 
 def set_life_status(slug: str, status: str) -> None:
-    """Update a life status in the registry."""
-
     normalized = status.strip().lower()
     if normalized not in {"active", "extinct"}:
         raise ValueError(f"unsupported life status '{status}'")
-
     registry = load_registry()
     lives: dict[str, LifeMetadata] = registry.get("lives", {})
     metadata = lives.get(slug)
-    if metadata is None:
+    if metadata is None or metadata.status == normalized:
         return
-    if metadata.status == normalized:
-        return
-
     metadata.status = normalized
     save_registry(registry)
 
@@ -160,8 +199,6 @@ def _slugify(name: str) -> str:
 
 
 def _resolve_life_metadata(name: str) -> tuple[dict[str, Any], str, LifeMetadata]:
-    """Resolve a life by slug or name and return ``(registry, slug, metadata)``."""
-
     registry = load_registry()
     lives: dict[str, LifeMetadata] = registry.setdefault("lives", {})
     if not lives:
@@ -189,13 +226,7 @@ def _resolve_life_metadata(name: str) -> tuple[dict[str, Any], str, LifeMetadata
     return registry, slug, metadata
 
 
-def create_life(
-    name: str,
-    *,
-    parents: tuple[str, ...] = (),
-) -> LifeMetadata:
-    """Create a new life directory and register it."""
-
+def create_life(name: str, *, parents: tuple[str, ...] = ()) -> LifeMetadata:
     registry = load_registry()
     lives: dict[str, LifeMetadata] = registry.setdefault("lives", {})
 
@@ -210,9 +241,10 @@ def create_life(
     life_dir = root / _REGISTRY_DIRNAME / slug
     life_dir.mkdir(parents=True, exist_ok=True)
 
-    created_at = datetime.now(timezone.utc).isoformat()
+    created_at = _now_iso()
     lineage_depth = 0
-    for parent_slug in parents:
+    valid_parents = tuple(parent for parent in parents if parent in lives)
+    for parent_slug in valid_parents:
         parent_meta = lives.get(parent_slug)
         if parent_meta is not None:
             lineage_depth = max(lineage_depth, parent_meta.lineage_depth + 1)
@@ -223,20 +255,135 @@ def create_life(
         path=life_dir,
         created_at=created_at,
         status="active",
-        parents=tuple(parent for parent in parents if parent in lives),
+        parents=valid_parents,
         lineage_depth=lineage_depth,
     )
 
     lives[slug] = metadata
+    for parent_slug in valid_parents:
+        parent_meta = lives.get(parent_slug)
+        if parent_meta is None:
+            continue
+        if slug not in parent_meta.children:
+            parent_meta.children = tuple(parent_meta.children) + (slug,)
+
     registry["active"] = slug
     save_registry(registry)
-
     return metadata
 
 
-def resolve_life(name: str | None) -> Path | None:
-    """Return the directory for the requested or active life."""
+def set_proximity(name: str, score: float) -> LifeMetadata:
+    _govern_relation_operation("set_proximity")
+    registry, slug, metadata = _resolve_life_metadata(name)
+    metadata.proximity_score = max(0.0, min(1.0, float(score)))
+    save_registry(registry)
+    _log_relations_event("proximity.set", actor=slug, details={"proximity_score": metadata.proximity_score})
+    return metadata
 
+
+def list_relations(name: str | None = None) -> dict[str, Any]:
+    registry = load_registry()
+    lives: dict[str, LifeMetadata] = registry.get("lives", {})
+    active = registry.get("active")
+    focus_slug = active if name is None else None
+    if name is not None:
+        _, focus_slug, _ = _resolve_life_metadata(name)
+    if focus_slug is None or focus_slug not in lives:
+        raise KeyError(name or "active")
+    focus = lives[focus_slug]
+
+    family_nodes = []
+    for slug in sorted(set(focus.parents) | {focus_slug} | set(focus.children)):
+        meta = lives.get(slug)
+        if meta is None:
+            continue
+        family_nodes.append({"slug": slug, "name": meta.name, "status": meta.status})
+
+    social_nodes = []
+    social_edges = []
+    for slug, meta in sorted(lives.items()):
+        social_nodes.append({"slug": slug, "name": meta.name, "proximity_score": meta.proximity_score})
+        for ally in meta.allies:
+            if ally in lives:
+                social_edges.append({"source": slug, "target": ally, "kind": "ally"})
+        for rival in meta.rivals:
+            if rival in lives:
+                social_edges.append({"source": slug, "target": rival, "kind": "rival"})
+
+    active_conflicts = sorted({tuple(sorted((slug, rival))) for slug, meta in lives.items() for rival in meta.rivals if rival in lives})
+    return {
+        "active": active,
+        "focus": {
+            "slug": focus_slug,
+            "name": focus.name,
+            "parents": list(focus.parents),
+            "children": list(focus.children),
+            "allies": list(focus.allies),
+            "rivals": list(focus.rivals),
+            "proximity_score": focus.proximity_score,
+        },
+        "family": {"nodes": family_nodes},
+        "social": {"nodes": social_nodes, "edges": social_edges},
+        "active_conflicts": [{"life_a": a, "life_b": b} for a, b in active_conflicts],
+    }
+
+
+def _link_relation(actor: LifeMetadata, target_slug: str, *, relation: str) -> None:
+    values = list(getattr(actor, relation))
+    if target_slug not in values:
+        values.append(target_slug)
+        setattr(actor, relation, tuple(values))
+
+
+def _unlink_relation(actor: LifeMetadata, target_slug: str, *, relation: str) -> None:
+    values = [item for item in getattr(actor, relation) if item != target_slug]
+    setattr(actor, relation, tuple(values))
+
+
+def ally_lives(name: str, ally_name: str) -> tuple[LifeMetadata, LifeMetadata]:
+    _govern_relation_operation("ally")
+    registry, slug, meta = _resolve_life_metadata(name)
+    lives: dict[str, LifeMetadata] = registry.setdefault("lives", {})
+    _, ally_slug, ally_meta = _resolve_life_metadata(ally_name)
+    if slug == ally_slug:
+        raise ValueError("une vie ne peut pas devenir son propre allié")
+    _link_relation(meta, ally_slug, relation="allies")
+    _link_relation(ally_meta, slug, relation="allies")
+    _unlink_relation(meta, ally_slug, relation="rivals")
+    _unlink_relation(ally_meta, slug, relation="rivals")
+    save_registry(registry)
+    _log_relations_event("ally", actor=slug, target=ally_slug)
+    return meta, ally_meta
+
+
+def rival_lives(name: str, rival_name: str) -> tuple[LifeMetadata, LifeMetadata]:
+    _govern_relation_operation("rival")
+    registry, slug, meta = _resolve_life_metadata(name)
+    lives: dict[str, LifeMetadata] = registry.setdefault("lives", {})
+    _, rival_slug, rival_meta = _resolve_life_metadata(rival_name)
+    if slug == rival_slug:
+        raise ValueError("une vie ne peut pas devenir sa propre rivale")
+    _link_relation(meta, rival_slug, relation="rivals")
+    _link_relation(rival_meta, slug, relation="rivals")
+    _unlink_relation(meta, rival_slug, relation="allies")
+    _unlink_relation(rival_meta, slug, relation="allies")
+    save_registry(registry)
+    _log_relations_event("rival", actor=slug, target=rival_slug)
+    return meta, rival_meta
+
+
+def reconcile_lives(name: str, other_name: str) -> tuple[LifeMetadata, LifeMetadata]:
+    _govern_relation_operation("reconcile")
+    registry, slug, meta = _resolve_life_metadata(name)
+    _, other_slug, other_meta = _resolve_life_metadata(other_name)
+    _unlink_relation(meta, other_slug, relation="rivals")
+    _unlink_relation(other_meta, slug, relation="rivals")
+    save_registry(registry)
+    _log_relations_event("reconcile", actor=slug, target=other_slug)
+    return meta, other_meta
+
+
+def resolve_life(name: str | None) -> Path | None:
     registry = load_registry()
     lives: dict[str, LifeMetadata] = registry.get("lives", {})
     if not lives:
@@ -269,54 +416,35 @@ def resolve_life(name: str | None) -> Path | None:
     return target.path
 
 
-def bootstrap_life(
-    name: str,
-    seed: int | None = None,
-    *,
-    psyche_overrides: dict[str, float] | None = None,
-    starter_profile: str = "minimal",
-    starter_skills: list[str] | None = None,
-) -> LifeMetadata:
-    """Create and initialise a life."""
-
+def bootstrap_life(name: str, seed: int | None = None, *, psyche_overrides: dict[str, float] | None = None, starter_profile: str = "minimal", starter_skills: list[str] | None = None) -> LifeMetadata:
     metadata = create_life(name)
-
-    from .organisms.birth import birth  # Imported lazily to avoid cycles.
-
-    birth(
-        seed=seed,
-        home=metadata.path,
-        psyche_overrides=psyche_overrides,
-        starter_profile=starter_profile,
-        starter_skills=starter_skills,
-    )
+    from .organisms.birth import birth
+    birth(seed=seed, home=metadata.path, psyche_overrides=psyche_overrides, starter_profile=starter_profile, starter_skills=starter_skills)
     registry = load_registry()
     lives: dict[str, LifeMetadata] = registry.get("lives", {})
     return lives.get(metadata.slug, metadata)
 
 
 def delete_life(name: str) -> LifeMetadata:
-    """Remove a life from the registry and delete its directory."""
-
     registry, slug, metadata = _resolve_life_metadata(name)
     lives: dict[str, LifeMetadata] = registry.setdefault("lives", {})
-
     try:
         shutil.rmtree(metadata.path)
     except FileNotFoundError:
         pass
-
     lives.pop(slug, None)
+    for meta in lives.values():
+        meta.parents = tuple(item for item in meta.parents if item != slug)
+        meta.children = tuple(item for item in meta.children if item != slug)
+        meta.allies = tuple(item for item in meta.allies if item != slug)
+        meta.rivals = tuple(item for item in meta.rivals if item != slug)
     if registry.get("active") == slug:
         registry["active"] = next(iter(lives), None)
     save_registry(registry)
-
     return metadata
 
 
 def archive_life(name: str) -> LifeMetadata:
-    """Mark a life as extinct and return its metadata."""
-
     registry, slug, metadata = _resolve_life_metadata(name)
     metadata.status = "extinct"
     if registry.get("active") == slug:
@@ -326,21 +454,16 @@ def archive_life(name: str) -> LifeMetadata:
 
 
 def memorialize_life(name: str, *, message: str) -> Path:
-    """Write a memorial note for a life and return the created file path."""
-
     _, _, metadata = _resolve_life_metadata(name)
     memorial_dir = metadata.path / "mem"
     memorial_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).isoformat()
     memorial_file = memorial_dir / "memorial.json"
-    payload = {"life": metadata.slug, "written_at": stamp, "message": message.strip()}
+    payload = {"life": metadata.slug, "written_at": _now_iso(), "message": message.strip()}
     memorial_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return memorial_file
 
 
 def clone_life(name: str, *, new_name: str | None = None) -> LifeMetadata:
-    """Clone an existing life to a fresh life entry."""
-
     _, source_slug, source = _resolve_life_metadata(name)
     clone_name = new_name or f"{source.name} clone"
     clone_meta = create_life(clone_name, parents=(source_slug,))
@@ -356,8 +479,6 @@ def clone_life(name: str, *, new_name: str | None = None) -> LifeMetadata:
 
 
 def _remove_tree(path: Path) -> None:
-    """Remove a directory tree if it exists."""
-
     try:
         shutil.rmtree(path)
     except FileNotFoundError:
@@ -365,29 +486,14 @@ def _remove_tree(path: Path) -> None:
 
 
 def uninstall_singular(purge_lives: bool) -> None:
-    """Uninstall Singular data from ``SINGULAR_ROOT``.
-
-    Cleanup targets are intentionally explicit:
-
-    - ``--keep-lives`` mode removes only legacy/global technical artefacts
-      at the root level: ``mem/`` and ``runs/``.
-    - ``--purge-lives`` mode removes all Singular data trees under the root:
-      ``lives/``, ``mem/`` and ``runs/``.
-    """
-
     root = get_registry_root()
     if not root.exists():
         return
-
     targets = ["lives", "mem", "runs"] if purge_lives else ["mem", "runs"]
     for target in targets:
         _remove_tree(root / target)
-
     if purge_lives:
         try:
             root.rmdir()
-        except FileNotFoundError:
-            return
-        except OSError:
-            # Root is kept when not empty (e.g. user-managed files).
+        except (FileNotFoundError, OSError):
             return

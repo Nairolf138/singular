@@ -1249,16 +1249,28 @@ def create_app(
         active = registry.get("active")
         nodes: list[dict[str, object]] = []
         edges: list[dict[str, str]] = []
+        social_edges: list[dict[str, str]] = []
+        conflicts: list[dict[str, str]] = []
         if not isinstance(lives, dict):
-            return {"active": active, "nodes": nodes, "edges": edges}
+            return {"active": active, "nodes": nodes, "edges": edges, "social_edges": social_edges, "active_conflicts": conflicts}
 
         for slug, meta in sorted(lives.items()):
             name = getattr(meta, "name", slug)
             status = getattr(meta, "status", "active")
             parents = getattr(meta, "parents", ()) or ()
+            children = getattr(meta, "children", ()) or ()
+            allies = getattr(meta, "allies", ()) or ()
+            rivals = getattr(meta, "rivals", ()) or ()
+            proximity_score = getattr(meta, "proximity_score", 0.5)
             lineage_depth = getattr(meta, "lineage_depth", 0)
             if not isinstance(parents, (tuple, list)):
                 parents = ()
+            if not isinstance(children, (tuple, list)):
+                children = ()
+            if not isinstance(allies, (tuple, list)):
+                allies = ()
+            if not isinstance(rivals, (tuple, list)):
+                rivals = ()
             nodes.append(
                 {
                     "slug": slug,
@@ -1267,12 +1279,32 @@ def create_app(
                     "active": slug == active,
                     "lineage_depth": int(lineage_depth) if isinstance(lineage_depth, int) else 0,
                     "parents": [str(parent) for parent in parents if isinstance(parent, str)],
+                    "children": [str(child) for child in children if isinstance(child, str)],
+                    "allies": [str(ally) for ally in allies if isinstance(ally, str)],
+                    "rivals": [str(rival) for rival in rivals if isinstance(rival, str)],
+                    "proximity_score": float(proximity_score) if isinstance(proximity_score, (int, float)) else 0.5,
                 }
             )
             for parent in parents:
                 if isinstance(parent, str) and parent:
                     edges.append({"parent": parent, "child": slug})
-        return {"active": active, "nodes": nodes, "edges": edges}
+            for ally in allies:
+                if isinstance(ally, str) and ally:
+                    social_edges.append({"source": slug, "target": ally, "kind": "ally"})
+            for rival in rivals:
+                if isinstance(rival, str) and rival:
+                    social_edges.append({"source": slug, "target": rival, "kind": "rival"})
+                    pair = tuple(sorted((slug, rival)))
+                    if pair[0] != pair[1]:
+                        conflicts.append({"life_a": pair[0], "life_b": pair[1]})
+        unique_conflicts = {(item["life_a"], item["life_b"]) for item in conflicts}
+        return {
+            "active": active,
+            "nodes": nodes,
+            "edges": edges,
+            "social_edges": social_edges,
+            "active_conflicts": [{"life_a": a, "life_b": b} for a, b in sorted(unique_conflicts)],
+        }
 
     @app.get("/mutations/top")
     def read_top_mutations(limit: int = 3, current_life_only: bool = False) -> dict[str, object]:

@@ -227,3 +227,33 @@ def test_lives_archive_memorial_clone_guided_commands(
     clone_out = capsys.readouterr().out
     assert "Vie clonée" in clone_out
     assert "singular status --verbose" in clone_out
+
+
+def test_lives_relations_commands_and_journal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "relations"
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    main(["--root", str(root), "lives", "create", "--name", "Alpha"])
+    main(["--root", str(root), "lives", "create", "--name", "Beta"])
+    capsys.readouterr()
+
+    main(["--root", str(root), "lives", "ally", "alpha", "beta"])
+    assert "Alliance enregistrée" in capsys.readouterr().out
+    main(["--root", str(root), "lives", "rival", "alpha", "beta"])
+    assert "Rivalité enregistrée" in capsys.readouterr().out
+    main(["--root", str(root), "lives", "reconcile", "alpha", "beta"])
+    assert "Réconciliation enregistrée" in capsys.readouterr().out
+    main(["--root", str(root), "lives", "proximity", "alpha", "--score", "0.72"])
+    assert "Score proximité mis à jour" in capsys.readouterr().out
+
+    main(["--root", str(root), "--format", "json", "lives", "relations", "--name", "alpha"])
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["focus"]["slug"] == "alpha"
+    assert payload["focus"]["proximity_score"] == 0.72
+    assert isinstance(payload["active_conflicts"], list)
+    assert (root / "mem" / "lives_relations.jsonl").exists()

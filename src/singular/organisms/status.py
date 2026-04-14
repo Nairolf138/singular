@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ..lives import list_relations
 from ..life.health import detect_health_state
 from ..life.vital import compute_vital_timeline
 from ..metrics.autonomy import compute_autonomy_metrics
@@ -123,6 +124,7 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             "aggregates": {},
             "impact": {},
         },
+        "relationships": {},
     }
     host_aggregates = compute_host_metrics_aggregates()
     payload["host_environment"] = {
@@ -221,6 +223,10 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         "optimism": round(psyche.optimism, 2),
         "resilience": round(psyche.resilience, 2),
     }
+    try:
+        payload["relationships"] = list_relations(None)
+    except KeyError:
+        payload["relationships"] = {}
 
     if output_format == "json":
         print(json.dumps(payload, ensure_ascii=False))
@@ -259,6 +265,18 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             ["Latence perception→action", _fmt_number(autonomy.get("perception_to_action_latency_ms"), " ms")],
             ["Coût ressources par gain", _fmt_number(autonomy.get("resource_cost_per_gain"))],
             ["Mood", str(payload.get("mood"))],
+            [
+                "Arbre familial (nœuds)",
+                str(len((((payload.get("relationships") or {}).get("family") or {}).get("nodes") or []))),
+            ],
+            [
+                "Réseau social (liens)",
+                str(len((((payload.get("relationships") or {}).get("social") or {}).get("edges") or []))),
+            ],
+            [
+                "Conflits actifs",
+                str(len((payload.get("relationships") or {}).get("active_conflicts", []))),
+            ],
             ["Quêtes actives", str(len((payload.get("quests") or {}).get("active", [])))],
             ["Quêtes terminées", str(len((payload.get("quests") or {}).get("completed", [])))],
             ["Skills actives", str((payload.get("skills_lifecycle") or {}).get("active", 0))],
@@ -367,6 +385,12 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
                 print("Alerts: none")
 
     print(f"Mood: {payload['mood']}")
+    relationships = payload.get("relationships") if isinstance(payload.get("relationships"), dict) else {}
+    family = relationships.get("family") if isinstance(relationships.get("family"), dict) else {}
+    social = relationships.get("social") if isinstance(relationships.get("social"), dict) else {}
+    print(f"Arbre familial: {len(family.get('nodes', []))} nœuds")
+    print(f"Réseau social: {len(social.get('edges', []))} relations")
+    print(f"Conflits actifs: {len(relationships.get('active_conflicts', []))}")
     quests = payload.get("quests") if isinstance(payload.get("quests"), dict) else {"active": [], "completed": []}
     print(f"Quêtes actives: {len(quests.get("active", []))}")
     print(f"Quêtes terminées: {len(quests.get("completed", []))}")
