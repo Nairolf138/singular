@@ -106,7 +106,7 @@ def test_intrinsic_goals_uses_skill_reputation_telemetry(tmp_path) -> None:
     )
 
     assert with_telemetry.efficacite > baseline.efficacite
-    assert with_telemetry.coherence > baseline.coherence
+    assert with_telemetry.robustesse > baseline.robustesse
 
 
 def test_intrinsic_goals_account_for_host_environment_pressure(tmp_path) -> None:
@@ -182,3 +182,54 @@ def test_intrinsic_goals_adjust_routine_priorities_from_urgency(tmp_path) -> Non
         },
     )
     assert adjusted[0]["id"] == "user_support"
+
+
+def test_intrinsic_goals_modulates_weights_from_narrative_and_history(tmp_path) -> None:
+    goals = IntrinsicGoals(path=tmp_path / "goals.json")
+    psyche = Psyche()
+
+    baseline = goals.update_tick(
+        tick=1,
+        psyche=psyche,
+        health_score=82.0,
+        resources={"energy": 80.0, "food": 80.0, "warmth": 80.0},
+        perception_signals={},
+    )
+    modulated = goals.update_tick(
+        tick=2,
+        psyche=psyche,
+        health_score=82.0,
+        resources={"energy": 80.0, "food": 80.0, "warmth": 80.0},
+        perception_signals={
+            "narrative_indicators": {
+                "risk_aversion_by_action_family": {"io": 0.8, "analysis": 0.7},
+                "accumulated_confidence_by_action_family": {"io": 0.9, "analysis": 0.8},
+            },
+            "execution_history": {
+                "recent_injuries": 3,
+                "recent_successes": 5,
+                "repeated_failure_pressure": 0.6,
+            },
+        },
+    )
+
+    assert modulated.robustesse > baseline.robustesse
+    assert modulated.exploration < baseline.exploration
+    assert goals.history()[-1]["signals"]["intrinsic_modulation_version"] == "intrinsic-mod-v2"
+
+
+def test_intrinsic_goals_strategy_applies_repeated_failure_penalty(tmp_path) -> None:
+    goals = IntrinsicGoals(path=tmp_path / "goals.json")
+    strategy = goals.derive_execution_strategy(
+        {
+            "episode_memory": {
+                "structured_feedback": {"frustration": 0.2, "satisfaction": 0.8, "urgency": 0.4, "theme": "general"}
+            },
+            "narrative_indicators": {"risk_aversion_by_action_family": {"exec": 0.2}},
+            "execution_history": {"repeated_failure_pressure": 0.8},
+        }
+    )
+
+    assert strategy["mode"] == "cautious"
+    assert strategy["repeated_failure_penalty"] == 0.8
+    assert strategy["intrinsic_modulation_version"] == "intrinsic-mod-v2"
