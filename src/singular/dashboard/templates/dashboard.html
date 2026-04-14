@@ -48,6 +48,7 @@
 <nav>
   <strong>Navigation :</strong>
   <a href="#cockpit">Cockpit</a> ·
+  <a href="#competences-quotidien">Compétences du quotidien</a> ·
   <a href="#timeline-section">Timeline</a> ·
   <a href="#vies">Vies</a> ·
   <a href="#logs-live">Logs</a> ·
@@ -112,6 +113,27 @@
       <div class='card'><div class='card-label'>Skills dormantes</div><div id='kpi-skills-dormant' class='card-value'>0</div></div>
       <div class='card'><div class='card-label'>Skills archivées</div><div id='kpi-skills-archived' class='card-value'>0</div></div>
     </div>
+  </div>
+
+  <div class='panel' id='competences-quotidien'>
+    <h3 style='margin-top:0;'>Compétences du quotidien</h3>
+    <div class='cards-grid'>
+      <div class='card'><div class='card-label'>Fréquence (24h)</div><div id='daily-skill-uses-24h' class='card-value'>0</div></div>
+      <div class='card'><div class='card-label'>Fréquence (7j)</div><div id='daily-skill-uses-7d' class='card-value'>0</div></div>
+      <div class='card'><div class='card-label'>Top skill</div><div id='daily-skill-top' class='card-value'>n/a</div></div>
+      <div class='card'><div class='card-label'>Progression apprise→utilisée→améliorée</div><div id='daily-skill-progression' class='card-value'>0→0→0</div></div>
+    </div>
+    <table border='1' cellspacing='0' cellpadding='6' style='margin-top:8px;border-collapse:collapse;width:100%;'>
+      <thead><tr>
+        <th>Compétence</th>
+        <th>Fréquence 24h/7j</th>
+        <th>Taux réussite</th>
+        <th>Dernière utilisation</th>
+        <th>Tâches associées</th>
+        <th>Tendance</th>
+      </tr></thead>
+      <tbody id='daily-skills-table-body'></tbody>
+    </table>
   </div>
 
   <div class='panel'>
@@ -280,6 +302,30 @@ const scopeState={currentLifeOnly:false};
 
 const setStatusTone=(el,tone)=>{el.classList.remove('status-good','status-warn','status-bad');if(tone==='good'){el.classList.add('status-good');}if(tone==='warn'){el.classList.add('status-warn');}if(tone==='bad'){el.classList.add('status-bad');}};
 const withScope=(url)=>{const u=new URL(url,window.location.origin);if(scopeState.currentLifeOnly){u.searchParams.set('current_life_only','true');}return `${u.pathname}${u.search}`;};
+const renderDailySkills=(dailySkills)=>{
+  const frequency=dailySkills?.frequency_totals||{};
+  const progression=dailySkills?.progression_pipeline||{};
+  const topSkills=dailySkills?.top_skills||[];
+  document.getElementById('daily-skill-uses-24h').textContent=String(frequency.uses_24h||0);
+  document.getElementById('daily-skill-uses-7d').textContent=String(frequency.uses_7d||0);
+  document.getElementById('daily-skill-top').textContent=String(topSkills[0]?.skill||'n/a');
+  document.getElementById('daily-skill-progression').textContent=`${progression.learned||0}→${progression.used||0}→${progression.improved||0}`;
+  const body=document.getElementById('daily-skills-table-body');
+  body.innerHTML='';
+  for(const item of topSkills){
+    const tr=document.createElement('tr');
+    const successRate=item.success_rate===null||item.success_rate===undefined?'n/a':`${(Number(item.success_rate)*100).toFixed(1)}%`;
+    const frequencyCell=`${item.frequency?.uses_24h||0}/${item.frequency?.uses_7d||0}`;
+    const tasks=(item.associated_tasks||[]).join(', ')||'n/a';
+    tr.innerHTML=`<td>${item.skill||'n/a'}</td><td>${frequencyCell}</td><td>${successRate}</td><td>${item.last_used_at||'n/a'}</td><td>${tasks}</td><td>${item.trend||'stable'}</td>`;
+    body.appendChild(tr);
+  }
+  if(!topSkills.length){
+    const tr=document.createElement('tr');
+    tr.innerHTML="<td colspan='6'>Aucune compétence quotidienne détectée.</td>";
+    body.appendChild(tr);
+  }
+};
 
 const loadContext=()=>fetch('/dashboard/context').then(r=>r.json()).then(ctx=>{
   document.getElementById('ctx-root').textContent=ctx.singular_root||'n/a';
@@ -382,6 +428,7 @@ const loadCockpit=()=>fetch(withScope('/api/cockpit')).then(r=>r.json()).then(d=
   document.getElementById('kpi-skills-active').textContent=String(skillLifecycle.active||0);
   document.getElementById('kpi-skills-dormant').textContent=String(skillLifecycle.dormant||0);
   document.getElementById('kpi-skills-archived').textContent=String(skillLifecycle.archived||0);
+  renderDailySkills(d.daily_skills||{});
   const objectivesList=document.getElementById('kpi-active-objectives-list');
   objectivesList.innerHTML='';
   for(const item of (objectives.items||[])){

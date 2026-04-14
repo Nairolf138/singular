@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from singular.lives import get_registry_root
+from singular.skills_daily import build_daily_skills_snapshot
 
 
 @dataclass(slots=True)
@@ -44,11 +45,32 @@ class DashboardActionService:
         current_home = Path(os.environ.get("SINGULAR_HOME", str(self.home)))
         runs_dir = current_home / "runs"
         vital_metrics = self._consolidated_vital_metrics(runs_dir=runs_dir)
+        daily_skills = build_daily_skills_snapshot(self._read_run_records(runs_dir=runs_dir))
         return {
             "registry_root": str(self.root),
             "current_life_home": str(current_home),
             "vital_metrics": vital_metrics,
+            "daily_skills": daily_skills,
         }
+
+    def _read_run_records(self, *, runs_dir: Path) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        if not runs_dir.exists():
+            return records
+        for file in runs_dir.iterdir():
+            if not file.is_file() or file.suffix != ".jsonl":
+                continue
+            for line in file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(payload, dict):
+                    records.append(payload)
+        return records
 
     def _consolidated_vital_metrics(self, *, runs_dir: Path) -> dict[str, Any]:
         if not runs_dir.exists():

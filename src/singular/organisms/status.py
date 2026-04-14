@@ -13,6 +13,7 @@ from ..memory import get_mem_dir
 from ..memory import read_skills
 from ..runs.logger import RUNS_DIR
 from ..schedulers.reevaluation import alerts_from_records
+from ..skills_daily import build_daily_skills_snapshot
 
 
 def _print_table(headers: list[str], rows: list[list[str]]) -> None:
@@ -107,6 +108,7 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             "deleted": 0,
             "total": 0,
         },
+        "daily_skills": build_daily_skills_snapshot([]),
         "vital_timeline": {
             "age": 0,
             "state": "mature",
@@ -121,12 +123,20 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
     files = sorted(runs_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
     if files:
         latest = files[-1]
+        all_records: list[dict[str, object]] = []
+        for run_file in files:
+            with run_file.open(encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line:
+                        all_records.append(json.loads(line))
         records = []
         with latest.open(encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
                 if line:
                     records.append(json.loads(line))
+        payload["daily_skills"] = build_daily_skills_snapshot(records=all_records)
         if records:
             last = records[-1]
             ms_new = last.get("ms_new")
@@ -244,6 +254,29 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             ["Skills actives", str((payload.get("skills_lifecycle") or {}).get("active", 0))],
             ["Skills dormantes", str((payload.get("skills_lifecycle") or {}).get("dormant", 0))],
             ["Skills archivées", str((payload.get("skills_lifecycle") or {}).get("archived", 0))],
+            [
+                "Top skill quotidienne",
+                (
+                    str(((payload.get("daily_skills") or {}).get("top_skills") or [{}])[0].get("skill") or "-")
+                    if ((payload.get("daily_skills") or {}).get("top_skills") or [])
+                    else "-"
+                ),
+            ],
+            [
+                "Fréquence skills (24h/7j)",
+                (
+                    f"{((payload.get('daily_skills') or {}).get('frequency_totals') or {}).get('uses_24h', 0)} / "
+                    f"{((payload.get('daily_skills') or {}).get('frequency_totals') or {}).get('uses_7d', 0)}"
+                ),
+            ],
+            [
+                "Progression apprise→utilisée→améliorée",
+                (
+                    f"{((payload.get('daily_skills') or {}).get('progression_pipeline') or {}).get('learned', 0)} → "
+                    f"{((payload.get('daily_skills') or {}).get('progression_pipeline') or {}).get('used', 0)} → "
+                    f"{((payload.get('daily_skills') or {}).get('progression_pipeline') or {}).get('improved', 0)}"
+                ),
+            ],
             ["Âge vital", str((payload.get("vital_timeline") or {}).get("age", 0))],
             ["État vital", str((payload.get("vital_timeline") or {}).get("state", "n/a"))],
             ["Risque vital", str((payload.get("vital_timeline") or {}).get("risk_level", "n/a"))],
