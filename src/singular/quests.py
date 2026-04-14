@@ -22,13 +22,63 @@ class QuestRecord:
     origin: str = "external"
     completed_at: str | None = None
     reason: str | None = None
+    history: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
 class QuestRuntimeState:
     active: list[QuestRecord] = field(default_factory=list)
+    paused: list[QuestRecord] = field(default_factory=list)
     completed: list[QuestRecord] = field(default_factory=list)
     cooldowns: dict[str, str] = field(default_factory=dict)
+
+
+class ObjectiveArbitrator:
+    """Compute per-quest arbitration signals and suggested transition."""
+
+    @staticmethod
+    def _clamp(value: float, *, floor: float = 0.0, ceil: float = 1.0) -> float:
+        return max(floor, min(ceil, value))
+
+    def assess(
+        self,
+        *,
+        spec: Spec,
+        record: QuestRecord,
+        resources: ResourceManager,
+        health_score: float | None,
+        load_score: float | None,
+    ) -> dict[str, float | str]:
+        reward_signal = float(len(spec.reward)) + float(spec.reward.get("psyche_energy", 0.0) or 0.0) / 15.0
+        penalty_signal = float(len(spec.penalty)) + abs(float(spec.penalty.get("psyche_energy", 0.0) or 0.0)) / 12.0
+        expected_utility = self._clamp((reward_signal + (0.2 if spec.origin == "intrinsic" else 0.1)) / (reward_signal + penalty_signal + 1.0))
+
+        failures = sum(1 for event in record.history if event.get("to") == "failure")
+        pauses = sum(1 for event in record.history if event.get("to") == "paused")
+        emotional_cost = self._clamp((failures * 0.35) + (pauses * 0.18) + (0.2 if record.reason == "timeout" else 0.0))
+
+        resources_score = self._clamp((resources.energy + resources.food + resources.warmth) / 300.0)
+        health_capacity = self._clamp(float(health_score if isinstance(health_score, (int, float)) else 100.0) / 100.0)
+        load_capacity = 1.0 - self._clamp(float(load_score if isinstance(load_score, (int, float)) else 0.0))
+        capacity = max(0.0, min(resources_score, health_capacity, load_capacity))
+
+        arbitration = (expected_utility * 0.55) + (capacity * 0.45) - (emotional_cost * 0.5)
+        transition = "keep"
+        if record.status == "active":
+            if capacity < 0.18 or arbitration < 0.05:
+                transition = "abandoned" if (emotional_cost > 0.78 or (pauses >= 2 and arbitration < 0.0)) else "paused"
+        elif record.status == "paused":
+            if arbitration > 0.35 and capacity > 0.4:
+                transition = "resumed"
+            elif emotional_cost > 0.85 and capacity < 0.2:
+                transition = "abandoned"
+        return {
+            "expected_utility": round(expected_utility, 4),
+            "emotional_cost": round(emotional_cost, 4),
+            "capacity": round(capacity, 4),
+            "arbitration": round(arbitration, 4),
+            "transition": transition,
+        }
 
 
 class QuestRuntime:
@@ -39,6 +89,7 @@ class QuestRuntime:
         self.mem_dir = mem_dir or get_mem_dir()
         self.quests_dir = self.base_dir / "quests"
         self.state_path = self.mem_dir / "quests_state.json"
+        self.arbitrator = ObjectiveArbitrator()
         self.state = self._load_state()
 
     def _now(self) -> datetime:
@@ -76,6 +127,7 @@ class QuestRuntime:
                         origin=origin,
                         completed_at=item.get("completed_at") if isinstance(item.get("completed_at"), str) else None,
                         reason=item.get("reason") if isinstance(item.get("reason"), str) else None,
+                        history=item.get("history") if isinstance(item.get("history"), list) else [],
                     )
                 )
             return out
@@ -88,6 +140,7 @@ class QuestRuntime:
                     cooldowns[key] = value
         return QuestRuntimeState(
             active=_records(raw.get("active", [])),
+            paused=_records(raw.get("paused", [])),
             completed=_records(raw.get("completed", [])),
             cooldowns=cooldowns,
         )
@@ -95,11 +148,37 @@ class QuestRuntime:
     def _save_state(self) -> None:
         payload = {
             "active": [asdict(item) for item in self.state.active],
+            "paused": [asdict(item) for item in self.state.paused],
             "completed": [asdict(item) for item in self.state.completed[-200:]],
             "cooldowns": self.state.cooldowns,
             "updated_at": self._now().isoformat(),
         }
         _atomic_write_text(self.state_path, json.dumps(payload, ensure_ascii=False, indent=2))
+
+    def _append_transition(
+        self,
+        *,
+        record: QuestRecord,
+        from_status: str,
+        to_status: str,
+        reason: str,
+        arbitration: dict[str, float | str] | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "at": self._now().isoformat(),
+            "from": from_status,
+            "to": to_status,
+            "reason": reason,
+        }
+        if arbitration is not None:
+            payload["arbitration"] = {
+                "expected_utility": arbitration.get("expected_utility"),
+                "emotional_cost": arbitration.get("emotional_cost"),
+                "capacity": arbitration.get("capacity"),
+                "arbitration": arbitration.get("arbitration"),
+            }
+        record.history.append(payload)
+        record.history = record.history[-100:]
 
     def _load_specs(self) -> list[Spec]:
         if not self.quests_dir.exists():
@@ -168,6 +247,14 @@ class QuestRuntime:
                         status="active",
                         started_at=self._now().isoformat(),
                         origin=spec.origin,
+                        history=[
+                            {
+                                "at": self._now().isoformat(),
+                                "from": "inactive",
+                                "to": "active",
+                                "reason": "trigger_matched",
+                            }
+                        ],
                     )
                 )
                 add_episode(
@@ -243,15 +330,64 @@ class QuestRuntime:
             }
         )
 
-    def settle_active(self, *, psyche: Psyche, resource_manager: ResourceManager) -> dict[str, list[str]]:
+    def settle_active(
+        self,
+        *,
+        psyche: Psyche,
+        resource_manager: ResourceManager,
+        health_score: float | None = None,
+        load_score: float | None = None,
+    ) -> dict[str, list[str]]:
         specs = {spec.name: spec for spec in self._load_specs()}
         next_active: list[QuestRecord] = []
+        next_paused: list[QuestRecord] = []
         successes: list[str] = []
         failures: list[str] = []
+        paused: list[str] = []
+        resumed: list[str] = []
+        abandoned: list[str] = []
 
         for record in self.state.active:
             spec = specs.get(record.name)
             if spec is None:
+                continue
+            arbitration = self.arbitrator.assess(
+                spec=spec,
+                record=record,
+                resources=resource_manager,
+                health_score=health_score,
+                load_score=load_score,
+            )
+            transition = arbitration.get("transition")
+            if transition == "paused":
+                self._append_transition(
+                    record=record,
+                    from_status="active",
+                    to_status="paused",
+                    reason="objective_arbitration_low_capacity_or_utility",
+                    arbitration=arbitration,
+                )
+                record.status = "paused"
+                record.reason = "objective_arbitration_low_capacity_or_utility"
+                next_paused.append(record)
+                paused.append(spec.name)
+                continue
+            if transition == "abandoned":
+                self._append_transition(
+                    record=record,
+                    from_status="active",
+                    to_status="abandoned",
+                    reason="objective_arbitration_high_emotional_cost_or_risk",
+                    arbitration=arbitration,
+                )
+                record.status = "abandoned"
+                record.reason = "objective_arbitration_high_emotional_cost_or_risk"
+                record.completed_at = self._now().isoformat()
+                self.state.completed.append(record)
+                self.state.cooldowns[spec.name] = (
+                    self._now() + timedelta(seconds=spec.cooldown)
+                ).isoformat()
+                abandoned.append(spec.name)
                 continue
             criteria = spec.success
             success = self._resource_criteria_met(criteria, resource_manager)
@@ -277,6 +413,7 @@ class QuestRuntime:
                         started_at=record.started_at,
                         origin=record.origin,
                         completed_at=self._now().isoformat(),
+                        history=record.history,
                     )
                 )
                 self.state.cooldowns[spec.name] = (
@@ -301,6 +438,7 @@ class QuestRuntime:
                         origin=record.origin,
                         completed_at=self._now().isoformat(),
                         reason="timeout",
+                        history=record.history,
                     )
                 )
                 self.state.cooldowns[spec.name] = (
@@ -311,13 +449,72 @@ class QuestRuntime:
 
             next_active.append(record)
 
+        for record in self.state.paused:
+            spec = specs.get(record.name)
+            if spec is None:
+                continue
+            arbitration = self.arbitrator.assess(
+                spec=spec,
+                record=record,
+                resources=resource_manager,
+                health_score=health_score,
+                load_score=load_score,
+            )
+            transition = arbitration.get("transition")
+            if transition == "resumed":
+                self._append_transition(
+                    record=record,
+                    from_status="paused",
+                    to_status="resumed",
+                    reason="objective_arbitration_capacity_restored",
+                    arbitration=arbitration,
+                )
+                self._append_transition(
+                    record=record,
+                    from_status="resumed",
+                    to_status="active",
+                    reason="quest_reentered_execution",
+                    arbitration=arbitration,
+                )
+                record.status = "active"
+                record.reason = "objective_arbitration_capacity_restored"
+                next_active.append(record)
+                resumed.append(spec.name)
+                continue
+            if transition == "abandoned":
+                self._append_transition(
+                    record=record,
+                    from_status="paused",
+                    to_status="abandoned",
+                    reason="objective_arbitration_persistent_risk",
+                    arbitration=arbitration,
+                )
+                record.status = "abandoned"
+                record.reason = "objective_arbitration_persistent_risk"
+                record.completed_at = self._now().isoformat()
+                self.state.completed.append(record)
+                self.state.cooldowns[spec.name] = (
+                    self._now() + timedelta(seconds=spec.cooldown)
+                ).isoformat()
+                abandoned.append(spec.name)
+                continue
+            next_paused.append(record)
+
         self.state.active = next_active
-        if successes or failures:
+        self.state.paused = next_paused
+        if successes or failures or paused or resumed or abandoned:
             self._save_state()
-        return {"successes": successes, "failures": failures}
+        return {
+            "successes": successes,
+            "failures": failures,
+            "paused": paused,
+            "resumed": resumed,
+            "abandoned": abandoned,
+        }
 
     def snapshot(self) -> dict[str, Any]:
         return {
             "active": [asdict(item) for item in self.state.active],
+            "paused": [asdict(item) for item in self.state.paused],
             "completed": [asdict(item) for item in self.state.completed[-20:]],
         }

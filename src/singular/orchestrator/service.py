@@ -477,9 +477,19 @@ class OrchestratorService:
                     governance_policy=self.governance_policy,
                     world=self.world_state,
                 )
+            host_metrics = self._latest_signals.get("host_metrics", {})
+            world_health = self._latest_signals.get("world.global_health.score")
+            health_score = world_health if isinstance(world_health, (int, float)) else None
+            load_score = None
+            if isinstance(host_metrics, dict):
+                cpu_percent = host_metrics.get("cpu_percent")
+                if isinstance(cpu_percent, (int, float)):
+                    load_score = max(0.0, min(1.0, float(cpu_percent) / 100.0))
             quest_outcomes = self.quest_runtime.settle_active(
                 psyche=self.psyche,
                 resource_manager=self.resource_manager,
+                health_score=health_score,
+                load_score=load_score,
             )
             self._push_event(
                 phase,
