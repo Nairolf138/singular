@@ -21,7 +21,7 @@ from singular.events import (
 )
 from singular.goals import IntrinsicGoals
 from singular.governance.policy import MutationGovernancePolicy
-from singular.life.loop import run_tick
+from singular.life.loop import WorldState, run_tick
 from singular.memory import _atomic_write_text, get_base_dir, get_mem_dir
 from singular.orchestrator.lifecycle_clock import (
     LifecycleClockConfig,
@@ -120,6 +120,7 @@ class OrchestratorService:
             bus=self.bus,
         )
         self.governance_policy = MutationGovernancePolicy(safe_mode=self.config.safe_mode)
+        self.world_state = WorldState()
         self.routines = RoutinesOrchestrator(state_path=self.mem_dir / "routines_state.json")
         self.goals = IntrinsicGoals(path=self.mem_dir / "goals.json")
         self._running = False
@@ -352,6 +353,11 @@ class OrchestratorService:
                     base_context=action_context,
                     priority_overrides=priority_overrides,
                 )
+                self.world_state.world_resources.replenish(
+                    cpu_budget=max(cpu_budget_percent, 1.0),
+                    mutation_slots=max(tick_budget * 10.0, 1.0),
+                    attention_score=max(20.0, 100.0 - (self._tick_count % 10) * 5.0),
+                )
                 run_tick(
                     skills_dirs=self.skills_dir,
                     checkpoint_path=self.checkpoint_path,
@@ -360,6 +366,7 @@ class OrchestratorService:
                     resource_manager=self.resource_manager,
                     tick_budget_seconds=tick_budget,
                     governance_policy=self.governance_policy,
+                    world=self.world_state,
                 )
             quest_outcomes = self.quest_runtime.settle_active(
                 psyche=self.psyche,
