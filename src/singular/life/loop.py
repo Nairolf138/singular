@@ -24,7 +24,7 @@ from singular.beliefs.meta_learning import (
     register_run_result,
 )
 from singular.events import EventBus, get_global_event_bus
-from singular.memory import register_memory_event_handlers, update_score
+from singular.memory import add_episode, register_memory_event_handlers, update_score
 from singular.psyche import Psyche, Mood
 from singular.runs.logger import RunLogger
 from singular.runs.explain import summarize_mutation
@@ -35,6 +35,7 @@ from graine.evolver.generate import propose_mutations
 from singular.environment import artifacts as env_artifacts
 from singular.environment import files as env_files
 from singular.environment import notifications as env_notifications
+from singular.environment import sim_world
 from singular.environment.reputation import ReputationSystem
 from singular.environment.world_resources import CompetitorIntent, WorldResourcePool
 from singular.goals import IntrinsicGoals
@@ -126,6 +127,15 @@ OrganismInputs = Mapping[str, Path] | Iterable[Path] | Path
 INTERACTION_RESOURCE_COMPETITION = "resource_competition"
 INTERACTION_CROSSOVER = "crossover"
 INTERACTION_EXTINCTION = "extinction"
+
+ACTION_TYPE_FROM_LOOP_EVENT: dict[str, str] = {
+    "mutation.accepted": "mutation.applied",
+    "mutation.rejected": "mutation.rejected",
+    "resource.granted": "resource.competition.granted",
+    "resource.denied": "resource.competition.denied",
+    "resource.cooperation": "resource.cooperation",
+    "resource.conflict": "resource.conflict",
+}
 
 
 CHECKPOINT_VERSION = 1
@@ -716,7 +726,10 @@ def run(
                 continue
 
             resource_manager.metabolize()
-            signals = capture_signals(bus=event_bus)
+            try:
+                signals = capture_signals(bus=event_bus)
+            except TypeError:
+                signals = capture_signals()
             temp = get_temperature()
             signals["temperature"] = temp
             signals["skill_reputation"] = logger.skill_reputation()
@@ -978,6 +991,7 @@ def run(
                 if map_elites
                 else mutated_score <= base_score
             )
+            world_effects: list[dict[str, object]] = []
             security_metadata: dict[str, object] = {
                 "governance_checked": False,
                 "allowed": accepted,
@@ -1033,6 +1047,13 @@ def run(
                     org.energy -= 0.1
                 else:
                     org.energy += 0.2
+                    effect_type = ACTION_TYPE_FROM_LOOP_EVENT["mutation.accepted"]
+                    world_effects.append(
+                        sim_world.map_action_type_to_effect(
+                            effect_type,
+                            {"health_delta": 0.2 if accepted else 0.0},
+                        )
+                    )
                     world.reputation.update(
                         org_name,
                         "share",
@@ -1041,6 +1062,8 @@ def run(
                     env_artifacts.save_text(f"mutation_{state.iteration}", diff)
             else:
                 org.energy -= 0.1
+                effect_type = ACTION_TYPE_FROM_LOOP_EVENT["mutation.rejected"]
+                world_effects.append(sim_world.map_action_type_to_effect(effect_type))
                 world.reputation.update(
                     org_name,
                     "steal",
@@ -1171,6 +1194,11 @@ def run(
                 competitor_intents=competitor_intents,
             )
             if action_resolution.granted:
+                world_effects.append(
+                    sim_world.map_action_type_to_effect(
+                        ACTION_TYPE_FROM_LOOP_EVENT["resource.granted"]
+                    )
+                )
                 world.resource_pool = max(
                     0.0,
                     world.resource_pool
@@ -1193,12 +1221,28 @@ def run(
                 )
 
             if cooperation_partners:
+                world_effects.append(
+                    sim_world.map_action_type_to_effect(
+                        ACTION_TYPE_FROM_LOOP_EVENT["resource.cooperation"]
+                    )
+                )
                 for partner in cooperation_partners:
                     world.reputation.update(partner, "share")
                 world.reputation.update(org_name, "share")
                 org.energy += action_resolution.relation_bonus
             elif action_resolution.conflicts:
+                world_effects.append(
+                    sim_world.map_action_type_to_effect(
+                        ACTION_TYPE_FROM_LOOP_EVENT["resource.conflict"]
+                    )
+                )
                 world.reputation.update(org_name, "steal")
+            else:
+                world_effects.append(
+                    sim_world.map_action_type_to_effect(
+                        ACTION_TYPE_FROM_LOOP_EVENT["resource.denied"]
+                    )
+                )
 
             for other in world.organisms.values():
                 other.energy = max(0.1, other.energy - ecosystem_rules.passive_energy_decay)
@@ -1320,6 +1364,13 @@ def run(
             if hasattr(psyche, "save_state"):
                 psyche.save_state()
 
+            world_state_path = Path(os.environ.get("SINGULAR_HOME", ".")) / "mem" / "world_state.json"
+            world_effects_path = Path(os.environ.get("SINGULAR_HOME", ".")) / "mem" / "world_effects.json"
+            sim_world.apply_action_effects(
+                world_effects,
+                state_path=world_state_path,
+                effects_path=world_effects_path,
+            )
             save_checkpoint(checkpoint_path, state)
 
             dead, reason = org.monitor.check(
