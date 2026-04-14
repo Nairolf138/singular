@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from singular.events import EventBus
 from singular.orchestrator.service import (
@@ -245,3 +246,58 @@ routines:
     assert routine_tasks
     assert routine_tasks[0]["name"] == "routine.user_support"
     assert routine_tasks[0]["priority"] > 90
+
+
+def test_orchestrator_introspection_refreshes_self_narrative(monkeypatch, tmp_path: Path) -> None:
+    life = tmp_path / "life"
+    (life / "skills").mkdir(parents=True)
+    (life / "mem").mkdir(parents=True)
+    (life / "runs").mkdir(parents=True)
+    (life / "mem" / "episodic.jsonl").write_text(
+        '{"event":"quest","status":"success"}\n{"event":"repair","status":"failure"}\n',
+        encoding="utf-8",
+    )
+    (life / "runs" / "run-1.jsonl").write_text('{"event":"mutation.applied"}\n', encoding="utf-8")
+    monkeypatch.setenv("SINGULAR_HOME", str(life))
+
+    events: list[dict[str, object]] = []
+    bus = EventBus()
+    bus.subscribe("self_narrative.updated", lambda event: events.append(event.payload))
+    service = OrchestratorService(config=OrchestratorConfig(dry_run=True), bus=bus)
+    service.state.current_phase = LifecyclePhase.INTROSPECTION.value
+
+    service.tick()
+
+    path = life / "mem" / "self_narrative.json"
+    assert path.exists()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["current_heading"]
+    assert events
+    assert events[-1]["event_type"] == "self_narrative.updated"
+    assert any(
+        isinstance(item, dict)
+        and isinstance(item.get("details"), dict)
+        and item["details"].get("event_type") == "self_narrative.updated"
+        for item in service.state.last_events
+    )
+
+
+def test_orchestrator_introspection_frequency_uses_introspection_ticks(monkeypatch, tmp_path: Path) -> None:
+    life = tmp_path / "life"
+    (life / "skills").mkdir(parents=True)
+    (life / "mem").mkdir(parents=True)
+    monkeypatch.setenv("SINGULAR_HOME", str(life))
+
+    events: list[dict[str, object]] = []
+    bus = EventBus()
+    bus.subscribe("self_narrative.updated", lambda event: events.append(event.payload))
+    service = OrchestratorService(
+        config=OrchestratorConfig(dry_run=True, introspection_frequency_ticks=2),
+        bus=bus,
+    )
+    service.state.current_phase = LifecyclePhase.INTROSPECTION.value
+    service.tick()
+    assert not events
+    service.state.current_phase = LifecyclePhase.INTROSPECTION.value
+    service.tick()
+    assert len(events) == 1
