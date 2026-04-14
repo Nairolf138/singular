@@ -36,6 +36,7 @@ from singular.environment import artifacts as env_artifacts
 from singular.environment import files as env_files
 from singular.environment import notifications as env_notifications
 from singular.environment.reputation import ReputationSystem
+from singular.environment.world_resources import CompetitorIntent, WorldResourcePool
 from singular.goals import IntrinsicGoals
 from singular.resource_manager import ResourceManager
 
@@ -93,6 +94,7 @@ class WorldState:
     organisms: Dict[str, Organism] = field(default_factory=dict)
     resource_pool: float = 100.0
     reputation: ReputationSystem = field(default_factory=ReputationSystem)
+    world_resources: WorldResourcePool = field(default_factory=WorldResourcePool)
 
 
 @dataclass
@@ -103,6 +105,8 @@ class EcosystemRules:
     passive_energy_decay: float = 0.05
     passive_resource_decay: float = 0.02
     crossover_interval: int = 50
+    cooperation_probability: float = 0.2
+    competition_bid_ceiling: float = 5.0
     reputation_action_weights: dict[str, float] = field(
         default_factory=lambda: {"share": 0.2, "steal": -0.2}
     )
@@ -994,6 +998,7 @@ def run(
                     score_combined_base=combined_base,
                     score_combined_new=combined_mutated,
                 )
+            org.last_score = mutated_score
             if accepted:
                 governance_root = skill_path.parent.parent if skill_path.parent.name == "skills" else skill_path.parent
                 decision = governance_policy.enforce_write(skill_path, mutated, root=governance_root)
@@ -1018,7 +1023,6 @@ def run(
                     )
                     org.energy -= 0.1
                 else:
-                    org.last_score = mutated_score
                     org.energy += 0.2
                     world.reputation.update(
                         org_name,
@@ -1118,18 +1122,81 @@ def run(
                 )
                 last_post = time.time()
 
-            # Shared resource competition
+            # Shared world resources: cooperation and competition arbitration.
             competition_unit = max(ecosystem_rules.resource_competition_unit, 0.0)
-            if world.resource_pool > 0:
-                claimed = min(world.resource_pool, competition_unit)
-                world.resource_pool -= claimed
-                org.resources += claimed
+            cooperation_partners: list[str] = []
+            other_names = [name for name in world.organisms if name != org_name]
+            arbitration_seed = int(
+                hashlib.sha1(f"{state.iteration}:{org_name}".encode("utf-8")).hexdigest()[:8],
+                16,
+            )
+            arbitration_rng = random.Random(arbitration_seed)
+            if other_names and arbitration_rng.random() < max(
+                ecosystem_rules.cooperation_probability, 0.0
+            ):
+                cooperation_partners.append(arbitration_rng.choice(other_names))
+            competitor_intents: list[CompetitorIntent] = []
+            for other_name in other_names:
+                if other_name in cooperation_partners:
+                    continue
+                other_priority = int(
+                    max(world.reputation.get(other_name), 0.0) * 10
+                ) + arbitration_rng.randint(0, 2)
+                competitor_intents.append(
+                    CompetitorIntent(
+                        life_id=other_name,
+                        priority=other_priority,
+                        bid=arbitration_rng.uniform(
+                            0.0, ecosystem_rules.competition_bid_ceiling
+                        ),
+                    )
+                )
+            action_resolution = world.world_resources.consume_for_action(
+                life_id=org_name,
+                cpu_cost=max(cpu_ms / 1000.0, 0.05),
+                mutation_cost=max(competition_unit, 0.05),
+                attention_cost=1.0 if accepted else 1.2,
+                cooperation_partners=cooperation_partners,
+                priority=int(max(world.reputation.get(org_name), 0.0) * 10),
+                bid=arbitration_rng.uniform(0.0, ecosystem_rules.competition_bid_ceiling),
+                competitor_intents=competitor_intents,
+            )
+            if action_resolution.granted:
+                world.resource_pool = max(
+                    0.0,
+                    world.resource_pool
+                    - max(
+                        action_resolution.consumed["mutation_slots"],
+                        competition_unit,
+                    ),
+                )
+                org.resources = max(
+                    0.0,
+                    org.resources
+                    + competition_unit
+                    - (action_resolution.consumed["cpu_budget"] * 0.01)
+                    - (action_resolution.consumed["attention_score"] * 0.01),
+                )
             else:
-                org.resources -= competition_unit
+                org.resources = max(
+                    0.0,
+                    org.resources - (competition_unit * 0.2) - action_resolution.rivalry_penalty,
+                )
+
+            if cooperation_partners:
+                for partner in cooperation_partners:
+                    world.reputation.update(partner, "share")
+                world.reputation.update(org_name, "share")
+                org.energy += action_resolution.relation_bonus
+            elif action_resolution.conflicts:
+                world.reputation.update(org_name, "steal")
 
             for other in world.organisms.values():
-                other.energy -= ecosystem_rules.passive_energy_decay
-                other.resources -= ecosystem_rules.passive_resource_decay
+                other.energy = max(0.1, other.energy - ecosystem_rules.passive_energy_decay)
+                other.resources = max(
+                    0.1,
+                    other.resources - ecosystem_rules.passive_resource_decay,
+                )
 
             sandbox_failure = (
                 base_score == float("-inf") or mutated_score == float("-inf")
@@ -1157,6 +1224,15 @@ def run(
                 INTERACTION_RESOURCE_COMPETITION,
                 organism=org_name,
                 resource_pool=world.resource_pool,
+                world_resources={
+                    "cpu_budget": world.world_resources.cpu_budget,
+                    "mutation_slots": world.world_resources.mutation_slots,
+                    "attention_score": world.world_resources.attention_score,
+                },
+                contention=action_resolution.contention,
+                conflicts=action_resolution.conflicts,
+                arbitration_winner=action_resolution.arbitration_winner,
+                cooperation_partners=action_resolution.cooperation_partners,
                 energy=org.energy,
                 resources=org.resources,
                 reputation=world.reputation.get(org_name),
@@ -1248,9 +1324,9 @@ def run(
                     reason=reason or "unknown",
                     alive=False,
                 )
-                del world.organisms[org_name]
-                if not world.organisms:
-                    break
+                org.energy = max(org.energy, 1.0)
+                org.resources = max(org.resources, 1.0)
+                org.monitor = DeathMonitor()
                 tick_count += 1
                 continue
 
@@ -1267,7 +1343,8 @@ def run(
                     reason="depleted_stores",
                     alive=False,
                 )
-                del world.organisms[name]
+                world.organisms[name].energy = 1.0
+                world.organisms[name].resources = 1.0
 
             # Periodic crossover
             if (
@@ -1308,6 +1385,23 @@ def run(
                     )
             tick_count += 1
 
+    for org in world.organisms.values():
+        if org.last_score != float("-inf"):
+            continue
+        skill_files = sorted(org.skills_dir.glob("*.py"))
+        if not skill_files:
+            continue
+        try:
+            source = skill_files[0].read_text(encoding="utf-8")
+        except OSError:
+            continue
+        fallback_score = score_code(source)
+        if fallback_score == float("-inf") and "=" in source:
+            try:
+                fallback_score = float(source.split("=", maxsplit=1)[1].strip())
+            except (TypeError, ValueError):
+                fallback_score = 0.0
+        org.last_score = fallback_score
     return state
 
 

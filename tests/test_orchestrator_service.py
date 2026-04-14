@@ -127,6 +127,32 @@ def test_orchestrator_action_executes_skill_runtime(monkeypatch, tmp_path: Path)
     assert context["phase"] == "action"
 
 
+def test_orchestrator_action_passes_world_state_to_tick(monkeypatch, tmp_path: Path) -> None:
+    life = tmp_path / "life"
+    (life / "skills").mkdir(parents=True)
+    (life / "mem").mkdir(parents=True)
+    (life / "skills" / "a.py").write_text("result = 1", encoding="utf-8")
+    monkeypatch.setenv("SINGULAR_HOME", str(life))
+
+    captured: dict[str, object] = {}
+
+    def _fake_run_tick(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr("singular.orchestrator.service.run_tick", _fake_run_tick)
+    service = OrchestratorService(config=OrchestratorConfig(dry_run=False), bus=EventBus())
+    service.state.current_phase = LifecyclePhase.ACTION.value
+    monkeypatch.setattr(
+        service.skill_runtime,
+        "execute_best_skill",
+        lambda task, context: SkillExecutionResult(skill="a", status="succeeded", score=1.0),
+    )
+
+    service.tick()
+
+    assert captured["world"] is service.world_state
+
+
 def test_orchestrator_requests_help_after_failure_streak(monkeypatch, tmp_path: Path) -> None:
     life = tmp_path / "life"
     (life / "skills").mkdir(parents=True)
