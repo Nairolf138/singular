@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 import multiprocessing as mp
 from pathlib import Path
+from unittest.mock import Mock
 
 from singular.multiagent import (
     AgentMessage,
@@ -15,6 +16,7 @@ from singular.multiagent import (
     resolve_conflicts,
     validate_message_schema,
 )
+from singular.multiagent import protocol as protocol_module
 from singular.governance.policy import MutationGovernancePolicy
 
 
@@ -290,3 +292,58 @@ def test_help_exchange_coordinator_emits_help_requested(tmp_path: Path) -> None:
     messages = transport.receive()
     assert len(messages) == 1
     assert messages[0].intent == "help.requested"
+
+
+def test_atomic_write_text_flushes_and_fsyncs_and_creates_parent(
+    tmp_path: Path, monkeypatch
+) -> None:
+    destination = tmp_path / "nested" / "queue" / "messages.jsonl"
+    fake_tmp_path = tmp_path / "tmp-write"
+    flush_mock = Mock()
+    fileno_mock = Mock(return_value=123)
+    write_mock = Mock()
+    unlink_calls: list[str] = []
+
+    class _FakeTempFile:
+        name = str(fake_tmp_path)
+
+        def write(self, data: str) -> None:
+            write_mock(data)
+
+        def flush(self) -> None:
+            flush_mock()
+
+        def fileno(self) -> int:
+            return fileno_mock()
+
+        def __enter__(self) -> "_FakeTempFile":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def _fake_named_tempfile(*args, **kwargs):
+        assert destination.parent.exists()
+        assert kwargs["dir"] == destination.parent
+        return _FakeTempFile()
+
+    fsync_mock = Mock()
+    replace_mock = Mock()
+
+    def _fake_unlink(path: str) -> None:
+        unlink_calls.append(path)
+        raise FileNotFoundError
+
+    monkeypatch.setattr(protocol_module.tempfile, "NamedTemporaryFile", _fake_named_tempfile)
+    monkeypatch.setattr(protocol_module.os, "fsync", fsync_mock)
+    monkeypatch.setattr(protocol_module.os, "replace", replace_mock)
+    monkeypatch.setattr(protocol_module.os, "unlink", _fake_unlink)
+
+    protocol_module._atomic_write_text(destination, "payload")
+
+    write_mock.assert_called_once_with("payload")
+    flush_mock.assert_called_once()
+    fileno_mock.assert_called_once()
+    fsync_mock.assert_any_call(123)
+    replace_mock.assert_called_once_with(str(fake_tmp_path), destination)
+    assert unlink_calls == [str(fake_tmp_path)]

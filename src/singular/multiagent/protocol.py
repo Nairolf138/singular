@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Literal, Protocol
 import json
+import os
+import tempfile
 import time
 from collections import defaultdict, deque
 
@@ -16,7 +18,7 @@ from singular.events import (
     build_help_event_payload,
 )
 from singular.governance.policy import AUTH_AUTO, AUTH_FORCED, MutationGovernancePolicy
-from singular.io_utils import append_jsonl_line, atomic_write_text
+from singular.io_utils import append_jsonl_line
 from singular.life import sandbox
 
 MESSAGE_SCHEMA_V1: dict[str, Any] = {
@@ -168,13 +170,39 @@ class FileQueueTransport:
         if not self.path.exists():
             return []
         payload = self.path.read_text(encoding="utf-8")
-        atomic_write_text(self.path, "")
+        _atomic_write_text(self.path, "")
         messages: list[AgentMessage] = []
         for line in payload.splitlines():
             if not line.strip():
                 continue
             messages.append(AgentMessage.from_dict(json.loads(line)))
         return messages
+
+
+def _atomic_write_text(path: Path, data: str) -> None:
+    """Atomically write text to ``path`` using a temporary sibling file."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=path.parent, delete=False
+    )
+    try:
+        with tmp:
+            tmp.write(data)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        os.replace(tmp.name, path)
+        if os.name != "nt":
+            dir_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except FileNotFoundError:
+            pass
 
 
 def resolve_conflicts(messages: Iterable[AgentMessage]) -> dict[str, AgentMessage]:
