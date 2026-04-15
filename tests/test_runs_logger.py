@@ -7,6 +7,7 @@ from singular.runs.explain import summarize_mutation
 
 def test_log_creation(tmp_path: Path) -> None:
     logger = RunLogger("test", root=tmp_path)
+    assert (tmp_path / "test" / ".active.lock").exists()
     summary = summarize_mutation(
         operator="op",
         impacted_file="skill.py",
@@ -47,6 +48,7 @@ def test_log_creation(tmp_path: Path) -> None:
     assert event["version"] == 1
     assert event["event_type"] == "mutation"
     assert event["payload"]["human_summary"] == summary
+    assert not (tmp_path / "test" / ".active.lock").exists()
 
 
 def test_resume_after_crash(tmp_path: Path) -> None:

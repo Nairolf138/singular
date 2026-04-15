@@ -14,9 +14,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import json
 import os
+import shutil
+import time
 from typing import Any, Mapping
 
+from .io_utils import append_jsonl_line
+
 _DEFAULT_PERSISTED_CONFIG_RELATIVE_PATH = Path("mem") / "retention_policy.json"
+_RETENTION_LOG_RELATIVE_PATH = Path("mem") / "retention.log.jsonl"
 _BYTES_PER_MB = 1024 * 1024
 
 
@@ -43,6 +48,8 @@ class PolicyDecision:
     reason: str
     size_mb: float | None = None
     age_days: float | None = None
+    run_id: str | None = None
+    active: bool = False
 
 
 @dataclass(frozen=True)
@@ -72,6 +79,83 @@ def _coerce_positive_int(value: Any, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return parsed if parsed > 0 else default
+
+
+def _walk_total_size(path: Path) -> int:
+    if not path.exists():
+        return 0
+    if path.is_file():
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+    total = 0
+    for file in path.rglob("*"):
+        if not file.is_file():
+            continue
+        try:
+            total += file.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def _latest_mtime(path: Path) -> datetime | None:
+    if not path.exists():
+        return None
+    timestamps: list[float] = []
+    try:
+        timestamps.append(path.stat().st_mtime)
+    except OSError:
+        return None
+    if path.is_dir():
+        for file in path.rglob("*"):
+            try:
+                timestamps.append(file.stat().st_mtime)
+            except OSError:
+                continue
+    if not timestamps:
+        return None
+    return datetime.fromtimestamp(max(timestamps), tz=timezone.utc)
+
+
+def _run_id_from_legacy_file(path: Path) -> str:
+    stem = path.stem
+    return stem.rsplit("-", 1)[0] if "-" in stem else stem
+
+
+def _is_active_run(runs_dir: Path, run_id: str) -> bool:
+    run_dir = runs_dir / run_id
+    if (run_dir / ".active.lock").exists():
+        return True
+    return any(runs_dir.glob(f"{run_id}-*.jsonl.tmp"))
+
+
+def _retention_log_path(runs_dir: Path) -> Path:
+    base_dir = runs_dir.parent
+    return base_dir / _RETENTION_LOG_RELATIVE_PATH
+
+
+def _safe_delete_path(target: Path) -> tuple[bool, str]:
+    if not target.exists():
+        return True, "missing"
+    tombstone = target.with_name(f".purge-{target.name}-{time.time_ns()}")
+    try:
+        os.replace(target, tombstone)
+    except FileNotFoundError:
+        return True, "missing"
+    except OSError as exc:
+        return False, f"rename_failed:{exc.__class__.__name__}"
+    try:
+        if tombstone.is_dir():
+            shutil.rmtree(tombstone, ignore_errors=False)
+        else:
+            tombstone.unlink()
+    except FileNotFoundError:
+        return True, "missing"
+    except OSError as exc:
+        return False, f"remove_failed:{exc.__class__.__name__}"
+    return True, "deleted"
 
 
 def persisted_retention_config_path(base_dir: Path | None = None) -> Path:
@@ -144,48 +228,77 @@ def build_runs_policy_report(
     """Build retention decisions for run JSONL logs in ``runs_dir``."""
 
     ref_now = now or _now_utc()
-    candidates = []
-    for file in runs_dir.glob("*.jsonl"):
-        try:
-            stat = file.stat()
-        except OSError:
-            continue
-        mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
-        age_days = (ref_now - mtime).total_seconds() / 86400
-        size = stat.st_size
-        candidates.append((file, mtime, age_days, size))
+    grouped: dict[str, list[Path]] = {}
+    for run_dir in runs_dir.iterdir() if runs_dir.exists() else []:
+        if run_dir.is_dir():
+            grouped.setdefault(run_dir.name, []).append(run_dir)
+    for legacy_file in runs_dir.glob("*.jsonl"):
+        grouped.setdefault(_run_id_from_legacy_file(legacy_file), []).append(legacy_file)
 
-    candidates.sort(key=lambda row: (row[1], row[0].name), reverse=True)
+    candidates: list[tuple[str, Path, datetime, float, int, bool]] = []
+    for run_id, artifacts in grouped.items():
+        mtimes = [mtime for artifact in artifacts if (mtime := _latest_mtime(artifact)) is not None]
+        if not mtimes:
+            continue
+        latest_mtime = max(mtimes)
+        age_days = (ref_now - latest_mtime).total_seconds() / 86400
+        size = sum(_walk_total_size(artifact) for artifact in artifacts)
+        primary = runs_dir / run_id if (runs_dir / run_id).exists() else artifacts[0]
+        candidates.append((run_id, primary, latest_mtime, age_days, size, _is_active_run(runs_dir, run_id)))
+
+    candidates.sort(key=lambda row: (row[2], row[0]), reverse=True)
 
     decisions: list[PolicyDecision] = []
+    kept_count = 0
+    kept_candidates: list[tuple[int, int]] = []
     running_size = 0
-    for index, (file, _mtime, age_days, size) in enumerate(candidates):
+    for index, (run_id, target, _mtime, age_days, size, active) in enumerate(candidates):
         size_mb = size / _BYTES_PER_MB
         action = "keep"
         reason = "within_policy"
-        if index >= config.max_runs:
+        if active:
+            reason = "active_run_protected"
+        elif kept_count >= config.max_runs:
             action = "delete"
             reason = "max_runs"
         elif age_days > config.max_run_age_days:
-            action = "archive"
+            action = "delete"
             reason = "max_run_age_days"
-        elif (running_size + size) / _BYTES_PER_MB > config.max_total_runs_size_mb:
-            action = "archive"
-            reason = "max_total_runs_size_mb"
-
-        if action == "keep":
+        else:
+            kept_count += 1
             running_size += size
 
         decisions.append(
             PolicyDecision(
-                target=str(file),
+                target=str(target),
                 category="runs",
                 action=action,
                 reason=reason,
                 size_mb=round(size_mb, 4),
                 age_days=round(age_days, 4),
+                run_id=run_id,
+                active=active,
             )
         )
+        if action == "keep" and not active:
+            kept_candidates.append((index, size))
+
+    if running_size / _BYTES_PER_MB > config.max_total_runs_size_mb:
+        for index, size in sorted(kept_candidates, key=lambda row: row[0], reverse=True):
+            if running_size / _BYTES_PER_MB <= config.max_total_runs_size_mb:
+                break
+            decision = decisions[index]
+            decisions[index] = PolicyDecision(
+                target=decision.target,
+                category=decision.category,
+                action="delete",
+                reason="max_total_runs_size_mb",
+                size_mb=decision.size_mb,
+                age_days=decision.age_days,
+                run_id=decision.run_id,
+                active=decision.active,
+            )
+            running_size -= size
 
     return PolicyReport(
         generated_at=ref_now.isoformat(),
@@ -209,11 +322,42 @@ def apply_runs_retention(
     """
 
     report = build_runs_policy_report(runs_dir=runs_dir, config=config, now=now)
+    retention_log = _retention_log_path(runs_dir)
+    by_run: dict[str, list[Path]] = {}
+    for run_dir in runs_dir.iterdir() if runs_dir.exists() else []:
+        if run_dir.is_dir():
+            by_run.setdefault(run_dir.name, []).append(run_dir)
+    for legacy_file in runs_dir.glob("*.jsonl"):
+        by_run.setdefault(_run_id_from_legacy_file(legacy_file), []).append(legacy_file)
+
     for decision in report.decisions:
-        if decision.action != "delete":
-            continue
-        try:
-            Path(decision.target).unlink()
-        except FileNotFoundError:
-            continue
+        delete_status = "skipped"
+        if decision.action == "delete" and not decision.active:
+            artifacts = by_run.get(decision.run_id or "", [Path(decision.target)])
+            deleted_all = True
+            statuses: list[str] = []
+            for artifact in artifacts:
+                ok, status = _safe_delete_path(artifact)
+                statuses.append(f"{artifact.name}:{status}")
+                deleted_all = deleted_all and ok
+            delete_status = "deleted" if deleted_all else "error"
+            if statuses:
+                delete_status = f"{delete_status}:{','.join(statuses)}"
+
+        append_jsonl_line(
+            retention_log,
+            {
+                "ts": _now_utc().isoformat(),
+                "scope": "runs",
+                "run_id": decision.run_id,
+                "target": decision.target,
+                "action": decision.action,
+                "reason": decision.reason,
+                "active": decision.active,
+                "size_mb": decision.size_mb,
+                "age_days": decision.age_days,
+                "delete_status": delete_status,
+            },
+            with_lock=True,
+        )
     return report
