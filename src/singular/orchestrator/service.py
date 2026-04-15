@@ -96,6 +96,8 @@ class OrchestratorConfig:
     dry_run: bool = False
     safe_mode: bool = False
     help_request_failure_threshold: int = 3
+    max_consecutive_tick_failures: int = 10
+    tick_failure_backoff_seconds: float = 0.2
 
 
 class OrchestratorService:
@@ -672,6 +674,7 @@ class OrchestratorService:
 
     def run_forever(self) -> None:
         self._running = True
+        consecutive_tick_failures = 0
 
         def _handle_signal(_signum: int, _frame: Any) -> None:
             self._running = False
@@ -685,7 +688,33 @@ class OrchestratorService:
                     log.info("orchestrator stop requested via %s", self.stop_signal_path)
                     self._running = False
                     break
-                self.tick()
+                try:
+                    self.tick()
+                    consecutive_tick_failures = 0
+                except (
+                    PermissionError,
+                    BlockingIOError,
+                    InterruptedError,
+                    TimeoutError,
+                ) as exc:
+                    consecutive_tick_failures += 1
+                    log.warning(
+                        "orchestrator transient tick failure #%s in phase=%s "
+                        "(state_path=%s, stop_signal_path=%s, checkpoint_path=%s): %s",
+                        consecutive_tick_failures,
+                        self.state.current_phase,
+                        self.state_path,
+                        self.stop_signal_path,
+                        self.checkpoint_path,
+                        exc,
+                        exc_info=True,
+                    )
+                    max_failures = max(1, int(self.config.max_consecutive_tick_failures))
+                    if consecutive_tick_failures >= max_failures:
+                        raise
+                    backoff_seconds = max(self.config.tick_failure_backoff_seconds, 0.05)
+                    time.sleep(backoff_seconds)
+                    continue
                 if self._external_stimulus_detected():
                     continue
                 time.sleep(max(self.config.poll_interval_seconds, 0.05))
