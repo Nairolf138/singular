@@ -1,5 +1,8 @@
 import {fetchJson,withScope} from './api.js';
 import {HOST_SENSORS_THRESHOLD,na,setPanelState,setStatusTone,applyStatusIndicator} from './state.js';
+import {renderQuestsSection} from './render-quests.js';
+import {renderObjectivesSection} from './render-objectives.js';
+import {renderConversationsSection} from './render-conversations.js';
 
 const renderDailySkills=(dailySkills)=>{
   const frequency=dailySkills?.frequency_totals||{};
@@ -155,7 +158,11 @@ export const loadEco=()=>Promise.all([fetchJson(withScope('/ecosystem')),fetchJs
   document.getElementById('raw-eco-json').textContent=JSON.stringify(eco,null,2);
 });
 
-export const loadQuests=()=>fetchJson('/quests').then(data=>{document.getElementById('quests').textContent=JSON.stringify(data,null,2);});
+export const loadQuests=()=>fetchJson('/api/dashboard/work-items').then(data=>{
+  renderQuestsSection(data?.quests||{active:[],completed:[]});
+  renderObjectivesSection(data?.objectives||{items:[]});
+  renderConversationsSection(data?.conversations||{items:[]});
+});
 
 export const loadHostVitals=()=>fetchJson(withScope('/runs/latest')).then(data=>{
   const hasData=renderHostMetrics(data?.records||[]);

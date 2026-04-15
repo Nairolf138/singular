@@ -105,6 +105,57 @@ def test_dashboard_quests_endpoint(tmp_path: Path, monkeypatch) -> None:
     assert len(payload["completed"]) == 1
 
 
+def test_dashboard_work_items_schema_contains_required_fields(
+    tmp_path: Path, monkeypatch
+) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    psyche_file = tmp_path / "psyche.json"
+    psyche_file.write_text(json.dumps({"mood": "curious"}), encoding="utf-8")
+
+    mem_dir = tmp_path / "mem"
+    mem_dir.mkdir()
+    quests_state = {
+        "active": [
+            {
+                "name": "q1",
+                "status": "active",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "next_step": "traiter alerte",
+            }
+        ],
+        "completed": [],
+    }
+    (mem_dir / "quests_state.json").write_text(json.dumps(quests_state), encoding="utf-8")
+
+    run_file = runs_dir / "loop.jsonl"
+    run_file.write_text(json.dumps({"ts": "2026-01-01T00:00:00+00:00"}), encoding="utf-8")
+    consciousness_file = runs_dir / "loop.consciousness.jsonl"
+    consciousness_file.write_text(
+        json.dumps(
+            {
+                "ts": "2026-01-01T00:01:00+00:00",
+                "objective": "stabiliser",
+                "success": True,
+                "next_step": "ouvrir rapport",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    app = create_app(runs_dir=runs_dir, psyche_file=psyche_file)
+    payload = TestClient(app).get("/api/dashboard/work-items").json()
+
+    for section in ("objectives", "conversations"):
+        assert "items" in payload[section]
+        assert payload[section]["items"]
+        for item in payload[section]["items"]:
+            for required in ("title", "status", "last_update", "next_step"):
+                assert required in item
+                assert item[required]
+
+
 def test_dashboard_alerts_endpoint(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
@@ -345,6 +396,10 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "Vie courante (SINGULAR_HOME)" in body
     assert "Nombre de vies détectées" in body
     assert "Quêtes" in body
+    assert "quests-table-body" in body
+    assert "objectives-table-body" in body
+    assert "conversations-table-body" in body
+    assert "Voir JSON" in body
     assert "Cycle circadien & objectifs actifs" in body
     assert "Trajectory des objectifs" in body
     assert "kpi-trajectory-in-progress" in body

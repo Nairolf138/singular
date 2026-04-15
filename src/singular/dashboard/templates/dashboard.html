@@ -211,7 +211,60 @@
     <h3>Impact des politiques actives</h3>
     <ul id='ctx-policy-impact'><li>Chargement…</li></ul>
     <h3>État psychique</h3><pre id='psyche'></pre>
-    <h3>Quêtes</h3><pre id='quests'>{"active":[],"completed":[]}</pre>
+    <h3>Quêtes</h3>
+    <section id='quests-section' class='panel panel-compact'>
+      <table class='table-base table-spacing-top'>
+        <thead>
+          <tr>
+            <th>Objectif</th>
+            <th>État</th>
+            <th>Priorité</th>
+            <th>Propriétaire</th>
+            <th>Dernière action</th>
+            <th>Blocage</th>
+          </tr>
+        </thead>
+        <tbody id='quests-table-body'></tbody>
+      </table>
+      <button type='button' id='quests-json-toggle' class='toggle-more-btn content-top-gap' aria-expanded='false'>Voir JSON</button>
+      <pre id='quests-json-raw' class='panel-hidden content-top-gap'>{"active":[],"completed":[]}</pre>
+    </section>
+    <h3>Objectifs</h3>
+    <section id='objectives-section' class='panel panel-compact'>
+      <table class='table-base table-spacing-top'>
+        <thead>
+          <tr>
+            <th>Objectif</th>
+            <th>État</th>
+            <th>Priorité</th>
+            <th>Propriétaire</th>
+            <th>Dernière action</th>
+            <th>Blocage</th>
+          </tr>
+        </thead>
+        <tbody id='objectives-table-body'></tbody>
+      </table>
+      <button type='button' id='objectives-json-toggle' class='toggle-more-btn content-top-gap' aria-expanded='false'>Voir JSON</button>
+      <pre id='objectives-json-raw' class='panel-hidden content-top-gap'>{"items":[]}</pre>
+    </section>
+    <h3>Conversations</h3>
+    <section id='conversations-section' class='panel panel-compact'>
+      <table class='table-base table-spacing-top'>
+        <thead>
+          <tr>
+            <th>Objectif</th>
+            <th>État</th>
+            <th>Priorité</th>
+            <th>Propriétaire</th>
+            <th>Dernière action</th>
+            <th>Blocage</th>
+          </tr>
+        </thead>
+        <tbody id='conversations-table-body'></tbody>
+      </table>
+      <button type='button' id='conversations-json-toggle' class='toggle-more-btn content-top-gap' aria-expanded='false'>Voir JSON</button>
+      <pre id='conversations-json-raw' class='panel-hidden content-top-gap'>{"items":[]}</pre>
+    </section>
     <h3>Organismes (résumé)</h3>
     <ul id='organisms-list'></ul>
   </section>
