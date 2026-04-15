@@ -40,6 +40,16 @@ const schedulerLabelIds={
   quests:'parametres',
   hostVitals:'cockpit',
 };
+const panelBindings={
+  cockpit:{panelId:'cockpit',emptyMessage:'Aucune donnée cockpit disponible.'},
+  timeline:{panelId:'timeline-section',emptyMessage:'Aucun événement de timeline disponible.'},
+  lives:{panelId:'vies',emptyMessage:'Aucune vie disponible pour les filtres actuels.'},
+  reflections:{panelId:'reflections-section',emptyMessage:'Aucune réflexion pour ces filtres.'},
+  hostVitals:{panelId:'host-vitals-panel',emptyMessage:'Aucune métrique hôte exploitable.'},
+};
+const panelFirstLoadDone=new Set();
+const staleTimeoutTasks=new Set();
+const PROLONGED_TIMEOUT_THRESHOLD=2;
 const fmtTimestamp=(value=new Date())=>{
   const d=value instanceof Date?value:new Date(value);
   if(Number.isNaN(d.getTime())){return 'n/a';}
@@ -75,11 +85,19 @@ const runTask=async task=>{
   if(task.inFlight||schedulerState.paused){return;}
   task.inFlight=true;
   task.lastRunAt=Date.now();
+  const binding=panelBindings[task.name];
+  if(binding){setPanelState(binding.panelId,'loading','Chargement en cours…');}
   try{
     await task.loader();
     task.errorCount=0;
     task.nextRunAt=Date.now()+task.intervalMs;
     markUpdated(task.name,new Date());
+    if(binding){
+      const layer=document.getElementById(binding.panelId)?.querySelector(':scope > .state-layer');
+      if(!layer||layer.dataset.state==='loading'){setPanelState(binding.panelId,'ready');}
+      panelFirstLoadDone.add(binding.panelId);
+    }
+    markStaleTimeout(task.name,false);
   }catch(error){
     if(shouldBackoff(error)){
       task.errorCount+=1;
@@ -87,6 +105,11 @@ const runTask=async task=>{
       const retryIn=Math.min(schedulerConfig.backoff.maxMs,schedulerConfig.backoff.baseMs*factor);
       task.nextRunAt=Date.now()+retryIn;
       markUpdateError(task.name,error);
+      if(binding){
+        const actionable=`API indisponible, nouvelle tentative dans ${Math.ceil(retryIn/1000)}s.`;
+        setPanelState(binding.panelId,'error',actionable);
+      }
+      markStaleTimeout(task.name,error?.code==='timeout'&&task.errorCount>=PROLONGED_TIMEOUT_THRESHOLD);
     }else{
       task.nextRunAt=Date.now()+task.intervalMs;
     }
@@ -125,7 +148,62 @@ const bootstrapPauseControls=()=>{
 
 const setStatusTone=(el,tone)=>{el.classList.remove('status-good','status-warn','status-bad');if(tone==='good'){el.classList.add('status-good');}if(tone==='warn'){el.classList.add('status-warn');}if(tone==='bad'){el.classList.add('status-bad');}};
 const withScope=(url)=>{const u=new URL(url,window.location.origin);if(scopeState.currentLifeOnly){u.searchParams.set('current_life_only','true');}return `${u.pathname}${u.search}`;};
-const fetchJson=(url,options)=>fetch(url,options).then(async response=>{if(!response.ok){throw new Error(`HTTP ${response.status} sur ${url}`);}return response.json();});
+const ensurePanelLayer=(panelId)=>{
+  const panel=document.getElementById(panelId);
+  if(!panel){return null;}
+  panel.classList.add('state-scope');
+  let layer=panel.querySelector(':scope > .state-layer');
+  if(!layer){
+    layer=document.createElement('div');
+    layer.className='state-layer';
+    panel.insertBefore(layer,panel.firstChild);
+  }
+  return layer;
+};
+const setPanelState=(panelId,state,message='')=>{
+  const layer=ensurePanelLayer(panelId);
+  if(!layer){return;}
+  const defaultMessage=state==='loading'?'Chargement…':(state==='empty'?'Aucune donnée disponible.':(state==='error'?'Erreur de chargement.':''));
+  layer.dataset.state=state;
+  const text=message||defaultMessage;
+  const withSkeleton=state==='loading'&&!panelFirstLoadDone.has(panelId);
+  const skeleton=withSkeleton?"<div class='skeleton-line'></div><div class='skeleton-line'></div><div class='skeleton-line'></div>":'';
+  layer.innerHTML=`<div class='state-message'>${text}</div>${skeleton}`;
+  if(state==='ready'){layer.innerHTML='';}
+};
+const updateStaleBanner=()=>{
+  const banner=document.getElementById('stale-data-banner');
+  if(!banner){return;}
+  if(!staleTimeoutTasks.size){
+    banner.classList.add('panel-hidden');
+    banner.textContent='';
+    return;
+  }
+  const tasks=[...staleTimeoutTasks].join(', ');
+  banner.classList.remove('panel-hidden');
+  banner.textContent=`⚠️ Données potentiellement obsolètes : timeout prolongé sur ${tasks}.`;
+};
+const markStaleTimeout=(taskName,isTimeout)=>{
+  if(isTimeout){staleTimeoutTasks.add(taskName);}
+  else{staleTimeoutTasks.delete(taskName);}
+  updateStaleBanner();
+};
+const fetchJson=(url,options={})=>{
+  const timeoutMs=options.timeoutMs??4500;
+  const controller=new AbortController();
+  const timeoutId=setTimeout(()=>controller.abort(),timeoutMs);
+  return fetch(url,{...options,signal:controller.signal}).then(async response=>{
+    if(!response.ok){throw new Error(`HTTP ${response.status} sur ${url}`);}
+    return response.json();
+  }).catch(error=>{
+    if(error?.name==='AbortError'){
+      const timeoutError=new Error(`Timeout API sur ${url}`);
+      timeoutError.code='timeout';
+      throw timeoutError;
+    }
+    throw error;
+  }).finally(()=>clearTimeout(timeoutId));
+};
 const renderDailySkills=(dailySkills)=>{
   const frequency=dailySkills?.frequency_totals||{};
   const progression=dailySkills?.progression_pipeline||{};
@@ -230,6 +308,7 @@ const renderHostMetrics=(records)=>{
   }else{
     adaptationEl.textContent='Dernière adaptation capteur: aucune adaptation trouvée';
   }
+  return unsupportedCount<metricDef.length;
 };
 
 const loadContext=()=>fetchJson('/dashboard/context').then(ctx=>{
@@ -286,9 +365,13 @@ const loadEco=()=>Promise.all([fetchJson(withScope('/ecosystem')),fetchJson(with
 
 
 const loadQuests=()=>fetchJson('/quests').then(data=>{document.getElementById('quests').textContent=JSON.stringify(data,null,2);});
-const loadHostVitals=()=>fetchJson(withScope('/runs/latest')).then(data=>{renderHostMetrics(data?.records||[]);}).catch(error=>{renderHostMetrics([]);throw error;});
+const loadHostVitals=()=>fetchJson(withScope('/runs/latest')).then(data=>{
+  const hasData=renderHostMetrics(data?.records||[]);
+  if(!hasData){setPanelState('host-vitals-panel','empty','Capteurs hôte non supportés ou données absentes.');}
+}).catch(error=>{renderHostMetrics([]);throw error;});
 // Cockpit domain
 const loadCockpit=()=>fetchJson(withScope('/api/cockpit')).then(d=>{
+  if(!d||typeof d!=='object'){setPanelState('cockpit','empty','Aucune donnée cockpit disponible.');return;}
   const statusBox=document.getElementById('cockpit-status');
   statusBox.textContent=`Statut global: ${d.global_status||'unknown'}`;
   if(d.global_status==='stable'){setStatusTone(statusBox,'good');}
@@ -412,7 +495,7 @@ const renderUnattachedRuns=(payload)=>{const panel=document.getElementById('unat
 const renderGenealogyTree=(payload)=>{const nodes=payload?.nodes||[];const treeEl=document.getElementById('genealogy-tree');const socialEl=document.getElementById('social-network-tree');const conflictsEl=document.getElementById('active-conflicts');if(!nodes.length){treeEl.textContent='Aucune lignée enregistrée.';socialEl.textContent='Aucun réseau social.';conflictsEl.textContent='Aucun conflit.';return;}const bySlug=new Map(nodes.map(node=>[node.slug,node]));const children=new Map();for(const node of nodes){children.set(node.slug,[]);}for(const node of nodes){for(const parent of (node.parents||[])){if(children.has(parent)){children.get(parent).push(node.slug);}}}const roots=nodes.filter(node=>(node.parents||[]).length===0).map(node=>node.slug);const lines=[];const visit=(slug,depth)=>{const node=bySlug.get(slug);if(!node){return;}const marker=node.active?'★':'•';const status=node.status==='extinct'?'✝':'✓';lines.push(`${'  '.repeat(depth)}${marker} ${node.name} (${node.slug}) [${status}]`);for(const child of (children.get(slug)||[])){visit(child,depth+1);}};for(const root of roots){visit(root,0);}const detached=nodes.filter(node=>!roots.includes(node.slug)&&!(node.parents||[]).every(parent=>bySlug.has(parent)));for(const node of detached){lines.push(`• ${node.name} (${node.slug}) [orphan]`);}treeEl.textContent=lines.join('\n');const socialLines=[];for(const node of nodes){const allies=(node.allies||[]).join(', ')||'-';const rivals=(node.rivals||[]).join(', ')||'-';socialLines.push(`${node.slug} | proximité=${Number(node.proximity_score||0.5).toFixed(2)} | alliés: ${allies} | rivaux: ${rivals}`);}socialEl.textContent=socialLines.join('\n');const conflicts=payload?.active_conflicts||[];conflictsEl.textContent=conflicts.length?conflicts.map(c=>`${c.life_a} ⚔ ${c.life_b}`).join('\n'):'Aucun conflit actif.';};
 const loadGenealogy=()=>fetchJson('/lives/genealogy').then(renderGenealogyTree).catch(error=>{document.getElementById('genealogy-tree').textContent='Impossible de charger la généalogie.';throw error;});
 // Lives board domain
-const loadLivesBoard=()=>{const q=new URLSearchParams();q.set('sort_by',livesTableState.sortBy);q.set('sort_order',livesTableState.sortOrder);if(document.getElementById('filter-active').checked){q.set('active_only','true');}if(document.getElementById('filter-degrading').checked){q.set('degrading_only','true');}if(document.getElementById('filter-dead').checked){q.set('dead_only','true');}const timeWindow=document.getElementById('filter-time-window').value||'all';q.set('time_window',timeWindow);const compareLives=(document.getElementById('filter-compare-lives').value||'').trim();if(compareLives){q.set('compare_lives',compareLives);}if(scopeState.currentLifeOnly){q.set('current_life_only','true');}return fetchJson(`/lives/comparison?${q.toString()}`).then(d=>{renderLivesBuckets(Object.entries(d.lives||{}).map(([life,payload])=>({life,...payload})));renderLivesTable(d.table||[]);renderUnattachedRuns(d.unattached_runs);});};
+const loadLivesBoard=()=>{const q=new URLSearchParams();q.set('sort_by',livesTableState.sortBy);q.set('sort_order',livesTableState.sortOrder);if(document.getElementById('filter-active').checked){q.set('active_only','true');}if(document.getElementById('filter-degrading').checked){q.set('degrading_only','true');}if(document.getElementById('filter-dead').checked){q.set('dead_only','true');}const timeWindow=document.getElementById('filter-time-window').value||'all';q.set('time_window',timeWindow);const compareLives=(document.getElementById('filter-compare-lives').value||'').trim();if(compareLives){q.set('compare_lives',compareLives);}if(scopeState.currentLifeOnly){q.set('current_life_only','true');}return fetchJson(`/lives/comparison?${q.toString()}`).then(d=>{const tableRows=d.table||[];renderLivesBuckets(Object.entries(d.lives||{}).map(([life,payload])=>({life,...payload})));renderLivesTable(tableRows);renderUnattachedRuns(d.unattached_runs);if(!tableRows.length){setPanelState('vies','empty','Aucune vie pour ces filtres. Ajustez la fenêtre ou retirez des filtres.');}});};
 for(const button of document.querySelectorAll('#lives-table [data-sort]')){button.onclick=()=>{const next=button.getAttribute('data-sort');if(livesTableState.sortBy===next){livesTableState.sortOrder=livesTableState.sortOrder==='desc'?'asc':'desc';}else{livesTableState.sortBy=next;livesTableState.sortOrder='desc';}loadLivesBoard();};}
 document.getElementById('filter-active').onchange=()=>loadLivesBoard();
 document.getElementById('filter-degrading').onchange=()=>loadLivesBoard();
@@ -424,9 +507,9 @@ const updateLiveStatus=()=>{document.getElementById('live-status').textContent=l
 document.getElementById('live-toggle').onclick=()=>{liveState.paused=!liveState.paused;updateLiveStatus();if(!liveState.paused){renderLiveEvents();}};
 document.getElementById('live-autoscroll').onchange=e=>{liveState.autoScroll=Boolean(e.target.checked);if(liveState.autoScroll){renderLiveEvents();}};
 // Timeline domain
-const loadTimeline=()=>fetchJson(withScope('/runs/latest')).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}const q=scopeState.currentLifeOnly?'&current_life_only=true':'';return fetchJson(`/api/runs/${meta.run}/timeline?page=1&page_size=120${q}`);}).then(data=>{const wrap=document.getElementById('timeline');const summary=document.getElementById('timeline-summary');const impact=document.getElementById('timeline-impact');const diff=document.getElementById('timeline-diff');wrap.innerHTML='';let mutationIndex=0;for(const item of data.items||[]){const row=document.createElement('div');row.className='timeline-item';const btn=document.createElement('button');btn.className='timeline-button';btn.textContent=`${item.event} · ${item.timestamp||'n/a'}`;row.appendChild(btn);if(item.event==='mutation'&&data.run_id){const currentIndex=mutationIndex;mutationIndex+=1;btn.onclick=()=>showMutationDetail(data.run_id,currentIndex);const link=document.createElement('a');link.href=`/runs/${data.run_id}/mutations/${currentIndex}`;link.textContent='Voir détail';link.className='timeline-link';row.appendChild(link);}wrap.appendChild(row);}if(!(data.items||[]).length){summary.textContent='Aucun événement de frise disponible.';impact.textContent='';diff.textContent='';}});
+const loadTimeline=()=>fetchJson(withScope('/runs/latest')).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}const q=scopeState.currentLifeOnly?'&current_life_only=true':'';return fetchJson(`/api/runs/${meta.run}/timeline?page=1&page_size=120${q}`);}).then(data=>{const wrap=document.getElementById('timeline');const summary=document.getElementById('timeline-summary');const impact=document.getElementById('timeline-impact');const diff=document.getElementById('timeline-diff');wrap.innerHTML='';let mutationIndex=0;for(const item of data.items||[]){const row=document.createElement('div');row.className='timeline-item';const btn=document.createElement('button');btn.className='timeline-button';btn.textContent=`${item.event} · ${item.timestamp||'n/a'}`;row.appendChild(btn);if(item.event==='mutation'&&data.run_id){const currentIndex=mutationIndex;mutationIndex+=1;btn.onclick=()=>showMutationDetail(data.run_id,currentIndex);const link=document.createElement('a');link.href=`/runs/${data.run_id}/mutations/${currentIndex}`;link.textContent='Voir détail';link.className='timeline-link';row.appendChild(link);}wrap.appendChild(row);}if(!(data.items||[]).length){summary.textContent='Aucun événement de frise disponible.';impact.textContent='';diff.textContent='';setPanelState('timeline-section','empty','Aucun événement pour le run courant.');}});
 // Reflections domain
-const loadReflections=()=>fetchJson(withScope('/runs/latest')).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}const q=new URLSearchParams();const objective=document.getElementById('reflection-objective').value;const mood=document.getElementById('reflection-mood').value;const success=document.getElementById('reflection-success').value;if(objective){q.set('objective',objective);}if(mood){q.set('mood',mood);}if(success){q.set('success',success);}if(scopeState.currentLifeOnly){q.set('current_life_only','true');}const suffix=q.toString()?`?${q.toString()}`:'';return fetchJson(`/api/runs/${meta.run}/consciousness${suffix}`);}).then(data=>{const wrap=document.getElementById('reflections-timeline');const detail=document.getElementById('reflections-detail');wrap.innerHTML='';for(const item of data.items||[]){const row=document.createElement('div');row.className='timeline-item';const btn=document.createElement('button');btn.className='timeline-button';const mood=item.emotional_state?.mood||'n/a';const objective=item.objective||'n/a';btn.textContent=`${item.ts||'n/a'} · ${objective} · ${mood}`;btn.onclick=()=>{detail.textContent=JSON.stringify(item,null,2);};row.appendChild(btn);wrap.appendChild(row);}if(!(data.items||[]).length){detail.textContent='Aucune réflexion disponible pour ces filtres.';}});
+const loadReflections=()=>fetchJson(withScope('/runs/latest')).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}const q=new URLSearchParams();const objective=document.getElementById('reflection-objective').value;const mood=document.getElementById('reflection-mood').value;const success=document.getElementById('reflection-success').value;if(objective){q.set('objective',objective);}if(mood){q.set('mood',mood);}if(success){q.set('success',success);}if(scopeState.currentLifeOnly){q.set('current_life_only','true');}const suffix=q.toString()?`?${q.toString()}`:'';return fetchJson(`/api/runs/${meta.run}/consciousness${suffix}`);}).then(data=>{const wrap=document.getElementById('reflections-timeline');const detail=document.getElementById('reflections-detail');wrap.innerHTML='';for(const item of data.items||[]){const row=document.createElement('div');row.className='timeline-item';const btn=document.createElement('button');btn.className='timeline-button';const mood=item.emotional_state?.mood||'n/a';const objective=item.objective||'n/a';btn.textContent=`${item.ts||'n/a'} · ${objective} · ${mood}`;btn.onclick=()=>{detail.textContent=JSON.stringify(item,null,2);};row.appendChild(btn);wrap.appendChild(row);}if(!(data.items||[]).length){detail.textContent='Aucune réflexion disponible pour ces filtres.';setPanelState('reflections-section','empty','Aucune réflexion disponible. Essayez d’élargir les filtres.');}});
 document.getElementById('reflection-apply').onclick=()=>loadReflections();
 
 // Module bootstrap

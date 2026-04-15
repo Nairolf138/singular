@@ -15,6 +15,7 @@
   <a href="#logs-live">Logs</a> ·
   <a href="#parametres">Paramètres</a>
 </nav>
+<div id='stale-data-banner' class='stale-banner panel-hidden' role='status' aria-live='polite'></div>
 <div class='intro-box'>
   <strong>Guide de lecture rapide (humain)</strong>
   <ol class='intro-steps'>
@@ -38,7 +39,7 @@
     <div class='card'><div class='card-label'>Alertes critiques</div><div id='kpi-alerts' class='card-value'>0</div></div>
     <div class='card'><div class='card-label'>Prochaine action</div><div id='kpi-next-action' class='card-value'>n/a</div></div>
   </div>
-  <div class='panel'>
+  <div class='panel' id='host-vitals-panel'>
     <h3 class='heading-reset-top'>Santé hôte consolidée</h3>
     <div class='cards-grid'>
       <div class='card'><div class='card-label'>CPU</div><div id='host-cpu' class='card-value'>n/a</div><div id='host-cpu-trend' class='sparkline'>·</div></div>
