@@ -301,3 +301,42 @@ body.essential-mode #toggle-essential { border-color: var(--ok); color: var(--ok
 .tab-pane.panel-hidden {
   display: none;
 }
+
+.level-panel { margin-top: 10px; }
+.level-panel > summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: #dce8ff;
+}
+
+.signal-threshold {
+  margin-top: 6px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.toggle-more-btn {
+  min-width: 110px;
+  font-weight: 600;
+}
+
+.actionable-signal {
+  border-radius: 8px;
+  padding: 3px 6px;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.actionable-signal[data-actionable='off'] {
+  background: transparent;
+  color: #f2f6ff;
+}
+
+.actionable-signal.actionable-warn {
+  background: rgba(255, 191, 83, 0.2);
+  color: var(--warn);
+}
+
+.actionable-signal.actionable-critical {
+  background: rgba(255, 107, 141, 0.22);
+  color: var(--bad);
+}
