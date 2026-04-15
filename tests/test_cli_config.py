@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import types
 
@@ -128,3 +129,43 @@ def test_config_openai_test_ping_failure(monkeypatch, capsys) -> None:
     out = capsys.readouterr().out
     assert exit_code == 1
     assert "Test OpenAI échoué" in out
+
+
+def test_config_root_set_global_persists_and_show_reads_it(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(workspace)
+
+    exit_code = cli.main(["config", "root", "set", "lab", "--scope", "global"])
+    out_set = capsys.readouterr().out
+    assert exit_code == 0
+    assert "global" in out_set
+
+    cfg_path = tmp_path / "home" / ".singular" / "config.json"
+    payload = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert payload["registry_root"] == "lab"
+
+    exit_code = cli.main(["config", "root", "show"])
+    out_show = capsys.readouterr().out
+    assert exit_code == 0
+    assert str(tmp_path / "home" / ".singular" / "lab") in out_show
+
+
+def test_config_root_set_project_overrides_global(monkeypatch, tmp_path, capsys) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(workspace)
+
+    assert cli.main(["config", "root", "set", "global-root", "--scope", "global"]) == 0
+    capsys.readouterr()
+    assert cli.main(["config", "root", "set", "project-root", "--scope", "project"]) == 0
+    capsys.readouterr()
+
+    exit_code = cli.main(["config", "root", "show"])
+    out = capsys.readouterr().out
+    assert exit_code == 0
+    assert str(workspace / ".singular" / "project-root") in out

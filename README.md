@@ -151,15 +151,27 @@ libérer son espace disque.
 
 ### Piège courant : changer de root sans le voir
 
-Un cas classique : créer une vie dans le registre implicite, puis lister avec un
-autre root explicite.
+La résolution du root de registre est désormais **unique et explicite** :
+
+1. `--root` (CLI) / `SINGULAR_ROOT` (env) ;
+2. configuration projet explicite (`./.singular/config.json`) ;
+3. configuration globale explicite (`~/.singular/config.json`) ;
+4. fallback documenté unique : `~/.singular`.
+
+> Important : Singular **n'infère plus** le root depuis la seule présence de
+> `./lives/registry.json` dans le répertoire courant.
+
+Vous pouvez persister ce choix :
 
 ```bash
-# Crée la vie dans le root implicite (SINGULAR_ROOT ou ~/.singular)
-singular birth --name "Lumen"
+# Global (toutes les sessions)
+singular config root set ~/singular-lab --scope global
 
-# Liste un autre registre : ici ./lab
-singular lives list --root ./lab
+# Projet courant uniquement
+singular config root set ./.lab --scope project
+
+# Vérifier le root implicite courant
+singular config root show
 ```
 
 Depuis cette version, Singular affiche un message de contexte quand ``--root``

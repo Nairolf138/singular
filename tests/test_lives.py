@@ -19,6 +19,7 @@ from singular.lives import (
     set_proximity,
     set_life_status,
 )
+from singular.root_config import set_configured_registry_root
 from singular.organisms.birth import birth
 
 
@@ -82,7 +83,7 @@ def test_registry_root_defaults_to_home_without_explicit_marker(
     assert get_registry_root() == tmp_path / "home" / ".singular"
 
 
-def test_registry_root_uses_cwd_with_valid_registry_marker(
+def test_registry_root_ignores_cwd_registry_marker_without_explicit_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("SINGULAR_ROOT", raising=False)
@@ -95,7 +96,36 @@ def test_registry_root_uses_cwd_with_valid_registry_marker(
     )
     monkeypatch.chdir(workspace)
 
-    assert get_registry_root() == workspace
+    assert get_registry_root() == tmp_path / "home" / ".singular"
+
+
+def test_registry_root_uses_project_config_before_global(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(workspace)
+
+    set_configured_registry_root(str(tmp_path / "global-root"), scope="global")
+    set_configured_registry_root("./project-root", scope="project")
+
+    assert get_registry_root() == workspace / ".singular" / "project-root"
+
+
+def test_registry_root_uses_global_config_when_project_config_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(workspace)
+
+    set_configured_registry_root("configured-root", scope="global")
+
+    assert get_registry_root() == tmp_path / "home" / ".singular" / "configured-root"
 
 
 def test_set_life_status_updates_registry(

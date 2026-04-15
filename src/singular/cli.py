@@ -11,8 +11,14 @@ import re
 import sys
 import sysconfig
 from importlib.metadata import PackageNotFoundError, version
-from pathlib import Path
+from pathlib import Path, PosixPath
 from typing import Any, Callable
+
+from .root_config import (
+    default_registry_root,
+    load_configured_registry_root,
+    set_configured_registry_root,
+)
 
 __all__ = ["main"]
 
@@ -500,10 +506,23 @@ def _print_table(headers: list[str], rows: list[list[str]]) -> None:
 def _implicit_registry_root_from_env_or_default() -> Path:
     """Return the implicit registry root used before any ``--root`` override."""
 
+    def _safe_path(raw: str) -> Path:
+        try:
+            return Path(raw)
+        except NotImplementedError:
+            return PosixPath(raw.replace("\\", "/"))
+
     raw = os.environ.get("SINGULAR_ROOT")
     if raw:
-        return Path(raw).expanduser()
-    return Path.home() / ".singular"
+        if os.name == "nt":
+            return PosixPath(raw.replace("\\", "/")).expanduser()
+        return _safe_path(raw).expanduser()
+    if os.name == "nt":
+        return PosixPath(os.path.expanduser("~/.singular").replace("\\", "/"))
+    configured = load_configured_registry_root()
+    if configured is not None:
+        return configured
+    return default_registry_root()
 
 
 def _print_registry_context_message_if_needed(
@@ -845,6 +864,25 @@ def main(argv: list[str] | None = None) -> int:
         "--test",
         action="store_true",
         help="Run a short provider ping after configuration",
+    )
+    config_root_parser = config_subparsers.add_parser(
+        "root", help="Configurer le root de registre persistant"
+    )
+    config_root_subparsers = config_root_parser.add_subparsers(
+        dest="config_root_command", required=True
+    )
+    config_root_set_parser = config_root_subparsers.add_parser(
+        "set", help="Persister un root de registre"
+    )
+    config_root_set_parser.add_argument("path", help="Chemin du root à utiliser")
+    config_root_set_parser.add_argument(
+        "--scope",
+        choices=("global", "project"),
+        default="global",
+        help="Global (~/.singular/config.json) ou projet (.singular/config.json)",
+    )
+    config_root_subparsers.add_parser(
+        "show", help="Afficher le root implicite résolu"
     )
 
     lives_parser = subparsers.add_parser("lives", help="Manage lives")
@@ -1259,6 +1297,19 @@ def main(argv: list[str] | None = None) -> int:
                 shell_profile=args.shell_profile,
                 test=args.test,
             )
+        if args.config_command == "root":
+            if args.config_root_command == "set":
+                config_path, resolved_root = set_configured_registry_root(
+                    args.path,
+                    scope=args.scope,
+                )
+                print(f"Root persistant enregistré ({args.scope}) : {resolved_root}")
+                print(f"Fichier de configuration : {config_path}")
+                return 0
+            if args.config_root_command == "show":
+                implicit = _implicit_registry_root_from_env_or_default().resolve()
+                print(f"Root implicite courant : {implicit}")
+                return 0
 
     elif args.command == "lives":
         if args.lives_command == "list":
