@@ -130,10 +130,12 @@ export const loadRetentionStatus=()=>fetchJson('/api/retention/status').then(pay
 });
 
 export const loadEco=()=>Promise.all([fetchJson(withScope('/ecosystem')),fetchJson(withScope('/lives/comparison?sort_by=last_activity&sort_order=desc'))]).then(([eco,lives])=>{
-  const summary=eco.summary||{};
-  const total=Number(summary.total_organisms||0);
-  const alive=Number(summary.alive_organisms||0);
-  const dead=Math.max(total-alive,0);
+  const contract=eco.life_metrics_contract||lives.life_metrics_contract||{};
+  const counts=contract.counts||{};
+  const labels=contract.labels||{};
+  const total=Number(counts.total_lives||0);
+  const alive=Number(counts.alive_lives||0);
+  const dead=Number(counts.dead_lives||0);
   document.getElementById('eco-total-lives').textContent=String(total);
   document.getElementById('eco-alive-lives').textContent=String(alive);
   document.getElementById('eco-dead-lives').textContent=String(dead);
@@ -142,6 +144,9 @@ export const loadEco=()=>Promise.all([fetchJson(withScope('/ecosystem')),fetchJs
   document.getElementById('eco-selected-life').textContent=selected?.life||'Aucune';
   const latestRow=rows.find(row=>row.last_activity);
   document.getElementById('eco-last-activity').textContent=latestRow?.last_activity||na();
+  document.getElementById('eco-total-lives').title=labels.total_lives||'Vies totales';
+  document.getElementById('eco-alive-lives').title=labels.alive_lives||'Vies vivantes';
+  document.getElementById('eco-dead-lives').title=labels.dead_lives||'Vies mortes';
   const organisms=eco.organisms||{};
   const list=document.getElementById('organisms-list');
   list.innerHTML='';
