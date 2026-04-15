@@ -68,6 +68,23 @@ def create_app(
                 lives_paths.append(path)
         return lives_paths
 
+    def _registry_overview() -> dict[str, object]:
+        registry = load_registry()
+        raw_lives = registry.get("lives")
+        lives = raw_lives if isinstance(raw_lives, dict) else {}
+        active = registry.get("active")
+        active_valid = isinstance(active, str) and active in lives
+        is_empty = not lives and active is None
+        onboarding_message = "Aucune vie, créez-en une." if is_empty else None
+        return {
+            "lives": lives,
+            "lives_count": len(lives),
+            "active": active,
+            "active_valid": active_valid,
+            "is_empty": is_empty,
+            "onboarding_message": onboarding_message,
+        }
+
     def _runs_dirs(current_life_only: bool = False) -> list[Path]:
         if runs_path is not None:
             return [runs_path]
@@ -991,10 +1008,20 @@ def create_app(
     @app.get("/dashboard/context")
     def read_dashboard_context() -> dict[str, object]:
         policy = load_runtime_policy()
+        registry_state = _registry_overview()
         return {
             "singular_root": str(registry_root),
             "singular_home": str(base_dir),
-            "registry_lives_count": len(_registry_lives_paths()),
+            "registry_lives_count": registry_state["lives_count"],
+            "registry_state": {
+                "active": registry_state["active"],
+                "active_valid": registry_state["active_valid"],
+                "is_empty": registry_state["is_empty"],
+            },
+            "onboarding": {
+                "required": bool(registry_state["is_empty"]),
+                "message": registry_state["onboarding_message"],
+            },
             "policy": policy.to_payload(),
             "policy_impact": policy.impact_summary(),
             "skills_lifecycle": _skill_lifecycle_summary(),
@@ -1331,10 +1358,15 @@ def create_app(
             reverse=reverse,
         )
 
+        registry_state = _registry_overview()
         return {
             "lives": comparison,
             "table": lives_rows,
             "unattached_runs": unattached,
+            "onboarding": {
+                "required": bool(registry_state["is_empty"]),
+                "message": registry_state["onboarding_message"],
+            },
             "filters": {
                 "sort_by": sort_by,
                 "sort_order": "desc" if reverse else "asc",
@@ -1356,7 +1388,14 @@ def create_app(
         social_edges: list[dict[str, str]] = []
         conflicts: list[dict[str, str]] = []
         if not isinstance(lives, dict):
-            return {"active": active, "nodes": nodes, "edges": edges, "social_edges": social_edges, "active_conflicts": conflicts}
+            return {
+                "active": active,
+                "nodes": nodes,
+                "edges": edges,
+                "social_edges": social_edges,
+                "active_conflicts": conflicts,
+                "onboarding": {"required": active is None, "message": "Aucune vie, créez-en une." if active is None else None},
+            }
 
         for slug, meta in sorted(lives.items()):
             name = getattr(meta, "name", slug)
@@ -1408,6 +1447,10 @@ def create_app(
             "edges": edges,
             "social_edges": social_edges,
             "active_conflicts": [{"life_a": a, "life_b": b} for a, b in sorted(unique_conflicts)],
+            "onboarding": {
+                "required": not nodes and active is None,
+                "message": "Aucune vie, créez-en une." if not nodes and active is None else None,
+            },
         }
 
     @app.get("/mutations/top")

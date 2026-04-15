@@ -36,6 +36,46 @@ def test_dashboard_endpoints(tmp_path: Path, monkeypatch) -> None:
     assert "skills_lifecycle" in context
 
 
+def test_dashboard_starts_with_empty_registry_and_exposes_onboarding(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "empty-root"
+    root.mkdir()
+    monkeypatch.setenv("SINGULAR_ROOT", str(root))
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    runs_dir = tmp_path / "runs"
+    psyche_file = tmp_path / "psyche.json"
+    psyche_file.write_text(json.dumps({"mood": "idle"}), encoding="utf-8")
+
+    app = create_app(runs_dir=runs_dir, psyche_file=psyche_file)
+    client = TestClient(app)
+
+    index_response = client.get("/")
+    assert index_response.status_code == 200
+
+    context = client.get("/dashboard/context")
+    assert context.status_code == 200
+    context_payload = context.json()
+    assert context_payload["registry_lives_count"] == 0
+    assert context_payload["registry_state"] == {
+        "active": None,
+        "active_valid": False,
+        "is_empty": True,
+    }
+    assert context_payload["onboarding"] == {
+        "required": True,
+        "message": "Aucune vie, créez-en une.",
+    }
+
+    comparison = client.get("/lives/comparison")
+    assert comparison.status_code == 200
+    comparison_payload = comparison.json()
+    assert comparison_payload["table"] == []
+    assert comparison_payload["onboarding"] == {
+        "required": True,
+        "message": "Aucune vie, créez-en une.",
+    }
+
+
 def test_dashboard_quests_endpoint(tmp_path: Path, monkeypatch) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
