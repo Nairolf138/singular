@@ -25,7 +25,7 @@ from singular.beliefs.meta_learning import (
     register_run_result,
 )
 from singular.events import EventBus, get_global_event_bus
-from singular.memory import add_episode, register_memory_event_handlers, update_score
+from singular.memory import add_causal_trace, add_episode, register_memory_event_handlers, update_score
 from singular.psyche import Psyche, Mood
 from singular.runs.logger import RunLogger
 from singular.runs.explain import summarize_mutation
@@ -1410,6 +1410,42 @@ def run(
                 "timing_ms": {"base": ms_base, "new": ms_new},
                 "skill_reputation": logger.skill_reputation().get(key, {}),
             }
+            gain_loss = round(base_score - mutated_score, 6)
+            add_causal_trace(
+                {
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "trace_id": hashlib.sha1(
+                        f"{logger.run_id}:{state.iteration}:{key}:{op_name}".encode("utf-8")
+                    ).hexdigest(),
+                    "life": org_name,
+                    "run_id": logger.run_id,
+                    "iteration": state.iteration,
+                    "pipeline": "life.loop",
+                    "input": {
+                        "kind": "world_event",
+                        "temperature_c": temp,
+                        "perception_signals": signals,
+                    },
+                    "decision": {
+                        "reason": reflection.decision_reason,
+                        "operator": op_name,
+                        "accepted": accepted,
+                        "objective": dominant_objective,
+                    },
+                    "action": {
+                        "kind": "mutation",
+                        "skill": key,
+                        "impacted_file": skill_path.name,
+                    },
+                    "result": {
+                        "gain_loss": gain_loss,
+                        "objective_impact": {
+                            "objective": dominant_objective,
+                            "impact": gain_loss,
+                        },
+                    },
+                }
+            )
             event_bus.publish(
                 "mutation.applied" if accepted else "mutation.rejected",
                 mutation_payload,

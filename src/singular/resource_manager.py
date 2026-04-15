@@ -3,9 +3,12 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
+from uuid import uuid4
 
+from .memory import add_causal_trace
 from .memory import _atomic_write_text
 
 
@@ -141,11 +144,31 @@ class ResourceManager:
         """
 
         neutral = 20.0
+        before = self.warmth
         diff = temp - neutral
+        decision = "hold"
         if diff > 0:
+            decision = "warm_up"
             self.add_warmth(diff * 0.1)
         elif diff < 0:
+            decision = "cool_down"
             self.cool_down(-diff * 0.1)
+        after = self.warmth
+        delta = round(after - before, 3)
+        add_causal_trace(
+            {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "trace_id": uuid4().hex,
+                "pipeline": "environment.resource_manager",
+                "input": {"kind": "world_event", "temperature_c": temp},
+                "decision": {"temperature_delta_from_neutral": round(diff, 3), "selected": decision},
+                "action": {"kind": decision, "warmth_before": round(before, 3), "warmth_after": round(after, 3)},
+                "result": {
+                    "gain_loss": delta,
+                    "objective_impact": {"objective": "homeostasis.warmth", "impact": delta},
+                },
+            }
+        )
 
     def simulate_human_interaction(self, amount: float = 5.0) -> None:
         """API used by tests/CLI to increase warmth."""

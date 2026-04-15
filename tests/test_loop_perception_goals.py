@@ -3,6 +3,7 @@ from pathlib import Path
 
 import singular.life.loop as life_loop
 from singular.goals.intrinsic import GoalWeights
+from singular.memory import read_causal_timeline
 
 
 class _CaptureGoals:
@@ -67,6 +68,11 @@ def test_run_passes_capture_signals_to_intrinsic_goals(tmp_path: Path, monkeypat
     assert "artifact_events" in _CaptureGoals.last_perception_signals
     assert _CaptureGoals.last_perception_signals["artifact_events"][0]["type"] == "artifact.tech_debt.simple"
     assert isinstance(_CaptureGoals.last_skill_reputation, dict)
+    traces = read_causal_timeline()
+    assert traces
+    last = traces[-1]
+    assert last["pipeline"] == "life.loop"
+    assert set(("input", "decision", "action", "result")).issubset(last)
 
 
 def test_choose_skill_prioritizes_frequent_low_quality_skills(tmp_path: Path) -> None:

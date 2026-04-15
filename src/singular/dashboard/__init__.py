@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from singular.lives import get_registry_root, load_registry, set_life_status
 from singular.life.vital import compute_vital_timeline
 from singular.metrics.autonomy import compute_autonomy_metrics
-from singular.memory import read_skills
+from singular.memory import read_causal_timeline, read_skills
 from singular.storage_retention import retention_status_snapshot
 
 from singular.dashboard.actions import DashboardActionService
@@ -92,6 +92,27 @@ def create_app(
             if isinstance(path, Path):
                 lives_paths.append(path)
         return lives_paths
+
+    def _resolve_life_dir(life: str) -> Path | None:
+        registry = load_registry()
+        raw_lives = registry.get("lives")
+        if not isinstance(raw_lives, dict):
+            return None
+        for slug, meta in raw_lives.items():
+            if not isinstance(slug, str):
+                continue
+            path_value = getattr(meta, "path", None)
+            display_name = getattr(meta, "name", None)
+            if isinstance(meta, dict):
+                path_value = meta.get("path", path_value)
+                display_name = meta.get("name", display_name)
+            if isinstance(path_value, str):
+                path_value = Path(path_value)
+            if not isinstance(path_value, Path):
+                continue
+            if life in {slug, str(display_name)}:
+                return path_value
+        return None
 
     def _registry_overview() -> dict[str, object]:
         registry = load_registry()
@@ -909,6 +930,26 @@ def create_app(
                 "total": total,
                 "total_pages": (total + page_size - 1) // page_size if total else 0,
             },
+            "items": items,
+        }
+
+    @app.get("/api/lives/{life}/causal-timeline")
+    def read_life_causal_timeline(
+        life: str,
+        limit: int = 100,
+    ) -> dict[str, object]:
+        life_dir = _resolve_life_dir(life)
+        if life_dir is None:
+            raise HTTPException(status_code=404, detail=f"life '{life}' not found")
+
+        entries = read_causal_timeline(life_dir / "mem" / "causal_timeline.jsonl")
+        entries = [entry for entry in entries if isinstance(entry, dict)]
+        entries.sort(key=lambda item: str(item.get("ts", item.get("recorded_at", ""))))
+        safe_limit = min(max(limit, 1), 500)
+        items = entries[-safe_limit:]
+        return {
+            "life": life,
+            "count": len(items),
             "items": items,
         }
 

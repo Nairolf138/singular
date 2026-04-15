@@ -5,7 +5,7 @@ import pytest
 
 from singular.cli import main
 from singular.lives import load_registry
-from singular.memory import read_episodes
+from singular.memory import read_causal_timeline, read_episodes
 from singular.organisms.talk import _default_reply, talk
 from singular.providers import (
     LLMProviderClient,
@@ -214,6 +214,27 @@ def test_talk_logs_provider_events(monkeypatch, tmp_path):
     assert events[0]["provider"] == "openai"
     assert events[0]["fallback"] is False
     assert events[0]["error_category"] is None
+
+
+def test_talk_creates_complete_causal_trace(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    inputs = iter(["hello", "quit"])
+    monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
+    monkeypatch.setattr("builtins.print", lambda _msg: None)
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", lambda _name: None)
+
+    talk(seed=5)
+
+    traces = read_causal_timeline()
+    assert traces
+    trace = traces[-1]
+    for key in ("input", "decision", "action", "result"):
+        assert key in trace
+    assert trace["input"]["kind"] == "human_message"
+    assert trace["action"]["kind"] == "assistant_reply"
+    assert "gain_loss" in trace["result"]
+    assert "objective_impact" in trace["result"]
 
 
 def test_talk_injects_self_narrative_in_provider_prompt(monkeypatch, tmp_path):

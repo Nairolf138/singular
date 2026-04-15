@@ -78,6 +78,19 @@ class RuntimeEvent:
 
 
 @dataclass(frozen=True)
+class CausalTrace:
+    """Correlation record linking input, decision, action and measured result."""
+
+    trace_id: str
+    input: dict[str, Any]
+    decision: dict[str, Any]
+    action: dict[str, Any]
+    result: dict[str, Any]
+    schema_version: str = DEFAULT_SCHEMA_VERSION
+    recorded_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+@dataclass(frozen=True)
 class RuntimeSafetyConfig:
     """Safety controls applied to runtime action execution."""
 
@@ -166,6 +179,7 @@ class AgentRuntime:
         self._critical_error_count = 0
         self._action_timestamps: deque[float] = deque()
         self._recent_actions: deque[str] = deque(maxlen=max(self.safety.watchdog_window_size, 1))
+        self._causal_traces: deque[CausalTrace] = deque(maxlen=200)
 
     @property
     def disabled(self) -> bool:
@@ -286,6 +300,13 @@ class AgentRuntime:
                     },
                 )
                 self.event_bus.publish("action.blocked", result)
+                self._record_causal_trace(
+                    percept=percept,
+                    intent=intent,
+                    request=request,
+                    result=result,
+                    decision=decision,
+                )
                 results.append(result)
                 continue
 
@@ -307,6 +328,13 @@ class AgentRuntime:
                     },
                 )
                 self.event_bus.publish("action.simulated", result)
+                self._record_causal_trace(
+                    percept=percept,
+                    intent=intent,
+                    request=request,
+                    result=result,
+                    decision=decision,
+                )
                 results.append(result)
                 continue
 
@@ -332,6 +360,13 @@ class AgentRuntime:
                     },
                 )
                 self.event_bus.publish("action.failed", result)
+                self._record_causal_trace(
+                    percept=percept,
+                    intent=intent,
+                    request=request,
+                    result=result,
+                    decision=decision,
+                )
                 results.append(result)
                 if self._disabled:
                     break
@@ -360,6 +395,13 @@ class AgentRuntime:
             if self._is_critical_result(result):
                 self._record_critical_error("critical_action_result")
             self.event_bus.publish("action.completed", result)
+            self._record_causal_trace(
+                percept=percept,
+                intent=intent,
+                request=request,
+                result=result,
+                decision=decision,
+            )
             results.append(result)
             if self._disabled:
                 break
@@ -441,3 +483,53 @@ class AgentRuntime:
                     "max_critical_errors": self.safety.max_critical_errors,
                 },
             )
+
+    def _record_causal_trace(
+        self,
+        *,
+        percept: PerceptEvent,
+        intent: Intent,
+        request: ActionRequest,
+        result: ActionResult,
+        decision: Any,
+    ) -> None:
+        policy_details = {
+            "allowed": getattr(decision, "allowed", None),
+            "blocked": getattr(decision, "blocked", None),
+            "reason": getattr(decision, "reason", None),
+            "rule_id": getattr(decision, "rule_id", None),
+            "risk_level": getattr(decision, "risk_level", None),
+            "dry_run": getattr(decision, "dry_run", None),
+        }
+        gain_loss = 1.0 if result.success else -1.0
+        trace = CausalTrace(
+            trace_id=uuid4().hex,
+            input={
+                "kind": "percept_event",
+                "event_type": percept.event_type,
+                "source": percept.source,
+                "payload": percept.payload,
+            },
+            decision={
+                "intent_goal": intent.goal,
+                "intent_rationale": intent.rationale,
+                "policy": policy_details,
+            },
+            action={
+                "action_type": request.action_type,
+                "parameters": request.parameters,
+            },
+            result={
+                "success": result.success,
+                "message": result.message,
+                "error": result.error,
+                "gain_loss": gain_loss,
+                "objective_impact": {
+                    "objective": intent.goal,
+                    "impact": gain_loss,
+                },
+            },
+            schema_version=self.schema_version,
+        )
+        self._causal_traces.append(trace)
+        self.event_bus.publish("causal.trace", trace)
