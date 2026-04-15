@@ -10,6 +10,8 @@ import logging
 import os
 from typing import Any, Mapping
 
+from ..storage_retention import apply_runs_retention, load_retention_config
+
 from ..psyche import Psyche
 from ..memory import add_episode, add_procedural_memory
 from typing import Callable, Dict
@@ -18,8 +20,6 @@ from typing import Callable, Dict
 _BASE_DIR = Path(os.environ.get("SINGULAR_HOME", "."))
 # Directory where run logs are stored
 RUNS_DIR = _BASE_DIR / "runs"
-# Number of run logs to retain
-MAX_RUN_LOGS = int(os.environ.get("SINGULAR_RUNS_KEEP", "20"))
 EVENT_SCHEMA_VERSION = 1
 USAGE_REPUTATION_SCHEMA_VERSION = 1
 DEFAULT_REPUTATION_UPDATE_EVERY = int(os.environ.get("SINGULAR_REPUTATION_UPDATE_EVERY", "5"))
@@ -82,25 +82,19 @@ def _ensure_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _enforce_retention(root: Path, keep: int = MAX_RUN_LOGS) -> None:
-    """Remove oldest log files beyond the retention limit."""
-    logs = sorted(
-        root.glob("*.jsonl"),
-        key=lambda p: (p.stat().st_mtime, p.name),
-        reverse=True,
-    )
-    for old in logs[keep:]:
-        try:
-            old.unlink()
-        except FileNotFoundError:  # pragma: no cover - race condition
-            pass
-    # Clean up any leftover temporary files
+def _enforce_retention(root: Path) -> None:
+    """Apply retention policy to run logs and temporary files."""
+
+    config = load_retention_config(base_dir=_BASE_DIR)
+    apply_runs_retention(runs_dir=root, config=config)
+
+    # Clean up any leftover temporary files with the same count limit as runs.
     tmps = sorted(
         root.glob("*.jsonl.tmp"),
         key=lambda p: (p.stat().st_mtime, p.name),
         reverse=True,
     )
-    for old in tmps[keep:]:
+    for old in tmps[config.max_runs:]:
         try:
             old.unlink()
         except FileNotFoundError:  # pragma: no cover - race condition
