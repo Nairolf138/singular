@@ -255,6 +255,56 @@ def test_dashboard_cockpit_endpoint_schema(tmp_path: Path) -> None:
     assert "objective_narrative_links" in payload["trajectory"]
 
 
+def test_dashboard_cockpit_essential_projection_schema(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "essential.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "ts": "2026-04-12T10:00:00",
+                        "accepted": False,
+                        "op": "flip",
+                        "score_base": 10.0,
+                        "score_new": 12.0,
+                        "health": {"score": 70.0, "sandbox_stability": 0.6},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-04-12T10:05:00",
+                        "event": "alert",
+                        "kind": "health_decline",
+                        "severity": "critical",
+                    }
+                ),
+            ]
+        )
+        + "\n"
+    )
+
+    app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    client = TestClient(app)
+    response = client.get("/api/cockpit/essential")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload == {
+        "schema_version": "2026-04-15",
+        "global_status": payload["global_status"],
+        "critical_alerts_count": payload["critical_alerts_count"],
+        "next_action": payload["next_action"],
+        "selected_life": payload["selected_life"],
+        "active_incidents_count": payload["active_incidents_count"],
+    }
+    assert payload["global_status"] in {"critical", "warning", "stable", "unknown"}
+    assert isinstance(payload["critical_alerts_count"], int)
+    assert isinstance(payload["next_action"], str)
+    assert isinstance(payload["selected_life"], str)
+    assert isinstance(payload["active_incidents_count"], int)
+
+
 def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
     client = TestClient(app)
@@ -308,6 +358,28 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "Nouvelles" in body
     assert "filter-time-window" in body
     assert "life-detail-panel" in body
+    assert "essential-selected-life" in body
+    assert "essential-active-incidents" in body
+    assert "data-essential-level='1'" in body
+    assert "data-essential-level='2'" in body
+    assert "data-essential-level='3'" in body
+
+
+def test_dashboard_essential_mode_critical_blocks_and_visibility_markers(tmp_path: Path) -> None:
+    app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
+    body = TestClient(app).get("/").json()
+
+    for marker in [
+        "id='cockpit-status'",
+        "id='kpi-alerts'",
+        "id='kpi-next-action'",
+        "id='essential-selected-life'",
+        "id='essential-active-incidents'",
+    ]:
+        assert marker in body
+
+    assert "id='cockpit-detail' class='panel level-panel technical-only' data-essential-level='3'" in body
+    assert "class='lives-grid technical-only' data-essential-level='3'" in body
 
 
 def test_dashboard_index_renders_main_sections(tmp_path: Path) -> None:

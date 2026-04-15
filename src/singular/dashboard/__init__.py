@@ -625,6 +625,30 @@ def create_app(
             "trajectory": trajectory,
         }
 
+    def _summarize_cockpit_essential(current_life_only: bool = False) -> dict[str, object]:
+        cockpit = _summarize_cockpit(current_life_only=current_life_only)
+        comparison, _ = _aggregate_lives(current_life_only=current_life_only)
+        rows = comparison.get("table", []) if isinstance(comparison.get("table"), list) else []
+        selected_life = "Aucune"
+        for row in rows:
+            if isinstance(row, dict) and row.get("selected_life") is True:
+                candidate = row.get("life")
+                if isinstance(candidate, str) and candidate:
+                    selected_life = candidate
+                    break
+        incidents_count = 0
+        critical_alerts = cockpit.get("critical_alerts")
+        if isinstance(critical_alerts, list):
+            incidents_count = len(critical_alerts)
+        return {
+            "schema_version": "2026-04-15",
+            "global_status": cockpit.get("global_status", "unknown"),
+            "critical_alerts_count": incidents_count,
+            "next_action": cockpit.get("next_action") or "Aucune action immédiate",
+            "selected_life": selected_life,
+            "active_incidents_count": incidents_count,
+        }
+
 
     @app.get("/logs")
     def read_logs(current_life_only: bool = False) -> dict[str, str]:
@@ -865,6 +889,10 @@ def create_app(
     @app.get("/api/cockpit")
     def read_cockpit(current_life_only: bool = False) -> dict[str, object]:
         return _summarize_cockpit(current_life_only=current_life_only)
+
+    @app.get("/api/cockpit/essential")
+    def read_cockpit_essential(current_life_only: bool = False) -> dict[str, object]:
+        return _summarize_cockpit_essential(current_life_only=current_life_only)
 
     @app.get("/dashboard/context")
     def read_dashboard_context() -> dict[str, object]:
