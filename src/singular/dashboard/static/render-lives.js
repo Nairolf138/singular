@@ -46,6 +46,54 @@ const livesUiState={
   rowsByLife:new Map(),
 };
 
+const formatFilterLabel=(key,value)=>{
+  if(key==='quickFilter'){return `quickFilter=${value}`;}
+  if(key==='focus'){return `focus=${value}`;}
+  if(key==='time_window'){return `time_window=${value}`;}
+  if(key==='current_life_only'){return `current_life_only=${value?'true':'false'}`;}
+  return `${key}=${value}`;
+};
+
+const updateResetFiltersChipStates=()=>{
+  document.querySelectorAll('#lives-quick-filters .filter-chip').forEach(node=>{
+    const active=(node.dataset.filterKey||'all')===livesUiState.quickFilter;
+    node.classList.toggle('active',active);
+    node.setAttribute('aria-pressed',active?'true':'false');
+  });
+  document.querySelectorAll('#lives-focus-chips .filter-chip').forEach(node=>{
+    const active=(node.dataset.focusKey||'all')===livesUiState.focus;
+    node.classList.toggle('active',active);
+    node.setAttribute('aria-pressed',active?'true':'false');
+  });
+};
+
+const resetLivesFilters=(reload=loadLivesBoard)=>{
+  livesUiState.quickFilter='all';
+  livesUiState.focus='all';
+  const timeWindowSelect=document.getElementById('filter-time-window');
+  if(timeWindowSelect){timeWindowSelect.value='all';}
+  scopeState.currentLifeOnly=false;
+  const scopeToggle=document.getElementById('scope-current-life');
+  if(scopeToggle){scopeToggle.checked=false;}
+  updateResetFiltersChipStates();
+  reload();
+};
+
+const renderFilterDiagnostics=(payload)=>{
+  const container=document.getElementById('lives-filter-diagnostics');
+  if(!container){return;}
+  const steps=(payload?.steps)||[];
+  if(!steps.length){
+    container.textContent='Aucun breakdown de filtrage disponible.';
+    return;
+  }
+  const lines=steps.map(step=>{
+    const applied=step.applied===true?'appliqué':'ignoré';
+    return `${step.label||step.step} : ${step.count??0} (${applied})`;
+  });
+  container.textContent=lines.join('\n');
+};
+
 const rowStateSummary=row=>{
   if(row.extinction_seen_in_runs){return {label:'Extinction',tone:'summary-critical'};}
   if(row.is_registry_active_life){return {label:'Active',tone:'summary-ok'};}
@@ -188,9 +236,14 @@ export const loadLivesBoard=()=>{
       const risk=rowRiskSummary(row);
       return {...row,__riskLevel:risk.level,__stateSummary:rowStateSummary(row),__riskSummary:risk,__activitySummary:rowActivitySummary(row)};
     });
+    const clientSteps=[
+      {step:'client_before_focus',label:'Avant focus client',applied:true,count:mappedRows.length},
+    ];
     let tableRows=preset.apply(mappedRows);
+    clientSteps.push({step:'client_after_preset',label:`Après preset ${presetKey}`,applied:true,count:tableRows.length});
     if(livesUiState.focus==='selected'){tableRows=tableRows.filter(row=>row.selected_life);}
     if(livesUiState.focus==='at_risk'){tableRows=tableRows.filter(row=>(row.__riskLevel||0)>=1);}
+    clientSteps.push({step:'client_focus',label:`Après focus ${livesUiState.focus}`,applied:livesUiState.focus!=='all',count:tableRows.length});
     livesUiState.rowsByLife=new Map(mappedRows.map(row=>[row.life,row]));
     renderLivesBuckets(Object.entries(d.lives||{}).map(([life,payload])=>({life,...payload})),d.life_metrics_contract);
     renderLivesTable(tableRows);
@@ -198,7 +251,19 @@ export const loadLivesBoard=()=>{
     else if(tableRows.length){showLifeDetails(tableRows[0].life||'');}
     else{showLifeDetails('');}
     renderUnattachedRuns(d.unattached_runs);
-    if(!tableRows.length){setPanelState('vies','empty','Aucune vie pour ces filtres. Ajustez la fenêtre ou retirez des filtres.');}
+    renderFilterDiagnostics({...d.filter_diagnostics,steps:[...((d.filter_diagnostics?.steps)||[]),...clientSteps]});
+    if(!tableRows.length){
+      const activeFilters=[
+        ['quickFilter',livesUiState.quickFilter],
+        ['focus',livesUiState.focus],
+        ['time_window',timeWindow],
+        ['current_life_only',scopeState.currentLifeOnly],
+      ];
+      const activeLabels=activeFilters.map(([key,value])=>formatFilterLabel(key,value));
+      const message=`Aucune vie pour ces filtres.<br><strong>Filtres actifs :</strong> ${activeLabels.join(' · ')}<br><button type='button' id='reset-lives-filters-btn' class='filter-chip active'>Réinitialiser les filtres</button>`;
+      setPanelState('vies','empty',message);
+      document.getElementById('reset-lives-filters-btn')?.addEventListener('click',()=>resetLivesFilters(),{once:true});
+    }
   });
 };
 
@@ -275,6 +340,7 @@ export const bindLivesHandlers=(reload=loadLivesBoard)=>{
   });
   document.getElementById('filter-sort-preset').onchange=()=>reload();
   document.getElementById('filter-time-window').onchange=()=>reload();
+  document.getElementById('lives-reset-filters')?.addEventListener('click',()=>resetLivesFilters(reload));
 };
 
 export const bindLiveStreamHandlers=()=>{
