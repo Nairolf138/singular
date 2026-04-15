@@ -141,6 +141,7 @@ class OrchestratorService:
         self._failure_streak_by_task: dict[str, int] = {}
         self._introspection_tick_count = 0
         self._host_thresholds = load_host_sensor_thresholds()
+        self._started_at = datetime.now(timezone.utc)
 
         self._subscribe_external_stimuli()
 
@@ -683,6 +684,8 @@ class OrchestratorService:
         previous_term = signal.signal(signal.SIGTERM, _handle_signal)
 
         try:
+            if self._handle_startup_stop_signal():
+                self._running = False
             while self._running:
                 if self.stop_signal_path.exists():
                     log.info("orchestrator stop requested via %s", self.stop_signal_path)
@@ -722,6 +725,71 @@ class OrchestratorService:
             signal.signal(signal.SIGINT, previous_int)
             signal.signal(signal.SIGTERM, previous_term)
             self._save_state()
+
+    def _handle_startup_stop_signal(self) -> bool:
+        if not self.stop_signal_path.exists():
+            return False
+
+        payload: dict[str, Any] | None = None
+        try:
+            raw = json.loads(self.stop_signal_path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                payload = raw
+        except (OSError, json.JSONDecodeError):
+            payload = None
+
+        reason = str(payload.get("reason", "")).strip() if payload else ""
+        requested_at = str(payload.get("requested_at", "")).strip() if payload else ""
+        requested_at_dt = self._parse_utc_timestamp(requested_at)
+        log.info(
+            "startup_stop_signal_detected reason=%s requested_at=%s path=%s",
+            reason or "unknown",
+            requested_at or "unknown",
+            self.stop_signal_path,
+        )
+        if requested_at_dt is not None and requested_at_dt >= self._started_at:
+            log.info(
+                "startup_stop_signal_honored reason=%s requested_at=%s path=%s",
+                reason or "unknown",
+                requested_at,
+                self.stop_signal_path,
+            )
+            return True
+
+        consumed_path = self.stop_signal_path.with_name(
+            f"orchestrator.stop.consumed.{int(time.time())}.json"
+        )
+        try:
+            self.stop_signal_path.replace(consumed_path)
+            log.info(
+                "startup_stop_signal_consumed reason=%s requested_at=%s source=%s archived_to=%s",
+                reason or "unknown",
+                requested_at or "unknown",
+                self.stop_signal_path,
+                consumed_path,
+            )
+        except OSError:
+            self.stop_signal_path.unlink(missing_ok=True)
+            log.info(
+                "startup_stop_signal_consumed reason=%s requested_at=%s source=%s archived_to=deleted",
+                reason or "unknown",
+                requested_at or "unknown",
+                self.stop_signal_path,
+            )
+        return False
+
+    @staticmethod
+    def _parse_utc_timestamp(value: str) -> datetime | None:
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
 
 
 def run_orchestrator_daemon(
