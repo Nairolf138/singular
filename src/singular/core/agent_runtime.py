@@ -6,6 +6,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
+
+from security.policy_engine import ActionPolicyEngine
 from uuid import uuid4
 
 DEFAULT_SCHEMA_VERSION = "1.0"
@@ -135,6 +137,7 @@ class AgentRuntime:
         mind: MindPort,
         action: ActionPort,
         event_bus: RuntimeEventBus | None = None,
+        policy_engine: ActionPolicyEngine | None = None,
         schema_version: str = DEFAULT_SCHEMA_VERSION,
     ) -> None:
         self.perception = perception
@@ -142,6 +145,7 @@ class AgentRuntime:
         self.action = action
         self.schema_version = schema_version
         self.event_bus = event_bus or RuntimeEventBus(schema_version=schema_version)
+        self.policy_engine = policy_engine or ActionPolicyEngine()
 
     def step(self) -> list[ActionResult]:
         """Run one full runtime step.
@@ -173,8 +177,80 @@ class AgentRuntime:
             self._ensure_schema_version(request.schema_version)
             self.event_bus.publish("action.requested", request)
 
+            decision = self.policy_engine.evaluate(request)
+            self.event_bus.publish(
+                "action.policy.decision",
+                {
+                    "request": request,
+                    "allowed": decision.allowed,
+                    "blocked": decision.blocked,
+                    "reason": decision.reason,
+                    "rule_id": decision.rule_id,
+                    "risk_level": decision.risk_level,
+                    "dry_run": decision.dry_run,
+                },
+            )
+            if decision.blocked:
+                result = ActionResult(
+                    action_type=request.action_type,
+                    success=False,
+                    message="blocked by policy engine",
+                    error=decision.reason,
+                    audit={
+                        "policy": {
+                            "allowed": decision.allowed,
+                            "blocked": decision.blocked,
+                            "reason": decision.reason,
+                            "rule_id": decision.rule_id,
+                            "risk_level": decision.risk_level,
+                            "dry_run": decision.dry_run,
+                        }
+                    },
+                )
+                self.event_bus.publish("action.blocked", result)
+                results.append(result)
+                continue
+
+            if decision.dry_run:
+                result = ActionResult(
+                    action_type=request.action_type,
+                    success=True,
+                    message="simulated (dry-run)",
+                    audit={
+                        "policy": {
+                            "allowed": decision.allowed,
+                            "blocked": decision.blocked,
+                            "reason": decision.reason,
+                            "rule_id": decision.rule_id,
+                            "risk_level": decision.risk_level,
+                            "dry_run": decision.dry_run,
+                        }
+                    },
+                )
+                self.event_bus.publish("action.simulated", result)
+                results.append(result)
+                continue
+
             result = self.action.execute(request)
             self._ensure_schema_version(result.schema_version)
+            enriched_audit = dict(result.audit)
+            enriched_audit["policy"] = {
+                "allowed": decision.allowed,
+                "blocked": decision.blocked,
+                "reason": decision.reason,
+                "rule_id": decision.rule_id,
+                "risk_level": decision.risk_level,
+                "dry_run": decision.dry_run,
+            }
+            result = ActionResult(
+                action_type=result.action_type,
+                success=result.success,
+                message=result.message,
+                error=result.error,
+                audit=enriched_audit,
+                schema_version=result.schema_version,
+                completed_at=result.completed_at,
+            )
             self.event_bus.publish("action.completed", result)
             results.append(result)
 
