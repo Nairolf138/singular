@@ -51,6 +51,12 @@ def get_episodic_file() -> Path:
     return get_mem_dir() / "episodic.jsonl"
 
 
+def get_causal_timeline_file() -> Path:
+    """Return the path to the causal timeline JSONL file."""
+
+    return get_mem_dir() / "causal_timeline.jsonl"
+
+
 def get_skills_file() -> Path:
     """Return the path to the skills JSON file."""
     return get_mem_dir() / "skills.json"
@@ -102,6 +108,7 @@ def ensure_memory_structure(mem_dir: Path | str | None = None) -> None:
     (mem_dir / "profile.json").touch(exist_ok=True)
     (mem_dir / "values.yaml").touch(exist_ok=True)
     (mem_dir / "episodic.jsonl").touch(exist_ok=True)
+    (mem_dir / "causal_timeline.jsonl").touch(exist_ok=True)
     (mem_dir / "generations.jsonl").touch(exist_ok=True)
     (mem_dir / "skills.json").touch(exist_ok=True)
     (mem_dir / "psyche.json").touch(exist_ok=True)
@@ -249,6 +256,40 @@ def add_episode(
     except Exception:
         # Layered memory is best effort to preserve compatibility.
         pass
+
+
+def read_causal_timeline(path: Path | str | None = None) -> list[dict[str, Any]]:
+    """Read all causal trace entries from the causal timeline JSONL file."""
+
+    if path is None:
+        path = get_causal_timeline_file()
+    path = Path(path)
+    if not path.exists():
+        return []
+    records: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as file:
+        for line in file:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                records.append(payload)
+    return records
+
+
+def add_causal_trace(
+    trace: dict[str, Any],
+    path: Path | str | None = None,
+) -> None:
+    """Append one causal trace entry to the causal timeline JSONL file."""
+
+    if path is None:
+        path = get_causal_timeline_file()
+    append_jsonl_line(Path(path), trace)
 
 
 def add_procedural_memory(result: dict[str, Any]) -> None:

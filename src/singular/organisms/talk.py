@@ -6,8 +6,10 @@ import os
 import random
 import time
 import re
+from datetime import datetime, timezone
+from uuid import uuid4
 
-from ..memory import add_episode, ensure_memory_structure, read_episodes
+from ..memory import add_causal_trace, add_episode, ensure_memory_structure, read_episodes
 from ..perception import capture_signals
 from ..psyche import Mood, Psyche
 from ..self_narrative import load as load_self_narrative, summarize_short
@@ -307,6 +309,41 @@ def talk(
                     "self_narrative_summary": _trim_for_budget(
                         self_narrative_summary, 180
                     ),
+                },
+            }
+        )
+        gain_estimate = round(
+            float(user_signals.get("satisfaction", 0.0))
+            - float(user_signals.get("frustration", 0.0)),
+            3,
+        )
+        add_causal_trace(
+            {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "trace_id": uuid4().hex,
+                "pipeline": "interaction.talk",
+                "input": {
+                    "kind": "human_message",
+                    "message": user_input,
+                    "structured_signals": user_signals,
+                },
+                "decision": {
+                    "provider": provider_name,
+                    "fallback_used": fallback_used,
+                    "error_category": error_category,
+                    "mood": mood_report,
+                },
+                "action": {
+                    "kind": "assistant_reply",
+                    "raw_reply": reply,
+                    "response": response,
+                },
+                "result": {
+                    "gain_loss": gain_estimate,
+                    "objective_impact": {
+                        "objective": f"user_dialogue:{user_signals.get('theme', 'general')}",
+                        "impact": gain_estimate,
+                    },
                 },
             }
         )

@@ -52,4 +52,38 @@ export const loadTimeline=()=>fetchJson(withScope('/runs/latest')).then(meta=>{
     diff.textContent='';
     setPanelState('timeline-section','empty','Aucun événement pour le run courant.');
   }
+  return fetchJson(withScope('/api/cockpit/essential')).catch(()=>({}));
+}).then(essential=>{
+  const life=essential?.selected_life;
+  const list=document.getElementById('causal-timeline-list');
+  if(!list){return;}
+  list.innerHTML='';
+  if(!life||life==='Aucune'){
+    const li=document.createElement('li');
+    li.textContent='Aucune vie sélectionnée pour la timeline causale.';
+    list.appendChild(li);
+    return;
+  }
+  return fetchJson(`/api/lives/${encodeURIComponent(life)}/causal-timeline?limit=12`).then(payload=>{
+    const items=Array.isArray(payload?.items)?payload.items:[];
+    if(!items.length){
+      const li=document.createElement('li');
+      li.textContent='Aucune trace causale disponible.';
+      list.appendChild(li);
+      return;
+    }
+    for(const item of items.slice().reverse()){
+      const input=item?.input?.kind||'entrée';
+      const action=item?.action?.kind||item?.action?.action_type||'action';
+      const objective=item?.result?.objective_impact?.objective||'objectif';
+      const impact=item?.result?.objective_impact?.impact??item?.result?.gain_loss??na();
+      const li=document.createElement('li');
+      li.textContent=`${item?.ts||item?.recorded_at||na()} · ${input} → ${action} → ${objective} (${impact})`;
+      list.appendChild(li);
+    }
+  }).catch(()=>{
+    const li=document.createElement('li');
+    li.textContent='Timeline causale indisponible.';
+    list.appendChild(li);
+  });
 });

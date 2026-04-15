@@ -2,14 +2,21 @@ import time
 
 from singular.resource_manager import ResourceManager
 from singular.environment.notifications import auto_post, notify
+from singular.memory import read_causal_timeline
 from singular.perception import PerceptionNoiseFilter
 
 
-def test_update_from_environment_increases_warmth(tmp_path):
+def test_update_from_environment_increases_warmth(tmp_path, monkeypatch):
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
     path = tmp_path / "resources.json"
     rm = ResourceManager(warmth=50.0, path=path)
     rm.update_from_environment(30.0)
     assert rm.warmth > 50.0
+    traces = read_causal_timeline(tmp_path / "mem" / "causal_timeline.jsonl")
+    assert traces
+    trace = traces[-1]
+    assert trace["pipeline"] == "environment.resource_manager"
+    assert set(("input", "decision", "action", "result")).issubset(trace)
 
 
 def test_update_from_environment_decreases_warmth(tmp_path):
