@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from security.policy_engine import ActionPolicyEngine, PolicyRule
 from singular.core.agent_runtime import (
     ActionRequest,
     ActionResult,
@@ -31,7 +32,13 @@ class _MindStub:
     def propose_action(self, intent: Intent, percept: PerceptEvent) -> ActionRequest | None:
         return ActionRequest(
             action_type="os.notify",
-            parameters={"goal": intent.goal, "source": percept.source},
+            parameters={
+                "goal": intent.goal,
+                "source": percept.source,
+                "application": "terminal",
+                "window": "main",
+                "screen_zone": "center",
+            },
             intent_goal=intent.goal,
         )
 
@@ -44,6 +51,7 @@ class _ActionStub:
             message="done",
             audit={"intent_goal": request.intent_goal},
         )
+
 
 
 def test_agent_runtime_step_orchestrates_ports_and_events() -> None:
@@ -78,6 +86,8 @@ def test_agent_runtime_step_orchestrates_ports_and_events() -> None:
         "action.completed",
     ]
     assert all(event.schema_version == runtime.schema_version for event in seen_events)
+    assert results[0].audit["policy"]["allowed"] is True
+
 
 
 def test_agent_runtime_rejects_schema_version_mismatch() -> None:
@@ -100,3 +110,99 @@ def test_agent_runtime_rejects_schema_version_mismatch() -> None:
 
     with pytest.raises(ValueError, match="Schema version mismatch"):
         runtime.step()
+
+
+
+def test_agent_runtime_blocks_action_not_allowlisted() -> None:
+    decisions: list[dict[str, object]] = []
+    runtime = AgentRuntime(
+        perception=_PerceptionStub(),
+        mind=_MindStub(),
+        action=_ActionStub(),
+        policy_engine=ActionPolicyEngine(
+            rules=[
+                PolicyRule(
+                    rule_id="allow_browser_only",
+                    applications=frozenset({"browser"}),
+                    windows=frozenset({"*"}),
+                    screen_zones=frozenset({"*"}),
+                    action_types=frozenset({"os.notify"}),
+                )
+            ],
+            decision_logger=decisions.append,
+        ),
+    )
+
+    results = runtime.step()
+
+    assert len(results) == 1
+    assert results[0].success is False
+    assert results[0].error == "action_not_allowlisted"
+    assert decisions[-1]["blocked"] is True
+    assert decisions[-1]["reason"] == "action_not_allowlisted"
+
+
+
+def test_agent_runtime_simulates_dry_run_without_executing_action_port() -> None:
+    class _ActionSpy(_ActionStub):
+        def __init__(self) -> None:
+            self.called = False
+
+        def execute(self, request: ActionRequest) -> ActionResult:
+            self.called = True
+            return super().execute(request)
+
+    action_spy = _ActionSpy()
+    runtime = AgentRuntime(
+        perception=_PerceptionStub(),
+        mind=_MindStub(),
+        action=action_spy,
+        policy_engine=ActionPolicyEngine(dry_run=True),
+    )
+
+    results = runtime.step()
+
+    assert len(results) == 1
+    assert results[0].success is True
+    assert results[0].message == "simulated (dry-run)"
+    assert action_spy.called is False
+
+
+
+def test_agent_runtime_requires_human_confirmation_for_critical_actions() -> None:
+    class _CriticalMind(_MindStub):
+        def propose_action(self, intent: Intent, percept: PerceptEvent) -> ActionRequest | None:
+            return ActionRequest(
+                action_type="os.notify",
+                parameters={
+                    "application": "terminal",
+                    "window": "main",
+                    "screen_zone": "center",
+                    "risk_score": 0.95,
+                    "critical": True,
+                },
+                intent_goal=intent.goal,
+            )
+
+    runtime = AgentRuntime(
+        perception=_PerceptionStub(),
+        mind=_CriticalMind(),
+        action=_ActionStub(),
+        policy_engine=ActionPolicyEngine(
+            rules=[
+                PolicyRule(
+                    rule_id="allow_terminal_notify",
+                    applications=frozenset({"terminal"}),
+                    windows=frozenset({"main"}),
+                    screen_zones=frozenset({"center"}),
+                    action_types=frozenset({"os.notify"}),
+                )
+            ]
+        ),
+    )
+
+    results = runtime.step()
+
+    assert len(results) == 1
+    assert results[0].success is False
+    assert results[0].error == "critical_action_requires_human_confirmation"
