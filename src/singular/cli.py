@@ -11,7 +11,7 @@ import re
 import sys
 import sysconfig
 from importlib.metadata import PackageNotFoundError, version
-from pathlib import Path, PosixPath
+from pathlib import Path
 from typing import Any, Callable
 
 from .root_config import (
@@ -23,6 +23,7 @@ from .root_config import (
 __all__ = ["main"]
 
 _BIRTH_ALIAS_ENV = "SINGULAR_ENABLE_BIRTH_ALIAS"
+_HOST_PATH_CLS = type(Path())
 
 
 def _birth_alias_enabled() -> bool:
@@ -645,19 +646,17 @@ def _print_table(headers: list[str], rows: list[list[str]]) -> None:
 def _implicit_registry_root_from_env_or_default() -> Path:
     """Return the implicit registry root used before any ``--root`` override."""
 
-    def _safe_path(raw: str) -> Path:
+    def _expanded(raw_path: str) -> Path:
         try:
-            return Path(raw)
-        except NotImplementedError:
-            return PosixPath(raw.replace("\\", "/"))
+            return Path(raw_path).expanduser()
+        except (NotImplementedError, RuntimeError):
+            return _HOST_PATH_CLS(raw_path).expanduser()
 
     raw = os.environ.get("SINGULAR_ROOT")
     if raw:
-        if os.name == "nt":
-            return PosixPath(raw.replace("\\", "/")).expanduser()
-        return _safe_path(raw).expanduser()
+        return _expanded(raw)
     if os.name == "nt":
-        return PosixPath(os.path.expanduser("~/.singular").replace("\\", "/"))
+        return _expanded("~/.singular")
     configured = load_configured_registry_root()
     if configured is not None:
         return configured
