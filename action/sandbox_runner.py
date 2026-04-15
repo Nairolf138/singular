@@ -11,11 +11,12 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from threading import Event
 from time import monotonic
-from typing import Any, Callable, Deque, Dict, Mapping, MutableMapping
+from typing import Any, Callable, Deque, Dict, Literal, Mapping, MutableMapping
 
 
 AllowedActionName = str
 Rollback = Callable[[], None]
+RunnerMode = Literal["ghost", "live"]
 
 
 class ActionError(RuntimeError):
@@ -45,6 +46,8 @@ class RunnerConfig:
     rate_limit_window_s: float = 10.0
     max_consecutive_failures: int = 3
     circuit_open_s: float = 15.0
+    initial_mode: RunnerMode = "ghost"
+    require_qa_before_live: bool = True
 
 
 class DefaultActionBackend:
@@ -82,8 +85,12 @@ class SandboxRunner:
     _catalog: MutableMapping[AllowedActionName, Callable[..., Any]] = field(
         default_factory=dict, init=False
     )
+    _mode: RunnerMode = field(default="ghost", init=False)
+    _qa_completed: bool = field(default=False, init=False)
+    _ghost_log: list[dict[str, Any]] = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
+        self._mode = self.config.initial_mode
         self._catalog = {
             "click": self.backend.click,
             "type": self.backend.type,
@@ -96,6 +103,29 @@ class SandboxRunner:
     def allowed_actions(self) -> tuple[str, ...]:
         return tuple(self._catalog.keys())
 
+    @property
+    def mode(self) -> RunnerMode:
+        return self._mode
+
+    @property
+    def ghost_log(self) -> tuple[dict[str, Any], ...]:
+        return tuple(self._ghost_log)
+
+    def run_qa_plan(self, steps: list[Mapping[str, Any]]) -> list[Any]:
+        previous_mode = self._mode
+        try:
+            self._mode = "ghost"
+            results = self.run_plan(steps)
+            self._qa_completed = True
+            return results
+        finally:
+            self._mode = previous_mode
+
+    def enable_live_mode(self) -> None:
+        if self.config.require_qa_before_live and not self._qa_completed:
+            raise ActionError("live mode requires a successful QA step in ghost mode")
+        self._mode = "live"
+
     def cancel(self) -> None:
         self._cancel_event.set()
 
@@ -104,6 +134,9 @@ class SandboxRunner:
 
     def run_action(self, action: str, params: Mapping[str, Any] | None = None) -> Any:
         params = dict(params or {})
+        if self._mode == "live" and self.config.require_qa_before_live and not self._qa_completed:
+            raise ActionError("live mode requires a successful QA step in ghost mode")
+
         self._ensure_circuit_closed()
         self._ensure_not_cancelled()
         self._check_rate_limit()
@@ -116,8 +149,11 @@ class SandboxRunner:
 
         start = monotonic()
         try:
-            result = self._run_with_timeout(handler, params)
-            self._register_rollback(action, params)
+            if self._mode == "ghost":
+                result = self._simulate_action(action, params)
+            else:
+                result = self._run_with_timeout(handler, params)
+                self._register_rollback(action, params)
         except Exception:
             self._record_failure()
             self._rollback_best_effort()
@@ -150,6 +186,17 @@ class SandboxRunner:
             except FutureTimeout as exc:
                 future.cancel()
                 raise ActionTimeoutError("action timed out") from exc
+
+    def _simulate_action(self, action: str, params: Mapping[str, Any]) -> dict[str, Any]:
+        simulated = {
+            "ok": True,
+            "simulated": True,
+            "action": action,
+            "params": dict(params),
+            "overlay": f"[ghost] would execute action '{action}' with params={dict(params)}",
+        }
+        self._ghost_log.append(simulated)
+        return simulated
 
     def _check_rate_limit(self) -> None:
         now = monotonic()
