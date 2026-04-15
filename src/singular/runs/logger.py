@@ -10,7 +10,7 @@ import logging
 import os
 from typing import Any, Mapping
 
-from ..storage_retention import apply_runs_retention, load_retention_config
+from ..storage_retention import run_retention_service
 
 from ..psyche import Psyche
 from ..memory import add_episode, add_procedural_memory
@@ -85,20 +85,7 @@ def _ensure_dir(path: Path) -> None:
 def _enforce_retention(root: Path) -> None:
     """Apply retention policy to run logs and temporary files."""
 
-    config = load_retention_config(base_dir=_BASE_DIR)
-    apply_runs_retention(runs_dir=root, config=config)
-
-    # Clean up any leftover temporary files with the same count limit as runs.
-    tmps = sorted(
-        root.glob("*.jsonl.tmp"),
-        key=lambda p: (p.stat().st_mtime, p.name),
-        reverse=True,
-    )
-    for old in tmps[config.max_runs:]:
-        try:
-            old.unlink()
-        except FileNotFoundError:  # pragma: no cover - race condition
-            pass
+    run_retention_service(base_dir=_BASE_DIR, runs_dir=root)
 
 
 @dataclass
@@ -121,7 +108,6 @@ class RunLogger:
     def __post_init__(self) -> None:
         self.root = Path(self.root)
         self.root.mkdir(parents=True, exist_ok=True)
-        _enforce_retention(self.root)
 
         self.run_dir = self.root / self.run_id
         self.run_dir.mkdir(parents=True, exist_ok=True)

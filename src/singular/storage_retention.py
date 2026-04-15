@@ -69,6 +69,18 @@ class PolicyReport:
         return counts
 
 
+@dataclass(frozen=True)
+class RetentionRunOutcome:
+    """Outcome returned by the retention service entry point."""
+
+    executed: bool
+    dry_run: bool
+    report: PolicyReport | None
+    skipped_reason: str | None = None
+    minimum_interval_minutes: int = 0
+    last_executed_at: str | None = None
+
+
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -134,6 +146,30 @@ def _is_active_run(runs_dir: Path, run_id: str) -> bool:
 def _retention_log_path(runs_dir: Path) -> Path:
     base_dir = runs_dir.parent
     return base_dir / _RETENTION_LOG_RELATIVE_PATH
+
+
+def _retention_state_path(base_dir: Path) -> Path:
+    return base_dir / "mem" / "retention_state.json"
+
+
+def _load_retention_state(base_dir: Path) -> Mapping[str, Any]:
+    state_path = _retention_state_path(base_dir)
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, Mapping):
+        return {}
+    return payload
+
+
+def _persist_retention_state(base_dir: Path, *, last_full_run_at: str) -> None:
+    state_path = _retention_state_path(base_dir)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps({"last_full_run_at": last_full_run_at}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _safe_delete_path(target: Path) -> tuple[bool, str]:
@@ -361,3 +397,82 @@ def apply_runs_retention(
             with_lock=True,
         )
     return report
+
+
+def run_retention_service(
+    *,
+    base_dir: Path | None = None,
+    runs_dir: Path | None = None,
+    dry_run: bool = False,
+    now: datetime | None = None,
+    minimum_interval_minutes: int | None = None,
+    enforce_minimum_interval: bool = True,
+) -> RetentionRunOutcome:
+    """Execute unified run-retention service with optional throttling.
+
+    ``dry_run=True`` computes and returns the report without deleting files or
+    writing retention state.
+    """
+
+    root = Path(base_dir) if base_dir is not None else Path(os.environ.get("SINGULAR_HOME", "."))
+    target_runs_dir = Path(runs_dir) if runs_dir is not None else root / "runs"
+    ref_now = now or _now_utc()
+    config = load_retention_config(base_dir=root)
+
+    min_interval = _coerce_positive_int(
+        os.environ.get("SINGULAR_RETENTION_MIN_INTERVAL_MINUTES", "15"),
+        15,
+    )
+    if minimum_interval_minutes is not None:
+        min_interval = _coerce_positive_int(minimum_interval_minutes, min_interval)
+    state = _load_retention_state(root)
+    last_run_raw = state.get("last_full_run_at")
+    last_run_at: datetime | None = None
+    if isinstance(last_run_raw, str):
+        try:
+            last_run_at = datetime.fromisoformat(last_run_raw)
+        except ValueError:
+            last_run_at = None
+
+    if (
+        enforce_minimum_interval
+        and not dry_run
+        and min_interval > 0
+        and last_run_at is not None
+        and ref_now < (last_run_at + timedelta(minutes=min_interval))
+    ):
+        return RetentionRunOutcome(
+            executed=False,
+            dry_run=False,
+            report=None,
+            skipped_reason="minimum_interval_not_elapsed",
+            minimum_interval_minutes=min_interval,
+            last_executed_at=last_run_at.isoformat(),
+        )
+
+    report = (
+        build_runs_policy_report(runs_dir=target_runs_dir, config=config, now=ref_now)
+        if dry_run
+        else apply_runs_retention(runs_dir=target_runs_dir, config=config, now=ref_now)
+    )
+
+    if not dry_run:
+        tmps = sorted(
+            target_runs_dir.glob("*.jsonl.tmp"),
+            key=lambda p: (p.stat().st_mtime, p.name),
+            reverse=True,
+        )
+        for old in tmps[config.max_runs :]:
+            try:
+                old.unlink()
+            except FileNotFoundError:  # pragma: no cover - race condition
+                pass
+        _persist_retention_state(root, last_full_run_at=ref_now.isoformat())
+
+    return RetentionRunOutcome(
+        executed=True,
+        dry_run=dry_run,
+        report=report,
+        minimum_interval_minutes=min_interval,
+        last_executed_at=(last_run_at.isoformat() if last_run_at is not None else None),
+    )

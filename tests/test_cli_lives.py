@@ -150,6 +150,38 @@ def test_status_supports_subcommand_format_and_verbose(
     assert captured["output_format"] == "table"
 
 
+def test_cli_loop_runs_startup_retention(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    root = tmp_path / "loop-root"
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    main(["--root", str(root), "lives", "create", "--name", "Alpha"])
+
+    called: dict[str, object] = {"retention": 0}
+
+    def fake_run_retention_service(**kwargs):
+        called["retention"] = int(called["retention"]) + 1
+
+        class _Outcome:
+            executed = True
+            report = None
+            skipped_reason = None
+            minimum_interval_minutes = 15
+
+        return _Outcome()
+
+    def fake_loop_run(**kwargs):
+        called["loop"] = kwargs
+
+    monkeypatch.setattr("singular.storage_retention.run_retention_service", fake_run_retention_service)
+    monkeypatch.setattr("singular.runs.loop.loop", fake_loop_run)
+
+    code = main(["--root", str(root), "loop", "--budget-seconds", "0.1"])
+
+    assert code == 0
+    assert called["retention"] == 1
+    assert "loop" in called
+
+
 def test_cli_root_context_message_when_switching_registry_root(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

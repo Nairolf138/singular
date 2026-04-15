@@ -121,6 +121,49 @@ def _looks_like_dev_repo_root(path: Path) -> bool:
     return (path / "pyproject.toml").exists() and (path / "src" / "singular").is_dir()
 
 
+def _run_retention_at_safe_point(*, dry_run: bool = False, enforce_minimum_interval: bool = True) -> int:
+    """Run storage retention service and print a concise summary."""
+
+    from .storage_retention import run_retention_service
+
+    base_dir = Path(os.environ.get("SINGULAR_HOME", "."))
+    outcome = run_retention_service(
+        base_dir=base_dir,
+        dry_run=dry_run,
+        enforce_minimum_interval=enforce_minimum_interval,
+    )
+    report = outcome.report
+    if not outcome.executed:
+        reason = outcome.skipped_reason or "skipped"
+        print(
+            "Retention ignorée "
+            f"({reason}, min_interval={outcome.minimum_interval_minutes} min)."
+        )
+        return 0
+    if report is None:
+        print("Retention exécutée (aucun rapport).")
+        return 0
+    summary = report.summary
+    planned_or_deleted = summary.get("delete", 0)
+    action_word = "planned_delete" if dry_run else "deleted"
+    print(
+        "Retention exécutée "
+        f"(scope={report.scope}, keep={summary.get('keep', 0)}, "
+        f"{action_word}={planned_or_deleted})."
+    )
+    if dry_run:
+        planned = [d for d in report.decisions if d.action == "delete"]
+        if not planned:
+            print("Aucune suppression planifiée.")
+        for decision in planned:
+            print(
+                " - would_delete "
+                f"run_id={decision.run_id or '-'} target={decision.target} "
+                f"reason={decision.reason}"
+            )
+    return 0
+
+
 def _in_path(target: Path, env_path: str | None = None) -> bool:
     """Return True when *target* is present in PATH."""
 
@@ -891,6 +934,23 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Active les phases sans exécuter la mutation",
     )
+    retention_parser = subparsers.add_parser(
+        "retention",
+        help="Inspecte ou exécute la purge de rétention",
+    )
+    retention_subparsers = retention_parser.add_subparsers(
+        dest="retention_command",
+        required=True,
+    )
+    retention_run = retention_subparsers.add_parser(
+        "run",
+        help="Exécute la rétention des runs",
+    )
+    retention_run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Affiche les suppressions prévues sans écrire",
+    )
     doctor_parser = subparsers.add_parser(
         "doctor", help="Diagnose CLI installation and PATH"
     )
@@ -1164,6 +1224,7 @@ def main(argv: list[str] | None = None) -> int:
         from .runs.loop import loop as loop_run
 
         life_dir = _ensure_active_life(resolve_life, args.life)
+        _run_retention_at_safe_point()
         skills_dir = args.skills_dir or life_dir / "skills"
         checkpoint = args.checkpoint or life_dir / "life_checkpoint.json"
         loop_run(
@@ -1252,6 +1313,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "dashboard":
         from .dashboard import run as dashboard_run
 
+        _run_retention_at_safe_point()
         dashboard_run()
     elif args.command == "rollback":
         from .runs.generations import rollback_generation
@@ -1309,6 +1371,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.orchestrate_command == "run":
             from .orchestrator import run_orchestrator_daemon
 
+            _run_retention_at_safe_point()
             return run_orchestrator_daemon(
                 veille_seconds=args.veille_seconds,
                 action_seconds=args.action_seconds,
@@ -1319,6 +1382,14 @@ def main(argv: list[str] | None = None) -> int:
                 lifecycle_config_path=args.lifecycle_config,
                 dry_run=args.dry_run,
                 safe_mode=args.safe_mode,
+            )
+
+    elif args.command == "retention":
+        _ensure_active_life(resolve_life, args.life)
+        if args.retention_command == "run":
+            return _run_retention_at_safe_point(
+                dry_run=bool(args.dry_run),
+                enforce_minimum_interval=not bool(args.dry_run),
             )
 
     elif args.command == "doctor":

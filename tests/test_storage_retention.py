@@ -7,6 +7,7 @@ from singular.storage_retention import (
     apply_runs_retention,
     build_runs_policy_report,
     load_retention_config,
+    run_retention_service,
 )
 
 
@@ -151,3 +152,61 @@ def test_apply_runs_retention_protects_active_run(tmp_path) -> None:
     assert run_old.exists()
     old_decision = next(d for d in report.decisions if d.run_id == "old")
     assert old_decision.reason == "active_run_protected"
+
+
+def test_run_retention_service_dry_run_does_not_delete(tmp_path, monkeypatch) -> None:
+    now = datetime(2026, 4, 15, tzinfo=timezone.utc)
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    recent = runs_dir / "recent.jsonl"
+    old = runs_dir / "old.jsonl"
+    recent.write_text("{}\n", encoding="utf-8")
+    old.write_text("{}\n", encoding="utf-8")
+
+    import os
+
+    os.utime(recent, (now.timestamp(), now.timestamp()))
+    older = (now - timedelta(days=1)).timestamp()
+    os.utime(old, (older, older))
+    monkeypatch.setenv("SINGULAR_RETENTION_MAX_RUNS", "1")
+
+    outcome = run_retention_service(
+        base_dir=tmp_path,
+        runs_dir=runs_dir,
+        dry_run=True,
+        now=now,
+        minimum_interval_minutes=30,
+    )
+
+    assert outcome.executed is True
+    assert outcome.report is not None
+    assert recent.exists()
+    assert old.exists()
+    assert any(
+        decision.target.endswith("old.jsonl") and decision.action == "delete"
+        for decision in outcome.report.decisions
+    )
+    assert not (tmp_path / "mem" / "retention_state.json").exists()
+
+
+def test_run_retention_service_respects_minimum_interval(tmp_path) -> None:
+    now = datetime(2026, 4, 15, tzinfo=timezone.utc)
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "a.jsonl").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "mem").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "mem" / "retention_state.json").write_text(
+        json.dumps({"last_full_run_at": (now - timedelta(minutes=5)).isoformat()}),
+        encoding="utf-8",
+    )
+
+    outcome = run_retention_service(
+        base_dir=tmp_path,
+        runs_dir=runs_dir,
+        now=now,
+        minimum_interval_minutes=30,
+    )
+
+    assert outcome.executed is False
+    assert outcome.report is None
+    assert outcome.skipped_reason == "minimum_interval_not_elapsed"
