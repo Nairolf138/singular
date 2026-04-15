@@ -24,6 +24,18 @@ from singular.skills_daily import build_daily_skills_snapshot
 from fastapi.responses import HTMLResponse
 
 from singular.schedulers.reevaluation import alerts_from_records
+from singular.dashboard.repositories.run_records import RunRecordsRepository
+from singular.dashboard.services.trajectory import (
+    build_trajectory as build_trajectory_service,
+    extract_objective_priorities as extract_objective_priorities_service,
+)
+from singular.dashboard.services.lives_comparison import (
+    aggregate_lives as aggregate_lives_service,
+    parse_ts as parse_ts_service,
+    resolve_time_window_cutoff as resolve_time_window_cutoff_service,
+    life_trend_label as life_trend_label_service,
+    life_trend_rank as life_trend_rank_service,
+)
 
 
 @dataclass
@@ -50,6 +62,11 @@ def create_app(
     templates_dir = Path(__file__).parent / "templates"
     static_dir = Path(__file__).parent / "static"
     app.mount("/static", StaticFiles(directory=static_dir), name="dashboard-static")
+    run_repository = RunRecordsRepository(
+        base_dir=base_dir,
+        runs_path=runs_path,
+        registry_loader=load_registry,
+    )
 
     def _render_template(name: str, replacements: dict[str, str] | None = None) -> str:
         template = (templates_dir / name).read_text(encoding="utf-8")
@@ -87,45 +104,10 @@ def create_app(
         }
 
     def _runs_dirs(current_life_only: bool = False) -> list[Path]:
-        if runs_path is not None:
-            return [runs_path]
-        if current_life_only:
-            return [base_dir / "runs"]
-        dirs: list[Path] = []
-        seen: set[str] = set()
-        for life_dir in _registry_lives_paths():
-            candidate = life_dir / "runs"
-            candidate_key = str(candidate.resolve()) if candidate.exists() else str(candidate)
-            if candidate_key in seen:
-                continue
-            seen.add(candidate_key)
-            dirs.append(candidate)
-        if not dirs:
-            dirs.append(base_dir / "runs")
-        return dirs
+        return run_repository.runs_dirs(current_life_only=current_life_only)
 
     def _load_run_records(current_life_only: bool = False) -> list[dict[str, object]]:
-        records: list[dict[str, object]] = []
-        for directory in _runs_dirs(current_life_only=current_life_only):
-            if not directory.exists():
-                continue
-            for file in directory.iterdir():
-                if not file.is_file() or file.suffix != ".jsonl":
-                    continue
-                for line in file.read_text(encoding="utf-8").splitlines():
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        payload = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if not isinstance(payload, dict):
-                        continue
-                    if "_run_file" not in payload:
-                        payload["_run_file"] = file.stem
-                    records.append(payload)
-        return records
+        return run_repository.load_run_records(current_life_only=current_life_only)
 
     def _is_mutation_record(record: dict[str, object]) -> bool:
         return any(
@@ -139,111 +121,14 @@ def create_app(
         return None
 
     def _extract_objective_priorities(record: dict[str, object]) -> dict[str, float]:
-        candidates = (
-            record.get("objective_priorities"),
-            record.get("objective_weights"),
-            record.get("objectives"),
-        )
-        for candidate in candidates:
-            if not isinstance(candidate, dict):
-                continue
-            parsed: dict[str, float] = {}
-            for key, value in candidate.items():
-                if not isinstance(key, str):
-                    continue
-                if isinstance(value, (int, float)):
-                    parsed[key] = float(value)
-                elif isinstance(value, dict):
-                    nested_priority = value.get("priority")
-                    if isinstance(nested_priority, (int, float)):
-                        parsed[key] = float(nested_priority)
-            if parsed:
-                return parsed
-        return {}
+        return extract_objective_priorities_service(record)
 
     def _build_trajectory(records: list[dict[str, object]]) -> dict[str, object]:
-        active: list[dict[str, object]] = []
-        paused: list[dict[str, object]] = []
-        completed: list[dict[str, object]] = []
-        if quests_path.exists():
-            try:
-                quests_data = json.loads(quests_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                quests_data = {}
-            if isinstance(quests_data, dict):
-                active = quests_data.get("active") if isinstance(quests_data.get("active"), list) else []
-                paused = quests_data.get("paused") if isinstance(quests_data.get("paused"), list) else []
-                completed = quests_data.get("completed") if isinstance(quests_data.get("completed"), list) else []
-
-        objective_status: dict[str, str] = {}
-        for item in active:
-            if isinstance(item, dict) and isinstance(item.get("name"), str):
-                objective_status[item["name"]] = "in_progress"
-        for item in paused:
-            if isinstance(item, dict) and isinstance(item.get("name"), str):
-                objective_status[item["name"]] = "abandoned"
-        for item in completed:
-            if isinstance(item, dict) and isinstance(item.get("name"), str):
-                objective_status[item["name"]] = "completed"
-
-        previous: dict[str, float] = {}
-        priority_changes: list[dict[str, object]] = []
-        for record in records:
-            priorities = _extract_objective_priorities(record)
-            if not priorities:
-                continue
-            ts = record.get("ts") if isinstance(record.get("ts"), str) else None
-            for objective, new_value in priorities.items():
-                old_value = previous.get(objective)
-                if old_value is None:
-                    previous[objective] = new_value
-                    continue
-                if abs(new_value - old_value) >= 0.01:
-                    priority_changes.append(
-                        {
-                            "objective": objective,
-                            "at": ts,
-                            "from": round(old_value, 4),
-                            "to": round(new_value, 4),
-                            "delta": round(new_value - old_value, 4),
-                        }
-                    )
-                    previous[objective] = new_value
-
-        links: list[dict[str, object]] = []
-        major_events = {"death", "interaction", "quest", "quest_triggered", "quest_resolved", "consciousness"}
-        for record in records:
-            event = record.get("event")
-            if not isinstance(event, str):
-                continue
-            if event not in major_events and not isinstance(record.get("self_narrative_event"), str):
-                continue
-            objective = record.get("objective")
-            if not isinstance(objective, str):
-                continue
-            links.append(
-                {
-                    "objective": objective,
-                    "event": record.get("self_narrative_event", event),
-                    "at": record.get("ts") if isinstance(record.get("ts"), str) else None,
-                    "run": _record_run_id(record),
-                }
-            )
-
-        return {
-            "objectives": {
-                "counts": {
-                    "in_progress": sum(1 for status in objective_status.values() if status == "in_progress"),
-                    "abandoned": sum(1 for status in objective_status.values() if status == "abandoned"),
-                    "completed": sum(1 for status in objective_status.values() if status == "completed"),
-                },
-                "in_progress": [name for name, status in objective_status.items() if status == "in_progress"],
-                "abandoned": [name for name, status in objective_status.items() if status == "abandoned"],
-                "completed": [name for name, status in objective_status.items() if status == "completed"],
-            },
-            "priority_changes": priority_changes[-40:],
-            "objective_narrative_links": links[-40:],
-        }
+        return build_trajectory_service(
+            records=records,
+            quests_path=quests_path,
+            record_run_id=_record_run_id,
+        )
 
     def _record_run_id(record: dict[str, object]) -> str:
         run_id = record.get("run_id")
@@ -381,86 +266,25 @@ def create_app(
         return payload
 
     def _iter_run_files(current_life_only: bool = False) -> list[Path]:
-        files: list[Path] = []
-        for directory in _runs_dirs(current_life_only=current_life_only):
-            if not directory.exists():
-                continue
-            for path in directory.iterdir():
-                if path.is_file() and path.suffix == ".jsonl":
-                    files.append(path)
-        return sorted(
-            files,
-            key=lambda path: (path.stat().st_mtime_ns, path.name),
-        )
+        return run_repository.iter_run_files(current_life_only=current_life_only)
 
     def _read_jsonl_records(file: Path) -> list[dict[str, object]]:
-        records: list[dict[str, object]] = []
-        for line in file.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict):
-                records.append(payload)
-        return records
+        return run_repository.read_jsonl_records(file)
 
     def _latest_run_file(current_life_only: bool = False) -> Path | None:
-        files = _iter_run_files(current_life_only=current_life_only)
-        if not files:
-            return None
-
-        def _latest_ts_in_file(path: Path) -> str:
-            latest_ts = ""
-            for record in _read_jsonl_records(path):
-                ts = record.get("ts")
-                if isinstance(ts, str) and ts > latest_ts:
-                    latest_ts = ts
-            return latest_ts
-
-        return max(
-            files,
-            key=lambda path: (path.stat().st_mtime_ns, _latest_ts_in_file(path), path.name),
-        )
+        return run_repository.latest_run_file(current_life_only=current_life_only)
 
     def _resolve_run_file(run_id: str, current_life_only: bool = False) -> Path | None:
-        return next(
-            (
-                directory / f"{run_id}.jsonl"
-                for directory in _runs_dirs(current_life_only=current_life_only)
-                if (directory / f"{run_id}.jsonl").exists()
-            ),
-            None,
-        )
+        return run_repository.resolve_run_file(run_id, current_life_only=current_life_only)
 
     def _resolve_consciousness_path(run_id: str, current_life_only: bool = False) -> Path | None:
-        raw_run_id = run_id.rsplit("-", 1)[0]
-        for directory in _runs_dirs(current_life_only=current_life_only):
-            candidate = directory / raw_run_id / "consciousness.jsonl"
-            if candidate.exists():
-                return candidate
-        return None
+        return run_repository.resolve_consciousness_path(run_id, current_life_only=current_life_only)
 
     def _parse_ts(value: object) -> datetime | None:
-        if not isinstance(value, str):
-            return None
-        try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            return None
+        return parse_ts_service(value)
 
     def _resolve_time_window_cutoff(time_window: str) -> datetime | None:
-        normalized = time_window.strip().lower()
-        now = datetime.now(timezone.utc)
-        if normalized == "24h":
-            return now - timedelta(hours=24)
-        if normalized == "7d":
-            return now - timedelta(days=7)
-        if normalized == "30d":
-            return now - timedelta(days=30)
-        return None
+        return resolve_time_window_cutoff_service(time_window)
 
     def _event_type(record: dict[str, object]) -> str | None:
         event = record.get("event")
@@ -1111,25 +935,10 @@ def create_app(
         }
 
     def _life_trend_label(points: list[float]) -> str:
-        if len(points) < 2:
-            return "plateau"
-        window = points[-5:]
-        first = window[0]
-        last = window[-1]
-        if last > first + 1.0:
-            return "amélioration"
-        if last < first - 1.0:
-            return "dégradation"
-        return "plateau"
+        return life_trend_label_service(points)
 
     def _life_trend_rank(trend: str) -> int:
-        if trend == "dégradation":
-            return 0
-        if trend == "plateau":
-            return 1
-        if trend == "amélioration":
-            return 2
-        return -1
+        return life_trend_rank_service(trend)
 
     def _registry_life_meta(
         life_name: str, lives_payload: dict[str, object]
@@ -1157,159 +966,20 @@ def create_app(
         compare_lives: set[str] | None = None,
         time_window: str = "all",
     ) -> tuple[dict[str, dict[str, object]], dict[str, object]]:
-        registry = load_registry()
-        active_life = registry.get("active")
-        registry_lives = registry.get("lives")
-        if not isinstance(registry_lives, dict):
-            registry_lives = {}
-        cutoff = _resolve_time_window_cutoff(time_window)
-        by_life: dict[str, list[dict[str, object]]] = {}
-        unattached_runs: dict[str, int] = {}
-        for record in _load_run_records(current_life_only=current_life_only):
-            if cutoff is not None:
-                ts = _parse_ts(record.get("ts"))
-                if ts is None or ts < cutoff:
-                    continue
-            life_name = _record_life(record)
-            if compare_lives and life_name != "unknown" and life_name not in compare_lives:
-                continue
-            if life_name == "unknown":
-                run_id = _record_run_id(record)
-                unattached_runs[run_id] = unattached_runs.get(run_id, 0) + 1
-                continue
-            by_life.setdefault(life_name, []).append(record)
-
-        comparison: dict[str, dict[str, object]] = {}
-        for life_name, all_records in by_life.items():
-            all_records = sorted(all_records, key=lambda rec: str(rec.get("ts", "")))
-            mutation_records = [rec for rec in all_records if _is_mutation_record(rec)]
-
-            score_points = [
-                (
-                    _as_float(rec.get("score_base")),
-                    _as_float(rec.get("score_new")),
-                )
-                for rec in mutation_records
-            ]
-            health_values: list[float] = []
-            health_score_points: list[float] = []
-            sandbox_stability_points: list[float] = []
-            for rec in mutation_records:
-                health = rec.get("health")
-                if isinstance(health, dict):
-                    score = _as_float(health.get("score"))
-                    if score is not None:
-                        health_values.append(score)
-                        health_score_points.append(score)
-                    stability = _as_float(health.get("sandbox_stability"))
-                    if stability is not None:
-                        sandbox_stability_points.append(stability)
-
-            ms_points = [_as_float(rec.get("ms_new")) for rec in mutation_records]
-            ms_points = [value for value in ms_points if value is not None]
-            accepted_values: list[bool] = []
-            for rec in mutation_records:
-                accepted = rec.get("accepted")
-                if not isinstance(accepted, bool):
-                    accepted = rec.get("ok")
-                if isinstance(accepted, bool):
-                    accepted_values.append(accepted)
-
-            first_base = next((base for base, _ in score_points if base is not None), None)
-            last_new = next(
-                (new for _, new in reversed(score_points) if new is not None), None
-            )
-            progression_slope = None
-            if first_base is not None and last_new is not None and len(mutation_records) > 1:
-                progression_slope = (first_base - last_new) / (len(mutation_records) - 1)
-
-            failure_rate = None
-            if accepted_values:
-                failures = sum(1 for value in accepted_values if not value)
-                failure_rate = failures / len(accepted_values)
-
-            evolution_speed = None
-            if ms_points:
-                evolution_speed = sum(ms_points) / len(ms_points)
-
-            last_timestamp = next(
-                (str(rec.get("ts")) for rec in reversed(all_records) if isinstance(rec.get("ts"), str)),
-                None,
-            )
-            last_event = next(
-                (
-                    str(rec.get("event"))
-                    for rec in reversed(all_records)
-                    if isinstance(rec.get("event"), str)
-                ),
-                None,
-            )
-            extinction_seen = any(rec.get("event") == "death" for rec in all_records)
-            run_terminated = last_event == "death"
-            slug, raw_meta = _registry_life_meta(life_name, registry_lives)
-            registry_status = "active"
-            if isinstance(raw_meta, dict):
-                status_value = raw_meta.get("status")
-                if isinstance(status_value, str) and status_value in {"active", "extinct"}:
-                    registry_status = status_value
-            elif slug is not None:
-                registry_meta = registry_lives.get(slug)
-                status_value = getattr(registry_meta, "status", None)
-                if isinstance(status_value, str) and status_value in {"active", "extinct"}:
-                    registry_status = status_value
-            if extinction_seen and slug is not None and registry_status != "extinct":
-                set_life_status(slug, "extinct")
-                registry_status = "extinct"
-            is_selected = isinstance(active_life, str) and active_life in {life_name, slug}
-            trend = _life_trend_label(health_score_points)
-            alerts = alerts_from_records(mutation_records) if mutation_records else []
-            current_health_score = health_score_points[-1] if health_score_points else None
-            stability_score = (
-                sum(sandbox_stability_points) / len(sandbox_stability_points)
-                if sandbox_stability_points
-                else None
-            )
-
-            comparison[life_name] = {
-                "health_score": (
-                    sum(health_values) / len(health_values) if health_values else None
-                ),
-                "progression_slope": progression_slope,
-                "failure_rate": failure_rate,
-                "evolution_speed": evolution_speed,
-                "mutations": len(mutation_records),
-                "current_health_score": current_health_score,
-                "trend": trend,
-                "trend_rank": _life_trend_rank(trend),
-                "stability": stability_score,
-                "last_activity": last_timestamp,
-                "alerts": alerts,
-                "alerts_count": len(alerts),
-                "iterations": len(mutation_records),
-                "selected_life": is_selected,
-                "life_status": registry_status,
-                "is_registry_active_life": registry_status == "active",
-                "has_recent_activity": last_timestamp is not None,
-                "extinction_seen_in_runs": extinction_seen,
-                "run_terminated": run_terminated,
-                "vital_timeline": compute_vital_timeline(
-                    age=len(mutation_records),
-                    current_health=current_health_score,
-                    failure_rate=failure_rate,
-                    failure_streak=0,
-                    extinction_seen=extinction_seen,
-                    registry_status=registry_status,
-                ),
-            }
-        unattached_summary = {
-            "records_count": sum(unattached_runs.values()),
-            "runs_count": len(unattached_runs),
-            "runs": [
-                {"run_id": run_id, "records_count": count}
-                for run_id, count in sorted(unattached_runs.items())
-            ],
-        }
-        return comparison, unattached_summary
+        return aggregate_lives_service(
+            _load_run_records(current_life_only=current_life_only),
+            registry=load_registry(),
+            compare_lives=compare_lives,
+            time_window=time_window,
+            record_life=_record_life,
+            record_run_id=_record_run_id,
+            is_mutation_record=_is_mutation_record,
+            as_float=_as_float,
+            alerts_from_records=alerts_from_records,
+            compute_vital_timeline=compute_vital_timeline,
+            set_life_status=set_life_status,
+            registry_life_meta=_registry_life_meta,
+        )
 
     @app.get("/lives/comparison")
     def read_lives_comparison(
