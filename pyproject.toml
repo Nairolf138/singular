@@ -19,6 +19,7 @@ yaml = ["pyyaml>=6.0,<7"]
 dashboard = [
     "fastapi>=0.110,<1",
     "uvicorn>=0.29,<1",
+    "websockets>=12,<16",
 ]
 viz = ["matplotlib>=3.8,<4"]
 
