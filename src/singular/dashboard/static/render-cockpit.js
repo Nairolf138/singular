@@ -186,6 +186,8 @@ export const loadCockpit=()=>Promise.all([
   const trend=d.trend||na();
   const accepted=d.accepted_mutation_rate===null?na():`${(d.accepted_mutation_rate*100).toFixed(1)}%`;
   const alertsCount=Number(essentialPayload.critical_alerts_count??(d.critical_alerts||[]).length||0);
+  const livenessIndex=d.life_liveness_index===null||d.life_liveness_index===undefined?na():Number(d.life_liveness_index).toFixed(1);
+  const livenessProofs=Array.isArray(d.life_liveness_proofs)?d.life_liveness_proofs:[];
   const autonomy=d.autonomy_metrics||{};
   const decisionQuality=autonomy.decision_quality||{};
   const fmtPct=(value)=>value===null||value===undefined?na():`${(Number(value)*100).toFixed(1)}%`;
@@ -195,6 +197,7 @@ export const loadCockpit=()=>Promise.all([
   document.getElementById('kpi-trend').textContent=trend;
   document.getElementById('kpi-accepted').textContent=accepted;
   document.getElementById('kpi-alerts').textContent=String(alertsCount);
+  document.getElementById('kpi-liveness-index').textContent=livenessIndex;
   document.getElementById('kpi-next-action').textContent=essentialPayload.next_action||d.next_action||na();
   const selectedLifeEl=document.getElementById('essential-selected-life');
   if(selectedLifeEl){selectedLifeEl.textContent=String(essentialPayload.selected_life||'Aucune');}
@@ -249,6 +252,18 @@ export const loadCockpit=()=>Promise.all([
   linksList.innerHTML='';
   for(const link of objectiveLinks.slice(-5).reverse()){const li=document.createElement('li');li.textContent=`${link.objective||'objectif'} ↔ ${link.event||'événement'} (${link.at||na()})`;linksList.appendChild(li);} 
   if(!objectiveLinks.length){const li=document.createElement('li');li.textContent='Aucun lien narratif détecté';linksList.appendChild(li);} 
+  const livenessProofsEl=document.getElementById('kpi-liveness-proofs');
+  livenessProofsEl.innerHTML='';
+  for(const proof of livenessProofs.slice(0,5)){
+    const li=document.createElement('li');
+    li.textContent=`${proof.ts||na()} · ${proof.evidence||'preuve'} (${proof.component||'signal'})`;
+    livenessProofsEl.appendChild(li);
+  }
+  if(!livenessProofs.length){
+    const li=document.createElement('li');
+    li.textContent='Aucune preuve récente.';
+    livenessProofsEl.appendChild(li);
+  }
   setStatusTone(document.getElementById('kpi-trend'),trend==='amélioration'?'good':(trend==='dégradation'?'bad':'warn'));
   const notable=d.last_notable_mutation;
   if(notable){const acceptedBadge=notable.accepted===true?'acceptée':(notable.accepted===false?'refusée':na());document.getElementById('kpi-notable-summary').textContent=`${notable.timestamp||na()} · ${notable.life||na()} · ${notable.operator||na()} · ${acceptedBadge} · Δ=${notable.impact_delta??na()}`;}
