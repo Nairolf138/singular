@@ -16,6 +16,7 @@ from singular.lives import get_registry_root, load_registry, set_life_status
 from singular.life.vital import compute_vital_timeline
 from singular.metrics.autonomy import compute_autonomy_metrics
 from singular.memory import read_skills
+from singular.storage_retention import retention_status_snapshot
 
 from singular.dashboard.actions import DashboardActionService
 from singular.governance.policy import load_runtime_policy
@@ -1009,6 +1010,7 @@ def create_app(
     def read_dashboard_context() -> dict[str, object]:
         policy = load_runtime_policy()
         registry_state = _registry_overview()
+        retention = retention_status_snapshot(base_dir=base_dir)
         return {
             "singular_root": str(registry_root),
             "singular_home": str(base_dir),
@@ -1025,7 +1027,13 @@ def create_app(
             "policy": policy.to_payload(),
             "policy_impact": policy.impact_summary(),
             "skills_lifecycle": _skill_lifecycle_summary(),
+            "retention": retention,
         }
+
+    @app.get("/api/retention/status")
+    def read_retention_status() -> dict[str, object]:
+        payload = retention_status_snapshot(base_dir=base_dir)
+        return dict(payload)
 
     @app.get("/timeline")
     def read_timeline(

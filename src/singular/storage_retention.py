@@ -79,6 +79,7 @@ class RetentionRunOutcome:
     skipped_reason: str | None = None
     minimum_interval_minutes: int = 0
     last_executed_at: str | None = None
+    last_run_summary: Mapping[str, Any] | None = None
 
 
 def _now_utc() -> datetime:
@@ -163,11 +164,19 @@ def _load_retention_state(base_dir: Path) -> Mapping[str, Any]:
     return payload
 
 
-def _persist_retention_state(base_dir: Path, *, last_full_run_at: str) -> None:
+def _persist_retention_state(
+    base_dir: Path,
+    *,
+    last_full_run_at: str,
+    last_run_summary: Mapping[str, Any] | None = None,
+) -> None:
     state_path = _retention_state_path(base_dir)
     state_path.parent.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, Any] = {"last_full_run_at": last_full_run_at}
+    if last_run_summary is not None:
+        payload["last_run_summary"] = dict(last_run_summary)
     state_path.write_text(
-        json.dumps({"last_full_run_at": last_full_run_at}, indent=2, ensure_ascii=False) + "\n",
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
 
@@ -456,6 +465,7 @@ def run_retention_service(
         else apply_runs_retention(runs_dir=target_runs_dir, config=config, now=ref_now)
     )
 
+    last_run_summary: Mapping[str, Any] | None = None
     if not dry_run:
         tmps = sorted(
             target_runs_dir.glob("*.jsonl.tmp"),
@@ -467,7 +477,25 @@ def run_retention_service(
                 old.unlink()
             except FileNotFoundError:  # pragma: no cover - race condition
                 pass
-        _persist_retention_state(root, last_full_run_at=ref_now.isoformat())
+        deleted_decisions = [
+            decision
+            for decision in report.decisions
+            if decision.action == "delete" and not decision.active
+        ]
+        freed_mb = round(sum(decision.size_mb or 0.0 for decision in deleted_decisions), 4)
+        counts = report.summary
+        last_run_summary = {
+            "scope": report.scope,
+            "freed_mb": freed_mb,
+            "deleted": len(deleted_decisions),
+            "archived": counts.get("archive", 0),
+            "planned_deletions": counts.get("delete", 0),
+        }
+        _persist_retention_state(
+            root,
+            last_full_run_at=ref_now.isoformat(),
+            last_run_summary=last_run_summary,
+        )
 
     return RetentionRunOutcome(
         executed=True,
@@ -475,4 +503,90 @@ def run_retention_service(
         report=report,
         minimum_interval_minutes=min_interval,
         last_executed_at=(last_run_at.isoformat() if last_run_at is not None else None),
+        last_run_summary=last_run_summary,
     )
+
+
+def _child_entries_size(path: Path) -> list[dict[str, Any]]:
+    if not path.exists() or not path.is_dir():
+        return []
+    entries: list[dict[str, Any]] = []
+    for child in sorted(path.iterdir(), key=lambda item: item.name):
+        child_size_bytes = _walk_total_size(child)
+        entries.append(
+            {
+                "name": child.name,
+                "path": str(child),
+                "kind": "dir" if child.is_dir() else "file",
+                "size_bytes": child_size_bytes,
+                "size_mb": round(child_size_bytes / _BYTES_PER_MB, 4),
+            }
+        )
+    entries.sort(key=lambda item: item["size_bytes"], reverse=True)
+    return entries
+
+
+def retention_status_snapshot(
+    *,
+    base_dir: Path | None = None,
+    runs_dir: Path | None = None,
+    now: datetime | None = None,
+) -> Mapping[str, Any]:
+    """Return a rich status payload used by CLI and dashboard monitoring."""
+
+    root = Path(base_dir) if base_dir is not None else Path(os.environ.get("SINGULAR_HOME", "."))
+    target_runs_dir = Path(runs_dir) if runs_dir is not None else root / "runs"
+    config = load_retention_config(base_dir=root)
+    report = build_runs_policy_report(runs_dir=target_runs_dir, config=config, now=now)
+    state = _load_retention_state(root)
+
+    runs_size_bytes = _walk_total_size(target_runs_dir)
+    mem_size_bytes = _walk_total_size(root / "mem")
+    lives_size_bytes = _walk_total_size(root / "lives")
+
+    run_count = len(report.decisions)
+    overdue_age = [
+        decision for decision in report.decisions if (decision.age_days or 0.0) > config.max_run_age_days
+    ]
+    exceeds = {
+        "max_runs": run_count > config.max_runs,
+        "max_total_runs_size_mb": (runs_size_bytes / _BYTES_PER_MB) > config.max_total_runs_size_mb,
+        "max_run_age_days": len(overdue_age) > 0,
+    }
+
+    return {
+        "scope": "runs",
+        "generated_at": report.generated_at,
+        "usage": {
+            "runs": {
+                "size_bytes": runs_size_bytes,
+                "size_mb": round(runs_size_bytes / _BYTES_PER_MB, 4),
+                "entries": _child_entries_size(target_runs_dir),
+            },
+            "mem": {
+                "size_bytes": mem_size_bytes,
+                "size_mb": round(mem_size_bytes / _BYTES_PER_MB, 4),
+                "entries": _child_entries_size(root / "mem"),
+            },
+            "lives": {
+                "size_bytes": lives_size_bytes,
+                "size_mb": round(lives_size_bytes / _BYTES_PER_MB, 4),
+                "entries": _child_entries_size(root / "lives"),
+            },
+        },
+        "thresholds": {
+            "max_runs": config.max_runs,
+            "max_run_age_days": config.max_run_age_days,
+            "max_total_runs_size_mb": config.max_total_runs_size_mb,
+            "max_episodic_lines": config.max_episodic_lines,
+            "max_episodic_days": config.max_episodic_days,
+            "max_generations_lines": config.max_generations_lines,
+            "max_generations_days": config.max_generations_days,
+        },
+        "active_thresholds": exceeds,
+        "policy_summary": report.summary,
+        "last_purge": {
+            "at": state.get("last_full_run_at"),
+            "summary": state.get("last_run_summary", {}),
+        },
+    }

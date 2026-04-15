@@ -7,6 +7,7 @@ from singular.storage_retention import (
     apply_runs_retention,
     build_runs_policy_report,
     load_retention_config,
+    retention_status_snapshot,
     run_retention_service,
 )
 
@@ -210,3 +211,60 @@ def test_run_retention_service_respects_minimum_interval(tmp_path) -> None:
     assert outcome.executed is False
     assert outcome.report is None
     assert outcome.skipped_reason == "minimum_interval_not_elapsed"
+
+
+def test_run_retention_service_persists_last_purge_summary(tmp_path, monkeypatch) -> None:
+    now = datetime(2026, 4, 15, tzinfo=timezone.utc)
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    recent = runs_dir / "recent.jsonl"
+    old = runs_dir / "old.jsonl"
+    recent.write_text("{}\n", encoding="utf-8")
+    old.write_text("{}\n", encoding="utf-8")
+
+    import os
+
+    os.utime(recent, (now.timestamp(), now.timestamp()))
+    older = (now - timedelta(days=1)).timestamp()
+    os.utime(old, (older, older))
+    monkeypatch.setenv("SINGULAR_RETENTION_MAX_RUNS", "1")
+
+    outcome = run_retention_service(base_dir=tmp_path, runs_dir=runs_dir, now=now)
+
+    assert outcome.executed is True
+    assert outcome.last_run_summary is not None
+    assert outcome.last_run_summary["deleted"] == 1
+    state = json.loads((tmp_path / "mem" / "retention_state.json").read_text(encoding="utf-8"))
+    assert state["last_run_summary"]["deleted"] == 1
+
+
+def test_retention_status_snapshot_reports_usage_and_thresholds(tmp_path, monkeypatch) -> None:
+    runs_dir = tmp_path / "runs"
+    mem_dir = tmp_path / "mem"
+    lives_dir = tmp_path / "lives"
+    runs_dir.mkdir()
+    mem_dir.mkdir()
+    lives_dir.mkdir()
+    (runs_dir / "a.jsonl").write_text("{}\n", encoding="utf-8")
+    (mem_dir / "events.jsonl").write_text("{}\n", encoding="utf-8")
+    (lives_dir / "alpha.json").write_text("{}\n", encoding="utf-8")
+    (mem_dir / "retention_state.json").write_text(
+        json.dumps(
+            {
+                "last_full_run_at": "2026-04-15T10:00:00+00:00",
+                "last_run_summary": {"freed_mb": 1.2, "deleted": 3, "archived": 0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SINGULAR_RETENTION_MAX_RUNS", "1")
+    monkeypatch.setenv("SINGULAR_RETENTION_MAX_TOTAL_RUNS_SIZE_MB", "1")
+
+    payload = retention_status_snapshot(base_dir=tmp_path, now=datetime(2026, 4, 15, tzinfo=timezone.utc))
+
+    assert payload["usage"]["runs"]["size_mb"] >= 0
+    assert payload["usage"]["mem"]["size_mb"] >= 0
+    assert payload["usage"]["lives"]["size_mb"] >= 0
+    assert payload["thresholds"]["max_runs"] == 1
+    assert payload["thresholds"]["max_total_runs_size_mb"] == 1
+    assert payload["last_purge"]["summary"]["deleted"] == 3

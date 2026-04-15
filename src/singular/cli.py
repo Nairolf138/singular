@@ -164,6 +164,80 @@ def _run_retention_at_safe_point(*, dry_run: bool = False, enforce_minimum_inter
     return 0
 
 
+def _retention_status() -> int:
+    """Display retention usage, thresholds and latest purge summary."""
+
+    from .storage_retention import retention_status_snapshot
+
+    base_dir = Path(os.environ.get("SINGULAR_HOME", "."))
+    status = retention_status_snapshot(base_dir=base_dir)
+    usage = status.get("usage", {})
+    runs_usage = usage.get("runs", {})
+    mem_usage = usage.get("mem", {})
+    lives_usage = usage.get("lives", {})
+    thresholds = status.get("thresholds", {})
+    threshold_flags = status.get("active_thresholds", {})
+    last_purge = status.get("last_purge", {})
+    purge_summary = last_purge.get("summary", {}) if isinstance(last_purge, dict) else {}
+
+    print("Retention status")
+    print(
+        "Usage: "
+        f"runs={runs_usage.get('size_mb', 0):.2f}MB, "
+        f"mem={mem_usage.get('size_mb', 0):.2f}MB, "
+        f"lives={lives_usage.get('size_mb', 0):.2f}MB"
+    )
+    print(
+        "Last purge: "
+        f"at={last_purge.get('at') or 'never'}, "
+        f"freed_mb={purge_summary.get('freed_mb', 0)}, "
+        f"deleted={purge_summary.get('deleted', 0)}, "
+        f"archived={purge_summary.get('archived', 0)}"
+    )
+    print(
+        "Thresholds: "
+        f"max_runs={thresholds.get('max_runs')}, "
+        f"max_run_age_days={thresholds.get('max_run_age_days')}, "
+        f"max_total_runs_size_mb={thresholds.get('max_total_runs_size_mb')}"
+    )
+    exceeded = [name for name, value in threshold_flags.items() if value]
+    print(
+        "Exceeded: "
+        + (", ".join(sorted(exceeded)) if exceeded else "none")
+    )
+
+    def _print_entries(label: str, entries: Any) -> None:
+        print(f"{label}:")
+        if not isinstance(entries, list) or not entries:
+            print(" - (empty)")
+            return
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            print(
+                " - "
+                f"{entry.get('kind', 'item')} {entry.get('name', '?')} "
+                f"({entry.get('size_mb', 0):.4f}MB)"
+            )
+
+    _print_entries("runs details", runs_usage.get("entries"))
+    _print_entries("mem details", mem_usage.get("entries"))
+    _print_entries("lives details", lives_usage.get("entries"))
+    return 0
+
+
+def _retention_config_show() -> int:
+    """Print currently active retention thresholds."""
+
+    from .storage_retention import retention_status_snapshot
+
+    base_dir = Path(os.environ.get("SINGULAR_HOME", "."))
+    status = retention_status_snapshot(base_dir=base_dir)
+    thresholds = status.get("thresholds", {})
+    print(json.dumps({"retention": thresholds}, ensure_ascii=False, indent=2))
+    return 0
+
+
 def _in_path(target: Path, env_path: str | None = None) -> bool:
     """Return True when *target* is present in PATH."""
 
@@ -951,6 +1025,22 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Affiche les suppressions prévues sans écrire",
     )
+    retention_subparsers.add_parser(
+        "status",
+        help="Affiche l'usage stockage, les seuils et la dernière purge",
+    )
+    retention_config = retention_subparsers.add_parser(
+        "config",
+        help="Inspecte la configuration de rétention active",
+    )
+    retention_config_subparsers = retention_config.add_subparsers(
+        dest="retention_config_command",
+        required=True,
+    )
+    retention_config_subparsers.add_parser(
+        "show",
+        help="Affiche les seuils actifs",
+    )
     doctor_parser = subparsers.add_parser(
         "doctor", help="Diagnose CLI installation and PATH"
     )
@@ -1391,6 +1481,10 @@ def main(argv: list[str] | None = None) -> int:
                 dry_run=bool(args.dry_run),
                 enforce_minimum_interval=not bool(args.dry_run),
             )
+        if args.retention_command == "status":
+            return _retention_status()
+        if args.retention_command == "config" and args.retention_config_command == "show":
+            return _retention_config_show()
 
     elif args.command == "doctor":
         _doctor(fix=args.fix)

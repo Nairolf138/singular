@@ -34,6 +34,10 @@ def test_dashboard_endpoints(tmp_path: Path, monkeypatch) -> None:
     assert context["policy"]["version"] == 1
     assert isinstance(context["policy_impact"], list)
     assert "skills_lifecycle" in context
+    assert "retention" in context
+    retention = client.get("/api/retention/status").json()
+    assert "usage" in retention
+    assert "last_purge" in retention
 
 
 def test_dashboard_starts_with_empty_registry_and_exposes_onboarding(tmp_path: Path, monkeypatch) -> None:
@@ -258,6 +262,8 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     response = client.get("/")
     assert response.status_code == 200
     body = response.json()
+    assert "kpi-retention-usage" in body
+    assert "kpi-retention-thresholds" in body
     assert "Cockpit" in body
     assert "Prochaine action" in body
     assert "Métriques d’autonomie" in body

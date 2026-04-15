@@ -22,6 +22,7 @@ const schedulerConfig={
   backoff:{baseMs:1500,maxMs:30000,multiplier:2},
   frequencies:{
     context:7000,
+    retention:7000,
     cockpit:5000,
     ecosystem:5000,
     timeline:4000,
@@ -34,6 +35,7 @@ const schedulerConfig={
 };
 const schedulerLabelIds={
   context:'parametres',
+  retention:'cockpit',
   cockpit:'cockpit',
   ecosystem:'cockpit',
   timeline:'timeline-section',
@@ -341,6 +343,25 @@ const loadContext=()=>fetchJson('/dashboard/context').then(ctx=>{
   document.getElementById('kpi-skills-archived').textContent=String(lifecycle.archived||0);
 });
 
+const loadRetentionStatus=()=>fetchJson('/api/retention/status').then(payload=>{
+  const usage=payload?.usage||{};
+  const runs=usage?.runs||{};
+  const mem=usage?.mem||{};
+  const lives=usage?.lives||{};
+  const lastPurge=payload?.last_purge||{};
+  const summary=lastPurge?.summary||{};
+  const thresholds=payload?.thresholds||{};
+  const activeThresholds=payload?.active_thresholds||{};
+  const exceeded=Object.entries(activeThresholds).filter(([,active])=>Boolean(active)).map(([key])=>key);
+
+  document.getElementById('kpi-retention-usage').textContent=`${Number(runs.size_mb||0).toFixed(2)}MB / ${Number(mem.size_mb||0).toFixed(2)}MB / ${Number(lives.size_mb||0).toFixed(2)}MB`;
+  document.getElementById('kpi-retention-last-purge').textContent=String(lastPurge?.at||'jamais');
+  document.getElementById('kpi-retention-freed').textContent=`${Number(summary.freed_mb||0).toFixed(2)}MB`;
+  document.getElementById('kpi-retention-items').textContent=`${summary.deleted||0} / ${summary.archived||0}`;
+  const thresholdLabel=`runs≤${thresholds.max_runs??na()} · age≤${thresholds.max_run_age_days??na()}j · size≤${thresholds.max_total_runs_size_mb??na()}MB`;
+  document.getElementById('kpi-retention-thresholds').textContent=exceeded.length?`${thresholdLabel} · dépassement: ${exceeded.join(', ')}`:thresholdLabel;
+});
+
 const loadEco=()=>Promise.all([fetchJson(withScope('/ecosystem')),fetchJson(withScope('/lives/comparison?sort_by=last_activity&sort_order=desc'))]).then(([eco,lives])=>{
   const summary=eco.summary||{};
   const total=Number(summary.total_organisms||0);
@@ -536,6 +557,7 @@ if(essentialBtn){essentialBtn.onclick=toggleEssentialMode;}
 // Module bootstrap
 bootstrapPauseControls();
 registerTask('context',loadContext,schedulerConfig.frequencies.context);
+registerTask('retention',loadRetentionStatus,schedulerConfig.frequencies.retention);
 registerTask('ecosystem',loadEco,schedulerConfig.frequencies.ecosystem);
 registerTask('cockpit',loadCockpit,schedulerConfig.frequencies.cockpit);
 registerTask('timeline',loadTimeline,schedulerConfig.frequencies.timeline);
