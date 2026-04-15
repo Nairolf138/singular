@@ -169,3 +169,34 @@ def test_config_root_set_project_overrides_global(monkeypatch, tmp_path, capsys)
     out = capsys.readouterr().out
     assert exit_code == 0
     assert str(workspace / ".singular" / "project-root") in out
+
+
+def test_implicit_registry_root_windows_uses_path_for_env_value(monkeypatch) -> None:
+    monkeypatch.setattr(cli.os, "name", "nt")
+    monkeypatch.setenv("SINGULAR_ROOT", r"C:\tmp\singular")
+
+    root = cli._implicit_registry_root_from_env_or_default()
+
+    assert isinstance(root, Path)
+    assert root == Path(r"C:\tmp\singular").expanduser()
+
+
+def test_implicit_registry_root_windows_defaults_to_user_home(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(cli.os, "name", "nt")
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+
+    root = cli._implicit_registry_root_from_env_or_default()
+
+    assert root == cli._HOST_PATH_CLS("~/.singular").expanduser()
+
+
+def test_implicit_registry_root_posix_keeps_configured_behavior(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(cli.os, "name", "posix")
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    configured = tmp_path / "configured-root"
+    monkeypatch.setattr(cli, "load_configured_registry_root", lambda: configured)
+
+    root = cli._implicit_registry_root_from_env_or_default()
+
+    assert root == configured
