@@ -22,6 +22,15 @@ from .root_config import (
 
 __all__ = ["main"]
 
+_BIRTH_ALIAS_ENV = "SINGULAR_ENABLE_BIRTH_ALIAS"
+
+
+def _birth_alias_enabled() -> bool:
+    """Return True when the deprecated ``birth`` alias is still enabled."""
+
+    raw = os.environ.get(_BIRTH_ALIAS_ENV, "1").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
 
 def _bounded_trait_value(raw: str) -> float:
     """Parse a psyche trait override constrained to ``[0, 1]``."""
@@ -440,8 +449,8 @@ def _ensure_active_life(
     life_dir = resolve(life_name)
     if life_dir is None:
         raise SystemExit(
-            "Aucune vie active. Utilisez `singular birth --name ...` ou "
-            "`singular lives create` pour créer une vie."
+            "Aucune vie active. Utilisez `singular lives create --name ...` pour créer "
+            "une vie (`birth` reste un alias temporaire déprécié)."
         )
     os.environ["SINGULAR_HOME"] = str(life_dir)
     return life_dir
@@ -556,6 +565,84 @@ def _print_registry_context_message_if_needed(
     )
 
 
+def _add_life_creation_arguments(parser: argparse.ArgumentParser) -> None:
+    """Attach shared life creation options to a parser."""
+
+    parser.add_argument(
+        "--name",
+        default="New life",
+        help="Human readable name for the life",
+    )
+    parser.add_argument(
+        "--curiosity",
+        type=_bounded_trait_value,
+        default=None,
+        help="Trait initial borné dans [0,1]",
+    )
+    parser.add_argument(
+        "--patience",
+        type=_bounded_trait_value,
+        default=None,
+        help="Trait initial borné dans [0,1]",
+    )
+    parser.add_argument(
+        "--playfulness",
+        type=_bounded_trait_value,
+        default=None,
+        help="Trait initial borné dans [0,1]",
+    )
+    parser.add_argument(
+        "--optimism",
+        type=_bounded_trait_value,
+        default=None,
+        help="Trait initial borné dans [0,1]",
+    )
+    parser.add_argument(
+        "--resilience",
+        type=_bounded_trait_value,
+        default=None,
+        help="Trait initial borné dans [0,1]",
+    )
+    parser.add_argument(
+        "--starter-profile",
+        default="minimal",
+        help="Profil de starter skills à appliquer (ex: minimal, assistant, ops, creative)",
+    )
+    parser.add_argument(
+        "--starter-skill",
+        action="append",
+        default=[],
+        help="Skill starter individuel à ajouter (option répétable)",
+    )
+
+
+def _create_life_with_bootstrap(
+    args: argparse.Namespace,
+    *,
+    bootstrap_life: Callable[..., Any],
+    get_registry_root: Callable[[], Path],
+) -> None:
+    """Create a life via ``bootstrap_life`` with shared CLI options."""
+
+    psyche_overrides = {
+        trait: getattr(args, trait)
+        for trait in ("curiosity", "patience", "playfulness", "optimism", "resilience")
+        if getattr(args, trait, None) is not None
+    }
+    name = args.name or "New life"
+    metadata = bootstrap_life(
+        name,
+        seed=args.seed,
+        psyche_overrides=psyche_overrides or None,
+        starter_profile=args.starter_profile,
+        starter_skills=args.starter_skill,
+    )
+    registry_root = get_registry_root()
+    os.environ["SINGULAR_HOME"] = str(metadata.path)
+    print(f"Vie créée: {metadata.name} ({metadata.slug}) → {metadata.path}")
+    print(f"Registre de vies utilisé: {registry_root}")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the singular command line interface."""
 
@@ -619,56 +706,12 @@ def main(argv: list[str] | None = None) -> int:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    birth_parser = subparsers.add_parser(
-        "birth",
-        help="Birth a new life (affiche aussi le root de registre utilisé)",
-    )
-    birth_parser.add_argument(
-        "--name",
-        default="New life",
-        help="Human readable name for the life",
-    )
-    birth_parser.add_argument(
-        "--curiosity",
-        type=_bounded_trait_value,
-        default=None,
-        help="Trait initial borné dans [0,1]",
-    )
-    birth_parser.add_argument(
-        "--patience",
-        type=_bounded_trait_value,
-        default=None,
-        help="Trait initial borné dans [0,1]",
-    )
-    birth_parser.add_argument(
-        "--playfulness",
-        type=_bounded_trait_value,
-        default=None,
-        help="Trait initial borné dans [0,1]",
-    )
-    birth_parser.add_argument(
-        "--optimism",
-        type=_bounded_trait_value,
-        default=None,
-        help="Trait initial borné dans [0,1]",
-    )
-    birth_parser.add_argument(
-        "--resilience",
-        type=_bounded_trait_value,
-        default=None,
-        help="Trait initial borné dans [0,1]",
-    )
-    birth_parser.add_argument(
-        "--starter-profile",
-        default="minimal",
-        help="Profil de starter skills à appliquer (ex: minimal, assistant, ops, creative)",
-    )
-    birth_parser.add_argument(
-        "--starter-skill",
-        action="append",
-        default=[],
-        help="Skill starter individuel à ajouter (option répétable)",
-    )
+    if _birth_alias_enabled():
+        birth_parser = subparsers.add_parser(
+            "birth",
+            help="Alias déprécié de `lives create` (migration recommandée)",
+        )
+        _add_life_creation_arguments(birth_parser)
 
     spawn_parser = subparsers.add_parser(
         "spawn", help="Create child organism from two parents"
@@ -902,11 +945,7 @@ def main(argv: list[str] | None = None) -> int:
     lives_subparsers = lives_parser.add_subparsers(dest="lives_command", required=True)
     lives_subparsers.add_parser("list", help="List registered lives")
     lives_create = lives_subparsers.add_parser("create", help="Create a new life")
-    lives_create.add_argument(
-        "--name",
-        default="New life",
-        help="Human readable name for the life",
-    )
+    _add_life_creation_arguments(lives_create)
     lives_use = lives_subparsers.add_parser("use", help="Activate an existing life")
     lives_use.add_argument("name", help="Slug or name of the life to activate")
     lives_delete = lives_subparsers.add_parser(
@@ -1094,29 +1133,16 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["SINGULAR_SAFE_MODE"] = "1"
 
     if args.command == "birth":
-        psyche_overrides = {
-            trait: getattr(args, trait)
-            for trait in (
-                "curiosity",
-                "patience",
-                "playfulness",
-                "optimism",
-                "resilience",
-            )
-            if getattr(args, trait, None) is not None
-        }
-        name = args.name or "New life"
-        metadata = bootstrap_life(
-            name,
-            seed=args.seed,
-            psyche_overrides=psyche_overrides or None,
-            starter_profile=args.starter_profile,
-            starter_skills=args.starter_skill,
+        print(
+            "⚠️ `singular birth` est déprécié et sera supprimé après la période "
+            "de transition. Migrez vers `singular lives create --name ...`.",
+            file=sys.stderr,
         )
-        registry_root = get_registry_root()
-        os.environ["SINGULAR_HOME"] = str(metadata.path)
-        print(f"Vie créée: {metadata.name} ({metadata.slug}) → {metadata.path}")
-        print(f"Registre de vies utilisé: {registry_root}")
+        _create_life_with_bootstrap(
+            args,
+            bootstrap_life=bootstrap_life,
+            get_registry_root=get_registry_root,
+        )
 
     elif args.command == "spawn":
         from .organisms.spawn import spawn
@@ -1364,12 +1390,11 @@ def main(argv: list[str] | None = None) -> int:
                             f" (créée le {item['created_at']})"
                         )
         elif args.lives_command == "create":
-            name = args.name or "New life"
-            metadata = bootstrap_life(name, seed=args.seed)
-            registry_root = get_registry_root()
-            os.environ["SINGULAR_HOME"] = str(metadata.path)
-            print(f"Vie créée: {metadata.name} ({metadata.slug}) → {metadata.path}")
-            print(f"Registre de vies utilisé: {registry_root}")
+            _create_life_with_bootstrap(
+                args,
+                bootstrap_life=bootstrap_life,
+                get_registry_root=get_registry_root,
+            )
         elif args.lives_command == "use":
             life_dir = resolve_life(args.name)
             if life_dir is None:
