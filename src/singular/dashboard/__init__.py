@@ -179,11 +179,11 @@ def create_app(
         return mapping
 
     def _record_life(record: dict[str, object]) -> str:
+        if isinstance(record.get("life"), str):
+            return str(record["life"])
         skill = record.get("skill")
         if isinstance(skill, str) and ":" in skill:
             return skill.split(":", 1)[0]
-        if isinstance(record.get("life"), str):
-            return str(record["life"])
         run_id = _record_run_id(record)
         if run_id != "unknown":
             mapped_life = _registry_run_to_life_mapping().get(run_id)

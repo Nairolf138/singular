@@ -819,6 +819,31 @@ def test_lives_comparison_compare_lives_filter(tmp_path: Path) -> None:
     assert payload["filters"]["time_window"] == "all"
 
 
+def test_lives_comparison_prefers_record_life_over_skill_prefix(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "compare.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": "2026-04-11T09:00:00",
+                "life": "life-a",
+                "skill": "loop-20260411090000:skills/a.py",
+                "accepted": True,
+                "score_base": 10.0,
+                "score_new": 8.0,
+                "health": {"score": 80.0},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+
+    payload = app._routes["/lives/comparison"]()
+
+    assert set(payload["lives"]) == {"life-a"}
+
+
 def test_lives_comparison_maps_timestamped_run_file_to_registry_life(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
