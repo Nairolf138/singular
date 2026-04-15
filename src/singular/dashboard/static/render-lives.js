@@ -294,7 +294,17 @@ export const renderGenealogyTree=(payload)=>{
   const treeEl=document.getElementById('genealogy-tree');
   const socialEl=document.getElementById('social-network-tree');
   const conflictsEl=document.getElementById('active-conflicts');
-  if(!nodes.length){treeEl.textContent='Aucune lignée enregistrée.';socialEl.textContent='Aucun réseau social.';conflictsEl.textContent='Aucun conflit.';return;}
+  const relationsBody=document.getElementById('active-relations-table-body');
+  const lifeFilterEl=document.getElementById('genealogy-relations-life-filter');
+  const relationships=payload?.relationships||[];
+  const relationRows=payload?.active_relations||[];
+  if(!nodes.length){
+    treeEl.textContent='Aucune lignée enregistrée.';
+    socialEl.textContent='Aucun réseau social.';
+    conflictsEl.textContent='Aucun conflit.';
+    if(relationsBody){relationsBody.innerHTML=\"<tr><td colspan='6'>Aucune relation active.</td></tr>\";}
+    return;
+  }
   const bySlug=new Map(nodes.map(node=>[node.slug,node]));
   const children=new Map();
   for(const node of nodes){children.set(node.slug,[]);} 
@@ -307,10 +317,31 @@ export const renderGenealogyTree=(payload)=>{
   for(const node of detached){lines.push(`• ${node.name} (${node.slug}) [orphan]`);} 
   treeEl.textContent=lines.join('\n');
   const socialLines=[];
-  for(const node of nodes){const allies=(node.allies||[]).join(', ')||'-';const rivals=(node.rivals||[]).join(', ')||'-';socialLines.push(`${node.slug} | proximité=${Number(node.proximity_score||0.5).toFixed(2)} | alliés: ${allies} | rivaux: ${rivals}`);} 
+  for(const node of nodes){
+    const allies=relationships.filter(item=>item.type==='alliance'&&(item.source===node.slug||item.target===node.slug)).map(item=>item.source===node.slug?item.target:item.source).join(', ')||'-';
+    const rivals=relationships.filter(item=>item.type==='rivalry'&&(item.source===node.slug||item.target===node.slug)).map(item=>item.source===node.slug?item.target:item.source).join(', ')||'-';
+    socialLines.push(`${node.slug} | statut=${node.status} | proximité=${Number(node.proximity_score||0.5).toFixed(2)} | alliés: ${allies} | rivaux: ${rivals}`);
+  } 
   socialEl.textContent=socialLines.join('\n');
   const conflicts=payload?.active_conflicts||[];
-  conflictsEl.textContent=conflicts.length?conflicts.map(c=>`${c.life_a} ⚔ ${c.life_b}`).join('\n'):'Aucun conflit actif.';
+  conflictsEl.textContent=conflicts.length?conflicts.map(c=>`${c.life_a} ⚔ ${c.life_b} | sévérité=${c.severity??'-'} | MAJ=${c.updated_at||'n/a'}`).join('\n'):'Aucun conflit actif.';
+  if(relationsBody){
+    if(!relationRows.length){relationsBody.innerHTML=\"<tr><td colspan='6'>Aucune relation active pour ce filtre.</td></tr>\";}
+    else{
+      relationsBody.innerHTML=relationRows.map(row=>`<tr><td>${row.type||'unknown'}</td><td>${row.source||'-'}</td><td>${row.target||'-'}</td><td>${row.status||'unknown'}</td><td>${row.severity??'-'}</td><td>${row.updated_at||'n/a'}</td></tr>`).join('');
+    }
+  }
+  if(lifeFilterEl){
+    const currentValue=(payload?.filters?.life)||'all';
+    const options=['<option value=\"all\">Toutes les vies</option>',...nodes.map(node=>`<option value=\"${node.slug}\">${node.name} (${node.slug})</option>`)];
+    lifeFilterEl.innerHTML=options.join('');
+    lifeFilterEl.value=currentValue;
+    lifeFilterEl.onchange=()=>{
+      const selected=lifeFilterEl.value;
+      const route=selected&&selected!=='all'?`/lives/genealogy?life=${encodeURIComponent(selected)}`:'/lives/genealogy';
+      fetchJson(route).then(renderGenealogyTree).catch(error=>{document.getElementById('genealogy-tree').textContent='Impossible de charger la généalogie.';throw error;});
+    };
+  }
 };
 
 export const loadGenealogy=()=>fetchJson('/lives/genealogy').then(renderGenealogyTree).catch(error=>{document.getElementById('genealogy-tree').textContent='Impossible de charger la généalogie.';throw error;});

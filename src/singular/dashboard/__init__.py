@@ -194,6 +194,25 @@ def create_app(
                 return mapped_life
         return "unknown"
 
+    def _parse_iso8601(value: object) -> datetime | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        normalized = value.strip()
+        if normalized.endswith("Z"):
+            normalized = normalized[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed
+
+    def _iso_or_none(value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        return value.astimezone(timezone.utc).isoformat()
+
     def _compute_ecosystem(current_life_only: bool = False) -> dict:
         organisms: dict[str, dict[str, object]] = {}
         for directory in _runs_dirs(current_life_only=current_life_only):
@@ -1173,24 +1192,115 @@ def create_app(
         }
 
     @app.get("/lives/genealogy")
-    def read_lives_genealogy() -> dict[str, object]:
+    def read_lives_genealogy(life: str | None = None) -> dict[str, object]:
         registry = load_registry()
         lives = registry.get("lives", {})
         active = registry.get("active")
         nodes: list[dict[str, object]] = []
-        edges: list[dict[str, str]] = []
-        social_edges: list[dict[str, str]] = []
-        conflicts: list[dict[str, str]] = []
+        relationships: list[dict[str, object]] = []
+        active_conflicts: list[dict[str, object]] = []
+        if isinstance(life, str):
+            life = life.strip() or None
+        relation_updates: dict[tuple[str, str, str], datetime] = {}
+
+        relations_journal = get_registry_root() / "mem" / "lives_relations.jsonl"
+        if relations_journal.exists():
+            for line in relations_journal.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                event = record.get("event")
+                actor = record.get("actor")
+                target = record.get("target")
+                timestamp = _parse_iso8601(record.get("ts"))
+                if not (
+                    isinstance(event, str)
+                    and isinstance(actor, str)
+                    and actor
+                    and isinstance(target, str)
+                    and target
+                    and timestamp is not None
+                ):
+                    continue
+                pair = tuple(sorted((actor, target)))
+                if event == "ally":
+                    relation_updates[(pair[0], pair[1], "alliance")] = timestamp
+                elif event in {"rival", "reconcile"}:
+                    relation_updates[(pair[0], pair[1], "rivalry")] = timestamp
+
+        def _relation_timestamp(source: str, target: str, relation_type: str) -> str | None:
+            pair = tuple(sorted((source, target)))
+            return _iso_or_none(relation_updates.get((pair[0], pair[1], relation_type)))
+
+        def _relation_severity(*, relation_type: str, source_status: str, target_status: str, proximity: float) -> int:
+            if relation_type == "rivalry":
+                base = 2
+                if source_status == "active" and target_status == "active":
+                    base += 1
+                if proximity >= 0.65:
+                    base += 1
+                return min(base, 4)
+            if relation_type == "alliance":
+                if source_status == "active" and target_status == "active":
+                    return 1
+                return 2
+            return 1
+
+        def _append_relationship(
+            *,
+            source: str,
+            target: str,
+            relation_type: str,
+            source_status: str,
+            target_status: str,
+            source_proximity: float,
+            active_relation: bool = True,
+        ) -> None:
+            severity = _relation_severity(
+                relation_type=relation_type,
+                source_status=source_status,
+                target_status=target_status,
+                proximity=source_proximity,
+            )
+            item = {
+                "source": source,
+                "target": target,
+                "type": relation_type,
+                "status": "active" if active_relation else "inactive",
+                "updated_at": _relation_timestamp(source, target, relation_type),
+                "severity": severity,
+            }
+            relationships.append(item)
+            if relation_type == "rivalry" and active_relation:
+                active_conflicts.append(
+                    {
+                        "life_a": min(source, target),
+                        "life_b": max(source, target),
+                        "type": relation_type,
+                        "status": "active",
+                        "updated_at": item["updated_at"],
+                        "severity": severity,
+                    }
+                )
+
         if not isinstance(lives, dict):
             return {
                 "active": active,
                 "nodes": nodes,
-                "edges": edges,
-                "social_edges": social_edges,
-                "active_conflicts": conflicts,
+                "edges": [],
+                "social_edges": [],
+                "relationships": relationships,
+                "active_conflicts": active_conflicts,
+                "active_relations": [],
+                "filters": {"life": life},
                 "onboarding": {"required": active is None, "message": "Aucune vie, créez-en une." if active is None else None},
             }
 
+        statuses_by_slug: dict[str, str] = {}
+        proximity_by_slug: dict[str, float] = {}
         for slug, meta in sorted(lives.items()):
             name = getattr(meta, "name", slug)
             status = getattr(meta, "status", "active")
@@ -1208,39 +1318,144 @@ def create_app(
                 allies = ()
             if not isinstance(rivals, (tuple, list)):
                 rivals = ()
+            normalized_status = str(status).strip().lower() if isinstance(status, str) else "unknown"
+            if normalized_status not in {"active", "extinct", "archived"}:
+                normalized_status = "unknown"
+            proximity_value = float(proximity_score) if isinstance(proximity_score, (int, float)) else 0.5
+            proximity_value = max(0.0, min(1.0, proximity_value))
+            statuses_by_slug[slug] = normalized_status
+            proximity_by_slug[slug] = proximity_value
             nodes.append(
                 {
                     "slug": slug,
                     "name": str(name),
-                    "status": str(status),
+                    "status": normalized_status,
                     "active": slug == active,
                     "lineage_depth": int(lineage_depth) if isinstance(lineage_depth, int) else 0,
                     "parents": [str(parent) for parent in parents if isinstance(parent, str)],
                     "children": [str(child) for child in children if isinstance(child, str)],
                     "allies": [str(ally) for ally in allies if isinstance(ally, str)],
                     "rivals": [str(rival) for rival in rivals if isinstance(rival, str)],
-                    "proximity_score": float(proximity_score) if isinstance(proximity_score, (int, float)) else 0.5,
+                    "proximity_score": proximity_value,
                 }
             )
-            for parent in parents:
-                if isinstance(parent, str) and parent:
-                    edges.append({"parent": parent, "child": slug})
-            for ally in allies:
-                if isinstance(ally, str) and ally:
-                    social_edges.append({"source": slug, "target": ally, "kind": "ally"})
-            for rival in rivals:
-                if isinstance(rival, str) and rival:
-                    social_edges.append({"source": slug, "target": rival, "kind": "rival"})
-                    pair = tuple(sorted((slug, rival)))
-                    if pair[0] != pair[1]:
-                        conflicts.append({"life_a": pair[0], "life_b": pair[1]})
-        unique_conflicts = {(item["life_a"], item["life_b"]) for item in conflicts}
+
+        known_lives = set(statuses_by_slug)
+        unique_parent_edges: set[tuple[str, str]] = set()
+        unique_alliance_edges: set[tuple[str, str]] = set()
+        unique_rival_edges: set[tuple[str, str]] = set()
+        for node in nodes:
+            slug = str(node["slug"])
+            source_status = statuses_by_slug.get(slug, "unknown")
+            for parent in node.get("parents", []):
+                if isinstance(parent, str) and parent and parent in known_lives:
+                    edge_key = (parent, slug)
+                    if edge_key in unique_parent_edges:
+                        continue
+                    unique_parent_edges.add(edge_key)
+                    _append_relationship(
+                        source=parent,
+                        target=slug,
+                        relation_type="parentage",
+                        source_status=statuses_by_slug.get(parent, "unknown"),
+                        target_status=source_status,
+                        source_proximity=proximity_by_slug.get(parent, 0.5),
+                    )
+
+            for ally in node.get("allies", []):
+                if not (isinstance(ally, str) and ally and ally in known_lives and ally != slug):
+                    continue
+                edge_key = tuple(sorted((slug, ally)))
+                if edge_key in unique_alliance_edges:
+                    continue
+                unique_alliance_edges.add(edge_key)
+                _append_relationship(
+                    source=edge_key[0],
+                    target=edge_key[1],
+                    relation_type="alliance",
+                    source_status=statuses_by_slug.get(edge_key[0], "unknown"),
+                    target_status=statuses_by_slug.get(edge_key[1], "unknown"),
+                    source_proximity=proximity_by_slug.get(edge_key[0], 0.5),
+                )
+
+            for rival in node.get("rivals", []):
+                if not (isinstance(rival, str) and rival and rival in known_lives and rival != slug):
+                    continue
+                edge_key = tuple(sorted((slug, rival)))
+                if edge_key in unique_rival_edges:
+                    continue
+                unique_rival_edges.add(edge_key)
+                _append_relationship(
+                    source=edge_key[0],
+                    target=edge_key[1],
+                    relation_type="rivalry",
+                    source_status=statuses_by_slug.get(edge_key[0], "unknown"),
+                    target_status=statuses_by_slug.get(edge_key[1], "unknown"),
+                    source_proximity=proximity_by_slug.get(edge_key[0], 0.5),
+                )
+
+        unique_conflicts = {
+            (
+                item["life_a"],
+                item["life_b"],
+                item["type"],
+                item["status"],
+                item["updated_at"],
+                item["severity"],
+            )
+            for item in active_conflicts
+        }
+        filtered_relations = [
+            relation
+            for relation in relationships
+            if relation["status"] == "active"
+            and (
+                life is None
+                or relation["source"] == life
+                or relation["target"] == life
+            )
+        ]
+        filtered_relations.sort(
+            key=lambda item: (
+                int(item.get("severity", 0)),
+                _parse_iso8601(item.get("updated_at")) or datetime.fromtimestamp(0, timezone.utc),
+                str(item.get("type", "")),
+                str(item.get("source", "")),
+                str(item.get("target", "")),
+            ),
+            reverse=True,
+        )
         return {
             "active": active,
             "nodes": nodes,
-            "edges": edges,
-            "social_edges": social_edges,
-            "active_conflicts": [{"life_a": a, "life_b": b} for a, b in sorted(unique_conflicts)],
+            "edges": [
+                {"parent": str(item["source"]), "child": str(item["target"])}
+                for item in relationships
+                if item.get("type") == "parentage"
+            ],
+            "social_edges": [
+                {
+                    "source": str(item["source"]),
+                    "target": str(item["target"]),
+                    "kind": "ally" if item.get("type") == "alliance" else "rival",
+                }
+                for item in relationships
+                if item.get("type") in {"alliance", "rivalry"}
+            ],
+            "relationships": relationships,
+            "active_relations": filtered_relations,
+            "active_conflicts": [
+                {
+                    "life_a": a,
+                    "life_b": b,
+                    "type": relation_type,
+                    "status": status,
+                    "updated_at": updated_at,
+                    "severity": severity,
+                }
+                for a, b, relation_type, status, updated_at, severity in sorted(unique_conflicts)
+            ],
+            "filters": {"life": life},
             "onboarding": {
                 "required": not nodes and active is None,
                 "message": "Aucune vie, créez-en une." if not nodes and active is None else None,

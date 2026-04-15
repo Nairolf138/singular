@@ -1017,6 +1017,131 @@ def test_dashboard_life_metrics_contract_is_consistent_across_endpoints(
     assert ecosystem_contract == cockpit_contract
 
 
+def test_lives_genealogy_returns_normalized_relationships_and_conflicts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "registry-root"
+    (root / "mem").mkdir(parents=True)
+    monkeypatch.setenv("SINGULAR_ROOT", str(root))
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    (root / "mem" / "lives_relations.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "ts": "2026-04-13T08:00:00+00:00",
+                        "event": "ally",
+                        "actor": "life-a",
+                        "target": "life-b",
+                        "details": {},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-04-14T09:00:00+00:00",
+                        "event": "rival",
+                        "actor": "life-a",
+                        "target": "life-c",
+                        "details": {},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
+    monkeypatch.setattr(
+        "singular.dashboard.load_registry",
+        lambda: {
+            "active": "life-a",
+            "lives": {
+                "life-a": {
+                    "slug": "life-a",
+                    "name": "Life A",
+                    "status": "active",
+                    "parents": [],
+                    "children": ["life-b", "life-c"],
+                    "allies": ["life-b"],
+                    "rivals": ["life-c"],
+                    "proximity_score": 0.82,
+                    "lineage_depth": 0,
+                },
+                "life-b": {
+                    "slug": "life-b",
+                    "name": "Life B",
+                    "status": "active",
+                    "parents": ["life-a"],
+                    "children": [],
+                    "allies": ["life-a"],
+                    "rivals": [],
+                    "proximity_score": 0.66,
+                    "lineage_depth": 1,
+                },
+                "life-c": {
+                    "slug": "life-c",
+                    "name": "Life C",
+                    "status": "active",
+                    "parents": ["life-a"],
+                    "children": [],
+                    "allies": [],
+                    "rivals": ["life-a"],
+                    "proximity_score": 0.3,
+                    "lineage_depth": 1,
+                },
+            },
+        },
+    )
+
+    payload = app._routes["/lives/genealogy"]()
+
+    assert payload["filters"] == {"life": None}
+    assert payload["active_relations"]
+    for relation in payload["relationships"]:
+        assert "type" in relation
+        assert "status" in relation
+        assert "updated_at" in relation
+        assert "severity" in relation
+    for conflict in payload["active_conflicts"]:
+        assert "type" in conflict
+        assert "status" in conflict
+        assert "updated_at" in conflict
+        assert "severity" in conflict
+    first = payload["active_relations"][0]
+    assert first["type"] == "rivalry"
+    assert first["severity"] >= payload["active_relations"][-1]["severity"]
+
+
+def test_lives_genealogy_life_filter_limits_active_relations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "registry-root"
+    (root / "mem").mkdir(parents=True)
+    monkeypatch.setenv("SINGULAR_ROOT", str(root))
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
+    monkeypatch.setattr(
+        "singular.dashboard.load_registry",
+        lambda: {
+            "active": "life-a",
+            "lives": {
+                "life-a": {"slug": "life-a", "allies": ["life-b"], "rivals": ["life-c"]},
+                "life-b": {"slug": "life-b", "allies": ["life-a"], "rivals": []},
+                "life-c": {"slug": "life-c", "allies": [], "rivals": ["life-a"]},
+            },
+        },
+    )
+
+    payload = app._routes["/lives/genealogy"](life="life-b")
+
+    assert payload["filters"] == {"life": "life-b"}
+    assert payload["active_relations"]
+    assert all(
+        relation["source"] == "life-b" or relation["target"] == "life-b"
+        for relation in payload["active_relations"]
+    )
+
+
 def test_psyche_missing_returns_404(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
