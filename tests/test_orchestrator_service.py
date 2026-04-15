@@ -1,5 +1,8 @@
 from pathlib import Path
 import json
+import logging
+
+import pytest
 
 from singular.events import EventBus
 from singular.orchestrator.service import (
@@ -265,6 +268,64 @@ def test_orchestrator_run_forever_stops_on_stop_signal(monkeypatch, tmp_path: Pa
     service.run_forever()
 
     assert called["tick"] == 0
+
+
+def test_orchestrator_run_forever_recovers_from_transient_tick_failure(
+    monkeypatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    life = tmp_path / "life"
+    (life / "skills").mkdir(parents=True)
+    (life / "mem").mkdir(parents=True)
+    monkeypatch.setenv("SINGULAR_HOME", str(life))
+
+    service = OrchestratorService(config=OrchestratorConfig(dry_run=True), bus=EventBus())
+    calls = {"tick": 0}
+    sleep_calls: list[float] = []
+
+    def _fake_tick() -> LifecyclePhase:
+        calls["tick"] += 1
+        if calls["tick"] == 1:
+            raise PermissionError("temporary permission glitch")
+        service._running = False
+        return LifecyclePhase.ACTION
+
+    monkeypatch.setattr(service, "tick", _fake_tick)
+    monkeypatch.setattr(service, "_external_stimulus_detected", lambda: True)
+    monkeypatch.setattr("singular.orchestrator.service.time.sleep", lambda seconds: sleep_calls.append(seconds))
+    caplog.set_level(logging.WARNING)
+
+    service.run_forever()
+
+    assert calls["tick"] == 2
+    assert sleep_calls
+    assert "phase=" in caplog.text
+    assert str(service.state_path) in caplog.text
+
+
+def test_orchestrator_run_forever_raises_after_transient_tick_failure_threshold(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    life = tmp_path / "life"
+    (life / "skills").mkdir(parents=True)
+    (life / "mem").mkdir(parents=True)
+    monkeypatch.setenv("SINGULAR_HOME", str(life))
+
+    service = OrchestratorService(
+        config=OrchestratorConfig(
+            dry_run=True,
+            max_consecutive_tick_failures=2,
+            tick_failure_backoff_seconds=0.01,
+        ),
+        bus=EventBus(),
+    )
+    monkeypatch.setattr(service, "tick", lambda: (_ for _ in ()).throw(PermissionError("still locked")))
+    monkeypatch.setattr("singular.orchestrator.service.time.sleep", lambda seconds: None)
+
+    with pytest.raises(PermissionError):
+        service.run_forever()
 
 
 def test_orchestrator_introspection_refreshes_self_narrative(monkeypatch, tmp_path: Path) -> None:
