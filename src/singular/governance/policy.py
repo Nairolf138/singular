@@ -927,8 +927,9 @@ class MutationGovernancePolicy:
     def record_violation(self, *, category: str, severity: str = "high") -> None:
         self._prune_history()
         now = self._now()
+        was_open = self._circuit_open_until is not None and now < self._circuit_open_until
         self._violation_timestamps.append(now)
-        if len(self._violation_timestamps) >= self.circuit_breaker_threshold:
+        if not was_open and len(self._violation_timestamps) >= self.circuit_breaker_threshold:
             self._circuit_open_until = now + timedelta(seconds=self.circuit_breaker_cooldown_seconds)
             log.error(
                 "governance circuit breaker opened: category=%s severity=%s threshold=%s cooldown=%ss",

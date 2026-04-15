@@ -1,6 +1,7 @@
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
 import json
+import logging
+from pathlib import Path
 
 import pytest
 
@@ -115,6 +116,30 @@ def test_policy_opens_circuit_breaker_on_repeated_violations(tmp_path: Path) -> 
     assert decision.allowed is False
     assert "circuit-breaker active" in decision.reason
     assert decision.severity == "critical"
+
+
+def test_policy_logs_circuit_breaker_opened_only_once_when_already_open(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    clock = {"now": start}
+    policy = MutationGovernancePolicy(
+        circuit_breaker_threshold=2,
+        circuit_breaker_window_seconds=60.0,
+        circuit_breaker_cooldown_seconds=120.0,
+    )
+    policy._now = lambda: clock["now"]  # type: ignore[method-assign]
+    caplog.set_level(logging.ERROR, logger="singular.governance.policy")
+
+    policy.record_violation(category="quota", severity="high")
+    policy.record_violation(category="quota", severity="high")
+    policy.record_violation(category="quota", severity="high")
+    policy.record_violation(category="quota", severity="high")
+
+    opened_events = [
+        record for record in caplog.records if "governance circuit breaker opened" in record.message
+    ]
+    assert len(opened_events) == 1
 
 
 def test_policy_safe_mode_blocks_writes(tmp_path: Path) -> None:
