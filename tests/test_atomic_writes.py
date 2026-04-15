@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from singular import memory
+from singular import io_utils
 from singular.resource_manager import ResourceManager
 
 
@@ -16,7 +17,7 @@ def test_write_profile_atomic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     profile_path.parent.mkdir(parents=True, exist_ok=True)
     profile_path.write_text(json.dumps({"old": 1}), encoding="utf-8")
 
-    monkeypatch.setattr(memory.os, "replace", failing_replace)
+    monkeypatch.setattr(io_utils.os, "replace", failing_replace)
 
     with pytest.raises(RuntimeError):
         memory.write_profile({"new": 2}, path=profile_path)
@@ -31,7 +32,7 @@ def test_add_episode_uses_append_path_not_snapshot_replace(
     episode_path.parent.mkdir(parents=True, exist_ok=True)
     episode_path.write_text(json.dumps({"event": "old"}) + "\n", encoding="utf-8")
 
-    monkeypatch.setattr(memory.os, "replace", failing_replace)
+    monkeypatch.setattr(io_utils.os, "replace", failing_replace)
 
     memory.add_episode({"event": "new"}, path=episode_path)
 
@@ -48,7 +49,7 @@ def test_resource_manager_save_atomic(
     path.write_text(json.dumps({"energy": 1, "food": 2, "warmth": 3}), encoding="utf-8")
     rm = ResourceManager(path=path)
 
-    monkeypatch.setattr(memory.os, "replace", failing_replace)
+    monkeypatch.setattr(io_utils.os, "replace", failing_replace)
 
     rm.energy = 10
     with pytest.raises(RuntimeError):
