@@ -1505,8 +1505,13 @@ def run(
             resource_manager.apply_world_state(updated_world_state)
             save_checkpoint(checkpoint_path, state)
 
+            # DeathMonitor convention: ``action_succeeded=True`` means the
+            # mutation outcome is accepted (not a failure signal).
             dead, reason = org.monitor.check(
-                state.iteration, psyche, mutated_score <= base_score, org.resources
+                state.iteration,
+                psyche,
+                action_succeeded=accepted,
+                resources=org.resources,
             )
             if dead:
                 death_reason = reason or "unknown"

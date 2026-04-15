@@ -16,8 +16,8 @@ def test_energy_persistence(tmp_path):
 def test_energy_death():
     psyche = Psyche(energy=1.0)
     monitor = DeathMonitor(max_age=99, max_failures=99, min_trait=0.0)
-    dead, _ = monitor.check(0, psyche, success=True)
+    dead, _ = monitor.check(0, psyche, action_succeeded=True)
     assert not dead
     psyche.consume(1.0)
-    dead, reason = monitor.check(1, psyche, success=True)
+    dead, reason = monitor.check(1, psyche, action_succeeded=True)
     assert dead and reason == "energy depleted"

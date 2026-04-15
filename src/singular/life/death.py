@@ -19,11 +19,11 @@ class DeathMonitor:
         self,
         iteration: int,
         psyche: Psyche,
-        success: bool,
+        action_succeeded: bool,
         resources: float | None = None,
     ) -> Tuple[bool, str | None]:
         """Update state and return ``(dead, reason)`` for current iteration."""
-        if not success:
+        if not action_succeeded:
             self.failures += 1
         else:
             self.failures = 0
