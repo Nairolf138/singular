@@ -51,6 +51,7 @@ class FastAPI:
     def __init__(self) -> None:
         self._routes: Dict[str, Callable[[], Any]] = {}
         self._ws_routes: Dict[str, Callable[[WebSocket], Any]] = {}
+        self._mounts: Dict[str, Any] = {}
 
     def get(
         self, path: str, **_kwargs: Any
@@ -66,6 +67,10 @@ class FastAPI:
             return func
 
         return decorator
+
+
+    def mount(self, path: str, app: Any, name: str | None = None) -> None:
+        self._mounts[path] = {"app": app, "name": name}
 
     def websocket(
         self, path: str
