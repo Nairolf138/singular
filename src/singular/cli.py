@@ -6,6 +6,7 @@ import argparse
 import getpass
 import json
 import os
+import pathlib
 import random
 import re
 import sys
@@ -24,6 +25,28 @@ __all__ = ["main"]
 
 _BIRTH_ALIAS_ENV = "SINGULAR_ENABLE_BIRTH_ALIAS"
 _HOST_PATH_CLS = type(Path())
+
+
+def _path_unsupported_errors() -> tuple[type[Exception], ...]:
+    """Return exception types raised when host-incompatible path classes are built."""
+
+    errors: list[type[Exception]] = [NotImplementedError, RuntimeError]
+    unsupported = getattr(getattr(pathlib, "_abc", None), "UnsupportedOperation", None)
+    if isinstance(unsupported, type) and issubclass(unsupported, Exception):
+        errors.append(unsupported)
+    return tuple(dict.fromkeys(errors))
+
+
+_PATH_UNSUPPORTED_ERRORS = _path_unsupported_errors()
+
+
+def _safe_path(raw: str) -> Path:
+    """Build a path safely across host/path-flavor mismatches."""
+
+    try:
+        return Path(raw)
+    except _PATH_UNSUPPORTED_ERRORS:
+        return _HOST_PATH_CLS(raw)
 
 
 def _birth_alias_enabled() -> bool:
@@ -648,8 +671,8 @@ def _implicit_registry_root_from_env_or_default() -> Path:
 
     def _expanded(raw_path: str) -> Path:
         try:
-            return Path(raw_path).expanduser()
-        except (NotImplementedError, RuntimeError):
+            return _safe_path(raw_path).expanduser()
+        except _PATH_UNSUPPORTED_ERRORS:
             return _HOST_PATH_CLS(raw_path).expanduser()
 
     raw = os.environ.get("SINGULAR_ROOT")
