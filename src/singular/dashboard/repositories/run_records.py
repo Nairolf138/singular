@@ -21,9 +21,13 @@ class RunRecordsRepository:
             return []
         lives_paths: list[Path] = []
         for meta in raw_lives.values():
-            path = getattr(meta, "path", None)
-            if isinstance(path, Path):
-                lives_paths.append(path)
+            path_value = getattr(meta, "path", None)
+            if isinstance(meta, dict):
+                path_value = meta.get("path", path_value)
+            if isinstance(path_value, str):
+                path_value = Path(path_value)
+            if isinstance(path_value, Path):
+                lives_paths.append(path_value)
         return lives_paths
 
     def runs_dirs(self, current_life_only: bool = False) -> list[Path]:
