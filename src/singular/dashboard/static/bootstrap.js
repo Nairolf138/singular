@@ -120,7 +120,41 @@ const toggleEssentialMode=()=>{
   btn.setAttribute('aria-pressed',isEssential?'true':'false');
 };
 
+const DASHBOARD_TAB_KEY='singular.dashboard.lastTab';
+
+const activateDashboardTab=tabId=>{
+  const panes=document.querySelectorAll('.tab-pane');
+  const triggers=document.querySelectorAll('.tab-trigger');
+  if(!panes.length||!triggers.length){return;}
+  const selectedPaneId=`tab-${tabId}`;
+  let hasSelection=false;
+  panes.forEach(pane=>{
+    const isSelected=pane.id===selectedPaneId;
+    pane.classList.toggle('panel-hidden',!isSelected);
+    if(isSelected){hasSelection=true;}
+  });
+  triggers.forEach(trigger=>{
+    const isSelected=hasSelection&&trigger.dataset.tab===tabId;
+    trigger.setAttribute('aria-selected',isSelected?'true':'false');
+    trigger.tabIndex=isSelected?0:-1;
+  });
+  if(hasSelection){
+    localStorage.setItem(DASHBOARD_TAB_KEY,tabId);
+    window.location.hash=selectedPaneId;
+  }
+};
+
+const bindTabNavigation=()=>{
+  const triggers=document.querySelectorAll('.tab-trigger');
+  if(!triggers.length){return;}
+  triggers.forEach(trigger=>{trigger.onclick=()=>activateDashboardTab(trigger.dataset.tab||'decider-maintenant');});
+  const fromHash=(window.location.hash||'').replace('#tab-','');
+  const fromStorage=localStorage.getItem(DASHBOARD_TAB_KEY)||'';
+  activateDashboardTab(fromHash||fromStorage||'decider-maintenant');
+};
+
 const bindCommonHandlers=()=>{
+  bindTabNavigation();
   const essentialBtn=document.getElementById('toggle-essential');
   if(essentialBtn){essentialBtn.onclick=toggleEssentialMode;}
   const scopeToggle=document.getElementById('scope-current-life');
