@@ -9,7 +9,12 @@ from singular.cli import main
 from singular.lives import load_registry
 
 
-def test_birth_persists_initial_psyche_overrides(
+@pytest.mark.parametrize(
+    "creation_command",
+    [["birth"], ["lives", "create"]],
+)
+def test_birth_alias_and_lives_create_persist_initial_psyche_overrides(
+    creation_command: list[str],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -21,7 +26,7 @@ def test_birth_persists_initial_psyche_overrides(
         [
             "--root",
             str(root),
-            "birth",
+            *creation_command,
             "--name",
             "Prudent",
             "--curiosity",
@@ -52,13 +57,24 @@ def test_birth_persists_initial_psyche_overrides(
     assert payload["resilience"] == 0.95
 
 
-def test_birth_rejects_out_of_range_psyche_override() -> None:
+@pytest.mark.parametrize(
+    "creation_command",
+    [["birth"], ["lives", "create"]],
+)
+def test_birth_alias_and_lives_create_reject_out_of_range_psyche_override(
+    creation_command: list[str],
+) -> None:
     with pytest.raises(SystemExit) as excinfo:
-        main(["birth", "--curiosity", "1.5"])
+        main([*creation_command, "--curiosity", "1.5"])
     assert excinfo.value.code == 2
 
 
-def test_birth_uses_minimal_starter_profile_by_default(
+@pytest.mark.parametrize(
+    "creation_command",
+    [["birth"], ["lives", "create"]],
+)
+def test_birth_alias_and_lives_create_use_minimal_starter_profile_by_default(
+    creation_command: list[str],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -66,7 +82,7 @@ def test_birth_uses_minimal_starter_profile_by_default(
     monkeypatch.delenv("SINGULAR_ROOT", raising=False)
     monkeypatch.delenv("SINGULAR_HOME", raising=False)
 
-    main(["--root", str(root), "birth", "--name", "Minimal"])
+    main(["--root", str(root), *creation_command, "--name", "Minimal"])
 
     registry = load_registry()
     slug = registry["active"]
@@ -75,7 +91,12 @@ def test_birth_uses_minimal_starter_profile_by_default(
     assert skills == ["addition.py", "multiplication.py", "subtraction.py"]
 
 
-def test_birth_applies_explicit_starter_profile(
+@pytest.mark.parametrize(
+    "creation_command",
+    [["birth"], ["lives", "create"]],
+)
+def test_birth_alias_and_lives_create_apply_explicit_starter_profile(
+    creation_command: list[str],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -87,7 +108,7 @@ def test_birth_applies_explicit_starter_profile(
         [
             "--root",
             str(root),
-            "birth",
+            *creation_command,
             "--name",
             "Operator",
             "--starter-profile",
@@ -108,7 +129,12 @@ def test_birth_applies_explicit_starter_profile(
     ]
 
 
-def test_birth_unknown_profile_falls_back_to_minimal_and_adds_explicit_skills(
+@pytest.mark.parametrize(
+    "creation_command",
+    [["birth"], ["lives", "create"]],
+)
+def test_birth_alias_and_lives_create_unknown_profile_falls_back_to_minimal_and_adds_explicit_skills(
+    creation_command: list[str],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -120,7 +146,7 @@ def test_birth_unknown_profile_falls_back_to_minimal_and_adds_explicit_skills(
         [
             "--root",
             str(root),
-            "birth",
+            *creation_command,
             "--name",
             "Fallback",
             "--starter-profile",
@@ -135,3 +161,18 @@ def test_birth_unknown_profile_falls_back_to_minimal_and_adds_explicit_skills(
     life_home = Path(registry["lives"][slug].path)
     skills = sorted(path.name for path in (life_home / "skills").glob("*.py"))
     assert skills == ["addition.py", "multiplication.py", "subtraction.py", "summary.py"]
+
+
+def test_birth_prints_deprecation_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "registry-root"
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    main(["--root", str(root), "birth", "--name", "Legacy"])
+    stderr = capsys.readouterr().err
+    assert "déprécié" in stderr
+    assert "singular lives create --name" in stderr

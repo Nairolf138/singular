@@ -172,7 +172,7 @@ def test_cli_root_context_message_when_switching_registry_root(
     assert str(root_a.resolve()) in second_out
 
 
-def test_birth_prints_registry_root_used(
+def test_birth_alias_prints_registry_root_used(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -185,6 +185,42 @@ def test_birth_prints_registry_root_used(
     out = capsys.readouterr().out
     assert "Registre de vies utilisé:" in out
     assert str(root.resolve()) in out
+
+
+def test_birth_is_removed_when_alias_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "registry-root"
+    monkeypatch.setenv("SINGULAR_ENABLE_BIRTH_ALIAS", "0")
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--root", str(root), "birth", "--name", "Gamma"])
+    assert excinfo.value.code == 2
+    err = capsys.readouterr().err
+    assert "invalid choice" in err
+    assert "birth" in err
+
+    main(
+        [
+            "--root",
+            str(root),
+            "lives",
+            "create",
+            "--name",
+            "Gamma",
+            "--curiosity",
+            "0.3",
+            "--starter-profile",
+            "ops",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert "Vie créée:" in out
+    assert "Registre de vies utilisé:" in out
 
 
 def test_lives_create_prints_registry_root_used(

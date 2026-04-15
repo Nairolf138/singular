@@ -34,7 +34,7 @@ Contrairement aux chatbots classiques (qui ne changent pas leur cœur) ou aux si
 
 ```bash
 pip install -e .[yaml,dashboard,viz]
-singular birth --name Lumen
+singular lives create --name Lumen
 singular talk
 singular loop --budget-seconds 10
 singular status --format table
@@ -48,7 +48,7 @@ Si vous débutez, suivez **exactement** ces étapes :
 
 1. **Créer une vie**
    ```bash
-   singular birth --name Lumen
+   singular lives create --name Lumen
    ```
 2. **Envoyer un premier message**
    ```bash
@@ -95,17 +95,17 @@ Ce pack complète les skills arithmétiques historiques (`addition`, `subtractio
 
 ### Profils de naissance (traits initiaux)
 
-Le parser `birth` accepte des overrides bornés `[0,1]` pour les traits initiaux
+La commande `lives create` accepte des overrides bornés `[0,1]` pour les traits initiaux
 du psyche : `--curiosity`, `--patience`, `--playfulness`, `--optimism`,
 `--resilience`. Les valeurs sont persistées dans `mem/psyche.json`.
 
 ```bash
 # Profil prudent : stabilité, patience, faible prise de risque
-singular birth --name "Prudent" \
+singular lives create --name "Prudent" \
   --curiosity 0.20 --patience 0.90 --playfulness 0.15 --optimism 0.55 --resilience 0.90
 
 # Profil explorateur : curiosité et jeu plus élevés, patience plus basse
-singular birth --name "Explorateur" \
+singular lives create --name "Explorateur" \
   --curiosity 0.92 --patience 0.35 --playfulness 0.85 --optimism 0.75 --resilience 0.70
 ```
 
@@ -181,7 +181,7 @@ diffère du registre implicite précédent :
 Vous utilisez un autre registre de vies: ... (au lieu de ...).
 ```
 
-De plus, ``birth`` affiche explicitement le root de registre utilisé pour éviter
+De plus, ``lives create`` affiche explicitement le root de registre utilisé pour éviter
 toute ambiguïté.
 
 ## 🧹 Désinstallation
@@ -233,7 +233,7 @@ le fichier hybride dans `child/`.
 
 1. **Naissance**
    ```bash
-   singular birth --name Lumen
+   singular lives create --name Lumen
    ```
 
 ### ⏰ Horloge vitale
@@ -264,7 +264,7 @@ Si vous voulez un mode **autonome en continu** (au lieu d’exécuter `loop` à 
 
 1. **Préparer une vie active**
    ```bash
-   singular birth --name Lumen
+   singular lives create --name Lumen
    singular lives use lumen
    ```
 2. **Démarrer l’orchestrateur**
@@ -424,9 +424,9 @@ Exemples :
 
 ```bash
 # Choisir un dossier de données
-SINGULAR_HOME=/chemin/personnel singular birth
+SINGULAR_HOME=/chemin/personnel singular lives create
 # ou
-singular --home /chemin/personnel birth
+singular --home /chemin/personnel lives create
 
 # Ajuster la rétention des journaux
 SINGULAR_RUNS_KEEP=50 singular report --format json
