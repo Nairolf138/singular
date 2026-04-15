@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import timedelta
 import json
 import logging
 
@@ -253,21 +254,69 @@ routines:
     assert routine_tasks[0]["priority"] > 90
 
 
-def test_orchestrator_run_forever_stops_on_stop_signal(monkeypatch, tmp_path: Path) -> None:
+def test_orchestrator_run_forever_consumes_stale_startup_stop_signal(
+    monkeypatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     life = tmp_path / "life"
     (life / "skills").mkdir(parents=True)
     (life / "mem").mkdir(parents=True)
     monkeypatch.setenv("SINGULAR_HOME", str(life))
 
     service = OrchestratorService(config=OrchestratorConfig(dry_run=True), bus=EventBus())
-    service.stop_signal_path.write_text('{"stop": true}', encoding="utf-8")
+    stale_requested_at = (service._started_at - timedelta(minutes=5)).isoformat()
+    service.stop_signal_path.write_text(
+        json.dumps(
+            {
+                "stop": True,
+                "reason": "life_extinction_detected",
+                "requested_at": stale_requested_at,
+            }
+        ),
+        encoding="utf-8",
+    )
 
     called = {"tick": 0}
-    monkeypatch.setattr(service, "tick", lambda: called.__setitem__("tick", called["tick"] + 1))
+    def _fake_tick() -> LifecyclePhase:
+        called["tick"] += 1
+        service._running = False
+        return LifecyclePhase.ACTION
+
+    monkeypatch.setattr(service, "tick", _fake_tick)
+    monkeypatch.setattr(service, "_external_stimulus_detected", lambda: True)
+    caplog.set_level(logging.INFO)
 
     service.run_forever()
 
-    assert called["tick"] == 0
+    assert called["tick"] == 1
+    assert not service.stop_signal_path.exists()
+    archived = sorted((life / "mem").glob("orchestrator.stop.consumed.*.json"))
+    assert archived
+    assert "startup_stop_signal_detected" in caplog.text
+    assert "startup_stop_signal_consumed" in caplog.text
+
+
+def test_orchestrator_run_forever_honors_runtime_stop_signal(monkeypatch, tmp_path: Path) -> None:
+    life = tmp_path / "life"
+    (life / "skills").mkdir(parents=True)
+    (life / "mem").mkdir(parents=True)
+    monkeypatch.setenv("SINGULAR_HOME", str(life))
+
+    service = OrchestratorService(config=OrchestratorConfig(dry_run=True), bus=EventBus())
+    called = {"tick": 0}
+
+    def _fake_tick() -> LifecyclePhase:
+        called["tick"] += 1
+        service.stop_signal_path.write_text('{"stop": true}', encoding="utf-8")
+        return LifecyclePhase.ACTION
+
+    monkeypatch.setattr(service, "tick", _fake_tick)
+    monkeypatch.setattr(service, "_external_stimulus_detected", lambda: True)
+
+    service.run_forever()
+
+    assert called["tick"] == 1
 
 
 def test_orchestrator_run_forever_recovers_from_transient_tick_failure(
