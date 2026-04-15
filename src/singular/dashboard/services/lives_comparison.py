@@ -85,6 +85,57 @@ def aggregate_lives(
         by_life.setdefault(life_name, []).append(record)
 
     comparison: dict[str, dict[str, object]] = {}
+    for slug, raw_meta in registry_lives.items():
+        if not isinstance(slug, str):
+            continue
+        registry_status = "active"
+        display_name = slug
+        if isinstance(raw_meta, dict):
+            status_value = raw_meta.get("status")
+            if isinstance(status_value, str) and status_value in {"active", "extinct"}:
+                registry_status = status_value
+            name_value = raw_meta.get("name")
+            if isinstance(name_value, str) and name_value:
+                display_name = name_value
+        else:
+            status_value = getattr(raw_meta, "status", None)
+            if isinstance(status_value, str) and status_value in {"active", "extinct"}:
+                registry_status = status_value
+            name_value = getattr(raw_meta, "name", None)
+            if isinstance(name_value, str) and name_value:
+                display_name = name_value
+        is_selected = isinstance(active_life, str) and active_life in {slug, display_name}
+        is_extinct = registry_status == "extinct"
+        comparison[display_name] = {
+            "health_score": None,
+            "progression_slope": None,
+            "failure_rate": None,
+            "evolution_speed": None,
+            "mutations": 0,
+            "current_health_score": None,
+            "trend": "plateau",
+            "trend_rank": life_trend_rank("plateau"),
+            "stability": None,
+            "last_activity": None,
+            "alerts": [],
+            "alerts_count": 0,
+            "iterations": 0,
+            "selected_life": is_selected,
+            "life_status": registry_status,
+            "is_registry_active_life": registry_status == "active",
+            "has_recent_activity": False,
+            "extinction_seen_in_runs": is_extinct,
+            "run_terminated": False,
+            "vital_timeline": compute_vital_timeline(
+                age=0,
+                current_health=None,
+                failure_rate=None,
+                failure_streak=0,
+                extinction_seen=is_extinct,
+                registry_status=registry_status,
+            ),
+        }
+
     for life_name, all_records in by_life.items():
         all_records = sorted(all_records, key=lambda rec: str(rec.get("ts", "")))
         mutation_records = [rec for rec in all_records if is_mutation_record(rec)]

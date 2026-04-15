@@ -70,3 +70,96 @@ def test_lives_comparison_service_aggregates_metrics() -> None:
     assert comparison["alpha"]["failure_rate"] == 0.5
     assert comparison["alpha"]["mutations"] == 2
     assert comparison["alpha"]["trend"] in {"plateau", "dégradation", "amélioration"}
+
+
+def test_lives_comparison_includes_registry_life_without_records_in_table() -> None:
+    comparison, _ = aggregate_lives(
+        [
+            {
+                "life": "alpha",
+                "ts": "2026-01-01T00:00:00Z",
+                "score_base": 10,
+                "score_new": 9,
+            }
+        ],
+        registry={
+            "active": "alpha",
+            "lives": {
+                "alpha": {"name": "alpha", "status": "active"},
+                "beta": {"name": "beta", "status": "active"},
+            },
+        },
+        compare_lives=None,
+        time_window="all",
+        record_life=lambda rec: str(rec.get("life", "unknown")),
+        record_run_id=lambda rec: str(rec.get("run_id", "unknown")),
+        is_mutation_record=lambda rec: "score_base" in rec,
+        as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
+        alerts_from_records=lambda _: [],
+        compute_vital_timeline=lambda **_: {"ok": True},
+        set_life_status=lambda *_: None,
+        registry_life_meta=lambda life_name, lives: (life_name, lives.get(life_name)),
+    )
+
+    table = [{"life": name, **payload} for name, payload in comparison.items()]
+    assert {row["life"] for row in table} == {"alpha", "beta"}
+    beta = next(row for row in table if row["life"] == "beta")
+    assert beta["current_health_score"] is None
+    assert beta["iterations"] == 0
+    assert beta["has_recent_activity"] is False
+
+
+def test_lives_comparison_marks_selected_active_life_without_records() -> None:
+    comparison, _ = aggregate_lives(
+        [],
+        registry={
+            "active": "beta",
+            "lives": {
+                "alpha": {"name": "alpha", "status": "active"},
+                "beta": {"name": "beta", "status": "active"},
+            },
+        },
+        compare_lives=None,
+        time_window="all",
+        record_life=lambda rec: str(rec.get("life", "unknown")),
+        record_run_id=lambda rec: str(rec.get("run_id", "unknown")),
+        is_mutation_record=lambda rec: "score_base" in rec,
+        as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
+        alerts_from_records=lambda _: [],
+        compute_vital_timeline=lambda **_: {"ok": True},
+        set_life_status=lambda *_: None,
+        registry_life_meta=lambda life_name, lives: (life_name, lives.get(life_name)),
+    )
+
+    assert comparison["beta"]["selected_life"] is True
+    assert comparison["alpha"]["selected_life"] is False
+
+
+def test_lives_comparison_default_rows_follow_active_and_dead_filters() -> None:
+    comparison, _ = aggregate_lives(
+        [],
+        registry={
+            "active": "alpha",
+            "lives": {
+                "alpha": {"name": "alpha", "status": "active"},
+                "beta": {"name": "beta", "status": "extinct"},
+            },
+        },
+        compare_lives=None,
+        time_window="all",
+        record_life=lambda rec: str(rec.get("life", "unknown")),
+        record_run_id=lambda rec: str(rec.get("run_id", "unknown")),
+        is_mutation_record=lambda rec: "score_base" in rec,
+        as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
+        alerts_from_records=lambda _: [],
+        compute_vital_timeline=lambda **_: {"ok": True},
+        set_life_status=lambda *_: None,
+        registry_life_meta=lambda life_name, lives: (life_name, lives.get(life_name)),
+    )
+
+    table = [{"life": name, **payload} for name, payload in comparison.items()]
+    active_only = [row for row in table if row.get("is_registry_active_life") is True]
+    dead_only = [row for row in table if row.get("extinction_seen_in_runs") is True]
+
+    assert [row["life"] for row in active_only] == ["alpha"]
+    assert [row["life"] for row in dead_only] == ["beta"]
