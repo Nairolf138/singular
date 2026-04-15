@@ -1046,18 +1046,51 @@ def create_app(
             time_window=time_window,
         )
         metrics_contract = _build_metrics_contract(comparison)
-        lives_rows = [{"life": name, **payload} for name, payload in comparison.items()]
+        base_rows = [{"life": name, **payload} for name, payload in comparison.items()]
+        lives_rows = list(base_rows)
+        filter_steps: list[dict[str, object]] = [
+            {
+                "step": "before_filters",
+                "label": "Vies avant filtres endpoint",
+                "applied": True,
+                "count": len(lives_rows),
+            }
+        ]
 
         if active_only:
             lives_rows = [
                 row for row in lives_rows if row.get("is_registry_active_life") is True
             ]
+        filter_steps.append(
+            {
+                "step": "active_only",
+                "label": "Après filtre active_only",
+                "applied": active_only,
+                "count": len(lives_rows),
+            }
+        )
         if degrading_only:
             lives_rows = [row for row in lives_rows if row.get("trend") == "dégradation"]
+        filter_steps.append(
+            {
+                "step": "degrading_only",
+                "label": "Après filtre degrading_only",
+                "applied": degrading_only,
+                "count": len(lives_rows),
+            }
+        )
         if dead_only:
             lives_rows = [
                 row for row in lives_rows if row.get("extinction_seen_in_runs") is True
             ]
+        filter_steps.append(
+            {
+                "step": "dead_only",
+                "label": "Après filtre dead_only",
+                "applied": dead_only,
+                "count": len(lives_rows),
+            }
+        )
 
         sort_key_map: dict[str, str] = {
             "life": "life",
@@ -1076,6 +1109,14 @@ def create_app(
                 str(row.get("life", "")),
             ),
             reverse=reverse,
+        )
+        filter_steps.append(
+            {
+                "step": "sorted",
+                "label": "Après tri",
+                "applied": True,
+                "count": len(lives_rows),
+            }
         )
 
         registry_state = _registry_overview()
@@ -1096,6 +1137,10 @@ def create_app(
                 "dead_only": dead_only,
                 "time_window": time_window,
                 "compare_lives": sorted(compare_set) if compare_set else [],
+            },
+            "filter_diagnostics": {
+                "before_filter_count": len(base_rows),
+                "steps": filter_steps,
             },
         }
 
