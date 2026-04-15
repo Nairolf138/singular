@@ -8,11 +8,16 @@ from typing import Any, Iterator
 import json
 import os
 import tempfile
+import time
 
 if os.name == "nt":
     import msvcrt
 else:
     import fcntl
+
+
+def _is_windows() -> bool:
+    return os.name == "nt"
 
 
 def _ensure_parent(path: Path) -> None:
@@ -26,7 +31,7 @@ def _locked_file(path: Path) -> Iterator[None]:
     lock_path = path.with_suffix(path.suffix + ".lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+b") as lock_file:
-        if os.name == "nt":
+        if _is_windows():
             lock_file.seek(0)
             msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
         else:
@@ -34,7 +39,7 @@ def _locked_file(path: Path) -> Iterator[None]:
         try:
             yield
         finally:
-            if os.name == "nt":
+            if _is_windows():
                 lock_file.seek(0)
                 msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
             else:
@@ -63,8 +68,8 @@ def atomic_write_text(path: Path | str, data: str, fsync: bool = True) -> None:
             tmp.flush()
             if fsync:
                 os.fsync(tmp.fileno())
-        os.replace(tmp.name, destination)
-        if fsync and os.name != "nt":
+        _replace_with_retry(tmp.name, destination)
+        if fsync and not _is_windows():
             dir_fd = os.open(destination.parent, os.O_RDONLY)
             try:
                 os.fsync(dir_fd)
@@ -75,6 +80,41 @@ def atomic_write_text(path: Path | str, data: str, fsync: bool = True) -> None:
             os.unlink(tmp.name)
         except FileNotFoundError:
             pass
+
+
+def _replace_with_retry(source: str, destination: Path) -> None:
+    """Replace ``destination`` with ``source``, retrying transient Windows lock errors."""
+
+    max_attempts = 6
+    delay_seconds = 0.025
+    max_delay_seconds = 0.2
+    first_exception: PermissionError | OSError | None = None
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError as exc:
+            if not _is_windows():
+                raise
+            if first_exception is None:
+                first_exception = exc
+        except OSError as exc:
+            if not _is_windows() or getattr(exc, "winerror", None) != 5:
+                raise
+            if first_exception is None:
+                first_exception = exc
+
+        if attempt < max_attempts:
+            time.sleep(delay_seconds)
+            delay_seconds = min(delay_seconds * 2, max_delay_seconds)
+
+    assert first_exception is not None
+    first_exception.add_note(
+        "atomic_write_text failed to replace temporary file after "
+        f"{max_attempts} attempts (source={source!r}, destination={str(destination)!r})."
+    )
+    raise first_exception
 
 
 def append_jsonl_line(
