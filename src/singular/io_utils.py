@@ -15,6 +15,12 @@ if os.name == "nt":
 else:
     import fcntl
 
+_DEFAULT_REPLACE_MAX_ATTEMPTS = 6
+_DEFAULT_REPLACE_INITIAL_DELAY_SECONDS = 0.025
+_DEFAULT_REPLACE_MAX_DELAY_SECONDS = 0.2
+_WINDOWS_REPLACE_MAX_ATTEMPTS = 8
+_WINDOWS_REPLACE_MAX_DELAY_SECONDS = 0.4
+
 
 def _is_windows() -> bool:
     return os.name == "nt"
@@ -85,10 +91,17 @@ def atomic_write_text(path: Path | str, data: str, fsync: bool = True) -> None:
 def _replace_with_retry(source: str, destination: Path) -> None:
     """Replace ``destination`` with ``source``, retrying transient Windows lock errors."""
 
-    max_attempts = 6
-    delay_seconds = 0.025
-    max_delay_seconds = 0.2
+    max_attempts = (
+        _WINDOWS_REPLACE_MAX_ATTEMPTS if _is_windows() else _DEFAULT_REPLACE_MAX_ATTEMPTS
+    )
+    delay_seconds = _DEFAULT_REPLACE_INITIAL_DELAY_SECONDS
+    max_delay_seconds = (
+        _WINDOWS_REPLACE_MAX_DELAY_SECONDS
+        if _is_windows()
+        else _DEFAULT_REPLACE_MAX_DELAY_SECONDS
+    )
     first_exception: PermissionError | OSError | None = None
+    observed_delays: list[float] = []
 
     for attempt in range(1, max_attempts + 1):
         try:
@@ -106,15 +119,31 @@ def _replace_with_retry(source: str, destination: Path) -> None:
                 first_exception = exc
 
         if attempt < max_attempts:
+            observed_delays.append(delay_seconds)
             time.sleep(delay_seconds)
             delay_seconds = min(delay_seconds * 2, max_delay_seconds)
 
-    assert first_exception is not None
-    first_exception.add_note(
-        "atomic_write_text failed to replace temporary file after "
-        f"{max_attempts} attempts (source={source!r}, destination={str(destination)!r})."
+    assert first_exception is not None  # pragma: no cover - defensive
+
+    with _locked_file(destination):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError as exc:
+            if not _is_windows():
+                raise
+            fallback_exception: PermissionError | OSError = exc
+        except OSError as exc:
+            if not _is_windows() or getattr(exc, "winerror", None) != 5:
+                raise
+            fallback_exception = exc
+
+    fallback_exception.add_note(
+        "atomic_write_text failed after retry loop and sidecar-lock fallback "
+        f"(source={source!r}, destination={str(destination)!r}, attempts={max_attempts}, "
+        f"delays={observed_delays!r})."
     )
-    raise first_exception
+    raise fallback_exception
 
 
 def append_jsonl_line(

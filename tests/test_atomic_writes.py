@@ -1,4 +1,5 @@
 import json
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -89,6 +90,35 @@ def test_atomic_write_text_retries_permission_error_on_windows(
     assert json.loads(destination.read_text(encoding="utf-8")) == {"new": True}
 
 
+def test_atomic_write_text_retries_winerror_5_oserror_on_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "state.json"
+    destination.write_text('{"old": true}', encoding="utf-8")
+    original_replace = io_utils.os.replace
+    attempts = 0
+    delays: list[float] = []
+
+    def flaky_replace(src, dst):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 5:
+            error = OSError("Access denied")
+            error.winerror = 5
+            raise error
+        return original_replace(src, dst)
+
+    monkeypatch.setattr(io_utils, "_is_windows", lambda: True)
+    monkeypatch.setattr(io_utils.os, "replace", flaky_replace)
+    monkeypatch.setattr(io_utils.time, "sleep", delays.append)
+
+    io_utils.atomic_write_text(destination, '{"new": true}')
+
+    assert attempts == 5
+    assert delays == [0.025, 0.05, 0.1, 0.2]
+    assert json.loads(destination.read_text(encoding="utf-8")) == {"new": True}
+
+
 def test_atomic_write_text_windows_retry_raises_enriched_initial_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -102,18 +132,51 @@ def test_atomic_write_text_windows_retry_raises_enriched_initial_error(
         attempts += 1
         raise PermissionError("Access denied")
 
+    @contextmanager
+    def fake_lock(_path: Path):
+        yield
+
     monkeypatch.setattr(io_utils, "_is_windows", lambda: True)
+    monkeypatch.setattr(io_utils, "_locked_file", fake_lock)
     monkeypatch.setattr(io_utils.os, "replace", always_failing_replace)
     monkeypatch.setattr(io_utils.time, "sleep", delays.append)
 
     with pytest.raises(PermissionError) as exc_info:
         io_utils.atomic_write_text(destination, '{"new": true}')
 
-    assert attempts == 6
-    assert delays == [0.025, 0.05, 0.1, 0.2, 0.2]
+    assert attempts == 9
+    assert delays == [0.025, 0.05, 0.1, 0.2, 0.4, 0.4, 0.4]
     notes = getattr(exc_info.value, "__notes__", [])
     assert any(
-        "after 6 attempts" in note and str(destination) in note and "destination=" in note
+        "sidecar-lock fallback" in note
+        and "attempts=8" in note
+        and str(destination) in note
+        and "delays=" in note
         for note in notes
     )
+    assert json.loads(destination.read_text(encoding="utf-8")) == {"old": True}
+
+
+def test_atomic_write_text_non_windows_permission_error_not_retried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "state.json"
+    destination.write_text('{"old": true}', encoding="utf-8")
+    attempts = 0
+    delays: list[float] = []
+
+    def failing_replace(_src, _dst):
+        nonlocal attempts
+        attempts += 1
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(io_utils, "_is_windows", lambda: False)
+    monkeypatch.setattr(io_utils.os, "replace", failing_replace)
+    monkeypatch.setattr(io_utils.time, "sleep", delays.append)
+
+    with pytest.raises(PermissionError):
+        io_utils.atomic_write_text(destination, '{"new": true}')
+
+    assert attempts == 1
+    assert delays == []
     assert json.loads(destination.read_text(encoding="utf-8")) == {"old": True}
