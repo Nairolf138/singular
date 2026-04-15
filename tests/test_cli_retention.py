@@ -113,3 +113,38 @@ def test_cli_retention_config_show_prints_active_thresholds(monkeypatch, tmp_pat
     out = capsys.readouterr().out
     assert '"max_runs": 5' in out
     assert '"max_run_age_days": 14' in out
+
+
+def test_cli_retention_run_dry_run_has_no_side_effects(monkeypatch, tmp_path, capsys) -> None:
+    root = tmp_path / "root"
+    main(["--root", str(root), "lives", "create", "--name", "Alpha"])
+
+    runs = root / "lives" / "alpha" / "runs"
+    old_run = runs / "run-old"
+    new_run = runs / "run-new"
+    old_run.mkdir(parents=True, exist_ok=True)
+    new_run.mkdir(parents=True, exist_ok=True)
+    (old_run / "events.jsonl").write_text("{}\n", encoding="utf-8")
+    (new_run / "events.jsonl").write_text("{}\n", encoding="utf-8")
+
+    import os
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime(2026, 4, 15, tzinfo=timezone.utc)
+    os.utime((new_run / "events.jsonl"), (now.timestamp(), now.timestamp()))
+    older = (now - timedelta(days=2)).timestamp()
+    os.utime((old_run / "events.jsonl"), (older, older))
+    os.utime(new_run, (now.timestamp(), now.timestamp()))
+    os.utime(old_run, (older, older))
+
+    monkeypatch.setenv("SINGULAR_RETENTION_MAX_RUNS", "1")
+
+    code = main(["--root", str(root), "retention", "run", "--dry-run"])
+
+    assert code == 0
+    assert old_run.exists()
+    assert new_run.exists()
+    assert not (root / "lives" / "alpha" / "mem" / "retention_state.json").exists()
+    out = capsys.readouterr().out
+    assert "planned_delete=1" in out
+    assert "would_delete" in out
