@@ -31,6 +31,7 @@ from singular.dashboard.services.trajectory import (
 )
 from singular.dashboard.services.lives_comparison import (
     aggregate_lives as aggregate_lives_service,
+    compute_liveness_index as compute_liveness_index_service,
     parse_ts as parse_ts_service,
     resolve_time_window_cutoff as resolve_time_window_cutoff_service,
     life_trend_label as life_trend_label_service,
@@ -463,6 +464,10 @@ def create_app(
                 "daily_skills": build_daily_skills_snapshot([]),
                 "life_metrics_contract": _build_metrics_contract({}),
                 "trajectory": _build_trajectory([]),
+                "life_liveness_index": 0.0,
+                "life_liveness_components": {},
+                "life_liveness_proofs": [],
+                "life_liveness_life": None,
             }
             return empty
 
@@ -601,6 +606,34 @@ def create_app(
             failure_streak=max_failure_streak,
             extinction_seen=any(rec.get("event") == "death" for rec in records),
         )
+        comparison, _ = _aggregate_lives(current_life_only=current_life_only)
+        comparison_rows = [
+            {"life": life_name, **payload}
+            for life_name, payload in comparison.items()
+            if isinstance(payload, dict)
+        ]
+        selected_row = next(
+            (
+                row
+                for row in comparison_rows
+                if row.get("selected_life") is True and isinstance(row.get("life"), str)
+            ),
+            None,
+        )
+        if selected_row is None and comparison_rows:
+            selected_row = max(
+                comparison_rows,
+                key=lambda row: float(row.get("life_liveness_index") or 0.0),
+            )
+        selected_life = selected_row.get("life") if isinstance(selected_row, dict) else None
+        filtered_records = [
+            record for record in records if selected_life and _record_life(record) == selected_life
+        ]
+        liveness_payload = (
+            compute_liveness_index_service(filtered_records or records)
+            if records
+            else {"index": 0.0, "components": {}, "proofs": []}
+        )
 
         return {
             "run": latest.stem,
@@ -645,6 +678,10 @@ def create_app(
             "daily_skills": build_daily_skills_snapshot(records),
             "life_metrics_contract": metrics_contract,
             "trajectory": trajectory,
+            "life_liveness_index": liveness_payload.get("index", 0.0),
+            "life_liveness_components": liveness_payload.get("components", {}),
+            "life_liveness_proofs": liveness_payload.get("proofs", []),
+            "life_liveness_life": selected_life,
         }
 
     def _summarize_cockpit_essential(current_life_only: bool = False) -> dict[str, object]:
@@ -1288,6 +1325,7 @@ def create_app(
             "stability": "stability",
             "last_activity": "last_activity",
             "iterations": "iterations",
+            "liveness": "life_liveness_index",
         }
         key_name = sort_key_map.get(sort_by, "current_health_score")
         reverse = sort_order != "asc"

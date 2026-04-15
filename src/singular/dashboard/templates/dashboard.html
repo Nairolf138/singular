@@ -51,10 +51,15 @@
       <div class='cards-grid content-top-gap'>
         <div class='card'><div class='card-label kpi-label' title='Évolution récente du système'>Tendance</div><div id='kpi-trend' class='card-value actionable-signal'>Non disponible</div></div>
         <div class='card'><div class='card-label kpi-label' title='Part des mutations validées'>Mutations acceptées</div><div id='kpi-accepted' class='card-value'>Pas encore mesuré</div></div>
+        <div class='card'><div class='card-label kpi-label' title='Indice de vivacité basé sur des preuves concrètes'>Life liveness index</div><div id='kpi-liveness-index' class='card-value actionable-signal'>0.0</div></div>
         <div class='card'><div class='card-label'>Stabilité long terme</div><div id='kpi-autonomy-stability' class='card-value actionable-signal'>Pas encore mesuré</div></div>
         <div class='card'><div class='card-label'>Qualité décision</div><div id='kpi-autonomy-decision' class='card-value'>Pas encore mesuré</div></div>
         <div class='card'><div class='card-label'>Initiatives</div><div id='kpi-autonomy-proactive' class='card-value'>Pas encore mesuré</div></div>
         <div class='card'><div class='card-label'>Âge</div><div id='kpi-vital-age' class='card-value'>0</div></div>
+      </div>
+      <div class='panel panel-compact panel-top-gap'>
+        <h4 class='heading-reset-top'>Preuves de vie</h4>
+        <ul id='kpi-liveness-proofs' class='list-tight-top'><li>Aucune preuve récente.</li></ul>
       </div>
     </details>
 
@@ -169,6 +174,7 @@
           <th><button data-sort='stability'>Stabilité</button></th>
           <th><button data-sort='last_activity'>Dernière activité</button></th>
           <th><button data-sort='iterations'>Itérations</button></th>
+          <th><button data-sort='liveness'>Liveness</button></th>
           <th>État</th>
           <th>Risque</th>
           <th>Activité</th>
@@ -177,6 +183,8 @@
       <aside id='life-detail-panel' class='panel panel-hidden life-detail-panel' aria-live='polite'>
         <h3 class='heading-reset-top'>Détails de vie</h3>
         <p class='text-muted-small'>Cliquez sur une ligne pour afficher les badges complets et métadonnées.</p>
+        <h4>Preuves de vie</h4>
+        <ul id='life-detail-liveness-proofs' class='list-tight-top'><li>Aucune vie sélectionnée.</li></ul>
         <div id='life-detail-content'>Aucune vie sélectionnée.</div>
       </aside>
     </div>

@@ -4,13 +4,35 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 
+_RECENT_ACTIVITY_EVENTS = {
+    "mutation",
+    "interaction",
+    "consciousness",
+    "quest",
+    "quest_triggered",
+    "quest_resolved",
+    "decision",
+    "action",
+    "perception",
+}
+_PERCEPTION_EVENTS = {"perception", "signal", "sense", "observe"}
+_DECISION_EVENTS = {"decision", "consciousness", "plan", "evaluate"}
+_ACTION_EVENTS = {"action", "mutation", "interaction", "act", "execute"}
+_INTERACTION_EVENTS = {"interaction", "conversation", "talk", "message"}
+_OBJECTIVE_EVENTS = {"quest", "quest_triggered", "objective", "goal"}
+_PROGRESS_EVENTS = {"quest_resolved", "objective_progress", "objective_completed", "goal_progress"}
+
+
 def parse_ts(value: object) -> datetime | None:
     if not isinstance(value, str):
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def resolve_time_window_cutoff(time_window: str) -> datetime | None:
@@ -46,6 +68,240 @@ def life_trend_rank(trend: str) -> int:
     if trend == "amélioration":
         return 2
     return -1
+
+
+def _normalized_event(record: dict[str, object]) -> str:
+    event = record.get("event")
+    if isinstance(event, str):
+        return event.strip().lower()
+    return ""
+
+
+def compute_liveness_index(
+    records: list[dict[str, object]],
+    *,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    reference = now or datetime.now(timezone.utc)
+    sorted_records = sorted(records, key=lambda rec: str(rec.get("ts", "")))
+    recent_cutoff = reference - timedelta(hours=24)
+    loop_cutoff = reference - timedelta(hours=48)
+    interaction_cutoff = reference - timedelta(days=7)
+
+    component_details: dict[str, dict[str, object]] = {
+        "recent_activity": {"score": 0.0, "count": 0, "cutoff": recent_cutoff.isoformat()},
+        "perception_decision_action_loop": {"score": 0.0, "completed": False, "window_hours": 48},
+        "active_objectives_progress": {"score": 0.0, "active_objectives": 0, "progress_events": 0},
+        "interactions": {"score": 0.0, "count": 0, "window_days": 7},
+        "validated_internal_modifications": {"score": 0.0, "accepted_useful_changes": 0},
+    }
+    proofs: list[dict[str, object]] = []
+
+    # 1) Recent concrete activity
+    recent_activity_count = 0
+    for record in sorted_records:
+        ts = parse_ts(record.get("ts"))
+        if ts is None or ts < recent_cutoff:
+            continue
+        event_name = _normalized_event(record)
+        has_concrete_mutation = any(
+            key in record for key in ("score_base", "score_new", "accepted", "ok", "operator", "op")
+        )
+        if event_name in _RECENT_ACTIVITY_EVENTS or has_concrete_mutation:
+            recent_activity_count += 1
+            proofs.append(
+                {
+                    "ts": record.get("ts"),
+                    "component": "recent_activity",
+                    "evidence": "activité concrète récente",
+                    "event": event_name or "mutation",
+                }
+            )
+    if recent_activity_count >= 2:
+        component_details["recent_activity"]["score"] = 1.0
+    elif recent_activity_count == 1:
+        component_details["recent_activity"]["score"] = 0.5
+    component_details["recent_activity"]["count"] = recent_activity_count
+
+    # 2) Perception → decision → action loop
+    perception_ts: datetime | None = None
+    decision_ts: datetime | None = None
+    action_ts: datetime | None = None
+    for record in sorted_records:
+        ts = parse_ts(record.get("ts"))
+        if ts is None or ts < loop_cutoff:
+            continue
+        event_name = _normalized_event(record)
+        if perception_ts is None and (
+            event_name in _PERCEPTION_EVENTS or isinstance(record.get("perception_summary"), str)
+        ):
+            perception_ts = ts
+            proofs.append(
+                {
+                    "ts": record.get("ts"),
+                    "component": "perception_decision_action_loop",
+                    "evidence": "perception observée",
+                    "event": event_name or "perception",
+                }
+            )
+            continue
+        if perception_ts is not None and decision_ts is None and ts >= perception_ts and (
+            event_name in _DECISION_EVENTS
+            or isinstance(record.get("decision_reason"), str)
+            or isinstance(record.get("justification"), str)
+        ):
+            decision_ts = ts
+            proofs.append(
+                {
+                    "ts": record.get("ts"),
+                    "component": "perception_decision_action_loop",
+                    "evidence": "décision observée",
+                    "event": event_name or "decision",
+                }
+            )
+            continue
+        if perception_ts is not None and decision_ts is not None and ts >= decision_ts:
+            accepted = record.get("accepted")
+            if not isinstance(accepted, bool):
+                accepted = record.get("ok")
+            if event_name in _ACTION_EVENTS or isinstance(accepted, bool):
+                action_ts = ts
+                proofs.append(
+                    {
+                        "ts": record.get("ts"),
+                        "component": "perception_decision_action_loop",
+                        "evidence": "action observée",
+                        "event": event_name or "action",
+                    }
+                )
+                break
+    loop_completed = perception_ts is not None and decision_ts is not None and action_ts is not None
+    component_details["perception_decision_action_loop"]["completed"] = loop_completed
+    component_details["perception_decision_action_loop"]["score"] = 1.0 if loop_completed else 0.0
+
+    # 3) Active objectives with progress
+    active_objectives_count = 0
+    objective_progress_count = 0
+    for record in sorted_records:
+        event_name = _normalized_event(record)
+        objective_value = record.get("objective")
+        has_objective_payload = (
+            event_name in _OBJECTIVE_EVENTS
+            or isinstance(objective_value, str)
+            or isinstance(record.get("objective_priorities"), dict)
+        )
+        if has_objective_payload:
+            active_objectives_count += 1
+        explicit_progress = event_name in _PROGRESS_EVENTS
+        status = record.get("status")
+        if not explicit_progress and isinstance(status, str):
+            explicit_progress = status.strip().lower() in {"in_progress", "progress", "done", "completed", "success"}
+        progress_value = record.get("progress")
+        if not explicit_progress and isinstance(progress_value, (int, float)):
+            explicit_progress = float(progress_value) > 0
+        if explicit_progress and has_objective_payload:
+            objective_progress_count += 1
+            proofs.append(
+                {
+                    "ts": record.get("ts"),
+                    "component": "active_objectives_progress",
+                    "evidence": "objectif actif avec progression",
+                    "event": event_name or "objective_progress",
+                }
+            )
+    if active_objectives_count > 0 and objective_progress_count > 0:
+        component_details["active_objectives_progress"]["score"] = 1.0
+    component_details["active_objectives_progress"]["active_objectives"] = active_objectives_count
+    component_details["active_objectives_progress"]["progress_events"] = objective_progress_count
+
+    # 4) Interactions
+    interaction_count = 0
+    for record in sorted_records:
+        ts = parse_ts(record.get("ts"))
+        if ts is None or ts < interaction_cutoff:
+            continue
+        event_name = _normalized_event(record)
+        interaction_payload = record.get("interaction")
+        has_interaction = (
+            event_name in _INTERACTION_EVENTS
+            or isinstance(interaction_payload, dict)
+            or isinstance(record.get("speaker"), str)
+            or isinstance(record.get("user_message"), str)
+            or isinstance(record.get("world_event"), str)
+        )
+        if has_interaction:
+            interaction_count += 1
+            proofs.append(
+                {
+                    "ts": record.get("ts"),
+                    "component": "interactions",
+                    "evidence": "interaction détectée",
+                    "event": event_name or "interaction",
+                }
+            )
+    if interaction_count >= 2:
+        component_details["interactions"]["score"] = 1.0
+    elif interaction_count == 1:
+        component_details["interactions"]["score"] = 0.5
+    component_details["interactions"]["count"] = interaction_count
+
+    # 5) Useful validated internal modifications
+    accepted_useful_modifications = 0
+    for record in sorted_records:
+        accepted = record.get("accepted")
+        if not isinstance(accepted, bool):
+            accepted = record.get("ok")
+        if accepted is not True:
+            continue
+        score_base = record.get("score_base")
+        score_new = record.get("score_new")
+        score_improved = (
+            isinstance(score_base, (int, float))
+            and isinstance(score_new, (int, float))
+            and float(score_new) < float(score_base)
+        )
+        health = record.get("health")
+        health_score = health.get("score") if isinstance(health, dict) else None
+        has_quality_signal = score_improved or isinstance(health_score, (int, float))
+        if not has_quality_signal:
+            continue
+        accepted_useful_modifications += 1
+        proofs.append(
+            {
+                "ts": record.get("ts"),
+                "component": "validated_internal_modifications",
+                "evidence": "modification interne validée utile",
+                "event": _normalized_event(record) or "mutation",
+            }
+        )
+    component_details["validated_internal_modifications"]["accepted_useful_changes"] = (
+        accepted_useful_modifications
+    )
+    if accepted_useful_modifications >= 1:
+        component_details["validated_internal_modifications"]["score"] = 1.0
+
+    component_scores = [
+        float(component_details[name]["score"])
+        for name in (
+            "recent_activity",
+            "perception_decision_action_loop",
+            "active_objectives_progress",
+            "interactions",
+            "validated_internal_modifications",
+        )
+    ]
+    index = round((sum(component_scores) / 5.0) * 100.0, 1)
+
+    sorted_proofs = sorted(
+        proofs,
+        key=lambda item: parse_ts(item.get("ts")) or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    return {
+        "index": index,
+        "components": component_details,
+        "proofs": sorted_proofs[:5],
+    }
 
 
 def aggregate_lives(
@@ -134,6 +390,22 @@ def aggregate_lives(
                 extinction_seen=is_extinct,
                 registry_status=registry_status,
             ),
+            "life_liveness_index": 0.0,
+            "life_liveness_components": {
+                "recent_activity": {"score": 0.0, "count": 0},
+                "perception_decision_action_loop": {"score": 0.0, "completed": False},
+                "active_objectives_progress": {
+                    "score": 0.0,
+                    "active_objectives": 0,
+                    "progress_events": 0,
+                },
+                "interactions": {"score": 0.0, "count": 0},
+                "validated_internal_modifications": {
+                    "score": 0.0,
+                    "accepted_useful_changes": 0,
+                },
+            },
+            "life_liveness_proofs": [],
         }
 
     for life_name, all_records in by_life.items():
@@ -225,6 +497,7 @@ def aggregate_lives(
             if sandbox_stability_points
             else None
         )
+        liveness = compute_liveness_index(all_records)
 
         comparison[life_name] = {
             "health_score": (
@@ -256,6 +529,9 @@ def aggregate_lives(
                 extinction_seen=extinction_seen,
                 registry_status=registry_status,
             ),
+            "life_liveness_index": liveness["index"],
+            "life_liveness_components": liveness["components"],
+            "life_liveness_proofs": liveness["proofs"],
         }
     unattached_summary = {
         "records_count": sum(unattached_runs.values()),
