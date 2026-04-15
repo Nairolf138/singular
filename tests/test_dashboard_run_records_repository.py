@@ -31,3 +31,16 @@ def test_run_records_repository_latest_file_uses_timestamp(tmp_path: Path) -> No
 
     assert latest is not None
     assert latest.stem == "b"
+
+
+def test_run_records_repository_runs_dirs_supports_dict_registry_metadata(tmp_path: Path) -> None:
+    alpha_dir = tmp_path / "alpha"
+    repo = RunRecordsRepository(
+        base_dir=tmp_path,
+        runs_path=None,
+        registry_loader=lambda: {"lives": {"alpha": {"path": str(alpha_dir)}}},
+    )
+
+    runs_dirs = repo.runs_dirs()
+
+    assert alpha_dir / "runs" in runs_dirs
