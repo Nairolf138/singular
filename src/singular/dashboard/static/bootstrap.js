@@ -20,6 +20,7 @@ import {
 
 const ws=new WebSocket(`ws://${location.host}/ws`);
 const blockFreshness=new Map();
+const ESSENTIAL_MODE_KEY='singular.dashboard.essentialMode';
 
 const taskDefinitions={
   context:{loader:loadContext,intervalMs:schedulerConfig.frequencies.context,viewKey:'technique',blockId:'parametres',stream:'cold'},
@@ -220,11 +221,27 @@ const bootstrapViewPauseControls=()=>{
   });
 };
 
+const applyEssentialVisibility=isEssential=>{
+  document.body.classList.toggle('essential-mode',isEssential);
+  document.querySelectorAll('[data-essential-level]').forEach(node=>{
+    const level=Number(node.getAttribute('data-essential-level')||'1');
+    const shouldHide=isEssential&&level>=3;
+    if(node.tagName==='DETAILS'&&level===2){
+      node.open=!isEssential;
+    }
+    if(level>=3){
+      node.classList.toggle('panel-hidden',shouldHide);
+    }
+    node.setAttribute('aria-hidden',shouldHide?'true':'false');
+  });
+};
+
 const toggleEssentialMode=()=>{
-  document.body.classList.toggle('essential-mode');
+  const isEssential=!document.body.classList.contains('essential-mode');
+  applyEssentialVisibility(isEssential);
+  localStorage.setItem(ESSENTIAL_MODE_KEY,isEssential?'1':'0');
   const btn=document.getElementById('toggle-essential');
   if(!btn){return;}
-  const isEssential=document.body.classList.contains('essential-mode');
   btn.textContent=`Mode Essentiel : ${isEssential?'ON':'OFF'}`;
   btn.setAttribute('aria-pressed',isEssential?'true':'false');
 };
@@ -267,7 +284,13 @@ const bindTabNavigation=()=>{
 const bindCommonHandlers=()=>{
   bindTabNavigation();
   const essentialBtn=document.getElementById('toggle-essential');
-  if(essentialBtn){essentialBtn.onclick=toggleEssentialMode;}
+  const defaultEssential=localStorage.getItem(ESSENTIAL_MODE_KEY)==='1';
+  applyEssentialVisibility(defaultEssential);
+  if(essentialBtn){
+    essentialBtn.textContent=`Mode Essentiel : ${defaultEssential?'ON':'OFF'}`;
+    essentialBtn.setAttribute('aria-pressed',defaultEssential?'true':'false');
+    essentialBtn.onclick=toggleEssentialMode;
+  }
   const scopeToggle=document.getElementById('scope-current-life');
   if(scopeToggle){
     scopeToggle.onchange=e=>{

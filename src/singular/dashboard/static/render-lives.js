@@ -173,6 +173,15 @@ const renderLivesTable=(rows)=>{
   if(!(rows||[]).length){const tr=document.createElement('tr');tr.innerHTML="<td colspan='9'>Aucune vie ne correspond aux filtres.</td>";body.appendChild(tr);}
 };
 
+const renderEssentialLivesSummary=rows=>{
+  const selected=(rows||[]).find(row=>row.selected_life===true);
+  const selectedLifeEl=document.getElementById('essential-selected-life');
+  if(selectedLifeEl){selectedLifeEl.textContent=selected?.life||'Aucune';}
+  const activeIncidents=(rows||[]).reduce((total,row)=>total+Number(row.alerts_count||0),0);
+  const incidentsEl=document.getElementById('essential-active-incidents');
+  if(incidentsEl){incidentsEl.textContent=String(activeIncidents);}
+};
+
 const showLifeDetails=lifeName=>{
   const panel=document.getElementById('life-detail-panel');
   const content=document.getElementById('life-detail-content');
@@ -250,6 +259,7 @@ export const loadLivesBoard=()=>{
     if(livesUiState.selectedLife&&livesUiState.rowsByLife.has(livesUiState.selectedLife)){showLifeDetails(livesUiState.selectedLife);}
     else if(tableRows.length){showLifeDetails(tableRows[0].life||'');}
     else{showLifeDetails('');}
+    renderEssentialLivesSummary(mappedRows);
     renderUnattachedRuns(d.unattached_runs);
     renderFilterDiagnostics({...d.filter_diagnostics,steps:[...((d.filter_diagnostics?.steps)||[]),...clientSteps]});
     if(!tableRows.length){

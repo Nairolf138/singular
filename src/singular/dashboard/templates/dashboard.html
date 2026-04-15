@@ -35,7 +35,7 @@
       <span class='status-pill status-warn'>▲ Alerte</span>
       <span class='status-pill status-bad'>■ Critique</span>
     </div>
-    <div class='panel level-panel'>
+    <div class='panel level-panel' data-essential-level='1'>
       <h3 class='heading-reset-top'>Niveau Critique · action immédiate</h3>
       <div id='cockpit-status' class='card card-value'>Statut global: Non disponible</div>
       <div class='cards-grid'>
@@ -46,7 +46,7 @@
       </div>
     </div>
 
-    <details id='cockpit-followup' class='panel level-panel' open>
+    <details id='cockpit-followup' class='panel level-panel' data-essential-level='2' open>
       <summary>Niveau Suivi · tendances santé/autonomie/vital</summary>
       <div class='cards-grid content-top-gap'>
         <div class='card'><div class='card-label kpi-label' title='Évolution récente du système'>Tendance</div><div id='kpi-trend' class='card-value actionable-signal'>Non disponible</div></div>
@@ -58,7 +58,7 @@
       </div>
     </details>
 
-    <details id='cockpit-detail' class='panel level-panel'>
+    <details id='cockpit-detail' class='panel level-panel technical-only' data-essential-level='3'>
       <summary>Niveau Détail · skills lifecycle, rétention, payload JSON</summary>
       <div class='cards-grid content-top-gap'>
         <div class='card'><div class='card-label'>Skills actives</div><div id='kpi-skills-active' class='card-value'>0</div></div>
@@ -77,7 +77,7 @@
       </div>
     </details>
 
-    <div class='panel'>
+    <div class='panel technical-only' data-essential-level='3'>
       <button type='button' class='toggle-more-btn' data-expand-target='cockpit-context-more' aria-expanded='false'>Voir plus</button>
       <div id='cockpit-context-more' class='panel-hidden'>
         <h3 class='heading-reset-top'>Dernière mutation notable</h3>
@@ -133,7 +133,17 @@
         </select>
       </label>
     </div>
-    <div class='stats-grid'>
+    <div class='stats-grid' data-essential-level='1'>
+      <div class='panel panel-compact panel-bordered'>
+        <strong>Vie sélectionnée</strong>
+        <div id='essential-selected-life' class='card-value'>Aucune</div>
+      </div>
+      <div class='panel panel-compact panel-bordered'>
+        <strong>Incidents actifs</strong>
+        <div id='essential-active-incidents' class='card-value'>0</div>
+      </div>
+    </div>
+    <div class='stats-grid' data-essential-level='2'>
       <div class='panel panel-compact panel-bordered'>
         <strong>Vies actives dans le registre (<span id='alive-count'>0</span>)</strong>
         <ul id='alive-lives' class='list-compact'></ul>
@@ -143,14 +153,14 @@
         <ul id='dead-lives' class='list-compact'></ul>
       </div>
     </div>
-    <div class='panel panel-compact panel-bordered panel-top-gap'>
+    <div class='panel panel-compact panel-bordered panel-top-gap' data-essential-level='2'>
       <div class='toolbar-wrap'>
         <strong>Diagnostic filtrage vies</strong>
         <button type='button' id='lives-reset-filters' class='filter-chip'>Réinitialiser les filtres</button>
       </div>
       <pre id='lives-filter-diagnostics'>Chargement du breakdown…</pre>
     </div>
-    <div class='lives-grid'>
+    <div class='lives-grid technical-only' data-essential-level='3'>
       <table id='lives-table' class='table-base table-spacing-top'>
         <thead><tr>
           <th><button data-sort='life'>Vie</button></th>
@@ -174,7 +184,7 @@
 </section>
 
 <section id='tab-technique' class='tab-pane panel-hidden' role='tabpanel' aria-labelledby='tab-btn-technique'>
-  <div class='panel'>
+  <div class='panel technical-only' data-essential-level='3'>
     <h2 class='heading-reset-top'>Glossaire commun</h2>
     <dl class='glossary'>
       <dt>Vie</dt><dd>Instance suivie dans le registre, avec historique, statut et métriques.</dd>
@@ -265,7 +275,7 @@
     <pre id='raw-eco-json'></pre>
   </div>
 
-  <div id='host-vitals-panel' class='panel'>
+  <div id='host-vitals-panel' class='panel technical-only' data-essential-level='3'>
     <h3 class='heading-reset-top'>Santé hôte consolidée</h3>
     <div class='cards-grid'>
       <div class='card'><div class='card-label kpi-label'>CPU</div><div id='host-cpu' class='card-value'>Pas encore mesuré</div><div id='host-cpu-trend' class='sparkline'>·</div></div>
@@ -278,7 +288,7 @@
     <div id='host-fallback' class='status-muted panel-hidden fallback-box'>Capteurs hôte indisponibles ou sans données récentes.</div>
   </div>
 
-  <div class='panel'><h3 class='heading-reset-top'>KPIs étendus</h3>
+  <div class='panel technical-only' data-essential-level='3'><h3 class='heading-reset-top'>KPIs étendus</h3>
     <div class='cards-grid'>
       <div class='card'><div class='card-label'>Terminal</div><div id='kpi-vital-terminal' class='card-value'>Non disponible</div></div>
       <div class='card'><div class='card-label'>Causes</div><div id='kpi-vital-causes' class='card-value'>Non disponible</div></div>
@@ -307,7 +317,7 @@
     <ul id='kpi-objective-links-list' class='list-tight-top'></ul>
   </div>
 
-  <div class='panel'>
+  <div class='panel technical-only' data-essential-level='3'>
     <h3 class='heading-reset-top'>Compétences du quotidien</h3>
     <div class='cards-grid'>
       <div class='card'><div class='card-label'>Fréquence (24h)</div><div id='daily-skill-uses-24h' class='card-value'>0</div></div>
@@ -321,12 +331,12 @@
     </table>
   </div>
 
-  <div id='unattached-runs-panel' class='panel panel-hidden panel-top-gap panel-bordered panel-compact'>
+  <div id='unattached-runs-panel' class='panel panel-hidden panel-top-gap panel-bordered panel-compact technical-only' data-essential-level='3'>
     <strong>Runs non rattachés (<span id='unattached-runs-count'>0</span>)</strong>
     <div class='text-muted-small'>Enregistrements sans vie explicite: <span id='unattached-records-count'>0</span></div>
     <ul id='unattached-runs-list' class='list-compact'></ul>
   </div>
-  <div class='panel panel-top-gap'>
+  <div class='panel panel-top-gap technical-only' data-essential-level='3'>
     <h3 class='heading-reset-top'>Arbre généalogique (simplifié)</h3>
     <pre id='genealogy-tree'>Chargement…</pre>
     <div class='content-top-gap'><strong>Réseau social</strong><pre id='social-network-tree'>Chargement…</pre></div>

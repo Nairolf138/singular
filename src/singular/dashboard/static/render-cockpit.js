@@ -162,18 +162,23 @@ export const loadHostVitals=()=>fetchJson(withScope('/runs/latest')).then(data=>
   if(!hasData){setPanelState('host-vitals-panel','empty','Capteurs hôte non supportés ou données absentes.');}
 }).catch(error=>{renderHostMetrics([]);throw error;});
 
-export const loadCockpit=()=>fetchJson(withScope('/api/cockpit')).then(d=>{
+export const loadCockpit=()=>Promise.all([
+  fetchJson(withScope('/api/cockpit/essential')),
+  fetchJson(withScope('/api/cockpit')),
+]).then(([essential,d])=>{
   if(!d||typeof d!=='object'){setPanelState('cockpit','empty','Aucune donnée cockpit disponible.');return;}
+  const essentialPayload=(essential&&typeof essential==='object')?essential:{};
   const statusBox=document.getElementById('cockpit-status');
-  statusBox.textContent=`Statut global: ${d.global_status||na()}`;
-  if(d.global_status==='stable'){setStatusTone(statusBox,'good');applyStatusIndicator(statusBox,'good');}
-  else if(d.global_status==='warning'){setStatusTone(statusBox,'warn');applyStatusIndicator(statusBox,'warn');}
-  else if(d.global_status==='critical'){setStatusTone(statusBox,'bad');applyStatusIndicator(statusBox,'bad');}
+  const globalStatus=essentialPayload.global_status||d.global_status;
+  statusBox.textContent=`Statut global: ${globalStatus||na()}`;
+  if(globalStatus==='stable'){setStatusTone(statusBox,'good');applyStatusIndicator(statusBox,'good');}
+  else if(globalStatus==='warning'){setStatusTone(statusBox,'warn');applyStatusIndicator(statusBox,'warn');}
+  else if(globalStatus==='critical'){setStatusTone(statusBox,'bad');applyStatusIndicator(statusBox,'bad');}
 
   const healthValue=d.health_score===null?na():Number(d.health_score).toFixed(1);
   const trend=d.trend||na();
   const accepted=d.accepted_mutation_rate===null?na():`${(d.accepted_mutation_rate*100).toFixed(1)}%`;
-  const alertsCount=(d.critical_alerts||[]).length;
+  const alertsCount=Number(essentialPayload.critical_alerts_count??(d.critical_alerts||[]).length||0);
   const autonomy=d.autonomy_metrics||{};
   const decisionQuality=autonomy.decision_quality||{};
   const fmtPct=(value)=>value===null||value===undefined?na():`${(Number(value)*100).toFixed(1)}%`;
@@ -183,7 +188,11 @@ export const loadCockpit=()=>fetchJson(withScope('/api/cockpit')).then(d=>{
   document.getElementById('kpi-trend').textContent=trend;
   document.getElementById('kpi-accepted').textContent=accepted;
   document.getElementById('kpi-alerts').textContent=String(alertsCount);
-  document.getElementById('kpi-next-action').textContent=d.next_action||na();
+  document.getElementById('kpi-next-action').textContent=essentialPayload.next_action||d.next_action||na();
+  const selectedLifeEl=document.getElementById('essential-selected-life');
+  if(selectedLifeEl){selectedLifeEl.textContent=String(essentialPayload.selected_life||'Aucune');}
+  const incidentsEl=document.getElementById('essential-active-incidents');
+  if(incidentsEl){incidentsEl.textContent=String(essentialPayload.active_incidents_count??alertsCount);}
   document.getElementById('kpi-autonomy-proactive').textContent=fmtPct(autonomy.proactive_initiative_rate);
   document.getElementById('kpi-autonomy-stability').textContent=fmtPct(autonomy.long_term_stability);
   document.getElementById('kpi-autonomy-decision').textContent=`${fmtPct(decisionQuality.acceptance_rate)} / ${fmtPct(decisionQuality.regression_rate)}`;
