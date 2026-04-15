@@ -703,6 +703,82 @@ def create_app(
         completed = data.get("completed") if isinstance(data.get("completed"), list) else []
         return {"active": active, "completed": completed[-20:]}
 
+    def _normalize_work_item(
+        payload: dict[str, object], *, fallback_title: str, default_owner: str
+    ) -> dict[str, str]:
+        def _pick(*keys: str) -> str | None:
+            for key in keys:
+                value = payload.get(key)
+                if value is None:
+                    continue
+                text = str(value).strip()
+                if text:
+                    return text
+            return None
+
+        return {
+            "title": _pick("title", "name", "objective") or fallback_title,
+            "status": _pick("status", "result", "decision") or "unknown",
+            "last_update": _pick("last_update", "updated_at", "completed_at", "started_at", "ts")
+            or "Non disponible",
+            "next_step": _pick("next_step", "next_action", "objective", "action") or "Non disponible",
+            "priority": _pick("priority", "priority_level") or "normal",
+            "owner": _pick("owner", "assignee", "life", "speaker") or default_owner,
+            "blockage": _pick("blockage", "blocked_by", "blocker", "risk") or "aucun",
+        }
+
+    @app.get("/api/dashboard/work-items")
+    def read_dashboard_work_items(current_life_only: bool = False) -> dict[str, object]:
+        quests = read_quests()
+        active = quests.get("active") if isinstance(quests.get("active"), list) else []
+        completed = quests.get("completed") if isinstance(quests.get("completed"), list) else []
+
+        quests_items = [
+            _normalize_work_item(item, fallback_title="quête", default_owner="système")
+            for item in [*active, *completed]
+            if isinstance(item, dict)
+        ]
+        objectives_items = [
+            _normalize_work_item(item, fallback_title="objectif", default_owner="système")
+            for item in active
+            if isinstance(item, dict)
+        ]
+
+        conversations_items: list[dict[str, str]] = []
+        latest = _latest_run_file(current_life_only=current_life_only)
+        if latest is not None:
+            consciousness_path = _resolve_consciousness_path(
+                latest.stem, current_life_only=current_life_only
+            )
+            if consciousness_path is not None:
+                for line in consciousness_path.read_text(encoding="utf-8").splitlines():
+                    if not line.strip():
+                        continue
+                    try:
+                        raw = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(raw, dict):
+                        continue
+                    enriched = dict(raw)
+                    if "title" not in enriched:
+                        enriched["title"] = raw.get("objective") or raw.get("summary") or "conversation"
+                    if "status" not in enriched:
+                        enriched["status"] = "success" if raw.get("success") is True else "in_progress"
+                    conversations_items.append(
+                        _normalize_work_item(
+                            enriched,
+                            fallback_title="conversation",
+                            default_owner="agent",
+                        )
+                    )
+
+        return {
+            "quests": quests,
+            "objectives": {"items": objectives_items},
+            "conversations": {"run_id": latest.stem if latest is not None else None, "items": conversations_items},
+        }
+
     @app.get("/ecosystem")
     def read_ecosystem(current_life_only: bool = False) -> dict:
         return _compute_ecosystem(current_life_only=current_life_only)
