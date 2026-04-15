@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from .governance.policy import MutationGovernancePolicy
+from .root_config import default_registry_root, load_configured_registry_root
 from .memory import append_jsonl_line_safe
 
 _REGISTRY_DIRNAME = "lives"
@@ -326,19 +327,11 @@ def get_registry_root() -> Path:
     if raw:
         return Path(raw).expanduser()
 
-    default_home = Path.home() / ".singular"
-    cwd = Path.cwd()
-    registry_path = cwd / _REGISTRY_DIRNAME / _REGISTRY_FILENAME
+    configured_root = load_configured_registry_root()
+    if configured_root is not None:
+        return configured_root
 
-    if registry_path.exists():
-        try:
-            payload = json.loads(registry_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return default_home
-        if isinstance(payload, dict) and isinstance(payload.get("lives"), dict):
-            return cwd
-
-    return default_home
+    return default_registry_root()
 
 
 def load_registry() -> dict[str, Any]:
