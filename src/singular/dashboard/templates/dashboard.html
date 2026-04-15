@@ -12,90 +12,114 @@
   <a href="#competences-quotidien">Compétences du quotidien</a> ·
   <a href="#timeline-section">Timeline</a> ·
   <a href="#vies">Vies</a> ·
-  <a href="#logs-live">Logs</a> ·
-  <a href="#parametres">Paramètres</a>
+  <a href="#logs-live" class='technical-only'>Logs</a> ·
+  <a href="#parametres" class='technical-only'>Paramètres</a>
+  <button id='toggle-essential' class='nav-mode-toggle' type='button' aria-pressed='false'>Mode Essentiel : OFF</button>
 </nav>
 <div id='stale-data-banner' class='stale-banner panel-hidden' role='status' aria-live='polite'></div>
 <div class='intro-box'>
-  <strong>Guide de lecture rapide (humain)</strong>
+  <strong>Guide de lecture rapide</strong>
   <ol class='intro-steps'>
-    <li><strong>Cockpit</strong> : regardez d’abord le statut global, puis la prochaine action recommandée.</li>
-    <li><strong>Alertes et risques</strong> : vérifiez les zones en orange/rouge pour prioriser.</li>
-    <li><strong>Timeline</strong> : cliquez un événement pour comprendre le “pourquoi” d’une mutation.</li>
-    <li><strong>Vies</strong> : comparez les organismes pour décider quoi conserver, corriger ou archiver.</li>
+    <li><strong>Cockpit</strong> : vérifiez d’abord le statut global, puis la prochaine action recommandée.</li>
+    <li><strong>Risques</strong> : traitez en priorité les statuts <em>Alerte</em> et <em>Critique</em>.</li>
+    <li><strong>Timeline</strong> : ouvrez un événement pour comprendre la mutation et son impact.</li>
+    <li><strong>Vies</strong> : comparez les organismes avant de conserver, corriger ou archiver.</li>
   </ol>
+</div>
+
+<div class='panel'>
+  <h2 class='heading-reset-top'>Glossaire commun</h2>
+  <p class='section-help'>Ces définitions sont utilisées partout dans le dashboard pour garantir un vocabulaire cohérent.</p>
+  <dl class='glossary'>
+    <dt>Vie</dt><dd>Instance suivie dans le registre, avec historique, statut et métriques.</dd>
+    <dt>Organisme</dt><dd>Entité opérationnelle associée à une vie (énergie, ressources, décisions).</dd>
+    <dt>Mutation</dt><dd>Changement appliqué au système, accepté ou refusé selon son impact.</dd>
+    <dt>Run</dt><dd>Session d’exécution horodatée contenant événements, décisions et traces.</dd>
+    <dt>Extinction</dt><dd>Arrêt terminal détecté pour une vie dans les runs ou le registre.</dd>
+    <dt>Stabilité</dt><dd>Capacité à maintenir des performances cohérentes dans le temps.</dd>
+    <dt>Risque</dt><dd>Niveau de probabilité d’un incident ou d’une régression à court terme.</dd>
+  </dl>
 </div>
 
 <section id="cockpit">
   <h2>Cockpit</h2>
-  <p class='section-help'>Vue de synthèse : utilisez cette section pour décider en moins de 30 secondes si l’organisme est stable, en risque, ou en régression.</p>
-  <div id='cockpit-status' class='card card-value'>Statut global: n/a</div>
-  <p><strong>Qu’est-ce que ce score ?</strong> Le score de santé agrège stabilité sandbox, tendance récente et signal d’acceptation des mutations.</p>
+  <p class='section-help'>À utiliser pour décider en moins de 30 secondes si l’organisme est stable, en alerte, ou critique.</p>
+  <div class='status-legend'>
+    <span class='status-pill status-good'>● OK</span>
+    <span class='status-pill status-warn'>▲ Alerte</span>
+    <span class='status-pill status-bad'>■ Critique</span>
+  </div>
+  <div id='cockpit-status' class='card card-value'>Statut global: Non disponible</div>
+  <p><strong>Lecture du score santé :</strong> ce score combine stabilité, tendance récente et acceptation des mutations.</p>
 
   <div class='cards-grid'>
-    <div class='card'><div class='card-label'>Score de santé</div><div id='kpi-health' class='card-value'>n/a</div></div>
-    <div class='card'><div class='card-label'>Tendance</div><div id='kpi-trend' class='card-value'>n/a</div></div>
-    <div class='card'><div class='card-label'>Taux de mutations acceptées</div><div id='kpi-accepted' class='card-value'>n/a</div></div>
-    <div class='card'><div class='card-label'>Alertes critiques</div><div id='kpi-alerts' class='card-value'>0</div></div>
-    <div class='card'><div class='card-label'>Prochaine action</div><div id='kpi-next-action' class='card-value'>n/a</div></div>
+    <div class='card'><div class='card-label kpi-label' title='Niveau global de santé de l’organisme'>Santé</div><div id='kpi-health' class='card-value'>Pas encore mesuré</div></div>
+    <div class='card'><div class='card-label kpi-label' title='Évolution récente du système'>Tendance</div><div id='kpi-trend' class='card-value'>Non disponible</div></div>
+    <div class='card'><div class='card-label kpi-label' title='Part des mutations validées'>Mutations acceptées</div><div id='kpi-accepted' class='card-value'>Pas encore mesuré</div></div>
+    <div class='card'><div class='card-label kpi-label' title='Nombre d’alertes de niveau critique'>Alertes critiques</div><div id='kpi-alerts' class='card-value'>0</div></div>
+    <div class='card'><div class='card-label kpi-label' title='Action prioritaire recommandée'>Prochaine action</div><div id='kpi-next-action' class='card-value'>Non disponible</div></div>
   </div>
   <div class='panel' id='host-vitals-panel'>
     <h3 class='heading-reset-top'>Santé hôte consolidée</h3>
+    <p class='section-help'>À utiliser pour vérifier rapidement si la plateforme hôte limite les performances.</p>
     <div class='cards-grid'>
-      <div class='card'><div class='card-label'>CPU</div><div id='host-cpu' class='card-value'>n/a</div><div id='host-cpu-trend' class='sparkline'>·</div></div>
-      <div class='card'><div class='card-label'>RAM</div><div id='host-ram' class='card-value'>n/a</div><div id='host-ram-trend' class='sparkline'>·</div></div>
-      <div class='card'><div class='card-label'>Température</div><div id='host-temp' class='card-value'>n/a</div><div id='host-temp-trend' class='sparkline'>·</div></div>
-      <div class='card'><div class='card-label'>Disque</div><div id='host-disk' class='card-value'>n/a</div><div id='host-disk-trend' class='sparkline'>·</div></div>
-      <div class='card'><div class='card-label'>État global</div><div id='host-global' class='card-value'>n/a</div></div>
+      <div class='card'><div class='card-label kpi-label' title='Utilisation processeur'>CPU</div><div id='host-cpu' class='card-value'>Pas encore mesuré</div><div id='host-cpu-trend' class='sparkline'>·</div></div>
+      <div class='card'><div class='card-label kpi-label' title='Utilisation mémoire vive'>RAM</div><div id='host-ram' class='card-value'>Pas encore mesuré</div><div id='host-ram-trend' class='sparkline'>·</div></div>
+      <div class='card'><div class='card-label kpi-label' title='Température système'>Température</div><div id='host-temp' class='card-value'>Pas encore mesuré</div><div id='host-temp-trend' class='sparkline'>·</div></div>
+      <div class='card'><div class='card-label kpi-label' title='Utilisation disque'>Disque</div><div id='host-disk' class='card-value'>Pas encore mesuré</div><div id='host-disk-trend' class='sparkline'>·</div></div>
+      <div class='card'><div class='card-label kpi-label' title='État hôte consolidé'>État hôte</div><div id='host-global' class='card-value'>Non disponible</div></div>
     </div>
-    <div id='host-adaptation' class='content-top-gap'>Dernière adaptation capteur: n/a</div>
+    <div id='host-adaptation' class='content-top-gap'>Dernière adaptation capteur: Non disponible</div>
     <div id='host-fallback' class='status-muted panel-hidden fallback-box'>
       Certains capteurs hôte ne sont pas supportés sur cette plateforme (ou aucune donnée récente n’est disponible).
     </div>
   </div>
 
-  <h3>Métriques d’autonomie</h3>
-  <p class='section-help'>Ces indicateurs montrent si Singular agit seul de façon utile (et non juste active).</p>
+  <h3>Autonomie</h3>
+  <p class='section-help'>À utiliser pour suivre si Singular agit seul de façon utile, et pas seulement fréquente.</p>
   <div class='cards-grid'>
-    <div class='card'><div class='card-label'>Taux d’initiatives proactives</div><div id='kpi-autonomy-proactive' class='card-value'>n/a</div></div>
-    <div class='card'><div class='card-label'>Stabilité long terme</div><div id='kpi-autonomy-stability' class='card-value'>n/a</div></div>
-    <div class='card'><div class='card-label'>Qualité décisions (accept./régr.)</div><div id='kpi-autonomy-decision' class='card-value'>n/a</div></div>
-    <div class='card'><div class='card-label'>Latence perception→action</div><div id='kpi-autonomy-latency' class='card-value'>n/a</div></div>
-    <div class='card'><div class='card-label'>Coût ressources par gain</div><div id='kpi-autonomy-cost' class='card-value'>n/a</div></div>
+    <div class='card'><div class='card-label kpi-label' title='Part d’actions lancées sans demande explicite'>Initiatives</div><div id='kpi-autonomy-proactive' class='card-value'>Pas encore mesuré</div></div>
+    <div class='card'><div class='card-label kpi-label' title='Robustesse observée sur la durée'>Stabilité long terme</div><div id='kpi-autonomy-stability' class='card-value'>Pas encore mesuré</div></div>
+    <div class='card'><div class='card-label kpi-label' title='Qualité des décisions acceptées vs régressions'>Qualité décision</div><div id='kpi-autonomy-decision' class='card-value'>Pas encore mesuré</div></div>
+    <div class='card'><div class='card-label kpi-label' title='Temps entre perception et action'>Latence P→A</div><div id='kpi-autonomy-latency' class='card-value'>Pas encore mesuré</div></div>
+    <div class='card'><div class='card-label kpi-label' title='Consommation de ressources pour un gain utile'>Coût par gain</div><div id='kpi-autonomy-cost' class='card-value'>Pas encore mesuré</div></div>
   </div>
   <h3>Timeline vitale</h3>
-  <p class='section-help'>Âge + risque + causes terminales vous aident à estimer la probabilité d’une extinction à court terme.</p>
+  <p class='section-help'>À utiliser pour estimer le risque d’extinction à court terme.</p>
   <div class='cards-grid'>
-    <div class='card'><div class='card-label'>Âge</div><div id='kpi-vital-age' class='card-value'>0</div></div>
-    <div class='card'><div class='card-label'>Risque</div><div id='kpi-vital-risk' class='card-value'>n/a</div></div>
-    <div class='card'><div class='card-label'>État terminal</div><div id='kpi-vital-terminal' class='card-value'>n/a</div></div>
-    <div class='card'><div class='card-label'>Causes</div><div id='kpi-vital-causes' class='card-value'>n/a</div></div>
+    <div class='card'><div class='card-label kpi-label' title='Ancienneté de la vie'>Âge</div><div id='kpi-vital-age' class='card-value'>0</div></div>
+    <div class='card'><div class='card-label kpi-label' title='Niveau de risque courant'>Risque</div><div id='kpi-vital-risk' class='card-value'>Non disponible</div></div>
+    <div class='card'><div class='card-label kpi-label' title='Statut terminal détecté'>Terminal</div><div id='kpi-vital-terminal' class='card-value'>Non disponible</div></div>
+    <div class='card'><div class='card-label kpi-label' title='Causes terminales observées'>Causes</div><div id='kpi-vital-causes' class='card-value'>Non disponible</div></div>
   </div>
 
   <div class='panel'>
     <h3 class='heading-reset-top'>Synthèse des vies</h3>
+    <p class='section-help'>À utiliser pour piloter le portefeuille de vies actives et éteintes.</p>
     <div class='cards-grid'>
       <div class='card'><div class='card-label'>Vies totales</div><div id='eco-total-lives' class='card-value'>0</div></div>
       <div class='card'><div class='card-label'>Vies vivantes</div><div id='eco-alive-lives' class='card-value'>0</div></div>
       <div class='card'><div class='card-label'>Vies mortes</div><div id='eco-dead-lives' class='card-value'>0</div></div>
-      <div class='card'><div class='card-label'>Vie sélectionnée</div><div id='eco-selected-life' class='card-value'>n/a</div></div>
-      <div class='card'><div class='card-label'>Dernière activité</div><div id='eco-last-activity' class='card-value'>n/a</div></div>
+      <div class='card'><div class='card-label'>Vie sélectionnée</div><div id='eco-selected-life' class='card-value'>Non disponible</div></div>
+      <div class='card'><div class='card-label'>Dernière activité</div><div id='eco-last-activity' class='card-value'>Non disponible</div></div>
     </div>
   </div>
 
 
   <div class='panel'>
     <h3 class='heading-reset-top'>Cycle circadien & objectifs actifs</h3>
+    <p class='section-help'>À utiliser pour comprendre le rythme d’activité et la charge d’objectifs.</p>
     <div class='cards-grid'>
-      <div class='card'><div class='card-label'>Phase circadienne</div><div id='kpi-circadian-phase' class='card-value'>n/a</div></div>
+      <div class='card'><div class='card-label'>Phase circadienne</div><div id='kpi-circadian-phase' class='card-value'>Non disponible</div></div>
       <div class='card'><div class='card-label'>Objectifs actifs</div><div id='kpi-active-objectives-count' class='card-value'>0</div></div>
-      <div class='card'><div class='card-label'>Progression quêtes</div><div id='kpi-quests-progress' class='card-value'>n/a</div></div>
+      <div class='card'><div class='card-label'>Progression quêtes</div><div id='kpi-quests-progress' class='card-value'>Non disponible</div></div>
     </div>
     <ul id='kpi-active-objectives-list' class='list-tight-top'></ul>
   </div>
 
   <div class='panel'>
     <h3 class='heading-reset-top'>Trajectory des objectifs</h3>
+    <p class='section-help'>À utiliser pour suivre les bascules de priorité et la cohérence narrative.</p>
     <div class='cards-grid'>
       <div class='card'><div class='card-label'>En cours</div><div id='kpi-trajectory-in-progress' class='card-value'>0</div></div>
       <div class='card'><div class='card-label'>Abandonnés</div><div id='kpi-trajectory-abandoned' class='card-value'>0</div></div>
@@ -111,6 +135,7 @@
 
   <div class='panel'>
     <h3 class='heading-reset-top'>Cycle de vie des skills</h3>
+    <p class='section-help'>À utiliser pour garder un portefeuille de compétences actif et pertinent.</p>
     <div class='cards-grid'>
       <div class='card'><div class='card-label'>Skills actives</div><div id='kpi-skills-active' class='card-value'>0</div></div>
       <div class='card'><div class='card-label'>Skills dormantes</div><div id='kpi-skills-dormant' class='card-value'>0</div></div>
@@ -120,11 +145,11 @@
 
   <div class='panel' id='competences-quotidien'>
     <h3 class='heading-reset-top'>Compétences du quotidien</h3>
-    <p class='section-help'>Concentrez-vous sur les skills réellement utilisées et leur taux de réussite pour éviter les métriques “bruit”.</p>
+    <p class='section-help'>À utiliser pour suivre les skills réellement utilisées et éviter les métriques bruit.</p>
     <div class='cards-grid'>
       <div class='card'><div class='card-label'>Fréquence (24h)</div><div id='daily-skill-uses-24h' class='card-value'>0</div></div>
       <div class='card'><div class='card-label'>Fréquence (7j)</div><div id='daily-skill-uses-7d' class='card-value'>0</div></div>
-      <div class='card'><div class='card-label'>Top skill</div><div id='daily-skill-top' class='card-value'>n/a</div></div>
+      <div class='card'><div class='card-label'>Top skill</div><div id='daily-skill-top' class='card-value'>Non disponible</div></div>
       <div class='card'><div class='card-label'>Progression apprise→utilisée→améliorée</div><div id='daily-skill-progression' class='card-value'>0→0→0</div></div>
     </div>
     <table class='table-base table-spacing-top'>
@@ -142,21 +167,22 @@
 
   <div class='panel'>
     <h3 class='heading-reset-top'>Énergie / ressources & génération de code</h3>
+    <p class='section-help'>À utiliser pour arbitrer performance, coût et exposition au risque.</p>
     <div class='cards-grid'>
       <div class='card'><div class='card-label'>Énergie totale</div><div id='kpi-energy-total' class='card-value'>0</div></div>
       <div class='card'><div class='card-label'>Ressources totales</div><div id='kpi-resources-total' class='card-value'>0</div></div>
-      <div class='card'><div class='card-label'>Progression génération code</div><div id='kpi-code-progression' class='card-value'>n/a</div></div>
-      <div class='card'><div class='card-label'>Risques</div><div id='kpi-code-risks' class='card-value'>n/a</div></div>
+      <div class='card'><div class='card-label'>Progression génération code</div><div id='kpi-code-progression' class='card-value'>Non disponible</div></div>
+      <div class='card'><div class='card-label'>Risques</div><div id='kpi-code-risks' class='card-value'>Non disponible</div></div>
     </div>
   </div>
 
   <div class='panel'>
     <h3 class='heading-reset-top'>Dernière mutation notable</h3>
-    <p class='section-help'>Cette mutation est le meilleur “indice explicatif” de la trajectoire actuelle.</p>
+    <p class='section-help'>À utiliser pour relier la trajectoire actuelle à sa mutation la plus explicative.</p>
     <div id='kpi-notable-summary'>Aucune mutation notable</div>
     <h4>Actions suggérées</h4>
     <ul id='kpi-actions' class='list-tight-top'></ul>
-    <details class='technical-toggle'>
+    <details class='technical-toggle technical-only'>
       <summary><button type='button'>Voir détail technique</button></summary>
       <h4>Payload cockpit</h4>
       <pre id='raw-cockpit-json'></pre>
@@ -165,20 +191,20 @@
     </details>
   </div>
 
-  <p><strong>Pourquoi cette alerte ?</strong> Une alerte critique apparaît si la santé chute fortement, si la stabilité de sandbox baisse, ou si trop de mutations sont refusées.</p>
+  <p><strong>Pourquoi cette alerte ?</strong> Une alerte critique apparaît si la santé chute fortement, si la stabilité sandbox baisse, ou si trop de mutations sont refusées.</p>
 </section>
 
-<section id="parametres">
+<section id="parametres" class='technical-only'>
   <h2>Paramètres</h2>
-  <p class='section-help'>Section de diagnostic : utile surtout si vous suspectez un problème de configuration, de policy ou de registre.</p>
+  <p class='section-help'>À utiliser pour diagnostiquer une configuration, une policy ou un registre incohérent.</p>
   <div class='panel panel-spaced-bottom'>
     <h3 class='heading-reset-top'>Contexte registre</h3>
-    <div><strong>Registre courant (SINGULAR_ROOT)</strong> : <code id='ctx-root'>n/a</code></div>
-    <div><strong>Vie courante (SINGULAR_HOME)</strong> : <code id='ctx-home'>n/a</code></div>
+    <div><strong>Registre courant (SINGULAR_ROOT)</strong> : <code id='ctx-root'>Non disponible</code></div>
+    <div><strong>Vie courante (SINGULAR_HOME)</strong> : <code id='ctx-home'>Non disponible</code></div>
     <div><strong>Nombre de vies détectées</strong> : <span id='ctx-lives-count'>0</span></div>
-    <div><strong>Version politique</strong> : <span id='ctx-policy-version'>n/a</span></div>
-    <div><strong>Autonomie</strong> : <span id='ctx-policy-autonomy'>n/a</span></div>
-    <div><strong>Permissions</strong> : <span id='ctx-policy-permissions'>n/a</span></div>
+    <div><strong>Version politique</strong> : <span id='ctx-policy-version'>Non disponible</span></div>
+    <div><strong>Autonomie</strong> : <span id='ctx-policy-autonomy'>Non disponible</span></div>
+    <div><strong>Permissions</strong> : <span id='ctx-policy-permissions'>Non disponible</span></div>
   </div>
   <h3>Impact des politiques actives</h3>
   <ul id='ctx-policy-impact'><li>Chargement…</li></ul>
@@ -192,7 +218,7 @@
 
 <section id="timeline-section">
   <h2>Timeline des événements</h2>
-  <p class='section-help'>Objectif : passer du “quoi s’est passé” au “pourquoi cette décision”. Cliquez un événement de mutation pour inspecter impact + diff.</p>
+  <p class='section-help'>À utiliser pour passer du “quoi” au “pourquoi” sur chaque décision de mutation.</p>
   <div id='timeline' class='timeline-strip'></div>
   <h3>Détail mutation</h3>
   <p id='timeline-summary'>Cliquez sur un événement de mutation.</p>
@@ -200,9 +226,9 @@
   <pre id='timeline-diff' class='diff-preview'></pre>
 </section>
 
-<section id="reflections-section">
+<section id="reflections-section" class='technical-only'>
   <h2>Timeline des réflexions</h2>
-  <p class='section-help'>Filtrez par objectif/humeur/succès pour relier la qualité des décisions à l’état interne.</p>
+  <p class='section-help'>À utiliser pour corréler objectif, humeur et qualité de décision.</p>
   <div class='toolbar-wrap'>
     <label>Objectif
       <select id='reflection-objective'>
@@ -228,7 +254,7 @@
 </section>
 
 <section id="vies"><h2>Vies · Tableau comparatif</h2>
-  <p class='section-help'>Comparez plusieurs vies sur la même fenêtre temporelle pour choisir la plus robuste, pas seulement la plus performante à court terme.</p>
+  <p class='section-help'>À utiliser pour comparer la robustesse des vies sur une fenêtre temporelle identique.</p>
   <div class='filters-wrap'>
     <label><input id='filter-active' type='checkbox'/> Statut registre: active</label>
     <label><input id='filter-degrading' type='checkbox'/> Seulement en dégradation</label>
@@ -264,12 +290,12 @@
       <th>Badges</th>
     </tr></thead><tbody id='lives-table-body'></tbody>
   </table>
-  <div id='unattached-runs-panel' class='panel panel-hidden panel-top-gap panel-bordered panel-compact'>
+  <div id='unattached-runs-panel' class='panel panel-hidden panel-top-gap panel-bordered panel-compact technical-only'>
     <strong>Runs non rattachés (<span id='unattached-runs-count'>0</span>)</strong>
     <div class='text-muted-small'>Enregistrements sans vie explicite: <span id='unattached-records-count'>0</span></div>
     <ul id='unattached-runs-list' class='list-compact'></ul>
   </div>
-  <div class='panel panel-top-gap'>
+  <div class='panel panel-top-gap technical-only'>
     <h3 class='heading-reset-top'>Arbre généalogique (simplifié)</h3>
     <pre id='genealogy-tree'>Chargement…</pre>
     <div class='content-top-gap'><strong>Réseau social</strong><pre id='social-network-tree'>Chargement…</pre></div>
@@ -278,7 +304,7 @@
 </section>
 
 <section id="actions"><h2>Actions rapides</h2><pre id='action-result'>Aucune exécution</pre>
-  <p class='section-help'>Utilisez cette section pour agir immédiatement sans quitter le dashboard (créer, parler, lancer une boucle, archiver).</p>
+  <p class='section-help'>À utiliser pour exécuter une action immédiate sans quitter le dashboard.</p>
   <div class='panel actions-panel'>
     <label>Jeton dashboard <input id='action-token' type='password' placeholder='optionnel'/></label>
     <label>Nom de vie (créer/utiliser) <input id='action-life-name' placeholder='Nouvelle vie'/></label>
@@ -288,7 +314,7 @@
       <button id='act-birth'>Créer vie</button><button id='act-talk'>Discuter</button><button id='act-loop'>Boucle</button>
       <button id='act-archive'>Archiver</button><button id='act-memorial'>Mémorial</button><button id='act-clone'>Cloner</button>
     </div>
-    <details>
+    <details class='technical-only'>
       <summary>Actions secondaires</summary>
       <div class='toolbar-wrap content-top-gap'>
         <button id='act-report'>Rapport</button><button id='act-lives-list'>Lister vies</button><button id='act-lives-use'>Utiliser vie</button>
@@ -297,8 +323,8 @@
   </div>
 </section>
 
-<section id="logs-live"><h2>Logs en direct</h2>
-  <p class='section-help'>Flux opérationnel en temps réel. Si vous investiguez un incident, mettez en pause puis relisez les derniers événements.</p>
+<section id="logs-live" class='technical-only'><h2>Logs en direct</h2>
+  <p class='section-help'>À utiliser pour investiguer un incident via les derniers événements bruts.</p>
   <div class='toolbar-wrap'>
     <button id='live-toggle'>Pause</button>
     <label><input id='live-autoscroll' type='checkbox' checked/> Défilement automatique</label>
