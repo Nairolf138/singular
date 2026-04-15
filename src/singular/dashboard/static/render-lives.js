@@ -160,7 +160,8 @@ const renderLivesTable=(rows)=>{
     const state=rowStateSummary(row);
     const risk=rowRiskSummary(row);
     const activity=rowActivitySummary(row);
-    tr.innerHTML=`<td>${escapeHtml(row.life||na())}</td><td>${score}</td><td>${escapeHtml(row.trend||na())}</td><td>${stability}</td><td>${escapeHtml(lastActivity)}</td><td>${row.iterations??0}</td><td><span class='summary-pill ${state.tone}'>${state.label}</span></td><td><span class='summary-pill ${risk.tone}'>${risk.label}</span></td><td><span class='summary-pill ${activity.tone}'>${activity.label}</span></td>`;
+    const codeEvolutionEndpoint=row.code_evolution_endpoint||`/api/lives/${encodeURIComponent(row.life||'')}/code-evolution`;
+    tr.innerHTML=`<td>${escapeHtml(row.life||na())}<br/><a href='${escapeHtml(codeEvolutionEndpoint)}' target='_blank' rel='noopener noreferrer'>audit code</a></td><td>${score}</td><td>${escapeHtml(row.trend||na())}</td><td>${stability}</td><td>${escapeHtml(lastActivity)}</td><td>${row.iterations??0}</td><td><span class='summary-pill ${state.tone}'>${state.label}</span></td><td><span class='summary-pill ${risk.tone}'>${risk.label}</span></td><td><span class='summary-pill ${activity.tone}'>${activity.label}</span></td>`;
     tr.onclick=()=>showLifeDetails(row.life||'');
     tr.onkeydown=event=>{
       if(event.key==='Enter'||event.key===' '){
@@ -206,6 +207,7 @@ const showLifeDetails=lifeName=>{
     ['Alertes',row.alerts_count??0],
     ['Run terminé',row.run_terminated?'oui':'non'],
     ['Extinction runs',row.extinction_seen_in_runs?'oui':'non'],
+    ['Audit code evolution',row.code_evolution_endpoint||`/api/lives/${encodeURIComponent(row.life||'')}/code-evolution`],
   ];
   const metadataRows=metadata.map(([key,value])=>`<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(value)}</td></tr>`).join('');
   content.innerHTML=`<div class='detail-badges'>${summarizeBadges(row)||badge('Aucun badge',BADGE_TONE.info)}</div><table class='table-base life-meta-table'><tbody>${metadataRows}</tbody></table><h4>Timeline vitale</h4><pre>${escapeHtml(JSON.stringify(row.vital_timeline||{},null,2))}</pre>`;

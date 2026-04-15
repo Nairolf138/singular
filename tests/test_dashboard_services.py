@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from singular.dashboard.services.lives_comparison import aggregate_lives
+from singular.dashboard.services.code_evolution import aggregate_code_evolution
 from singular.dashboard.services.trajectory import build_trajectory
 
 
@@ -163,3 +164,59 @@ def test_lives_comparison_default_rows_follow_active_and_dead_filters() -> None:
 
     assert [row["life"] for row in active_only] == ["alpha"]
     assert [row["life"] for row in dead_only] == ["beta"]
+
+
+def test_code_evolution_service_aggregates_by_life_and_metrics() -> None:
+    payload = aggregate_code_evolution(
+        [
+            {
+                "life": "alpha",
+                "file": "skills/a.py",
+                "change_type": "perf_fix",
+                "score_base": 10.0,
+                "score_new": 8.0,
+                "ms_base": 100.0,
+                "ms_new": 75.0,
+                "stability_base": 0.7,
+                "stability_new": 0.9,
+                "accepted": True,
+                "ts": "2026-03-01T00:00:00Z",
+                "run_id": "run-a",
+                "trace_id": "trace-1",
+            },
+            {
+                "life": "alpha",
+                "module": "singular.life.loop",
+                "operator": "cleanup",
+                "score_base": 8.0,
+                "score_new": 9.0,
+                "ok": False,
+                "ts": "2026-03-02T00:00:00Z",
+                "run_id": "run-b",
+                "trace_id": "trace-2",
+            },
+            {
+                "life": "beta",
+                "file": "skills/b.py",
+                "change_type": "robustesse",
+                "score_base": 9.0,
+                "score_new": 7.0,
+                "accepted": True,
+                "ts": "2026-03-03T00:00:00Z",
+                "run_id": "run-c",
+            },
+        ],
+        life="alpha",
+        record_life=lambda rec: str(rec.get("life", "unknown")),
+        record_run_id=lambda rec: str(rec.get("run_id", "unknown")),
+        as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
+    )
+
+    assert payload["life"] == "alpha"
+    assert payload["count"] == 2
+    assert payload["items"][0]["timestamp"] == "2026-03-02T00:00:00Z"
+    assert payload["items"][1]["metrics"]["latency_ms"] == {"before": 100.0, "after": 75.0}
+    assert payload["items"][1]["metrics"]["stability"] == {"before": 0.7, "after": 0.9}
+    assert payload["summary"]["by_status"] == {"accepté": 1, "rejeté": 1}
+    assert payload["summary"]["by_change_type"] == {"perf_fix": 1, "cleanup": 1}
+    assert payload["summary"]["by_target"] == {"skills/a.py": 1, "singular.life.loop": 1}
