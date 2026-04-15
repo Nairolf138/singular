@@ -19,7 +19,9 @@ os.environ["PYTHONPATH"] = f"{tests_path}{os.pathsep}" + os.environ.get(
 import fastapi_stub  # noqa: E402
 import fastapi_stub.responses  # noqa: E402,F401 - imported for side effect
 import fastapi_stub.testclient  # noqa: E402,F401 - imported for side effect
+import fastapi_stub.staticfiles  # noqa: E402,F401 - imported for side effect
 
 sys.modules.setdefault("fastapi", fastapi_stub)
 sys.modules.setdefault("fastapi.responses", fastapi_stub.responses)
 sys.modules.setdefault("fastapi.testclient", fastapi_stub.testclient)
+sys.modules.setdefault("fastapi.staticfiles", fastapi_stub.staticfiles)
