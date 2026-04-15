@@ -119,6 +119,37 @@ def test_atomic_write_text_retries_winerror_5_oserror_on_windows(
     assert json.loads(destination.read_text(encoding="utf-8")) == {"new": True}
 
 
+def test_atomic_write_text_windows_mixed_transient_errors_eventually_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "state.json"
+    destination.write_text('{"old": true}', encoding="utf-8")
+    original_replace = io_utils.os.replace
+    attempts = 0
+    delays: list[float] = []
+
+    def flaky_replace(src, dst):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise PermissionError("locked")
+        if attempts in (2, 3):
+            error = OSError("Access denied")
+            error.winerror = 5
+            raise error
+        return original_replace(src, dst)
+
+    monkeypatch.setattr(io_utils, "_is_windows", lambda: True)
+    monkeypatch.setattr(io_utils.os, "replace", flaky_replace)
+    monkeypatch.setattr(io_utils.time, "sleep", delays.append)
+
+    io_utils.atomic_write_text(destination, '{"new": true}')
+
+    assert attempts == 4
+    assert delays == [0.025, 0.05, 0.1]
+    assert json.loads(destination.read_text(encoding="utf-8")) == {"new": True}
+
+
 def test_atomic_write_text_windows_retry_raises_enriched_initial_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
