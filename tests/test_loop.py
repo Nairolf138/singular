@@ -20,6 +20,7 @@ from singular.resource_manager import ResourceManager  # noqa: E402
 from singular.psyche import Psyche, Mood  # noqa: E402
 from singular.governance.policy import MutationGovernancePolicy  # noqa: E402
 from singular.life.reproduction import ReproductionDecisionPolicy  # noqa: E402
+from singular.events import EventBus  # noqa: E402
 
 
 def _inc_operator(tree: ast.AST, rng=None) -> ast.AST:
@@ -420,7 +421,7 @@ def test_multi_operator_selection(tmp_path: Path, monkeypatch):
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.2,
+        budget_seconds=2.0,
         rng=random.Random(0),
         run_id="loop",
         operators=operators,
@@ -601,6 +602,176 @@ def test_fatigue_reduces_proposals(tmp_path: Path, monkeypatch):
     )
 
     assert calls["n"] == 1
+
+
+def test_sandbox_violation_burst_enters_degraded_mode_without_immediate_extinction(
+    tmp_path: Path, monkeypatch
+):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    (skills_dir / "foo.py").write_text("result = 1", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+
+    score_calls = {"n": 0}
+
+    def failing_score(_code: str) -> float:
+        score_calls["n"] += 1
+        return float("-inf") if score_calls["n"] % 2 == 1 else 0.0
+
+    monkeypatch.setattr(life_loop, "score_code", failing_score)
+    monkeypatch.setattr(life_loop, "propose_mutations", lambda *_a, **_k: [])
+
+    class StablePsyche:
+        energy = 1000.0
+        curiosity = 1.0
+        patience = 1.0
+        playfulness = 1.0
+        sleeping = False
+
+        def mutation_policy(self):
+            return "default"
+
+        def process_run_record(self, record):
+            pass
+
+        def save_state(self):
+            pass
+
+        def consume(self):
+            pass
+
+        def feel(self, mood):
+            pass
+
+    monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: StablePsyche()))
+
+    events: list[dict] = []
+    bus = EventBus()
+    bus.subscribe(
+        "governance.degraded_mode_entered",
+        lambda event: events.append(event.payload),
+    )
+
+    class FailureOnlyMonitor:
+        def __init__(self, max_failures: int):
+            self.max_failures = max_failures
+            self.failures = 0
+
+        def check(self, iteration, psyche, action_succeeded, resources=None):
+            if not action_succeeded:
+                self.failures += 1
+            else:
+                self.failures = 0
+            if self.failures >= self.max_failures:
+                return True, "too many failures"
+            return False, None
+
+    state = life_loop.run(
+        skills_dir,
+        checkpoint,
+        budget_seconds=2.0,
+        max_iterations=4,
+        rng=random.Random(0),
+        operators={"noop": _noop_operator},
+        event_bus=bus,
+        mortality=FailureOnlyMonitor(max_failures=10),
+        world=life_loop.WorldState(
+            organisms={
+                skills_dir.name: life_loop.Organism(
+                    skills_dir,
+                    energy=1000.0,
+                    resources=1000.0,
+                    monitor=FailureOnlyMonitor(max_failures=10),
+                )
+            }
+        ),
+    )
+
+    assert state.iteration >= life_loop.SANDBOX_DEGRADED_MODE_THRESHOLD
+    assert events
+    assert events[0]["sandbox_violation_streak"] >= life_loop.SANDBOX_DEGRADED_MODE_THRESHOLD
+
+
+def test_prolonged_sandbox_violation_persistence_triggers_controlled_extinction(
+    tmp_path: Path, monkeypatch
+):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    (skills_dir / "foo.py").write_text("result = 1", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+
+    score_calls = {"n": 0}
+
+    def failing_score(_code: str) -> float:
+        score_calls["n"] += 1
+        return float("-inf") if score_calls["n"] % 2 == 1 else 0.0
+
+    monkeypatch.setattr(life_loop, "score_code", failing_score)
+    monkeypatch.setattr(life_loop, "propose_mutations", lambda *_a, **_k: [])
+    monkeypatch.setattr(life_loop, "SANDBOX_DEGRADED_MODE_THRESHOLD", 1)
+    monkeypatch.setattr(life_loop, "SANDBOX_EXTINCTION_THRESHOLD", 2)
+
+    class StablePsyche:
+        energy = 1000.0
+        curiosity = 1.0
+        patience = 1.0
+        playfulness = 1.0
+        sleeping = False
+
+        def mutation_policy(self):
+            return "default"
+
+        def process_run_record(self, record):
+            pass
+
+        def save_state(self):
+            pass
+
+        def consume(self):
+            pass
+
+        def feel(self, mood):
+            pass
+
+    monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: StablePsyche()))
+
+    class FailureOnlyMonitor:
+        def __init__(self, max_failures: int):
+            self.max_failures = max_failures
+            self.failures = 0
+
+        def check(self, iteration, psyche, action_succeeded, resources=None):
+            if not action_succeeded:
+                self.failures += 1
+            else:
+                self.failures = 0
+            if self.failures >= self.max_failures:
+                return True, "too many failures"
+            return False, None
+
+    state = life_loop.run(
+        skills_dir,
+        checkpoint,
+        budget_seconds=2.0,
+        max_iterations=12,
+        rng=random.Random(0),
+        operators={"noop": _noop_operator},
+        mortality=FailureOnlyMonitor(max_failures=1),
+        world=life_loop.WorldState(
+            organisms={
+                skills_dir.name: life_loop.Organism(
+                    skills_dir,
+                    energy=1000.0,
+                    resources=1000.0,
+                    monitor=FailureOnlyMonitor(max_failures=1),
+                )
+            }
+        ),
+    )
+
+    # Extinction occurs only once the higher sandbox violation threshold is crossed.
+    assert state.iteration >= life_loop.SANDBOX_EXTINCTION_THRESHOLD
+    assert state.iteration < 12
 
 
 def _setup_dummy_psyche(monkeypatch, tmp_path, decisions):

@@ -68,6 +68,10 @@ log = logging.getLogger(__name__)
 # ``SLEEP_TICKS`` iterations where no mutations are attempted.
 SLEEP_THRESHOLD = 10.0
 SLEEP_TICKS = 5
+SANDBOX_DEGRADED_MODE_THRESHOLD = 3
+SANDBOX_EXTINCTION_THRESHOLD = 7
+DEGRADED_MUTATION_INTERVAL = 2
+DEGRADED_DELAY_SECONDS = 0.05
 SKILL_GENESIS_TECH_DEBT_THRESHOLD = 8
 SKILL_GENESIS_FAILURE_STREAK_THRESHOLD = 3
 SKILL_GENESIS_COVERAGE_GAP_THRESHOLD = 0.6
@@ -92,6 +96,8 @@ class Organism:
     last_score: float = float("-inf")
     energy: float = 1.0
     resources: float = 1.0
+    sandbox_violation_streak: int = 0
+    degraded_mode: bool = False
     monitor: DeathMonitor = field(default_factory=DeathMonitor)
 
 
@@ -278,6 +284,16 @@ def _retain_health_history(
         retained.append(_aggregate_health_bucket(bucket))
     retained.extend(recent)
     return retained
+
+
+def _critical_extinction_indicators(
+    *,
+    health_snapshot: Mapping[str, float | int] | None,
+    organism: Organism,
+) -> bool:
+    """Return True when additional critical indicators justify immediate extinction."""
+
+    return organism.energy <= 0.0 and organism.resources <= 0.0
 
 
 def _should_trigger_skill_genesis(
@@ -842,11 +858,23 @@ def run(
                 decision = Psyche.Decision.ACCEPT
                 if hasattr(psyche, "irrational_decision"):
                     decision = psyche.irrational_decision(rng)
+            selected_org = world.organisms[org_name]
+            if selected_org.degraded_mode and state.iteration % DEGRADED_MUTATION_INTERVAL != 0:
+                logger.log_interaction(
+                    "degraded_mode_throttle",
+                    organism=org_name,
+                    sandbox_violation_streak=selected_org.sandbox_violation_streak,
+                    interval=DEGRADED_MUTATION_INTERVAL,
+                    alive=True,
+                )
+                tick_count += 1
+                continue
+
             trigger_genesis, trigger_name, trigger_snapshot = _should_trigger_skill_genesis(
                 signals=signals,
                 health_counters=state.health_counters,
             )
-            if trigger_genesis:
+            if trigger_genesis and not selected_org.degraded_mode:
                 mem_dir = Path(os.environ.get("SINGULAR_HOME", ".")) / "mem"
                 genesis = create_skill(
                     skills_dir=world.organisms[org_name].skills_dir,
@@ -885,7 +913,9 @@ def run(
                 logger.log_refusal(skill_path.name)
                 continue
             if decision is Psyche.Decision.DELAY:
-                delay_until = time.time() + 0.01
+                delay_until = time.time() + 0.01 + (
+                    DEGRADED_DELAY_SECONDS if selected_org.degraded_mode else 0.0
+                )
                 heapq.heappush(delayed, (delay_until, org_name, skill_path))
                 logger.log_delay(skill_path.name, delay_until)
                 continue
@@ -1096,7 +1126,7 @@ def run(
             }
             detection_rate = 0.0
             test_delta = {"added": 0, "removed": 0}
-            if coevolve_tests and test_pool is not None:
+            if coevolve_tests and test_pool is not None and not selected_org.degraded_mode:
                 detection_rate = test_pool.regression_detection_rate(original, mutated)
                 combined_mutated = mutated_score + (robustness_weight * detection_rate)
                 combined_base = base_score
@@ -1350,10 +1380,39 @@ def run(
                 base_score == float("-inf") or mutated_score == float("-inf")
             )
             if sandbox_failure:
+                org.sandbox_violation_streak += 1
                 governance_policy.record_violation(
                     category="sandbox_violation",
                     severity="critical",
                 )
+                if (
+                    org.sandbox_violation_streak >= SANDBOX_DEGRADED_MODE_THRESHOLD
+                    and not org.degraded_mode
+                ):
+                    org.degraded_mode = True
+                    event_bus.publish(
+                        "governance.degraded_mode_entered",
+                        {
+                            "life": org_name,
+                            "iteration": state.iteration,
+                            "sandbox_violation_streak": org.sandbox_violation_streak,
+                            "degraded_threshold": SANDBOX_DEGRADED_MODE_THRESHOLD,
+                            "extinction_threshold": SANDBOX_EXTINCTION_THRESHOLD,
+                            "mutation_interval": DEGRADED_MUTATION_INTERVAL,
+                            "cooldown_seconds": DEGRADED_DELAY_SECONDS,
+                            "suspended_actions": [
+                                "skill_genesis",
+                                "test_coevolution",
+                                "periodic_crossover",
+                            ],
+                            "energy": org.energy,
+                            "resources": org.resources,
+                        },
+                        payload_version=1,
+                    )
+            elif org.sandbox_violation_streak > 0:
+                org.sandbox_violation_streak = 0
+                org.degraded_mode = False
             failed = sandbox_failure or (not accepted)
             health_snapshot = health_tracker.update(
                 iteration=state.iteration,
@@ -1513,6 +1572,16 @@ def run(
                 action_succeeded=accepted,
                 resources=org.resources,
             )
+            if dead and reason == "too many failures":
+                can_extinguish = (
+                    org.sandbox_violation_streak >= SANDBOX_EXTINCTION_THRESHOLD
+                    or _critical_extinction_indicators(
+                        health_snapshot=health_snapshot.to_dict(),
+                        organism=org,
+                    )
+                )
+                if not can_extinguish:
+                    dead = False
             if dead:
                 death_reason = reason or "unknown"
                 logger.log_death(death_reason, age=state.iteration)
@@ -1592,6 +1661,15 @@ def run(
                 and state.iteration % ecosystem_rules.crossover_interval == 0
                 and len(world.organisms) >= 2
             ):
+                if any(organism.degraded_mode for organism in world.organisms.values()):
+                    logger.log_interaction(
+                        "reproduction_suspended_degraded_mode",
+                        organism="ecosystem",
+                        reason="sandbox_degraded_mode_active",
+                        alive=True,
+                    )
+                    tick_count += 1
+                    continue
                 parent_names = list(_pick_crossover_parents(rng, world))
                 cooldown_remaining = max(
                     world.reproduction_cooldowns.get(parent_names[0], 0),
