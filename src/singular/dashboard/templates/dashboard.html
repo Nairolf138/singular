@@ -105,9 +105,25 @@
   <section id='vies'><h2>Vies · Tableau comparatif</h2>
     <p class='section-help'>Comparer les vies sur la même fenêtre temporelle.</p>
     <div class='filters-wrap'>
-      <label><input id='filter-active' type='checkbox'/> Statut registre: active</label>
-      <label><input id='filter-degrading' type='checkbox'/> Seulement en dégradation</label>
-      <label><input id='filter-dead' type='checkbox'/> Extinction détectée</label>
+      <div class='chips-row' id='lives-quick-filters'>
+        <button type='button' class='filter-chip active' data-filter-key='all' aria-pressed='true'>Toutes</button>
+        <button type='button' class='filter-chip' data-filter-key='active' aria-pressed='false'>Actives</button>
+        <button type='button' class='filter-chip' data-filter-key='degrading' aria-pressed='false'>Dégradation</button>
+        <button type='button' class='filter-chip' data-filter-key='dead' aria-pressed='false'>Extinction</button>
+      </div>
+      <div class='chips-row' id='lives-focus-chips'>
+        <button type='button' class='filter-chip active' data-focus-key='all' aria-pressed='true'>Toutes les vies</button>
+        <button type='button' class='filter-chip' data-focus-key='selected' aria-pressed='false'>Vie sélectionnée</button>
+        <button type='button' class='filter-chip' data-focus-key='at_risk' aria-pressed='false'>À risque</button>
+      </div>
+      <label>Tri prédéfini
+        <select id='filter-sort-preset'>
+          <option value='watch'>À surveiller</option>
+          <option value='active'>Plus actives</option>
+          <option value='new'>Nouvelles</option>
+          <option value='custom'>Personnalisé (colonnes)</option>
+        </select>
+      </label>
       <label>Fenêtre temporelle
         <select id='filter-time-window'>
           <option value='all'>Toutes</option>
@@ -116,7 +132,6 @@
           <option value='30d'>30 jours</option>
         </select>
       </label>
-      <label>Comparer vies (CSV) <input id='filter-compare-lives' placeholder='life-a,life-b'/></label>
     </div>
     <div class='stats-grid'>
       <div class='panel panel-compact panel-bordered'>
@@ -128,17 +143,26 @@
         <ul id='dead-lives' class='list-compact'></ul>
       </div>
     </div>
-    <table id='lives-table' class='table-base table-spacing-top'>
-      <thead><tr>
-        <th><button data-sort='life'>Vie</button></th>
-        <th><button data-sort='score'>Score</button></th>
-        <th><button data-sort='trend'>Tendance</button></th>
-        <th><button data-sort='stability'>Stabilité</button></th>
-        <th><button data-sort='last_activity'>Dernière activité</button></th>
-        <th><button data-sort='iterations'>Itérations</button></th>
-        <th>Badges</th>
-      </tr></thead><tbody id='lives-table-body'></tbody>
-    </table>
+    <div class='lives-grid'>
+      <table id='lives-table' class='table-base table-spacing-top'>
+        <thead><tr>
+          <th><button data-sort='life'>Vie</button></th>
+          <th><button data-sort='score'>Score</button></th>
+          <th><button data-sort='trend'>Tendance</button></th>
+          <th><button data-sort='stability'>Stabilité</button></th>
+          <th><button data-sort='last_activity'>Dernière activité</button></th>
+          <th><button data-sort='iterations'>Itérations</button></th>
+          <th>État</th>
+          <th>Risque</th>
+          <th>Activité</th>
+        </tr></thead><tbody id='lives-table-body'></tbody>
+      </table>
+      <aside id='life-detail-panel' class='panel panel-hidden life-detail-panel' aria-live='polite'>
+        <h3 class='heading-reset-top'>Détails de vie</h3>
+        <p class='text-muted-small'>Cliquez sur une ligne pour afficher les badges complets et métadonnées.</p>
+        <div id='life-detail-content'>Aucune vie sélectionnée.</div>
+      </aside>
+    </div>
   </section>
 </section>
 

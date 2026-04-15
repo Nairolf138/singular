@@ -276,8 +276,8 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "Runs non rattachés" in body
     assert "data-sort='life'" in body
     assert "<td colspan='7'>Aucune vie ne correspond aux filtres.</td>" in body
-    assert "Statut registre: active" in body
-    assert "Seulement en dégradation" in body
+    assert "lives-quick-filters" in body
+    assert "filter-chip" in body
     assert "Logs en direct" in body
     assert "live-autoscroll" in body
     assert "live-toggle" in body
@@ -302,9 +302,12 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "Cycle de vie des skills" in body
     assert "Énergie / ressources & génération de code" in body
     assert "Fenêtre temporelle" in body
-    assert "Comparer vies (CSV)" in body
+    assert "Tri prédéfini" in body
+    assert "À surveiller" in body
+    assert "Plus actives" in body
+    assert "Nouvelles" in body
     assert "filter-time-window" in body
-    assert "filter-compare-lives" in body
+    assert "life-detail-panel" in body
 
 
 def test_dashboard_index_renders_main_sections(tmp_path: Path) -> None:
