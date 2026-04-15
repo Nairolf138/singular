@@ -58,21 +58,41 @@ class LifeMetadata:
     @classmethod
     def from_payload(cls, data: Dict[str, Any]) -> "LifeMetadata":
         """Build metadata from a registry payload."""
+        required_fields = ("name", "slug", "path", "created_at")
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            fields = ", ".join(missing_fields)
+            raise ValueError(f"invalid life metadata payload: missing required field(s): {fields}")
+
+        invalid_fields = [
+            field
+            for field in required_fields
+            if not isinstance(data.get(field), str) or not data.get(field, "").strip()
+        ]
+        if invalid_fields:
+            fields = ", ".join(invalid_fields)
+            raise ValueError(f"invalid life metadata payload: required field(s) must be non-empty strings: {fields}")
+
         proximity_score = data.get("proximity_score", 0.5)
         if not isinstance(proximity_score, (int, float)):
             proximity_score = 0.5
+        raw_lineage_depth = data.get("lineage_depth", 0)
+        try:
+            lineage_depth = max(0, int(raw_lineage_depth))
+        except (TypeError, ValueError):
+            lineage_depth = 0
         return cls(
-            name=str(data["name"]),
-            slug=str(data["slug"]),
+            name=data["name"].strip(),
+            slug=data["slug"].strip(),
             path=Path(data["path"]),
-            created_at=str(data["created_at"]),
+            created_at=data["created_at"].strip(),
             status=str(data.get("status", "active")),
             parents=tuple(str(item) for item in data.get("parents", []) if isinstance(item, str)),
             children=tuple(str(item) for item in data.get("children", []) if isinstance(item, str)),
             allies=tuple(str(item) for item in data.get("allies", []) if isinstance(item, str)),
             rivals=tuple(str(item) for item in data.get("rivals", []) if isinstance(item, str)),
             proximity_score=max(0.0, min(1.0, float(proximity_score))),
-            lineage_depth=max(0, int(data.get("lineage_depth", 0))),
+            lineage_depth=lineage_depth,
         )
 
 
@@ -339,7 +359,8 @@ def load_registry() -> dict[str, Any]:
     for slug, data in lives_payload.items():
         try:
             lives[slug] = LifeMetadata.from_payload(data)
-        except KeyError:
+        except (TypeError, ValueError) as exc:
+            _LOGGER.warning("Skipping invalid life entry '%s' in %s: %s", slug, path, exc)
             continue
 
     active = payload.get("active")
