@@ -135,7 +135,18 @@ def create_app(
         if isinstance(run_id, str) and run_id:
             return run_id
         run = record.get("_run_file")
-        return str(run) if isinstance(run, str) else "unknown"
+        if not isinstance(run, str):
+            return "unknown"
+        normalized = run.strip()
+        if not normalized:
+            return "unknown"
+        # Legacy JSONL files often follow <run_id>-<timestamp>.jsonl.
+        # Normalize back to <run_id> so registry run mappings can resolve life names.
+        if "-" in normalized:
+            candidate, suffix = normalized.rsplit("-", 1)
+            if candidate and suffix.isdigit() and len(suffix) >= 8:
+                return candidate
+        return normalized
 
     def _registry_run_to_life_mapping() -> dict[str, str]:
         registry = load_registry()
@@ -168,11 +179,31 @@ def create_app(
         return mapping
 
     def _record_life(record: dict[str, object]) -> str:
+        registry = load_registry()
+        registry_lives = registry.get("lives")
+        known_lives: set[str] = set()
+        if isinstance(registry_lives, dict):
+            for slug, metadata in registry_lives.items():
+                if isinstance(slug, str) and slug:
+                    known_lives.add(slug)
+                if isinstance(metadata, dict):
+                    name = metadata.get("name")
+                else:
+                    name = getattr(metadata, "name", None)
+                if isinstance(name, str) and name:
+                    known_lives.add(name)
+
         skill = record.get("skill")
         if isinstance(skill, str) and ":" in skill:
             return skill.split(":", 1)[0]
-        if isinstance(record.get("life"), str):
-            return str(record["life"])
+        life_field = record.get("life")
+        if isinstance(life_field, str) and life_field.strip():
+            normalized_life = life_field.strip()
+            if normalized_life in known_lives:
+                return normalized_life
+            mapped_from_life = _registry_run_to_life_mapping().get(normalized_life)
+            if isinstance(mapped_from_life, str) and mapped_from_life:
+                return mapped_from_life
         run_id = _record_run_id(record)
         if run_id != "unknown":
             mapped_life = _registry_run_to_life_mapping().get(run_id)
