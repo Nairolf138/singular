@@ -10,15 +10,10 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 import json
 import os
-import tempfile
 from datetime import datetime, timedelta, timezone
 
-if os.name == "nt":
-    import msvcrt
-else:
-    import fcntl
-
 from .events import Event, EventBus
+from .io_utils import append_jsonl_line, atomic_write_text
 from .memory_layers import MemoryLayerService, build_backend
 
 _MEMORY_LAYER_SERVICE: MemoryLayerService | None = None
@@ -71,54 +66,18 @@ def get_psyche_file() -> Path:
     return get_mem_dir() / "psyche.json"
 
 
-def _ensure_dir(path: Path) -> None:
-    """Ensure the parent directory of ``path`` exists."""
-    path.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _atomic_write_text(path: Path, data: str) -> None:
-    """Atomically write ``data`` to ``path``."""
-    _ensure_dir(path)
-    tmp = tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", dir=path.parent, delete=False
-    )
-    try:
-        with tmp:
-            tmp.write(data)
-            tmp.flush()
-            os.fsync(tmp.fileno())
-        os.replace(tmp.name, path)
-    finally:
-        try:
-            os.unlink(tmp.name)
-        except FileNotFoundError:
-            pass
+    """Backward-compatible alias for shared atomic text writes."""
+
+    atomic_write_text(path, data)
 
 
 def _append_jsonl_line(path: Path, payload: dict[str, Any]) -> None:
-    """Safely append one JSON line with cross-platform file locking."""
+    """Backward-compatible alias for shared locked JSONL appends."""
 
-    _ensure_dir(path)
-    line = json.dumps(payload, ensure_ascii=False) + "\n"
-    lock_path = path.with_suffix(path.suffix + ".lock")
-    with lock_path.open("a+b") as lock_file:
-        if os.name == "nt":
-            lock_file.seek(0)
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
-        else:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        try:
-            with path.open("a", encoding="utf-8") as file:
-                file.write(line)
-                file.flush()
-                os.fsync(file.fileno())
-        finally:
-            if os.name == "nt":
-                lock_file.seek(0)
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-
+    append_jsonl_line(path, payload, with_lock=True)
 
 def append_jsonl_line_safe(
     path: Path | str,
@@ -131,7 +90,7 @@ def append_jsonl_line_safe(
     exposing a stable cross-module contract.
     """
 
-    _append_jsonl_line(Path(path), dict(payload))
+    append_jsonl_line(Path(path), dict(payload), with_lock=True)
 
 
 def ensure_memory_structure(mem_dir: Path | str | None = None) -> None:
@@ -186,7 +145,7 @@ def write_profile(profile: dict[str, Any], path: Path | str | None = None) -> No
     if path is None:
         path = get_profile_file()
     path = Path(path)
-    _atomic_write_text(path, json.dumps(profile))
+    atomic_write_text(path, json.dumps(profile))
 
 
 def update_trait(
@@ -240,7 +199,7 @@ def write_values(values: dict[str, Any], path: Path | str | None = None) -> None
         raise ImportError(
             "PyYAML is required to write values. Please install PyYAML."
         ) from exc
-    _atomic_write_text(path, yaml.safe_dump(values))
+    atomic_write_text(path, yaml.safe_dump(values))
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +243,7 @@ def add_episode(
     if path is None:
         path = get_episodic_file()
     path = Path(path)
-    _append_jsonl_line(path, episode)
+    append_jsonl_line(path, episode)
     try:
         get_memory_layer_service().ingest_episode(episode)
     except Exception:
@@ -326,7 +285,7 @@ def write_skills(skills: dict[str, Any], path: Path | str | None = None) -> None
     if path is None:
         path = get_skills_file()
     path = Path(path)
-    _atomic_write_text(path, json.dumps(skills))
+    atomic_write_text(path, json.dumps(skills))
 
 
 def update_score(
@@ -586,7 +545,7 @@ def write_psyche(state: dict[str, Any], path: Path | str | None = None) -> None:
     if path is None:
         path = get_psyche_file()
     path = Path(path)
-    _atomic_write_text(path, json.dumps(state))
+    atomic_write_text(path, json.dumps(state))
 
 
 _REGISTERED_MEMORY_BUS_IDS: set[int] = set()

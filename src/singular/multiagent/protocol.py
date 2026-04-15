@@ -4,8 +4,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Literal, Protocol
 import json
-import os
-import tempfile
 import time
 from collections import defaultdict, deque
 
@@ -18,12 +16,8 @@ from singular.events import (
     build_help_event_payload,
 )
 from singular.governance.policy import AUTH_AUTO, AUTH_FORCED, MutationGovernancePolicy
+from singular.io_utils import append_jsonl_line, atomic_write_text
 from singular.life import sandbox
-
-if os.name == "nt":
-    import msvcrt
-else:
-    import fcntl
 
 MESSAGE_SCHEMA_V1: dict[str, Any] = {
     "required": {"intent", "task", "evidence", "confidence"},
@@ -168,13 +162,13 @@ class FileQueueTransport:
         self.path = Path(path)
 
     def send(self, message: AgentMessage) -> None:
-        _append_jsonl_line(self.path, message.to_dict())
+        append_jsonl_line(self.path, message.to_dict())
 
     def receive(self) -> list[AgentMessage]:
         if not self.path.exists():
             return []
         payload = self.path.read_text(encoding="utf-8")
-        _atomic_write_text(self.path, "")
+        atomic_write_text(self.path, "")
         messages: list[AgentMessage] = []
         for line in payload.splitlines():
             if not line.strip():
@@ -211,7 +205,7 @@ class CollectiveMemory:
         return self.root / f"{self.namespace}.jsonl"
 
     def append(self, record: dict[str, Any]) -> None:
-        _append_jsonl_line(self._path, record)
+        append_jsonl_line(self._path, record)
 
     def read(self) -> list[dict[str, Any]]:
         if not self._path.exists():
@@ -508,42 +502,3 @@ class HelpExchangeCoordinator:
             requester_gain=requester_gain,
             helper_gain=helper_gain,
         )
-
-
-def _atomic_write_text(path: Path, data: str) -> None:
-    tmp = tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", dir=path.parent, delete=False
-    )
-    try:
-        with tmp:
-            tmp.write(data)
-            tmp.flush()
-        Path(tmp.name).replace(path)
-    finally:
-        try:
-            Path(tmp.name).unlink()
-        except FileNotFoundError:
-            pass
-
-
-def _append_jsonl_line(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    line = json.dumps(payload, ensure_ascii=False) + "\n"
-    lock_path = path.with_suffix(path.suffix + ".lock")
-    with lock_path.open("a+b") as lock_file:
-        if os.name == "nt":
-            lock_file.seek(0)
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
-        else:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        try:
-            with path.open("a", encoding="utf-8") as file:
-                file.write(line)
-                file.flush()
-                os.fsync(file.fileno())
-        finally:
-            if os.name == "nt":
-                lock_file.seek(0)
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
