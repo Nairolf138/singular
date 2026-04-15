@@ -135,7 +135,18 @@ def create_app(
         if isinstance(run_id, str) and run_id:
             return run_id
         run = record.get("_run_file")
-        return str(run) if isinstance(run, str) else "unknown"
+        if not isinstance(run, str):
+            return "unknown"
+        normalized = run.strip()
+        if not normalized:
+            return "unknown"
+        # Legacy JSONL files often follow <run_id>-<timestamp>.jsonl.
+        # Normalize back to <run_id> so registry run mappings can resolve life names.
+        if "-" in normalized:
+            candidate, suffix = normalized.rsplit("-", 1)
+            if candidate and suffix.isdigit() and len(suffix) >= 8:
+                return candidate
+        return normalized
 
     def _registry_run_to_life_mapping() -> dict[str, str]:
         registry = load_registry()

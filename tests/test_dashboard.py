@@ -819,6 +819,39 @@ def test_lives_comparison_compare_lives_filter(tmp_path: Path) -> None:
     assert payload["filters"]["time_window"] == "all"
 
 
+def test_lives_comparison_maps_timestamped_run_file_to_registry_life(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "loop-20260415120000.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": "2026-04-15T12:00:00",
+                "accepted": True,
+                "score_base": 12.0,
+                "score_new": 9.0,
+                "health": {"score": 88.0},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    monkeypatch.setattr(
+        "singular.dashboard.load_registry",
+        lambda: {
+            "active": "life-alpha",
+            "lives": {"life-alpha": {"slug": "life-alpha", "run_id": "loop"}},
+        },
+    )
+
+    payload = app._routes["/lives/comparison"]()
+
+    assert "life-alpha" in payload["lives"]
+    assert payload["unattached_runs"]["records_count"] == 0
+
+
 def test_psyche_missing_returns_404(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
