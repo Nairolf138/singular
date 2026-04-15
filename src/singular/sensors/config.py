@@ -11,6 +11,22 @@ from typing import Any, Mapping
 DEFAULT_HOST_SENSORS_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "host_sensors.yaml"
 ENV_HOST_SENSORS_CONFIG_PATH = "SINGULAR_HOST_SENSORS_CONFIG"
 ENV_HOST_SENSORS_OVERRIDES = "SINGULAR_HOST_SENSORS_OVERRIDES"
+HOST_METRIC_STATUS_AVAILABLE = "available"
+HOST_METRIC_STATUS_PARTIAL = "partial"
+HOST_METRIC_STATUS_UNSUPPORTED = "unsupported"
+
+HOST_METRIC_UNITS: dict[str, str] = {
+    "cpu_percent": "percent",
+    "cpu_load_1m": "load",
+    "ram_used_percent": "percent",
+    "ram_available_mb": "MB",
+    "disk_used_percent": "percent",
+    "disk_free_gb": "GB",
+    "host_temperature_c": "C",
+    "process_cpu_percent": "percent",
+    "process_rss_mb": "MB",
+    "host_uptime_s": "s",
+}
 
 
 class HostSensorsConfigError(ValueError):
@@ -237,6 +253,10 @@ __all__ = [
     "DEFAULT_HOST_SENSORS_CONFIG_PATH",
     "ENV_HOST_SENSORS_CONFIG_PATH",
     "ENV_HOST_SENSORS_OVERRIDES",
+    "HOST_METRIC_STATUS_AVAILABLE",
+    "HOST_METRIC_STATUS_PARTIAL",
+    "HOST_METRIC_STATUS_UNSUPPORTED",
+    "HOST_METRIC_UNITS",
     "HostSensorThresholds",
     "HostSensorsConfigError",
     "load_host_sensor_thresholds",

@@ -19,6 +19,10 @@ _METRICS_KEYS = (
     "host_temperature_c",
     "process_cpu_percent",
     "process_rss_mb",
+    "cpu_load_1m",
+    "ram_available_mb",
+    "disk_free_gb",
+    "host_uptime_s",
 )
 
 
@@ -64,13 +68,48 @@ def _safe_float(value: Any) -> float | None:
         return None
 
 
+def _extract_metric_value(metrics: dict[str, Any], key: str) -> float | None:
+    raw = metrics.get(key)
+    if isinstance(raw, dict):
+        return _safe_float(raw.get("value"))
+    return _safe_float(raw)
+
+
+def _extract_metric_snapshot(metrics: dict[str, Any], key: str) -> dict[str, Any] | None:
+    candidate = metrics.get(key)
+    if not isinstance(candidate, dict):
+        return None
+    value = _safe_float(candidate.get("value"))
+    return {
+        "value": value,
+        "unit": candidate.get("unit"),
+        "status": candidate.get("status"),
+        "reason": candidate.get("reason"),
+        "last_seen_at": candidate.get("last_seen_at"),
+    }
+
+
+def _coerce_metric_status_block(metrics: dict[str, Any]) -> dict[str, Any]:
+    explicit = metrics.get("metric_status")
+    if isinstance(explicit, dict):
+        return explicit
+    snapshots: dict[str, Any] = {}
+    for key in _METRICS_KEYS:
+        snapshot = _extract_metric_snapshot(metrics, key)
+        if snapshot is not None:
+            snapshots[key] = snapshot
+    return snapshots
+
+
 def append_host_metrics_sample(metrics: dict[str, Any]) -> None:
     """Append one host sample and enforce retention."""
 
     path = host_metrics_file()
     payload = {
         "ts": _utc_now_iso(),
-        "metrics": {key: _safe_float(metrics.get(key)) for key in _METRICS_KEYS},
+        "metrics": {key: _extract_metric_value(metrics, key) for key in _METRICS_KEYS},
+        "metric_status": _coerce_metric_status_block(metrics),
+        "collection_strategy": metrics.get("collection_strategy"),
     }
     append_jsonl_line_safe(path, payload)
     _trim_retention(path=path, retention=_retention_samples())
@@ -138,7 +177,7 @@ def compute_host_metrics_aggregates(
         if not isinstance(metrics, dict):
             continue
         for key in _METRICS_KEYS:
-            value = _safe_float(metrics.get(key))
+            value = _extract_metric_value(metrics, key)
             if value is not None:
                 metrics_by_key[key].append(value)
 
