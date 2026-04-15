@@ -41,6 +41,14 @@ def _locked_file(path: Path) -> Iterator[None]:
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
+@contextmanager
+def file_lock(path: Path | str) -> Iterator[None]:
+    """Public lock helper using the same sidecar strategy as JSONL append."""
+
+    with _locked_file(Path(path)):
+        yield
+
+
 def atomic_write_text(path: Path | str, data: str, fsync: bool = True) -> None:
     """Atomically write text to ``path`` using a temporary sibling file."""
 
