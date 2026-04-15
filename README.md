@@ -428,8 +428,8 @@ SINGULAR_HOME=/chemin/personnel singular lives create
 # ou
 singular --home /chemin/personnel lives create
 
-# Ajuster la rétention des journaux
-SINGULAR_RUNS_KEEP=50 singular report --format json
+# Ajuster la rétention (priorité env > fichier mem/retention_policy.json > défauts)
+SINGULAR_RETENTION_MAX_RUNS=50 singular retention status
 
 # Utiliser l'API OpenAI
 OPENAI_API_KEY=sk-... singular talk --prompt "Salut"
@@ -468,7 +468,53 @@ Rollback atomique vers une génération stable :
 singular rollback --generation 42
 ```
 
-Politique de conservation/archivage/purge : `docs/generations_registry.md`.
+### Rétention des artefacts (nouveaux paramètres)
+
+La rétention est pilotée par 7 paramètres (`retention config show`) :
+
+- `max_runs` (défaut: `20`)
+- `max_run_age_days` (défaut: `30`)
+- `max_total_runs_size_mb` (défaut: `512`)
+- `max_episodic_lines` (défaut: `20000`)
+- `max_episodic_days` (défaut: `90`)
+- `max_generations_lines` (défaut: `50000`)
+- `max_generations_days` (défaut: `365`)
+
+Ordre de résolution des valeurs: variables d’environnement `SINGULAR_RETENTION_*`,
+puis `mem/retention_policy.json`, puis défauts intégrés.
+
+Garanties (suppression automatique) :
+
+- un run actif (verrou `.active.lock` ou fichier temporaire `.jsonl.tmp`) n’est jamais supprimé ;
+- les données `lives/` ne sont jamais supprimées par `singular retention run` ;
+- les snapshots/registre de générations ne sont pas supprimés automatiquement par ce service ;
+- `--dry-run` n’écrit rien et ne supprime rien.
+
+Commandes de contrôle :
+
+```bash
+# Voir les seuils effectivement actifs
+singular retention config show
+
+# Voir usage, dépassements et dernière purge
+singular retention status
+
+# Simuler les suppressions (fortement recommandé)
+singular retention run --dry-run
+
+# Appliquer la purge réelle
+singular retention run
+```
+
+### Migration (utilisateurs existants)
+
+1. **Audit initial** : exécutez `singular retention status`.
+2. **Activation progressive** : définissez d’abord des seuils permissifs (ex. `MAX_RUNS` élevé), puis resserrez par étapes.
+3. **Dry-run obligatoire en pratique** : lancez `singular retention run --dry-run` avant toute purge réelle.
+4. **Purge réelle** : exécutez `singular retention run` uniquement après validation de la liste `would_delete`.
+5. **Compatibilité legacy** : remplacez `SINGULAR_RUNS_KEEP` par `SINGULAR_RETENTION_MAX_RUNS` dans vos scripts CI/shell.
+
+Politique de conservation/archivage/purge détaillée : `docs/generations_registry.md`.
 
 Schéma JSON (`schema_version: 1`) :
 
