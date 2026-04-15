@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
@@ -77,6 +77,17 @@ class RuntimeEvent:
     emitted_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
+@dataclass(frozen=True)
+class RuntimeSafetyConfig:
+    """Safety controls applied to runtime action execution."""
+
+    global_stop_hotkey: str = "ctrl+shift+."
+    max_actions_per_minute: int = 60
+    watchdog_window_size: int = 12
+    watchdog_repeat_action_threshold: int = 10
+    max_critical_errors: int = 3
+
+
 EventHandler = Callable[[RuntimeEvent], None]
 
 
@@ -139,6 +150,8 @@ class AgentRuntime:
         event_bus: RuntimeEventBus | None = None,
         policy_engine: ActionPolicyEngine | None = None,
         schema_version: str = DEFAULT_SCHEMA_VERSION,
+        safety: RuntimeSafetyConfig | None = None,
+        stop_signal: Callable[[], bool] | None = None,
     ) -> None:
         self.perception = perception
         self.mind = mind
@@ -146,6 +159,24 @@ class AgentRuntime:
         self.schema_version = schema_version
         self.event_bus = event_bus or RuntimeEventBus(schema_version=schema_version)
         self.policy_engine = policy_engine or ActionPolicyEngine()
+        self.safety = safety or RuntimeSafetyConfig()
+        self._stop_signal = stop_signal
+        self._global_stop_requested = False
+        self._disabled = False
+        self._critical_error_count = 0
+        self._action_timestamps: deque[float] = deque()
+        self._recent_actions: deque[str] = deque(maxlen=max(self.safety.watchdog_window_size, 1))
+
+    @property
+    def disabled(self) -> bool:
+        """Whether the runtime has been automatically disabled."""
+
+        return self._disabled
+
+    def request_global_stop(self) -> None:
+        """Request an immediate global stop (hotkey equivalent)."""
+
+        self._global_stop_requested = True
 
     def step(self) -> list[ActionResult]:
         """Run one full runtime step.
@@ -156,6 +187,17 @@ class AgentRuntime:
         3. execute allowed actions,
         4. publish all lifecycle events on the internal bus.
         """
+
+        if self._disabled:
+            self.event_bus.publish(
+                "runtime.disabled",
+                {
+                    "reason": "critical_error_threshold_reached",
+                    "critical_error_count": self._critical_error_count,
+                    "max_critical_errors": self.safety.max_critical_errors,
+                },
+            )
+            return []
 
         percepts = self.perception.collect()
         results: list[ActionResult] = []
@@ -176,6 +218,42 @@ class AgentRuntime:
                 continue
             self._ensure_schema_version(request.schema_version)
             self.event_bus.publish("action.requested", request)
+
+            if self._stop_requested():
+                self.event_bus.publish(
+                    "runtime.global_stop",
+                    {
+                        "reason": "hotkey_triggered",
+                        "hotkey": self.safety.global_stop_hotkey,
+                    },
+                )
+                break
+
+            if self._is_rate_limited():
+                self._record_critical_error("max_actions_per_minute_exceeded")
+                self.event_bus.publish(
+                    "runtime.rate_limited",
+                    {
+                        "reason": "max_actions_per_minute_exceeded",
+                        "max_actions_per_minute": self.safety.max_actions_per_minute,
+                        "critical_error_count": self._critical_error_count,
+                    },
+                )
+                break
+
+            if self._watchdog_triggered(request.action_type):
+                self._record_critical_error("watchdog_abnormal_action_loop")
+                self.event_bus.publish(
+                    "runtime.watchdog_stopped",
+                    {
+                        "reason": "watchdog_abnormal_action_loop",
+                        "action_type": request.action_type,
+                        "watchdog_window_size": self.safety.watchdog_window_size,
+                        "repeat_threshold": self.safety.watchdog_repeat_action_threshold,
+                        "critical_error_count": self._critical_error_count,
+                    },
+                )
+                break
 
             decision = self.policy_engine.evaluate(request)
             self.event_bus.publish(
@@ -212,6 +290,7 @@ class AgentRuntime:
                 continue
 
             if decision.dry_run:
+                self._register_action(request.action_type)
                 result = ActionResult(
                     action_type=request.action_type,
                     success=True,
@@ -231,8 +310,35 @@ class AgentRuntime:
                 results.append(result)
                 continue
 
-            result = self.action.execute(request)
+            try:
+                result = self.action.execute(request)
+            except Exception as exc:  # pragma: no cover - defensive contract hardening
+                self._record_critical_error("action_execution_exception")
+                result = ActionResult(
+                    action_type=request.action_type,
+                    success=False,
+                    message="action execution failed",
+                    error=str(exc),
+                    audit={
+                        "policy": {
+                            "allowed": decision.allowed,
+                            "blocked": decision.blocked,
+                            "reason": decision.reason,
+                            "rule_id": decision.rule_id,
+                            "risk_level": decision.risk_level,
+                            "dry_run": decision.dry_run,
+                        },
+                        "critical_error": True,
+                    },
+                )
+                self.event_bus.publish("action.failed", result)
+                results.append(result)
+                if self._disabled:
+                    break
+                continue
+
             self._ensure_schema_version(result.schema_version)
+            self._register_action(request.action_type)
             enriched_audit = dict(result.audit)
             enriched_audit["policy"] = {
                 "allowed": decision.allowed,
@@ -251,8 +357,12 @@ class AgentRuntime:
                 schema_version=result.schema_version,
                 completed_at=result.completed_at,
             )
+            if self._is_critical_result(result):
+                self._record_critical_error("critical_action_result")
             self.event_bus.publish("action.completed", result)
             results.append(result)
+            if self._disabled:
+                break
 
         return results
 
@@ -261,4 +371,73 @@ class AgentRuntime:
             raise ValueError(
                 "Schema version mismatch: "
                 f"runtime={self.schema_version} candidate={candidate}"
+            )
+
+    def _stop_requested(self) -> bool:
+        if self._global_stop_requested:
+            return True
+        if self._stop_signal is None:
+            return False
+        try:
+            return bool(self._stop_signal())
+        except Exception:
+            return False
+
+    def _register_action(self, action_type: str) -> None:
+        import time
+
+        now = time.monotonic()
+        self._action_timestamps.append(now)
+        self._trim_action_window(now)
+        self._recent_actions.append(action_type)
+
+    def _trim_action_window(self, now: float) -> None:
+        one_minute = 60.0
+        while self._action_timestamps and now - self._action_timestamps[0] > one_minute:
+            self._action_timestamps.popleft()
+
+    def _is_rate_limited(self) -> bool:
+        import time
+
+        if self.safety.max_actions_per_minute <= 0:
+            return False
+        now = time.monotonic()
+        self._trim_action_window(now)
+        return len(self._action_timestamps) >= self.safety.max_actions_per_minute
+
+    def _watchdog_triggered(self, action_type: str) -> bool:
+        threshold = self.safety.watchdog_repeat_action_threshold
+        if threshold <= 0 or len(self._recent_actions) < threshold - 1:
+            return False
+        return list(self._recent_actions)[-(threshold - 1) :] == [action_type] * (threshold - 1)
+
+    def _is_critical_result(self, result: ActionResult) -> bool:
+        if result.success:
+            return False
+        policy = result.audit.get("policy") if isinstance(result.audit, dict) else None
+        if isinstance(policy, dict) and policy.get("risk_level") == "critical":
+            return True
+        if isinstance(result.error, str) and "critical" in result.error.lower():
+            return True
+        return bool(result.audit.get("critical_error", False)) if isinstance(result.audit, dict) else False
+
+    def _record_critical_error(self, reason: str) -> None:
+        self._critical_error_count += 1
+        self.event_bus.publish(
+            "runtime.critical_error",
+            {
+                "reason": reason,
+                "critical_error_count": self._critical_error_count,
+                "max_critical_errors": self.safety.max_critical_errors,
+            },
+        )
+        if self._critical_error_count >= max(self.safety.max_critical_errors, 1):
+            self._disabled = True
+            self.event_bus.publish(
+                "runtime.auto_disabled",
+                {
+                    "reason": "critical_error_threshold_reached",
+                    "critical_error_count": self._critical_error_count,
+                    "max_critical_errors": self.safety.max_critical_errors,
+                },
             )

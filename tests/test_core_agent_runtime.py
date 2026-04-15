@@ -11,6 +11,7 @@ from singular.core.agent_runtime import (
     PerceptEvent,
     RuntimeEvent,
     RuntimeEventBus,
+    RuntimeSafetyConfig,
 )
 
 
@@ -206,3 +207,99 @@ def test_agent_runtime_requires_human_confirmation_for_critical_actions() -> Non
     assert len(results) == 1
     assert results[0].success is False
     assert results[0].error == "critical_action_requires_human_confirmation"
+
+
+def test_agent_runtime_global_stop_hotkey_interrupts_step() -> None:
+    bus = RuntimeEventBus()
+    seen: list[str] = []
+    bus.subscribe("runtime.global_stop", lambda event: seen.append(event.topic))
+    runtime = AgentRuntime(
+        perception=_PerceptionStub(),
+        mind=_MindStub(),
+        action=_ActionStub(),
+        event_bus=bus,
+    )
+    runtime.request_global_stop()
+
+    results = runtime.step()
+
+    assert results == []
+    assert seen == ["runtime.global_stop"]
+
+
+
+def test_agent_runtime_watchdog_stops_abnormal_action_loop() -> None:
+    class _ManyPercepts:
+        def collect(self) -> list[PerceptEvent]:
+            return [
+                PerceptEvent(event_type=f"vision-{idx}", source="camera", payload={"idx": idx})
+                for idx in range(8)
+            ]
+
+    runtime = AgentRuntime(
+        perception=_ManyPercepts(),
+        mind=_MindStub(),
+        action=_ActionStub(),
+        safety=RuntimeSafetyConfig(
+            watchdog_window_size=6,
+            watchdog_repeat_action_threshold=4,
+            max_critical_errors=5,
+        ),
+    )
+
+    results = runtime.step()
+
+    assert len(results) == 3
+
+
+
+def test_agent_runtime_enforces_max_actions_per_minute() -> None:
+    class _ManyPercepts:
+        def collect(self) -> list[PerceptEvent]:
+            return [
+                PerceptEvent(event_type=f"vision-{idx}", source="camera", payload={"idx": idx})
+                for idx in range(10)
+            ]
+
+    runtime = AgentRuntime(
+        perception=_ManyPercepts(),
+        mind=_MindStub(),
+        action=_ActionStub(),
+        safety=RuntimeSafetyConfig(max_actions_per_minute=2, max_critical_errors=5),
+    )
+
+    results = runtime.step()
+
+    assert len(results) == 2
+
+
+
+def test_agent_runtime_auto_disables_after_critical_errors() -> None:
+    class _AlwaysFailAction:
+        def execute(self, request: ActionRequest) -> ActionResult:
+            return ActionResult(
+                action_type=request.action_type,
+                success=False,
+                error="critical: unrecoverable",
+            )
+
+    class _TwoPercepts:
+        def collect(self) -> list[PerceptEvent]:
+            return [
+                PerceptEvent(event_type="vision-a", source="camera", payload={}),
+                PerceptEvent(event_type="vision-b", source="camera", payload={}),
+            ]
+
+    runtime = AgentRuntime(
+        perception=_TwoPercepts(),
+        mind=_MindStub(),
+        action=_AlwaysFailAction(),
+        safety=RuntimeSafetyConfig(max_critical_errors=2),
+    )
+
+    first_results = runtime.step()
+    second_results = runtime.step()
+
+    assert len(first_results) == 2
+    assert runtime.disabled is True
+    assert second_results == []
