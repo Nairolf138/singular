@@ -77,9 +77,19 @@ def test_targeted_lifecycle_birth_introspection_goals_world_action_death(
     # mort (invariant raison terminale)
     monitor = DeathMonitor(max_failures=2)
     psyche = _DummyPsyche()
-    dead, reason = monitor.check(iteration=1, psyche=psyche, success=False, resources=1.0)
+    dead, reason = monitor.check(
+        iteration=1,
+        psyche=psyche,
+        action_succeeded=False,
+        resources=1.0,
+    )
     assert dead is False
-    dead, reason = monitor.check(iteration=2, psyche=psyche, success=False, resources=1.0)
+    dead, reason = monitor.check(
+        iteration=2,
+        psyche=psyche,
+        action_succeeded=False,
+        resources=1.0,
+    )
     assert dead is True
     assert reason == "too many failures"
 

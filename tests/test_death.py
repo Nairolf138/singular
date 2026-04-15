@@ -10,6 +10,13 @@ from singular.life.death import DeathMonitor
 from singular.events import EventBus
 
 
+class _StablePsyche:
+    energy = 1.0
+    curiosity = 1.0
+    patience = 1.0
+    playfulness = 1.0
+
+
 def _inc_operator(tree: ast.AST, rng=None) -> ast.AST:
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, int):
@@ -90,6 +97,99 @@ def test_death_by_age(tmp_path: Path, monkeypatch):
     assert any(entry.get("event") == "death" for entry in log)
     episodes = episodic.read_text().splitlines()
     assert any(json.loads(line)["event"] == "death" for line in episodes)
+
+
+def test_death_monitor_triggers_on_five_consecutive_failures():
+    psyche = _StablePsyche()
+    monitor = DeathMonitor(max_failures=5, max_age=999, min_trait=0.0)
+
+    for iteration in range(1, 5):
+        dead, reason = monitor.check(
+            iteration=iteration,
+            psyche=psyche,
+            action_succeeded=False,
+            resources=1.0,
+        )
+        assert dead is False
+        assert reason is None
+
+    dead, reason = monitor.check(
+        iteration=5,
+        psyche=psyche,
+        action_succeeded=False,
+        resources=1.0,
+    )
+    assert dead is True
+    assert reason == "too many failures"
+
+
+def test_death_monitor_success_resets_failure_counter():
+    psyche = _StablePsyche()
+    monitor = DeathMonitor(max_failures=5, max_age=999, min_trait=0.0)
+
+    for iteration in range(1, 5):
+        dead, _ = monitor.check(
+            iteration=iteration,
+            psyche=psyche,
+            action_succeeded=False,
+            resources=1.0,
+        )
+        assert dead is False
+
+    dead, reason = monitor.check(
+        iteration=5,
+        psyche=psyche,
+        action_succeeded=True,
+        resources=1.0,
+    )
+    assert dead is False
+    assert reason is None
+    assert monitor.failures == 0
+
+    dead, reason = monitor.check(
+        iteration=6,
+        psyche=psyche,
+        action_succeeded=False,
+        resources=1.0,
+    )
+    assert dead is False
+    assert reason is None
+    assert monitor.failures == 1
+
+
+def test_death_monitor_edge_conditions_unchanged():
+    psyche = _StablePsyche()
+
+    age_monitor = DeathMonitor(max_age=3, max_failures=99, min_trait=0.0)
+    dead, reason = age_monitor.check(
+        iteration=3,
+        psyche=psyche,
+        action_succeeded=True,
+        resources=1.0,
+    )
+    assert dead is True
+    assert reason == "old age"
+
+    resource_monitor = DeathMonitor(max_age=99, max_failures=99, min_trait=0.0)
+    dead, reason = resource_monitor.check(
+        iteration=1,
+        psyche=psyche,
+        action_succeeded=True,
+        resources=0.0,
+    )
+    assert dead is True
+    assert reason == "resources exhausted"
+
+    psyche.energy = 0.0
+    energy_monitor = DeathMonitor(max_age=99, max_failures=99, min_trait=0.0)
+    dead, reason = energy_monitor.check(
+        iteration=1,
+        psyche=psyche,
+        action_succeeded=True,
+        resources=1.0,
+    )
+    assert dead is True
+    assert reason == "energy depleted"
 
 
 def test_death_by_failures(tmp_path: Path, monkeypatch):
