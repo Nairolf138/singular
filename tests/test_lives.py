@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from singular.lives import (
+    LifeMetadata,
     ally_lives,
     bootstrap_life,
     clone_life,
@@ -147,6 +148,64 @@ def test_load_registry_handles_partial_payload(
     registry = load_registry()
 
     assert registry == {"active": None, "lives": {}}
+
+
+def test_life_metadata_from_payload_raises_for_missing_required_fields() -> None:
+    with pytest.raises(ValueError, match="missing required field"):
+        LifeMetadata.from_payload(
+            {
+                "slug": "alpha",
+                "path": "/tmp/life-alpha",
+                "created_at": "2026-01-01T00:00:00+00:00",
+            }
+        )
+
+
+def test_life_metadata_from_payload_raises_for_bad_required_types() -> None:
+    with pytest.raises(ValueError, match="non-empty strings"):
+        LifeMetadata.from_payload(
+            {
+                "name": "Alpha",
+                "slug": "alpha",
+                "path": 123,
+                "created_at": "2026-01-01T00:00:00+00:00",
+            }
+        )
+
+
+def test_load_registry_skips_invalid_entries_with_logging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    registry_path = tmp_path / "lives" / "registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(
+        json.dumps(
+            {
+                "active": "alpha",
+                "lives": {
+                    "alpha": {
+                        "name": "Alpha",
+                        "slug": "alpha",
+                        "path": str(tmp_path / "lives" / "alpha"),
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                    },
+                    "broken": {
+                        "name": "Broken",
+                        "slug": "broken",
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    registry = load_registry()
+
+    assert set(registry["lives"]) == {"alpha"}
+    assert registry["active"] == "alpha"
+    assert "Skipping invalid life entry 'broken'" in caplog.text
 
 
 def test_relations_support_allies_rivals_children_and_proximity(
