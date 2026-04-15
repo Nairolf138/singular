@@ -181,6 +181,36 @@ def test_implicit_registry_root_windows_uses_path_for_env_value(monkeypatch) -> 
     assert root == Path(r"C:\tmp\singular").expanduser()
 
 
+def test_safe_path_windows_fallback_handles_unsupported_operation(monkeypatch) -> None:
+    class UnsupportedOperation(Exception):
+        pass
+
+    FakeAbc = type("FakeAbc", (), {"UnsupportedOperation": UnsupportedOperation})
+
+    monkeypatch.setattr(cli.pathlib, "_abc", FakeAbc, raising=False)
+    monkeypatch.setattr(cli, "_PATH_UNSUPPORTED_ERRORS", cli._path_unsupported_errors())
+
+    def _raise(raw: str) -> Path:
+        raise UnsupportedOperation(raw)
+
+    monkeypatch.setattr(cli, "Path", _raise)
+
+    root = cli._safe_path(r"C:\tmp\singular")
+
+    assert root == cli._HOST_PATH_CLS(r"C:\tmp\singular")
+
+
+def test_safe_path_windows_fallback_handles_not_implemented(monkeypatch) -> None:
+    def _raise(raw: str) -> Path:
+        raise NotImplementedError(raw)
+
+    monkeypatch.setattr(cli, "Path", _raise)
+
+    root = cli._safe_path(r"C:\tmp\singular")
+
+    assert root == cli._HOST_PATH_CLS(r"C:\tmp\singular")
+
+
 def test_implicit_registry_root_windows_defaults_to_user_home(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(cli.os, "name", "nt")
     monkeypatch.delenv("SINGULAR_ROOT", raising=False)
