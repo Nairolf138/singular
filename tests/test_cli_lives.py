@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import logging
 
 import pytest
 
@@ -184,6 +185,38 @@ def test_birth_prints_registry_root_used(
     out = capsys.readouterr().out
     assert "Registre de vies utilisé:" in out
     assert str(root.resolve()) in out
+
+
+def test_lives_create_prints_registry_root_used(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "registry-root"
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    main(["--root", str(root), "lives", "create", "--name", "Alpha"])
+    out = capsys.readouterr().out
+    assert "Registre de vies utilisé:" in out
+    assert str(root.resolve()) in out
+
+
+def test_lives_create_first_run_has_no_missing_registry_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    root = tmp_path / "fresh-root"
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    caplog.set_level(logging.WARNING, logger="singular.lives")
+
+    main(["--root", str(root), "lives", "create", "--name", "Alpha"])
+    capsys.readouterr()
+
+    assert "Failed to load life registry" not in caplog.text
 
 
 def test_lives_archive_memorial_clone_guided_commands(
