@@ -630,6 +630,66 @@ def test_dashboard_lives_comparison_excludes_runs_without_explicit_life(tmp_path
     }
 
 
+def test_dashboard_code_evolution_endpoint_and_comparison_link(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "run-2001.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "ts": "2026-04-12T12:10:00Z",
+                        "life": "life-explicit",
+                        "file": "skills/perf.py",
+                        "change_type": "perf_fix",
+                        "score_base": 12.0,
+                        "score_new": 9.0,
+                        "ms_base": 110.0,
+                        "ms_new": 88.0,
+                        "accepted": True,
+                        "trace_id": "trace-ok",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-04-12T12:11:00Z",
+                        "life": "life-explicit",
+                        "module": "singular.life.loop",
+                        "operator": "cleanup",
+                        "score_base": 9.0,
+                        "score_new": 10.0,
+                        "ok": False,
+                        "trace_id": "trace-ko",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    client = TestClient(app)
+
+    comparison_payload = client.get("/lives/comparison").json()
+    life_row = next(row for row in comparison_payload["table"] if row["life"] == "life-explicit")
+    assert life_row["code_evolution_endpoint"] == "/api/lives/life-explicit/code-evolution"
+
+    endpoint_payload = app._routes["/api/lives/{life}/code-evolution"](life="life-explicit")
+    assert endpoint_payload["life"] == "life-explicit"
+    assert endpoint_payload["count"] == 2
+    assert endpoint_payload["summary"]["by_status"] == {"accepté": 1, "rejeté": 1}
+    assert endpoint_payload["items"][0]["run_id"] == "run-2001"
+
+    filtered_payload = app._routes["/api/lives/{life}/code-evolution"](
+        life="life-explicit",
+        status="accepté",
+        limit=1,
+    )
+    assert filtered_payload["count"] == 1
+    assert filtered_payload["items"][0]["status"] == "accepté"
+
+
 def test_run_timeline_endpoint_filters_pagination_and_event_coherence(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()

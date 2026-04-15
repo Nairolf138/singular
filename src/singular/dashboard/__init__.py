@@ -39,6 +39,9 @@ from singular.dashboard.services.lives_comparison import (
 from singular.dashboard.services.metrics_contract import (
     build_metrics_contract as build_metrics_contract_service,
 )
+from singular.dashboard.services.code_evolution import (
+    aggregate_code_evolution as aggregate_code_evolution_service,
+)
 
 
 @dataclass
@@ -1145,6 +1148,62 @@ def create_app(
     ) -> dict[str, object]:
         return build_metrics_contract_service(comparison)
 
+    def _aggregate_code_evolution(life: str) -> dict[str, object]:
+        return aggregate_code_evolution_service(
+            _load_run_records(current_life_only=False),
+            life=life,
+            record_life=_record_life,
+            record_run_id=_record_run_id,
+            as_float=_as_float,
+        )
+
+    @app.get("/api/lives/{life}/code-evolution")
+    def read_life_code_evolution(
+        life: str,
+        status: str | None = None,
+        change_type: str | None = None,
+        limit: int | None = None,
+    ) -> dict[str, object]:
+        payload = _aggregate_code_evolution(life)
+        items = payload.get("items")
+        if not isinstance(items, list):
+            items = []
+
+        normalized_status = status.strip().lower() if isinstance(status, str) else None
+        normalized_change_type = (
+            change_type.strip().lower() if isinstance(change_type, str) else None
+        )
+        filtered_items = [
+            item
+            for item in items
+            if (
+                normalized_status is None
+                or str(item.get("status", "")).lower() == normalized_status
+            )
+            and (
+                normalized_change_type is None
+                or str(item.get("change_type", "")).lower() == normalized_change_type
+            )
+        ]
+        if isinstance(limit, int) and limit >= 0:
+            filtered_items = filtered_items[:limit]
+
+        summary = payload.get("summary")
+        if not isinstance(summary, dict):
+            summary = {"by_status": {}, "by_change_type": {}, "by_target": {}}
+
+        return {
+            "life": life,
+            "count": len(filtered_items),
+            "items": filtered_items,
+            "summary": summary,
+            "filters": {
+                "status": normalized_status,
+                "change_type": normalized_change_type,
+                "limit": limit,
+            },
+        }
+
     @app.get("/lives/comparison")
     def read_lives_comparison(
         sort_by: str = "score",
@@ -1169,7 +1228,14 @@ def create_app(
             time_window=time_window,
         )
         metrics_contract = _build_metrics_contract(comparison)
-        base_rows = [{"life": name, **payload} for name, payload in comparison.items()]
+        base_rows = [
+            {
+                "life": name,
+                "code_evolution_endpoint": f"/api/lives/{name}/code-evolution",
+                **payload,
+            }
+            for name, payload in comparison.items()
+        ]
         lives_rows = list(base_rows)
         filter_steps: list[dict[str, object]] = [
             {
