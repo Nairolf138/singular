@@ -125,6 +125,11 @@ class RunLogger:
 
         self.run_dir = self.root / self.run_id
         self.run_dir.mkdir(parents=True, exist_ok=True)
+        self._active_lock_path = self.run_dir / ".active.lock"
+        self._active_lock_path.write_text(
+            json.dumps({"run_id": self.run_id, "started_at": datetime.utcnow().isoformat(timespec="seconds")}),
+            encoding="utf-8",
+        )
         self.events_path = self.run_dir / "events.jsonl"
         self._events_file = self.events_path.open("a", encoding="utf-8")
         self.consciousness_path = self.run_dir / "consciousness.jsonl"
@@ -474,6 +479,10 @@ class RunLogger:
             os.fsync(self._file.fileno())
             self._file.close()
             os.replace(self.tmp_path, self.path)
+            try:
+                self._active_lock_path.unlink()
+            except FileNotFoundError:
+                pass
             _enforce_retention(self.root)
 
     def __enter__(self) -> RunLogger:  # pragma: no cover - trivial
