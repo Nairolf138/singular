@@ -13,23 +13,30 @@ export const nm=()=>MISSING_TEXT.notMeasured;
 export const livesTableState={sortBy:'score',sortOrder:'desc'};
 export const liveState={paused:false,autoScroll:true,events:[]};
 export const scopeState={currentLifeOnly:false};
-export const schedulerState={paused:false,timer:null};
+export const schedulerState={
+  paused:false,
+  timer:null,
+  freshnessTimer:null,
+  activeTab:'decider-maintenant',
+  pausedViews:new Set(),
+  maxConcurrent:2,
+};
 export const schedulerTasks=new Map();
 
 export const schedulerConfig={
   tickMs:500,
   backoff:{baseMs:1500,maxMs:30000,multiplier:2},
   frequencies:{
-    context:7000,
-    retention:7000,
-    cockpit:5000,
-    ecosystem:5000,
-    timeline:4000,
-    lives:4000,
-    reflections:6000,
-    genealogy:10000,
-    quests:10000,
-    hostVitals:5000,
+    context:45000,
+    retention:45000,
+    cockpit:10000,
+    ecosystem:30000,
+    timeline:60000,
+    lives:45000,
+    reflections:30000,
+    genealogy:45000,
+    quests:45000,
+    hostVitals:15000,
   },
 };
 

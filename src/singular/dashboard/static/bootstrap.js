@@ -19,6 +19,36 @@ import {
 } from './state.js';
 
 const ws=new WebSocket(`ws://${location.host}/ws`);
+const blockFreshness=new Map();
+
+const taskDefinitions={
+  context:{loader:loadContext,intervalMs:schedulerConfig.frequencies.context,viewKey:'technique',blockId:'parametres',stream:'cold'},
+  retention:{loader:loadRetentionStatus,intervalMs:schedulerConfig.frequencies.retention,viewKey:'decider-maintenant',blockId:'cockpit',stream:'cold'},
+  ecosystem:{loader:loadEco,intervalMs:schedulerConfig.frequencies.ecosystem,viewKey:'technique',blockId:'parametres',stream:'cold'},
+  cockpit:{loader:loadCockpit,intervalMs:schedulerConfig.frequencies.cockpit,viewKey:'decider-maintenant',blockId:'cockpit',stream:'hot'},
+  timeline:{loader:loadTimeline,intervalMs:schedulerConfig.frequencies.timeline,viewKey:'diagnostiquer',blockId:'timeline-section',stream:'hot'},
+  lives:{loader:loadLivesBoard,intervalMs:schedulerConfig.frequencies.lives,viewKey:'comparer-vies',blockId:'vies',stream:'cold'},
+  genealogy:{loader:loadGenealogy,intervalMs:schedulerConfig.frequencies.genealogy,viewKey:'technique',blockId:'parametres',stream:'cold'},
+  quests:{loader:loadQuests,intervalMs:schedulerConfig.frequencies.quests,viewKey:'technique',blockId:'parametres',stream:'cold'},
+  hostVitals:{loader:loadHostVitals,intervalMs:schedulerConfig.frequencies.hostVitals,viewKey:'technique',blockId:'host-vitals-panel',stream:'cold'},
+  reflections:{loader:loadReflections,intervalMs:schedulerConfig.frequencies.reflections,viewKey:'technique',blockId:'reflections-section',stream:'cold'},
+};
+
+const sectionIsVisible=blockId=>{
+  const block=document.getElementById(blockId);
+  if(!block){return false;}
+  if(block.matches('details')&&!block.open){return false;}
+  const pane=block.closest('.tab-pane');
+  if(!pane){return true;}
+  return !pane.classList.contains('panel-hidden');
+};
+
+const taskCanRun=task=>{
+  if(document.visibilityState!=='visible'){return false;}
+  if(schedulerState.pausedViews.has(task.viewKey)){return false;}
+  if(task.viewKey!==schedulerState.activeTab){return false;}
+  return sectionIsVisible(task.blockId);
+};
 
 const ensureUpdateLabel=(taskName)=>{
   const hostSection=document.getElementById(schedulerLabelIds[taskName]||'');
@@ -35,6 +65,37 @@ const ensureUpdateLabel=(taskName)=>{
   return label;
 };
 
+const ensureFreshnessLabel=blockId=>{
+  const hostSection=document.getElementById(blockId||'');
+  if(!hostSection){return null;}
+  const labelId=`freshness-${blockId}`;
+  let label=document.getElementById(labelId);
+  if(!label){
+    label=document.createElement('div');
+    label.id=labelId;
+    label.className='status-muted';
+    label.dataset.freshness='true';
+    label.textContent='Mis à jour il y a jamais';
+    hostSection.appendChild(label);
+  }
+  return label;
+};
+
+const updateFreshnessLabels=()=>{
+  for(const [blockId,at] of blockFreshness.entries()){
+    const label=ensureFreshnessLabel(blockId);
+    if(!label){continue;}
+    const elapsed=Math.max(0,Math.floor((Date.now()-at)/1000));
+    label.textContent=`Mis à jour il y a ${elapsed}s`;
+  }
+};
+
+const markBlockUpdated=(blockId,at)=>{
+  if(!blockId){return;}
+  blockFreshness.set(blockId,at);
+  updateFreshnessLabels();
+};
+
 const markUpdated=(taskName,at)=>{
   const label=ensureUpdateLabel(taskName);
   if(label){label.textContent=`Dernière mise à jour (${taskName}): ${fmtTimestamp(at)}`;}
@@ -48,11 +109,23 @@ const markUpdateError=(taskName,error)=>{
 const shouldBackoff=(error)=>Boolean(error);
 
 const registerTask=(name,loader,intervalMs)=>{
-  schedulerTasks.set(name,{name,loader,intervalMs,nextRunAt:0,inFlight:false,errorCount:0,lastRunAt:null});
+  const definition=taskDefinitions[name];
+  schedulerTasks.set(name,{
+    name,
+    loader,
+    intervalMs,
+    nextRunAt:0,
+    inFlight:false,
+    errorCount:0,
+    lastRunAt:null,
+    stream:definition?.stream||'cold',
+    viewKey:definition?.viewKey||'decider-maintenant',
+    blockId:definition?.blockId||schedulerLabelIds[name]||'',
+  });
 };
 
 const runTask=async task=>{
-  if(task.inFlight||schedulerState.paused){return;}
+  if(task.inFlight||schedulerState.paused||!taskCanRun(task)){return;}
   task.inFlight=true;
   task.lastRunAt=Date.now();
   const binding=panelBindings[task.name];
@@ -62,6 +135,7 @@ const runTask=async task=>{
     task.errorCount=0;
     task.nextRunAt=Date.now()+task.intervalMs;
     markUpdated(task.name,new Date());
+    markBlockUpdated(task.blockId,Date.now());
     if(binding){
       const layer=document.getElementById(binding.panelId)?.querySelector(':scope > .state-layer');
       if(!layer||layer.dataset.state==='loading'){setPanelState(binding.panelId,'ready');}
@@ -81,15 +155,27 @@ const runTask=async task=>{
   }finally{task.inFlight=false;}
 };
 
+const inflightCount=()=>[...schedulerTasks.values()].filter(task=>task.inFlight).length;
+
 const schedulerTick=()=>{
-  if(schedulerState.paused){return;}
+  if(schedulerState.paused||document.visibilityState!=='visible'){return;}
   const now=Date.now();
-  for(const task of schedulerTasks.values()){if(task.nextRunAt<=now&&!task.inFlight){runTask(task);}}
+  const slotsAvailable=Math.max(0,schedulerState.maxConcurrent-inflightCount());
+  if(!slotsAvailable){return;}
+  const dueTasks=[...schedulerTasks.values()]
+    .filter(task=>task.nextRunAt<=now&&!task.inFlight&&taskCanRun(task))
+    .sort((a,b)=>{
+      if(a.stream!==b.stream){return a.stream==='hot'?-1:1;}
+      return a.nextRunAt-b.nextRunAt;
+    });
+  dueTasks.slice(0,slotsAvailable).forEach(task=>runTask(task));
 };
 
 const startScheduler=()=>{
   if(schedulerState.timer){clearInterval(schedulerState.timer);}
+  if(schedulerState.freshnessTimer){clearInterval(schedulerState.freshnessTimer);}
   schedulerState.timer=setInterval(schedulerTick,schedulerConfig.tickMs);
+  schedulerState.freshnessTimer=setInterval(updateFreshnessLabels,1000);
   schedulerTick();
 };
 
@@ -109,6 +195,29 @@ const bootstrapPauseControls=()=>{
   wrap.innerHTML="<h3 class='heading-reset-top'>Contrôle des mises à jour</h3><div id='updates-status'>Mises à jour globales: actives</div><button id='updates-toggle' type='button'>Pause updates</button>";
   section.prepend(wrap);
   document.getElementById('updates-toggle').onclick=toggleSchedulerPause;
+};
+
+const toggleViewPause=viewKey=>{
+  if(schedulerState.pausedViews.has(viewKey)){schedulerState.pausedViews.delete(viewKey);}
+  else{schedulerState.pausedViews.add(viewKey);}
+  const status=document.getElementById(`updates-status-${viewKey}`);
+  const button=document.getElementById(`updates-toggle-${viewKey}`);
+  const isPaused=schedulerState.pausedViews.has(viewKey);
+  if(status){status.textContent=isPaused?'Mises à jour de la vue: pause':'Mises à jour de la vue: actives';}
+  if(button){button.textContent=isPaused?'Reprendre la vue':'Pause updates (vue)';}
+};
+
+const bootstrapViewPauseControls=()=>{
+  document.querySelectorAll('.tab-pane').forEach(pane=>{
+    const viewKey=(pane.id||'').replace('tab-','');
+    if(!viewKey){return;}
+    const wrap=document.createElement('div');
+    wrap.className='panel';
+    wrap.innerHTML=`<h3 class='heading-reset-top'>Contrôle de la vue</h3><div id='updates-status-${viewKey}'>Mises à jour de la vue: actives</div><button id='updates-toggle-${viewKey}' type='button'>Pause updates (vue)</button>`;
+    pane.prepend(wrap);
+    const button=wrap.querySelector(`#updates-toggle-${viewKey}`);
+    if(button){button.onclick=()=>toggleViewPause(viewKey);}
+  });
 };
 
 const toggleEssentialMode=()=>{
@@ -139,8 +248,10 @@ const activateDashboardTab=tabId=>{
     trigger.tabIndex=isSelected?0:-1;
   });
   if(hasSelection){
+    schedulerState.activeTab=tabId;
     localStorage.setItem(DASHBOARD_TAB_KEY,tabId);
     window.location.hash=selectedPaneId;
+    schedulerTick();
   }
 };
 
@@ -171,22 +282,14 @@ const bindCommonHandlers=()=>{
 
 export const bootstrapDashboard=()=>{
   bootstrapPauseControls();
+  bootstrapViewPauseControls();
   bindActionHandlers({onAfterAction:()=>Promise.all([loadEco(),loadCockpit(),loadTimeline()])});
   bindLivesHandlers(loadLivesBoard);
   bindLiveStreamHandlers();
   bindReflectionHandlers(loadReflections);
   bindCommonHandlers();
 
-  registerTask('context',loadContext,schedulerConfig.frequencies.context);
-  registerTask('retention',loadRetentionStatus,schedulerConfig.frequencies.retention);
-  registerTask('ecosystem',loadEco,schedulerConfig.frequencies.ecosystem);
-  registerTask('cockpit',loadCockpit,schedulerConfig.frequencies.cockpit);
-  registerTask('timeline',loadTimeline,schedulerConfig.frequencies.timeline);
-  registerTask('lives',loadLivesBoard,schedulerConfig.frequencies.lives);
-  registerTask('genealogy',loadGenealogy,schedulerConfig.frequencies.genealogy);
-  registerTask('quests',loadQuests,schedulerConfig.frequencies.quests);
-  registerTask('hostVitals',loadHostVitals,schedulerConfig.frequencies.hostVitals);
-  registerTask('reflections',loadReflections,schedulerConfig.frequencies.reflections);
+  Object.entries(taskDefinitions).forEach(([name,definition])=>registerTask(name,definition.loader,definition.intervalMs));
 
   startScheduler();
   updateLiveStatus();
@@ -195,9 +298,18 @@ export const bootstrapDashboard=()=>{
     const m=JSON.parse(e.data);
     if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);return;}
     if(m.type==='quests'){document.getElementById('quests').textContent=JSON.stringify(m.data,null,2);return;}
+    if(['timeline','run_event','alert','alerts'].includes(m.type)){
+      const task=schedulerTasks.get('timeline');
+      if(task){task.nextRunAt=0;}
+    }
+    if(['alert','alerts','cockpit'].includes(m.type)){
+      const task=schedulerTasks.get('cockpit');
+      if(task){task.nextRunAt=0;}
+    }
     if(typeof m.run_id==='string'&&typeof m.event==='string'){
       liveState.events.push({type:m.type,run_id:m.run_id,event:m.event,ts:m.ts||null});
       if(!liveState.paused){renderLiveEvents();}
     }
+    schedulerTick();
   };
 };
