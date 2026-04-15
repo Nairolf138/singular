@@ -204,6 +204,7 @@ class DashboardActionService:
         recent = records[-120:]
         history_map: dict[str, list[dict[str, Any]]] = {"cpu": [], "ram": [], "temperature": [], "disk": []}
         latest_values: dict[str, float | None] = {"cpu": None, "ram": None, "temperature": None, "disk": None}
+        latest_statuses: dict[str, dict[str, Any] | None] = {"cpu": None, "ram": None, "temperature": None, "disk": None}
         latest_adaptation: dict[str, Any] | None = None
         for record in recent:
             ts = record.get("ts")
@@ -215,18 +216,30 @@ class DashboardActionService:
                     "temperature": host_metrics.get("host_temperature_c"),
                     "disk": host_metrics.get("disk_used_percent"),
                 }
+                metric_status_map = (
+                    host_metrics.get("metric_status") if isinstance(host_metrics.get("metric_status"), dict) else {}
+                )
+                metric_status_aliases = {
+                    "cpu": "cpu_percent",
+                    "ram": "ram_used_percent",
+                    "temperature": "host_temperature_c",
+                    "disk": "disk_used_percent",
+                }
                 for metric_name, raw_value in metric_map.items():
-                    if not isinstance(raw_value, (int, float)):
-                        continue
-                    value = float(raw_value)
-                    latest_values[metric_name] = value
-                    history_map[metric_name].append(
-                        {
-                            "ts": ts if isinstance(ts, str) else None,
-                            "value": value,
-                            "risk": self._host_metric_risk(metric_name, value, thresholds),
-                        }
-                    )
+                    status_payload = metric_status_map.get(metric_status_aliases[metric_name], {})
+                    if isinstance(status_payload, dict):
+                        latest_statuses[metric_name] = status_payload
+                        raw_value = status_payload.get("value", raw_value)
+                    if isinstance(raw_value, (int, float)):
+                        value = float(raw_value)
+                        latest_values[metric_name] = value
+                        history_map[metric_name].append(
+                            {
+                                "ts": ts if isinstance(ts, str) else None,
+                                "value": value,
+                                "risk": self._host_metric_risk(metric_name, value, thresholds),
+                            }
+                        )
             event = record.get("event")
             adaptation_payload: dict[str, Any] | None = None
             if event == "orchestrator.adaptation" and isinstance(record.get("payload"), dict):
@@ -247,18 +260,25 @@ class DashboardActionService:
         global_status = "ok"
         for metric_name in ("cpu", "ram", "temperature", "disk"):
             value = latest_values[metric_name]
-            risk = self._host_metric_risk(metric_name, value, thresholds)
+            status_payload = latest_statuses.get(metric_name) if isinstance(latest_statuses.get(metric_name), dict) else {}
+            status = str((status_payload or {}).get("status") or ("available" if value is not None else "unsupported"))
+            reason = (status_payload or {}).get("reason")
+            last_seen_at = (status_payload or {}).get("last_seen_at")
+            unit = (status_payload or {}).get("unit")
+            risk = self._host_metric_risk(metric_name, value, thresholds) if status != "unsupported" else "unsupported"
             trend_history = history_map[metric_name][-8:]
-            supported = value is not None
             metrics_payload[metric_name] = {
-                "supported": supported,
                 "value": value,
+                "unit": unit,
+                "status": status,
+                "reason": reason,
+                "last_seen_at": last_seen_at,
                 "risk": risk,
                 "history": trend_history,
             }
             if risk_priority.get(risk, -1) > risk_priority.get(global_status, 0):
                 global_status = risk
-        if all(not metrics_payload[name]["supported"] for name in metrics_payload):
+        if all(metrics_payload[name]["status"] == "unsupported" for name in metrics_payload):
             global_status = "unsupported"
 
         return {

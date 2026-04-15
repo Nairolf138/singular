@@ -27,6 +27,7 @@ def test_host_metrics_store_writes_jsonl_with_retention(tmp_path, monkeypatch) -
     assert len(lines) == 3
     latest = json.loads(lines[-1])
     assert latest["metrics"]["cpu_percent"] == 14.0
+    assert "metric_status" in latest
 
 
 def test_host_metrics_aggregates_and_impact(tmp_path, monkeypatch) -> None:
@@ -49,3 +50,34 @@ def test_host_metrics_aggregates_and_impact(tmp_path, monkeypatch) -> None:
     assert impact["impact_level"] in {"moderate", "high", "critical"}
     assert impact["decision_bias"] == "robustesse"
 
+
+def test_host_metrics_store_accepts_metric_status_payload(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    append_host_metrics_sample(
+        {
+            "cpu_percent": {
+                "value": 42.0,
+                "unit": "percent",
+                "status": "available",
+                "reason": None,
+                "last_seen_at": "2026-01-01T00:00:00+00:00",
+            },
+            "ram_used_percent": 55.0,
+            "metric_status": {
+                "cpu_percent": {
+                    "value": 42.0,
+                    "unit": "percent",
+                    "status": "available",
+                    "reason": None,
+                    "last_seen_at": "2026-01-01T00:00:00+00:00",
+                }
+            },
+            "collection_strategy": "partial_fallback",
+        }
+    )
+
+    lines = host_metrics_file().read_text(encoding="utf-8").splitlines()
+    latest = json.loads(lines[-1])
+    assert latest["metrics"]["cpu_percent"] == 42.0
+    assert latest["metric_status"]["cpu_percent"]["status"] == "available"
+    assert latest["collection_strategy"] == "partial_fallback"
