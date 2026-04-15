@@ -36,6 +36,9 @@ from singular.dashboard.services.lives_comparison import (
     life_trend_label as life_trend_label_service,
     life_trend_rank as life_trend_rank_service,
 )
+from singular.dashboard.services.metrics_contract import (
+    build_metrics_contract as build_metrics_contract_service,
+)
 
 
 @dataclass
@@ -251,14 +254,18 @@ def create_app(
             for state in organisms.values()
             if isinstance(state.get("resources"), (int, float))
         )
+        comparison, _ = _aggregate_lives(current_life_only=current_life_only)
+        life_metrics_contract = build_metrics_contract_service(comparison)
+        life_counts = life_metrics_contract.get("counts", {})
         return {
             "organisms": organisms,
             "summary": {
-                "total_organisms": len(organisms),
-                "alive_organisms": alive,
+                "total_organisms": int(life_counts.get("total_lives", len(organisms))),
+                "alive_organisms": int(life_counts.get("alive_lives", alive)),
                 "total_energy": total_energy,
                 "total_resources": total_resources,
             },
+            "life_metrics_contract": life_metrics_contract,
         }
 
     def _skill_lifecycle_summary() -> dict[str, int]:
@@ -432,6 +439,7 @@ def create_app(
                 ),
                 "skills_lifecycle": _skill_lifecycle_summary(),
                 "daily_skills": build_daily_skills_snapshot([]),
+                "life_metrics_contract": _build_metrics_contract({}),
                 "trajectory": _build_trajectory([]),
             }
             return empty
@@ -519,6 +527,16 @@ def create_app(
         autonomy_metrics = compute_autonomy_metrics(records)
         ecosystem = _compute_ecosystem(current_life_only=current_life_only)
         summary = ecosystem.get("summary", {}) if isinstance(ecosystem, dict) else {}
+        metrics_contract = (
+            ecosystem.get("life_metrics_contract", {})
+            if isinstance(ecosystem.get("life_metrics_contract"), dict)
+            else {}
+        )
+        life_counts = (
+            metrics_contract.get("counts", {})
+            if isinstance(metrics_contract.get("counts"), dict)
+            else {}
+        )
 
         hour_utc = datetime.now(timezone.utc).hour
         if 5 <= hour_utc < 12:
@@ -582,8 +600,14 @@ def create_app(
                 "energy_resources": {
                     "total_energy": float(summary.get("total_energy", 0.0) or 0.0),
                     "total_resources": float(summary.get("total_resources", 0.0) or 0.0),
-                    "alive_organisms": int(summary.get("alive_organisms", 0) or 0),
-                    "total_organisms": int(summary.get("total_organisms", 0) or 0),
+                    "alive_organisms": int(
+                        life_counts.get("alive_lives", summary.get("alive_organisms", 0))
+                        or 0
+                    ),
+                    "total_organisms": int(
+                        life_counts.get("total_lives", summary.get("total_organisms", 0))
+                        or 0
+                    ),
                 },
                 "code_generation": {
                     "progression": trend,
@@ -597,6 +621,7 @@ def create_app(
             "vital_timeline": vital_timeline,
             "skills_lifecycle": _skill_lifecycle_summary(),
             "daily_skills": build_daily_skills_snapshot(records),
+            "life_metrics_contract": metrics_contract,
             "trajectory": trajectory,
         }
 
@@ -992,6 +1017,11 @@ def create_app(
             registry_life_meta=_registry_life_meta,
         )
 
+    def _build_metrics_contract(
+        comparison: dict[str, dict[str, object]]
+    ) -> dict[str, object]:
+        return build_metrics_contract_service(comparison)
+
     @app.get("/lives/comparison")
     def read_lives_comparison(
         sort_by: str = "score",
@@ -1015,6 +1045,7 @@ def create_app(
             compare_lives=compare_set,
             time_window=time_window,
         )
+        metrics_contract = _build_metrics_contract(comparison)
         lives_rows = [{"life": name, **payload} for name, payload in comparison.items()]
 
         if active_only:
@@ -1051,6 +1082,7 @@ def create_app(
         return {
             "lives": comparison,
             "table": lives_rows,
+            "life_metrics_contract": metrics_contract,
             "unattached_runs": unattached,
             "onboarding": {
                 "required": bool(registry_state["is_empty"]),

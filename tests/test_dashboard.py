@@ -877,6 +877,74 @@ def test_lives_comparison_maps_timestamped_run_file_to_registry_life(
     assert payload["unattached_runs"]["records_count"] == 0
 
 
+def test_dashboard_life_metrics_contract_is_consistent_across_endpoints(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "contract.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "ts": "2026-04-10T09:00:00",
+                        "skill": "life-a:skills/a.py",
+                        "accepted": True,
+                        "score_base": 9.0,
+                        "score_new": 8.0,
+                        "health": {"score": 80.0},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-04-10T09:30:00",
+                        "skill": "life-b:skills/b.py",
+                        "event": "death",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-04-10T10:00:00",
+                        "skill": "life-c:skills/c.py",
+                        "accepted": False,
+                        "score_base": 10.0,
+                        "score_new": 11.0,
+                        "health": {"score": 70.0},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    monkeypatch.setattr(
+        "singular.dashboard.load_registry",
+        lambda: {
+            "active": "life-c",
+            "lives": {
+                "life-a": {"slug": "life-a", "status": "active"},
+                "life-b": {"slug": "life-b", "status": "extinct"},
+                "life-c": {"slug": "life-c", "status": "active"},
+            },
+        },
+    )
+
+    cockpit_contract = app._routes["/api/cockpit"]()["life_metrics_contract"]
+    comparison_contract = app._routes["/lives/comparison"]()["life_metrics_contract"]
+    ecosystem_contract = app._routes["/ecosystem"]()["life_metrics_contract"]
+
+    assert cockpit_contract["counts"] == {
+        "total_lives": 3,
+        "alive_lives": 2,
+        "dead_lives": 1,
+        "selected_lives": 1,
+        "recent_activity_lives": 3,
+    }
+    assert comparison_contract == cockpit_contract
+    assert ecosystem_contract == cockpit_contract
+
+
 def test_psyche_missing_returns_404(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()

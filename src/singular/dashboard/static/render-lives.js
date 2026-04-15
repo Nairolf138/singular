@@ -78,13 +78,17 @@ const summarizeBadges=row=>{
   return badges;
 };
 
-const renderLivesBuckets=(rows)=>{
+const renderLivesBuckets=(rows,contract)=>{
   const activeInRegistry=(rows||[]).filter(row=>row.is_registry_active_life===true);
   const extinctInRuns=(rows||[]).filter(row=>row.extinction_seen_in_runs===true);
+  const counts=contract?.counts||{};
+  const labels=contract?.labels||{};
   const aliveList=document.getElementById('alive-lives');
   const deadList=document.getElementById('dead-lives');
-  document.getElementById('alive-count').textContent=String(activeInRegistry.length);
-  document.getElementById('dead-count').textContent=String(extinctInRuns.length);
+  document.getElementById('alive-count').textContent=String(counts.alive_lives??activeInRegistry.length);
+  document.getElementById('dead-count').textContent=String(counts.dead_lives??extinctInRuns.length);
+  document.getElementById('alive-count').title=labels.alive_lives||'Vies vivantes';
+  document.getElementById('dead-count').title=labels.dead_lives||'Vies mortes';
   aliveList.innerHTML='';
   deadList.innerHTML='';
   for(const row of activeInRegistry){const li=document.createElement('li');li.textContent=row.life||na();aliveList.appendChild(li);} 
@@ -188,7 +192,7 @@ export const loadLivesBoard=()=>{
     if(livesUiState.focus==='selected'){tableRows=tableRows.filter(row=>row.selected_life);}
     if(livesUiState.focus==='at_risk'){tableRows=tableRows.filter(row=>(row.__riskLevel||0)>=1);}
     livesUiState.rowsByLife=new Map(mappedRows.map(row=>[row.life,row]));
-    renderLivesBuckets(Object.entries(d.lives||{}).map(([life,payload])=>({life,...payload})));
+    renderLivesBuckets(Object.entries(d.lives||{}).map(([life,payload])=>({life,...payload})),d.life_metrics_contract);
     renderLivesTable(tableRows);
     if(livesUiState.selectedLife&&livesUiState.rowsByLife.has(livesUiState.selectedLife)){showLifeDetails(livesUiState.selectedLife);}
     else if(tableRows.length){showLifeDetails(tableRows[0].life||'');}
