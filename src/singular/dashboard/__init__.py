@@ -11,6 +11,7 @@ import os
 import sys
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
 from singular.lives import get_registry_root, load_registry, set_life_status
 from singular.life.vital import compute_vital_timeline
 from singular.metrics.autonomy import compute_autonomy_metrics
@@ -46,6 +47,8 @@ def create_app(
     app = FastAPI()
     actions = DashboardActionService(home=base_dir)
     templates_dir = Path(__file__).parent / "templates"
+    static_dir = Path(__file__).parent / "static"
+    app.mount("/static", StaticFiles(directory=static_dir), name="dashboard-static")
 
     def _render_template(name: str, replacements: dict[str, str] | None = None) -> str:
         template = (templates_dir / name).read_text(encoding="utf-8")
