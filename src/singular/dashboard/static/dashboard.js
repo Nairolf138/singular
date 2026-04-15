@@ -11,9 +11,121 @@ const ws=new WebSocket(`ws://${location.host}/ws`);
 const livesTableState={sortBy:'score',sortOrder:'desc'};
 const liveState={paused:false,autoScroll:true,events:[]};
 const scopeState={currentLifeOnly:false};
+const schedulerState={paused:false};
+const schedulerTasks=new Map();
+let schedulerTimer=null;
+const schedulerConfig={
+  tickMs:500,
+  backoff:{baseMs:1500,maxMs:30000,multiplier:2},
+  frequencies:{
+    context:7000,
+    cockpit:5000,
+    ecosystem:5000,
+    timeline:4000,
+    lives:4000,
+    reflections:6000,
+    genealogy:10000,
+    quests:10000,
+    hostVitals:5000,
+  },
+};
+const schedulerLabelIds={
+  context:'parametres',
+  cockpit:'cockpit',
+  ecosystem:'cockpit',
+  timeline:'timeline-section',
+  lives:'vies',
+  reflections:'reflections-section',
+  genealogy:'vies',
+  quests:'parametres',
+  hostVitals:'cockpit',
+};
+const fmtTimestamp=(value=new Date())=>{
+  const d=value instanceof Date?value:new Date(value);
+  if(Number.isNaN(d.getTime())){return 'n/a';}
+  return d.toLocaleString('fr-FR',{hour12:false});
+};
+const ensureUpdateLabel=(taskName)=>{
+  const hostSection=document.getElementById(schedulerLabelIds[taskName]||'');
+  if(!hostSection){return null;}
+  const labelId=`last-update-${taskName}`;
+  let label=document.getElementById(labelId);
+  if(!label){
+    label=document.createElement('div');
+    label.id=labelId;
+    label.className='status-muted';
+    label.textContent='Dernière mise à jour: jamais';
+    hostSection.appendChild(label);
+  }
+  return label;
+};
+const markUpdated=(taskName,at)=>{
+  const label=ensureUpdateLabel(taskName);
+  if(label){label.textContent=`Dernière mise à jour (${taskName}): ${fmtTimestamp(at)}`;}
+};
+const markUpdateError=(taskName,error)=>{
+  const label=ensureUpdateLabel(taskName);
+  if(label){label.textContent=`Dernière mise à jour (${taskName}): erreur · ${error?.message||'échec réseau/API'}`;}
+};
+const shouldBackoff=(error)=>Boolean(error);
+const registerTask=(name,loader,intervalMs)=>{
+  schedulerTasks.set(name,{name,loader,intervalMs,nextRunAt:0,inFlight:false,errorCount:0,lastRunAt:null});
+};
+const runTask=async task=>{
+  if(task.inFlight||schedulerState.paused){return;}
+  task.inFlight=true;
+  task.lastRunAt=Date.now();
+  try{
+    await task.loader();
+    task.errorCount=0;
+    task.nextRunAt=Date.now()+task.intervalMs;
+    markUpdated(task.name,new Date());
+  }catch(error){
+    if(shouldBackoff(error)){
+      task.errorCount+=1;
+      const factor=schedulerConfig.backoff.multiplier**(task.errorCount-1);
+      const retryIn=Math.min(schedulerConfig.backoff.maxMs,schedulerConfig.backoff.baseMs*factor);
+      task.nextRunAt=Date.now()+retryIn;
+      markUpdateError(task.name,error);
+    }else{
+      task.nextRunAt=Date.now()+task.intervalMs;
+    }
+  }finally{
+    task.inFlight=false;
+  }
+};
+const schedulerTick=()=>{
+  if(schedulerState.paused){return;}
+  const now=Date.now();
+  for(const task of schedulerTasks.values()){
+    if(task.nextRunAt<=now&&!task.inFlight){runTask(task);}
+  }
+};
+const startScheduler=()=>{
+  if(schedulerTimer){clearInterval(schedulerTimer);}
+  schedulerTimer=setInterval(schedulerTick,schedulerConfig.tickMs);
+  schedulerTick();
+};
+const toggleSchedulerPause=()=>{
+  schedulerState.paused=!schedulerState.paused;
+  const status=document.getElementById('updates-status');
+  const button=document.getElementById('updates-toggle');
+  if(status){status.textContent=schedulerState.paused?'Mises à jour globales: pause':'Mises à jour globales: actives';}
+  if(button){button.textContent=schedulerState.paused?'Reprendre les mises à jour':'Pause updates';}
+};
+const bootstrapPauseControls=()=>{
+  const section=document.getElementById('parametres');
+  if(!section){return;}
+  const wrap=document.createElement('div');
+  wrap.className='panel';
+  wrap.innerHTML="<h3 class='heading-reset-top'>Contrôle des mises à jour</h3><div id='updates-status'>Mises à jour globales: actives</div><button id='updates-toggle' type='button'>Pause updates</button>";
+  section.prepend(wrap);
+  document.getElementById('updates-toggle').onclick=toggleSchedulerPause;
+};
 
 const setStatusTone=(el,tone)=>{el.classList.remove('status-good','status-warn','status-bad');if(tone==='good'){el.classList.add('status-good');}if(tone==='warn'){el.classList.add('status-warn');}if(tone==='bad'){el.classList.add('status-bad');}};
 const withScope=(url)=>{const u=new URL(url,window.location.origin);if(scopeState.currentLifeOnly){u.searchParams.set('current_life_only','true');}return `${u.pathname}${u.search}`;};
+const fetchJson=(url,options)=>fetch(url,options).then(async response=>{if(!response.ok){throw new Error(`HTTP ${response.status} sur ${url}`);}return response.json();});
 const renderDailySkills=(dailySkills)=>{
   const frequency=dailySkills?.frequency_totals||{};
   const progression=dailySkills?.progression_pipeline||{};
@@ -120,7 +232,7 @@ const renderHostMetrics=(records)=>{
   }
 };
 
-const loadContext=()=>fetch('/dashboard/context').then(r=>r.json()).then(ctx=>{
+const loadContext=()=>fetchJson('/dashboard/context').then(ctx=>{
   document.getElementById('ctx-root').textContent=ctx.singular_root||'n/a';
   document.getElementById('ctx-home').textContent=ctx.singular_home||'n/a';
   document.getElementById('ctx-lives-count').textContent=String(ctx.registry_lives_count||0);
@@ -140,7 +252,7 @@ const loadContext=()=>fetch('/dashboard/context').then(r=>r.json()).then(ctx=>{
   document.getElementById('kpi-skills-archived').textContent=String(lifecycle.archived||0);
 });
 
-const loadEco=()=>Promise.all([fetch(withScope('/ecosystem')).then(r=>r.json()),fetch(withScope('/lives/comparison?sort_by=last_activity&sort_order=desc')).then(r=>r.json())]).then(([eco,lives])=>{
+const loadEco=()=>Promise.all([fetchJson(withScope('/ecosystem')),fetchJson(withScope('/lives/comparison?sort_by=last_activity&sort_order=desc'))]).then(([eco,lives])=>{
   const summary=eco.summary||{};
   const total=Number(summary.total_organisms||0);
   const alive=Number(summary.alive_organisms||0);
@@ -173,10 +285,10 @@ const loadEco=()=>Promise.all([fetch(withScope('/ecosystem')).then(r=>r.json()),
 });
 
 
-const loadQuests=()=>fetch('/quests').then(r=>r.json()).then(data=>{document.getElementById('quests').textContent=JSON.stringify(data,null,2);});
-const loadHostVitals=()=>fetch(withScope('/runs/latest')).then(r=>r.json()).then(data=>{renderHostMetrics(data?.records||[]);}).catch(()=>{renderHostMetrics([]);});
+const loadQuests=()=>fetchJson('/quests').then(data=>{document.getElementById('quests').textContent=JSON.stringify(data,null,2);});
+const loadHostVitals=()=>fetchJson(withScope('/runs/latest')).then(data=>{renderHostMetrics(data?.records||[]);}).catch(error=>{renderHostMetrics([]);throw error;});
 // Cockpit domain
-const loadCockpit=()=>fetch(withScope('/api/cockpit')).then(r=>r.json()).then(d=>{
+const loadCockpit=()=>fetchJson(withScope('/api/cockpit')).then(d=>{
   const statusBox=document.getElementById('cockpit-status');
   statusBox.textContent=`Statut global: ${d.global_status||'unknown'}`;
   if(d.global_status==='stable'){setStatusTone(statusBox,'good');}
@@ -298,9 +410,9 @@ const renderLivesBuckets=(rows)=>{const activeInRegistry=(rows||[]).filter(row=>
 const renderLivesTable=(rows)=>{const body=document.getElementById('lives-table-body');body.innerHTML='';for(const row of rows||[]){const tr=document.createElement('tr');const score=row.current_health_score===null||row.current_health_score===undefined?'n/a':Number(row.current_health_score).toFixed(1);const stability=row.stability===null||row.stability===undefined?'n/a':`${(Number(row.stability)*100).toFixed(1)}%`;const lastActivity=row.last_activity||'n/a';let badges='';if(row.selected_life){badges+=badge('Vie sélectionnée',BADGE_TONE.success);}else{badges+=badge('Vie non sélectionnée',BADGE_TONE.danger);}if(row.is_registry_active_life){badges+=badge('Vie active dans le registre',BADGE_TONE.success);}else{badges+=badge(`Statut registre: ${row.life_status||'n/a'}`,BADGE_TONE.danger);}if(row.run_terminated){badges+=badge('Run terminé',BADGE_TONE.warning);}if(row.extinction_seen_in_runs){badges+=badge('Extinction détectée',BADGE_TONE.danger);}if(row.has_recent_activity){badges+=badge('Activité récente',BADGE_TONE.info);}if(row.trend==='dégradation'){badges+=badge('dégradation',BADGE_TONE.warning);}if((row.alerts_count||0)>0){badges+=badge(`${row.alerts_count} alertes`,BADGE_TONE.danger);}tr.innerHTML=`<td>${row.life||'n/a'}</td><td>${score}</td><td>${row.trend||'n/a'}</td><td>${stability}</td><td>${lastActivity}</td><td>${row.iterations??0}</td><td>${badges}</td>`;body.appendChild(tr);}if(!(rows||[]).length){const tr=document.createElement('tr');tr.innerHTML="<td colspan='7'>Aucune vie ne correspond aux filtres.</td>";body.appendChild(tr);}};
 const renderUnattachedRuns=(payload)=>{const panel=document.getElementById('unattached-runs-panel');const list=document.getElementById('unattached-runs-list');const runs=(payload?.runs)||[];const runsCount=Number(payload?.runs_count||0);const recordsCount=Number(payload?.records_count||0);document.getElementById('unattached-runs-count').textContent=String(runsCount);document.getElementById('unattached-records-count').textContent=String(recordsCount);list.innerHTML='';if(!runsCount){panel.classList.add('panel-hidden');return;}panel.classList.remove('panel-hidden');for(const item of runs){const li=document.createElement('li');li.textContent=`${item.run_id||'unknown'} · ${item.records_count||0} enregistrements`;list.appendChild(li);}};
 const renderGenealogyTree=(payload)=>{const nodes=payload?.nodes||[];const treeEl=document.getElementById('genealogy-tree');const socialEl=document.getElementById('social-network-tree');const conflictsEl=document.getElementById('active-conflicts');if(!nodes.length){treeEl.textContent='Aucune lignée enregistrée.';socialEl.textContent='Aucun réseau social.';conflictsEl.textContent='Aucun conflit.';return;}const bySlug=new Map(nodes.map(node=>[node.slug,node]));const children=new Map();for(const node of nodes){children.set(node.slug,[]);}for(const node of nodes){for(const parent of (node.parents||[])){if(children.has(parent)){children.get(parent).push(node.slug);}}}const roots=nodes.filter(node=>(node.parents||[]).length===0).map(node=>node.slug);const lines=[];const visit=(slug,depth)=>{const node=bySlug.get(slug);if(!node){return;}const marker=node.active?'★':'•';const status=node.status==='extinct'?'✝':'✓';lines.push(`${'  '.repeat(depth)}${marker} ${node.name} (${node.slug}) [${status}]`);for(const child of (children.get(slug)||[])){visit(child,depth+1);}};for(const root of roots){visit(root,0);}const detached=nodes.filter(node=>!roots.includes(node.slug)&&!(node.parents||[]).every(parent=>bySlug.has(parent)));for(const node of detached){lines.push(`• ${node.name} (${node.slug}) [orphan]`);}treeEl.textContent=lines.join('\n');const socialLines=[];for(const node of nodes){const allies=(node.allies||[]).join(', ')||'-';const rivals=(node.rivals||[]).join(', ')||'-';socialLines.push(`${node.slug} | proximité=${Number(node.proximity_score||0.5).toFixed(2)} | alliés: ${allies} | rivaux: ${rivals}`);}socialEl.textContent=socialLines.join('\n');const conflicts=payload?.active_conflicts||[];conflictsEl.textContent=conflicts.length?conflicts.map(c=>`${c.life_a} ⚔ ${c.life_b}`).join('\n'):'Aucun conflit actif.';};
-const loadGenealogy=()=>fetch('/lives/genealogy').then(r=>r.json()).then(renderGenealogyTree).catch(()=>{document.getElementById('genealogy-tree').textContent='Impossible de charger la généalogie.';});
+const loadGenealogy=()=>fetchJson('/lives/genealogy').then(renderGenealogyTree).catch(error=>{document.getElementById('genealogy-tree').textContent='Impossible de charger la généalogie.';throw error;});
 // Lives board domain
-const loadLivesBoard=()=>{const q=new URLSearchParams();q.set('sort_by',livesTableState.sortBy);q.set('sort_order',livesTableState.sortOrder);if(document.getElementById('filter-active').checked){q.set('active_only','true');}if(document.getElementById('filter-degrading').checked){q.set('degrading_only','true');}if(document.getElementById('filter-dead').checked){q.set('dead_only','true');}const timeWindow=document.getElementById('filter-time-window').value||'all';q.set('time_window',timeWindow);const compareLives=(document.getElementById('filter-compare-lives').value||'').trim();if(compareLives){q.set('compare_lives',compareLives);}if(scopeState.currentLifeOnly){q.set('current_life_only','true');}return fetch(`/lives/comparison?${q.toString()}`).then(r=>r.json()).then(d=>{renderLivesBuckets(Object.entries(d.lives||{}).map(([life,payload])=>({life,...payload})));renderLivesTable(d.table||[]);renderUnattachedRuns(d.unattached_runs);});};
+const loadLivesBoard=()=>{const q=new URLSearchParams();q.set('sort_by',livesTableState.sortBy);q.set('sort_order',livesTableState.sortOrder);if(document.getElementById('filter-active').checked){q.set('active_only','true');}if(document.getElementById('filter-degrading').checked){q.set('degrading_only','true');}if(document.getElementById('filter-dead').checked){q.set('dead_only','true');}const timeWindow=document.getElementById('filter-time-window').value||'all';q.set('time_window',timeWindow);const compareLives=(document.getElementById('filter-compare-lives').value||'').trim();if(compareLives){q.set('compare_lives',compareLives);}if(scopeState.currentLifeOnly){q.set('current_life_only','true');}return fetchJson(`/lives/comparison?${q.toString()}`).then(d=>{renderLivesBuckets(Object.entries(d.lives||{}).map(([life,payload])=>({life,...payload})));renderLivesTable(d.table||[]);renderUnattachedRuns(d.unattached_runs);});};
 for(const button of document.querySelectorAll('#lives-table [data-sort]')){button.onclick=()=>{const next=button.getAttribute('data-sort');if(livesTableState.sortBy===next){livesTableState.sortOrder=livesTableState.sortOrder==='desc'?'asc':'desc';}else{livesTableState.sortBy=next;livesTableState.sortOrder='desc';}loadLivesBoard();};}
 document.getElementById('filter-active').onchange=()=>loadLivesBoard();
 document.getElementById('filter-degrading').onchange=()=>loadLivesBoard();
@@ -312,14 +424,22 @@ const updateLiveStatus=()=>{document.getElementById('live-status').textContent=l
 document.getElementById('live-toggle').onclick=()=>{liveState.paused=!liveState.paused;updateLiveStatus();if(!liveState.paused){renderLiveEvents();}};
 document.getElementById('live-autoscroll').onchange=e=>{liveState.autoScroll=Boolean(e.target.checked);if(liveState.autoScroll){renderLiveEvents();}};
 // Timeline domain
-const loadTimeline=()=>fetch(withScope('/runs/latest')).then(r=>r.json()).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}const q=scopeState.currentLifeOnly?'&current_life_only=true':'';return fetch(`/api/runs/${meta.run}/timeline?page=1&page_size=120${q}`).then(r=>r.json());}).then(data=>{const wrap=document.getElementById('timeline');const summary=document.getElementById('timeline-summary');const impact=document.getElementById('timeline-impact');const diff=document.getElementById('timeline-diff');wrap.innerHTML='';let mutationIndex=0;for(const item of data.items||[]){const row=document.createElement('div');row.className='timeline-item';const btn=document.createElement('button');btn.className='timeline-button';btn.textContent=`${item.event} · ${item.timestamp||'n/a'}`;row.appendChild(btn);if(item.event==='mutation'&&data.run_id){const currentIndex=mutationIndex;mutationIndex+=1;btn.onclick=()=>showMutationDetail(data.run_id,currentIndex);const link=document.createElement('a');link.href=`/runs/${data.run_id}/mutations/${currentIndex}`;link.textContent='Voir détail';link.className='timeline-link';row.appendChild(link);}wrap.appendChild(row);}if(!(data.items||[]).length){summary.textContent='Aucun événement de frise disponible.';impact.textContent='';diff.textContent='';}});
+const loadTimeline=()=>fetchJson(withScope('/runs/latest')).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}const q=scopeState.currentLifeOnly?'&current_life_only=true':'';return fetchJson(`/api/runs/${meta.run}/timeline?page=1&page_size=120${q}`);}).then(data=>{const wrap=document.getElementById('timeline');const summary=document.getElementById('timeline-summary');const impact=document.getElementById('timeline-impact');const diff=document.getElementById('timeline-diff');wrap.innerHTML='';let mutationIndex=0;for(const item of data.items||[]){const row=document.createElement('div');row.className='timeline-item';const btn=document.createElement('button');btn.className='timeline-button';btn.textContent=`${item.event} · ${item.timestamp||'n/a'}`;row.appendChild(btn);if(item.event==='mutation'&&data.run_id){const currentIndex=mutationIndex;mutationIndex+=1;btn.onclick=()=>showMutationDetail(data.run_id,currentIndex);const link=document.createElement('a');link.href=`/runs/${data.run_id}/mutations/${currentIndex}`;link.textContent='Voir détail';link.className='timeline-link';row.appendChild(link);}wrap.appendChild(row);}if(!(data.items||[]).length){summary.textContent='Aucun événement de frise disponible.';impact.textContent='';diff.textContent='';}});
 // Reflections domain
-const loadReflections=()=>fetch(withScope('/runs/latest')).then(r=>r.json()).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}const q=new URLSearchParams();const objective=document.getElementById('reflection-objective').value;const mood=document.getElementById('reflection-mood').value;const success=document.getElementById('reflection-success').value;if(objective){q.set('objective',objective);}if(mood){q.set('mood',mood);}if(success){q.set('success',success);}if(scopeState.currentLifeOnly){q.set('current_life_only','true');}const suffix=q.toString()?`?${q.toString()}`:'';return fetch(`/api/runs/${meta.run}/consciousness${suffix}`).then(r=>r.ok?r.json():{run_id:meta.run,items:[]});}).then(data=>{const wrap=document.getElementById('reflections-timeline');const detail=document.getElementById('reflections-detail');wrap.innerHTML='';for(const item of data.items||[]){const row=document.createElement('div');row.className='timeline-item';const btn=document.createElement('button');btn.className='timeline-button';const mood=item.emotional_state?.mood||'n/a';const objective=item.objective||'n/a';btn.textContent=`${item.ts||'n/a'} · ${objective} · ${mood}`;btn.onclick=()=>{detail.textContent=JSON.stringify(item,null,2);};row.appendChild(btn);wrap.appendChild(row);}if(!(data.items||[]).length){detail.textContent='Aucune réflexion disponible pour ces filtres.';}});
+const loadReflections=()=>fetchJson(withScope('/runs/latest')).then(meta=>{if(!meta.run){return {run_id:null,items:[]};}const q=new URLSearchParams();const objective=document.getElementById('reflection-objective').value;const mood=document.getElementById('reflection-mood').value;const success=document.getElementById('reflection-success').value;if(objective){q.set('objective',objective);}if(mood){q.set('mood',mood);}if(success){q.set('success',success);}if(scopeState.currentLifeOnly){q.set('current_life_only','true');}const suffix=q.toString()?`?${q.toString()}`:'';return fetchJson(`/api/runs/${meta.run}/consciousness${suffix}`);}).then(data=>{const wrap=document.getElementById('reflections-timeline');const detail=document.getElementById('reflections-detail');wrap.innerHTML='';for(const item of data.items||[]){const row=document.createElement('div');row.className='timeline-item';const btn=document.createElement('button');btn.className='timeline-button';const mood=item.emotional_state?.mood||'n/a';const objective=item.objective||'n/a';btn.textContent=`${item.ts||'n/a'} · ${objective} · ${mood}`;btn.onclick=()=>{detail.textContent=JSON.stringify(item,null,2);};row.appendChild(btn);wrap.appendChild(row);}if(!(data.items||[]).length){detail.textContent='Aucune réflexion disponible pour ces filtres.';}});
 document.getElementById('reflection-apply').onclick=()=>loadReflections();
 
 // Module bootstrap
-loadContext();loadEco();loadCockpit();loadTimeline();loadLivesBoard();loadGenealogy();loadQuests();setInterval(()=>{loadContext();loadEco();loadCockpit();loadTimeline();loadLivesBoard();loadGenealogy();loadQuests();},500);
-loadHostVitals();setInterval(()=>{loadHostVitals();},1200);
-loadReflections();setInterval(()=>{loadReflections();},800);
+bootstrapPauseControls();
+registerTask('context',loadContext,schedulerConfig.frequencies.context);
+registerTask('ecosystem',loadEco,schedulerConfig.frequencies.ecosystem);
+registerTask('cockpit',loadCockpit,schedulerConfig.frequencies.cockpit);
+registerTask('timeline',loadTimeline,schedulerConfig.frequencies.timeline);
+registerTask('lives',loadLivesBoard,schedulerConfig.frequencies.lives);
+registerTask('genealogy',loadGenealogy,schedulerConfig.frequencies.genealogy);
+registerTask('quests',loadQuests,schedulerConfig.frequencies.quests);
+registerTask('hostVitals',loadHostVitals,schedulerConfig.frequencies.hostVitals);
+registerTask('reflections',loadReflections,schedulerConfig.frequencies.reflections);
+startScheduler();
 updateLiveStatus();
 ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);return;}if(m.type==='quests'){document.getElementById('quests').textContent=JSON.stringify(m.data,null,2);return;}if(typeof m.run_id==='string'&&typeof m.event==='string'){liveState.events.push({type:m.type,run_id:m.run_id,event:m.event,ts:m.ts||null});if(!liveState.paused){renderLiveEvents();}}};
