@@ -235,3 +235,36 @@ button:hover {
 .diff-added { color:#3ff9a8; }
 .diff-removed { color:#ff6b8d; }
 .diff-hunk { color:#6bc5ff; }
+
+.state-scope { position: relative; min-height: 84px; }
+.state-layer {
+  border: 1px dashed var(--table-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 8px 0;
+  background: rgba(8, 16, 38, 0.82);
+  color: var(--text-secondary);
+}
+.state-layer[data-state='error'] { border-color: rgba(255, 107, 141, 0.42); color: #ffd2dc; }
+.state-layer[data-state='loading'] { border-color: rgba(60, 242, 255, 0.35); }
+.state-layer[data-state='empty'] { border-color: rgba(255, 191, 83, 0.38); }
+.state-layer[data-state='ready'] { display: none; }
+.state-message { margin-bottom: 6px; }
+.skeleton-line {
+  height: 10px;
+  border-radius: 8px;
+  margin: 6px 0;
+  background: linear-gradient(90deg, rgba(97, 117, 190, 0.32) 0%, rgba(143, 164, 236, 0.48) 45%, rgba(97, 117, 190, 0.32) 100%);
+  background-size: 220% 100%;
+  animation: skeleton-shift 1.1s ease-in-out infinite;
+}
+@keyframes skeleton-shift {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+.stale-banner {
+  margin: 0 0 12px;
+  border-color: rgba(255, 191, 83, 0.6);
+  background: rgba(60, 45, 10, 0.5);
+  color: #ffe0a5;
+}
