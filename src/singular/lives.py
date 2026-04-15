@@ -343,7 +343,10 @@ def load_registry() -> dict[str, Any]:
     try:
         with path.open(encoding="utf-8") as fh:
             payload = json.load(fh)
-    except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+    except FileNotFoundError:
+        _LOGGER.debug("Life registry missing at %s (bootstrap mode).", path)
+        return default_registry
+    except (json.JSONDecodeError, OSError) as exc:
         _LOGGER.warning("Failed to load life registry from %s: %s", path, exc)
         return default_registry
 

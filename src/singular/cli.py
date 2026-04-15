@@ -398,7 +398,7 @@ def _preparse_environment(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--root", type=Path)
     parser.add_argument("--home", type=Path)
     parser.add_argument("--life")
-    args, _ = parser.parse_known_args(argv)
+    args, remaining = parser.parse_known_args(argv)
 
     if args.root:
         os.environ["SINGULAR_ROOT"] = str(args.root)
@@ -408,8 +408,21 @@ def _preparse_environment(argv: list[str] | None) -> argparse.Namespace:
     from . import lives as life_module
 
     life_name = _extract_talk_life_alias(argv) or args.life
+    command = next((token for token in remaining if not token.startswith("-")), None)
+    subcommand = None
+    if command is not None:
+        command_index = remaining.index(command)
+        subcommand = next(
+            (token for token in remaining[command_index + 1 :] if not token.startswith("-")),
+            None,
+        )
+    is_creation_bootstrap_command = command == "birth" or (
+        command == "lives" and subcommand == "create"
+    )
     needs_resolution = life_name is not None or (
-        args.home is None and "SINGULAR_HOME" not in os.environ
+        not is_creation_bootstrap_command
+        and args.home is None
+        and "SINGULAR_HOME" not in os.environ
     )
     if needs_resolution:
         life_dir = life_module.resolve_life(life_name)
@@ -1353,8 +1366,10 @@ def main(argv: list[str] | None = None) -> int:
         elif args.lives_command == "create":
             name = args.name or "New life"
             metadata = bootstrap_life(name, seed=args.seed)
+            registry_root = get_registry_root()
             os.environ["SINGULAR_HOME"] = str(metadata.path)
             print(f"Vie créée: {metadata.name} ({metadata.slug}) → {metadata.path}")
+            print(f"Registre de vies utilisé: {registry_root}")
         elif args.lives_command == "use":
             life_dir = resolve_life(args.name)
             if life_dir is None:

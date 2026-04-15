@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -151,6 +152,18 @@ def test_load_registry_returns_default_for_empty_file(
 
     assert registry == {"active": None, "lives": {}}
     assert "Failed to load life registry" in caplog.text
+
+
+def test_load_registry_missing_file_is_bootstrap_without_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    caplog.set_level(logging.WARNING, logger="singular.lives")
+
+    registry = load_registry()
+
+    assert registry == {"active": None, "lives": {}}
+    assert "Failed to load life registry" not in caplog.text
 
 
 def test_load_registry_returns_default_for_invalid_json(
