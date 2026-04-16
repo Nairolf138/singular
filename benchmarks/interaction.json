@@ -1,0 +1,17 @@
+{
+  "domain": "interaction",
+  "cases": [
+    {
+      "id": "interaction_clarification_1",
+      "prompt": "Répondre à une demande ambiguë.",
+      "reference_keywords": ["clarifier", "question", "objectif"],
+      "candidate_answer": "Il faut clarifier l'objectif avec une question ciblée."
+    },
+    {
+      "id": "interaction_ton_1",
+      "prompt": "Adopter un ton professionnel et bienveillant.",
+      "reference_keywords": ["professionnel", "bienveillant", "concis"],
+      "candidate_answer": "Utiliser un ton professionnel, bienveillant et concis."
+    }
+  ]
+}

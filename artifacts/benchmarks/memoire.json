@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-16T00:36:30.305881+00:00",
+  "domain": "memoire",
+  "score": 1.0,
+  "case_count": 2,
+  "cases": [
+    {
+      "id": "memoire_contexte_1",
+      "prompt": "Retenir une préférence utilisateur exprimée plus tôt.",
+      "score": 1.0,
+      "max_score": 1.0
+    },
+    {
+      "id": "memoire_restitution_1",
+      "prompt": "Restituer une décision passée avec justification.",
+      "score": 1.0,
+      "max_score": 1.0
+    }
+  ]
+}

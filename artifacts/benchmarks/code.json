@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-16T00:36:30.305317+00:00",
+  "domain": "code",
+  "score": 0.8334,
+  "case_count": 2,
+  "cases": [
+    {
+      "id": "code_complexite_1",
+      "prompt": "Donner la complexité de la recherche binaire.",
+      "score": 1.0,
+      "max_score": 1.0
+    },
+    {
+      "id": "code_qualite_1",
+      "prompt": "Comment sécuriser une écriture de fichier JSON ?",
+      "score": 0.6667,
+      "max_score": 1.0
+    }
+  ]
+}

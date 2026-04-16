@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-16T00:36:30.306633+00:00",
+  "global_score": 0.9667,
+  "domain_scores": {
+    "adaptation": 1.0,
+    "code": 0.8334,
+    "interaction": 1.0,
+    "memoire": 1.0,
+    "planification": 1.0,
+    "raisonnement": 1.0
+  },
+  "weights": {
+    "adaptation": 0.15,
+    "code": 0.2,
+    "interaction": 0.15,
+    "memoire": 0.15,
+    "planification": 0.15,
+    "raisonnement": 0.2
+  },
+  "non_regression": {
+    "max_allowed_drop": 0.05,
+    "previous_global_score": 0.9667,
+    "drop": 0.0,
+    "status": "passed"
+  }
+}

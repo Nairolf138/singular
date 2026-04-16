@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-16T00:36:30.305636+00:00",
+  "domain": "interaction",
+  "score": 1.0,
+  "case_count": 2,
+  "cases": [
+    {
+      "id": "interaction_clarification_1",
+      "prompt": "Répondre à une demande ambiguë.",
+      "score": 1.0,
+      "max_score": 1.0
+    },
+    {
+      "id": "interaction_ton_1",
+      "prompt": "Adopter un ton professionnel et bienveillant.",
+      "score": 1.0,
+      "max_score": 1.0
+    }
+  ]
+}

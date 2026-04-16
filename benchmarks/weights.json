@@ -1,0 +1,8 @@
+{
+  "raisonnement": 0.2,
+  "code": 0.2,
+  "planification": 0.15,
+  "memoire": 0.15,
+  "interaction": 0.15,
+  "adaptation": 0.15
+}

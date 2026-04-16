@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-16T00:36:30.306069+00:00",
+  "domain": "planification",
+  "score": 1.0,
+  "case_count": 2,
+  "cases": [
+    {
+      "id": "planification_release_1",
+      "prompt": "Planifier un déploiement en 3 phases.",
+      "score": 1.0,
+      "max_score": 1.0
+    },
+    {
+      "id": "planification_priorisation_1",
+      "prompt": "Prioriser un backlog critique.",
+      "score": 1.0,
+      "max_score": 1.0
+    }
+  ]
+}

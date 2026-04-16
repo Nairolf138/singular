@@ -1,0 +1,17 @@
+{
+  "domain": "planification",
+  "cases": [
+    {
+      "id": "planification_release_1",
+      "prompt": "Planifier un déploiement en 3 phases.",
+      "reference_keywords": ["canary", "monitoring", "rollback"],
+      "candidate_answer": "Commencer par canary, surveiller avec monitoring, puis rollback si besoin."
+    },
+    {
+      "id": "planification_priorisation_1",
+      "prompt": "Prioriser un backlog critique.",
+      "reference_keywords": ["impact", "urgence", "dépendances"],
+      "candidate_answer": "Classer par impact et urgence en tenant compte des dépendances."
+    }
+  ]
+}

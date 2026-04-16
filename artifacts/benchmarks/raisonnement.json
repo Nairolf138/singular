@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-16T00:36:30.306247+00:00",
+  "domain": "raisonnement",
+  "score": 1.0,
+  "case_count": 2,
+  "cases": [
+    {
+      "id": "raisonnement_deduction_1",
+      "prompt": "Si tous les A sont B et tous les B sont C, que peut-on dire des A ?",
+      "score": 1.0,
+      "max_score": 1.0
+    },
+    {
+      "id": "raisonnement_causal_1",
+      "prompt": "Identifier une cause probable d'une baisse de conversion après changement d'interface.",
+      "score": 1.0,
+      "max_score": 1.0
+    }
+  ]
+}
