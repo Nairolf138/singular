@@ -1,0 +1,17 @@
+{
+  "domain": "adaptation",
+  "cases": [
+    {
+      "id": "adaptation_contrainte_1",
+      "prompt": "Adapter la réponse quand le réseau est indisponible.",
+      "reference_keywords": ["fallback", "hors ligne", "continuité"],
+      "candidate_answer": "Prévoir un fallback hors ligne pour assurer la continuité."
+    },
+    {
+      "id": "adaptation_feedback_1",
+      "prompt": "Intégrer un feedback utilisateur négatif.",
+      "reference_keywords": ["feedback", "itération", "ajustement"],
+      "candidate_answer": "Le feedback déclenche une itération avec ajustement de la solution."
+    }
+  ]
+}

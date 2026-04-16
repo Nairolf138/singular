@@ -1,0 +1,17 @@
+{
+  "domain": "memoire",
+  "cases": [
+    {
+      "id": "memoire_contexte_1",
+      "prompt": "Retenir une préférence utilisateur exprimée plus tôt.",
+      "reference_keywords": ["préférence", "persistée", "contexte"],
+      "candidate_answer": "La préférence doit être persistée et réinjectée dans le contexte."
+    },
+    {
+      "id": "memoire_restitution_1",
+      "prompt": "Restituer une décision passée avec justification.",
+      "reference_keywords": ["décision", "historique", "justification"],
+      "candidate_answer": "La décision est relue depuis l'historique avec sa justification."
+    }
+  ]
+}

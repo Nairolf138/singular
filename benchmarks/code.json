@@ -1,0 +1,17 @@
+{
+  "domain": "code",
+  "cases": [
+    {
+      "id": "code_complexite_1",
+      "prompt": "Donner la complexité de la recherche binaire.",
+      "reference_keywords": ["O(log n)", "complexité", "recherche binaire"],
+      "candidate_answer": "La complexité de la recherche binaire est O(log n)."
+    },
+    {
+      "id": "code_qualite_1",
+      "prompt": "Comment sécuriser une écriture de fichier JSON ?",
+      "reference_keywords": ["temporaire", "atomique", "validation"],
+      "candidate_answer": "On écrit dans un fichier temporaire, on valide puis on remplace de façon atomique."
+    }
+  ]
+}

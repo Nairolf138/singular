@@ -1,0 +1,17 @@
+{
+  "domain": "raisonnement",
+  "cases": [
+    {
+      "id": "raisonnement_deduction_1",
+      "prompt": "Si tous les A sont B et tous les B sont C, que peut-on dire des A ?",
+      "reference_keywords": ["A", "C", "tous"],
+      "candidate_answer": "Tous les A appartiennent aussi à C."
+    },
+    {
+      "id": "raisonnement_causal_1",
+      "prompt": "Identifier une cause probable d'une baisse de conversion après changement d'interface.",
+      "reference_keywords": ["friction", "parcours", "utilisateur"],
+      "candidate_answer": "Une friction introduite dans le parcours utilisateur peut expliquer la baisse."
+    }
+  ]
+}
