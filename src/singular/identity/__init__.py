@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .coherence import CoherenceDecision, IdentityCoherenceGuard, IdentityInvariants, detect_contradictions
 from .consolidation import ConsolidationPipeline, ConsolidationPolicy, ConsolidationResult
 from .episodic_store import EpisodicStore
 from .self_model import IdentityInvariantError, SelfModelStore
@@ -56,8 +57,11 @@ def read_identity(path: Path | str = Path("id.json")) -> Identity:
 
 
 __all__ = [
+    "CoherenceDecision",
     "ConsolidationPipeline",
     "ConsolidationPolicy",
+    "IdentityCoherenceGuard",
+    "IdentityInvariants",
     "ConsolidationResult",
     "EpisodicStore",
     "Identity",
@@ -65,5 +69,6 @@ __all__ = [
     "SemanticMemoryStore",
     "SelfModelStore",
     "create_identity",
+    "detect_contradictions",
     "read_identity",
 ]
