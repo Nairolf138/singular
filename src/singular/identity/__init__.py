@@ -1,13 +1,18 @@
-"""Identity file creation and reading utilities."""
+"""Identity primitives and memory consolidation helpers."""
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from .consolidation import ConsolidationPipeline, ConsolidationPolicy, ConsolidationResult
+from .episodic_store import EpisodicStore
+from .self_model import IdentityInvariantError, SelfModelStore
+from .semantic_memory import SemanticMemoryStore
 
 
 @dataclass
@@ -23,22 +28,7 @@ class Identity:
 def create_identity(
     name: str, soulseed: str, path: Path | str = Path("id.json")
 ) -> Identity:
-    """Create an identity JSON file.
-
-    Parameters
-    ----------
-    name:
-        Name of the identity.
-    soulseed:
-        Seed string representing the soul.
-    path:
-        Path where the ``id.json`` file will be written.
-
-    Returns
-    -------
-    Identity
-        The identity information that was written to the file.
-    """
+    """Create an identity JSON file."""
 
     identity = Identity(
         name=name,
@@ -56,21 +46,24 @@ def create_identity(
 
 
 def read_identity(path: Path | str = Path("id.json")) -> Identity:
-    """Read an identity JSON file.
-
-    Parameters
-    ----------
-    path:
-        Path to the ``id.json`` file.
-
-    Returns
-    -------
-    Identity
-        The identity information loaded from the file.
-    """
+    """Read an identity JSON file."""
 
     path = Path(path)
     with path.open(encoding="utf-8") as file:
         data: dict[str, Any] = json.load(file)
 
     return Identity(**data)
+
+
+__all__ = [
+    "ConsolidationPipeline",
+    "ConsolidationPolicy",
+    "ConsolidationResult",
+    "EpisodicStore",
+    "Identity",
+    "IdentityInvariantError",
+    "SemanticMemoryStore",
+    "SelfModelStore",
+    "create_identity",
+    "read_identity",
+]
