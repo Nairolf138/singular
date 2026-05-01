@@ -42,6 +42,8 @@ from singular.environment.world_resources import CompetitorIntent, WorldResource
 from singular.goals import IntrinsicGoals
 from singular.resource_manager import ResourceManager
 from singular.lives import load_registry, set_life_status
+from singular.life.effectors import perform_action
+from singular.life.world_state import PersistentWorldState
 
 from . import sandbox
 from .death import DeathMonitor
@@ -814,6 +816,8 @@ def run(
         health_tracker = HealthTracker.from_state(state.health_counters)
         delayed: list[tuple[float, str, Path]] = []
         tick_count = 0
+        persistent_world_state_path = Path(os.environ.get("SINGULAR_HOME", ".")) / "mem" / "world_state.lifecycle.json"
+        persistent_world_state = PersistentWorldState.load(persistent_world_state_path)
         while time.time() - start < budget_seconds:
             if max_iterations is not None and tick_count >= max_iterations:
                 break
@@ -859,6 +863,11 @@ def run(
                 if hasattr(psyche, "irrational_decision"):
                     decision = psyche.irrational_decision(rng)
             selected_org = world.organisms[org_name]
+            for penalty in persistent_world_state.consume_due_penalties(state.iteration):
+                selected_org.energy += penalty.energy_delta
+                persistent_world_state.mortality_pressure = max(
+                    0.0, persistent_world_state.mortality_pressure + penalty.mortality_delta
+                )
             if selected_org.degraded_mode and state.iteration % DEGRADED_MUTATION_INTERVAL != 0:
                 logger.log_interaction(
                     "degraded_mode_throttle",
@@ -1369,6 +1378,27 @@ def run(
                     )
                 )
 
+            action_name = "simulated_world_task" if accepted else "structured_user_interaction"
+            if action_resolution.granted:
+                action_name = "resource_management"
+            effect_result = perform_action(
+                action_name,
+                {
+                    "risk": persistent_world_state.risks,
+                    "rarity_pressure": persistent_world_state.rarity,
+                    "success_bias": 0.2 if accepted else -0.2,
+                },
+            )
+            selected_org.energy += effect_result.energy_delta
+            persistent_world_state.mortality_pressure = max(
+                0.0,
+                persistent_world_state.mortality_pressure + effect_result.mortality_delta,
+            )
+            persistent_world_state.apply_world_delta(effect_result.world_delta)
+            persistent_world_state.schedule_penalties(
+                state.iteration, effect_result.delayed_penalties
+            )
+
             for other in world.organisms.values():
                 other.energy = max(0.1, other.energy - ecosystem_rules.passive_energy_decay)
                 other.resources = max(
@@ -1570,8 +1600,11 @@ def run(
                 state.iteration,
                 psyche,
                 action_succeeded=accepted,
-                resources=org.resources,
+                resources=max(0.0, org.resources - persistent_world_state.rarity),
             )
+            if persistent_world_state.mortality_pressure > 0.35:
+                dead = True
+                reason = reason or "world_mortality_pressure"
             if dead and reason == "too many failures":
                 can_extinguish = (
                     org.sandbox_violation_streak >= SANDBOX_EXTINCTION_THRESHOLD
@@ -1758,6 +1791,7 @@ def run(
                     world.reproduction_cooldowns.pop(name, None)
                 else:
                     world.reproduction_cooldowns[name] = remaining
+            persistent_world_state.save(persistent_world_state_path)
             tick_count += 1
 
     for org in world.organisms.values():
