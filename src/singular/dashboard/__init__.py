@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from singular.lives import get_registry_root, load_registry, set_life_status
 from singular.life.vital import compute_vital_timeline
 from singular.metrics.autonomy import compute_autonomy_metrics
+from singular.metrics.behavioral_regulation import compute_behavioral_regulation_metrics
 from singular.memory import read_causal_timeline, read_skills
 from singular.storage_retention import retention_status_snapshot
 
@@ -573,6 +574,8 @@ def create_app(
             global_status = "stable"
 
         autonomy_metrics = compute_autonomy_metrics(records)
+        major_decisions = [e for e in records if str(e.get("event", "")).startswith("orchestrator") or str(e.get("event", ""))=="mutation"]
+        behavioral_metrics = compute_behavioral_regulation_metrics(records, decision_events=major_decisions)
         ecosystem = _compute_ecosystem(current_life_only=current_life_only)
         summary = ecosystem.get("summary", {}) if isinstance(ecosystem, dict) else {}
         metrics_contract = (
@@ -667,6 +670,7 @@ def create_app(
             "suggested_actions": suggested_actions,
             "global_status": global_status,
             "autonomy_metrics": autonomy_metrics,
+            "behavioral_regulation_metrics": behavioral_metrics,
             "vital_metrics": {
                 "circadian_cycle": {"phase": circadian_phase, "hour_utc": hour_utc},
                 "active_objectives": {
