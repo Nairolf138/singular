@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 from . import (
@@ -48,6 +49,7 @@ def generate(prompt: str, *, timeout: float = 8.0) -> str:
     if OpenAI is None:
         raise ProviderUnavailableError("openai dependency is not installed")
 
+    start = time.perf_counter()
     try:  # pragma: no cover - network call
         client = OpenAI(api_key=api_key)
         response: Any = client.chat.completions.create(
@@ -69,6 +71,9 @@ def generate(prompt: str, *, timeout: float = 8.0) -> str:
         raise ProviderUnavailableError("Unable to connect to OpenAI") from exc
     except Exception as exc:
         raise ProviderExecutionError("Unexpected OpenAI provider failure") from exc
+    finally:
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        LAST_METRICS.latency_ms = round(elapsed_ms, 2)
 
     filtered = _filter(text)
     usage = getattr(response, "usage", None)
@@ -77,7 +82,6 @@ def generate(prompt: str, *, timeout: float = 8.0) -> str:
     LAST_METRICS.input_tokens = input_tokens or len(prompt.split())
     LAST_METRICS.output_tokens = output_tokens or len(filtered.split())
     LAST_METRICS.estimated_cost_usd = cost_estimate(prompt, filtered, input_tokens=input_tokens, output_tokens=output_tokens)
-    LAST_METRICS.latency_ms = min(timeout * 100.0, 800.0)
     return filtered
 
 

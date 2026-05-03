@@ -46,6 +46,7 @@ def test_generate_reply_success(monkeypatch):
 
 def test_openai_quota_maps_to_typed_error(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    timer_values = iter([1.0, 1.25])
 
     class FakeRateLimitError(Exception):
         pass
@@ -60,9 +61,34 @@ def test_openai_quota_maps_to_typed_error(monkeypatch):
 
     monkeypatch.setattr(llm_openai, "OpenAI", FakeClient)
     monkeypatch.setattr(llm_openai, "RateLimitError", FakeRateLimitError)
+    monkeypatch.setattr(llm_openai.time, "perf_counter", lambda: next(timer_values))
 
     with pytest.raises(ProviderQuotaExceededError):
         llm_openai.generate_reply("hi")
+    assert llm_openai.LAST_METRICS.latency_ms == 250.0
+
+
+def test_generate_reply_latency_uses_elapsed_time(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    class FakeCompletions:
+        def create(self, *, model, messages, max_tokens, timeout):
+            del model, messages, max_tokens, timeout
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))]
+            )
+
+    class FakeClient:
+        def __init__(self, api_key):
+            assert api_key == "test-key"
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    timer_values = iter([10.0, 10.1234])
+    monkeypatch.setattr(llm_openai, "OpenAI", FakeClient)
+    monkeypatch.setattr(llm_openai.time, "perf_counter", lambda: next(timer_values))
+
+    assert llm_openai.generate_reply("hi", timeout=3.0) == "ok"
+    assert llm_openai.LAST_METRICS.latency_ms == 123.4
 
 
 def test_retry_strategy_is_bounded():
