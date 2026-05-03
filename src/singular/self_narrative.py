@@ -69,6 +69,36 @@ class SelfNarrative:
         return payload
 
 
+def extract_planner_signals(narrative: SelfNarrative | None = None) -> dict[str, Any]:
+    """Extract planner-ready narrative signals from the persistent story."""
+
+    current = narrative or load()
+    regrets = current.regrets_and_pride
+    failures = len(regrets.significant_failures)
+    incidents = len(regrets.costly_incidents)
+    successes = len(regrets.significant_successes)
+    abandoned = len(regrets.abandoned_skills)
+    drift = sum(1 for trend in current.trait_trends.values() if trend.trend in {"up", "down"})
+    coherence = max(0.0, min(1.0, 1.0 - ((failures + incidents + abandoned) / max(1.0, successes + failures + 1.0))))
+    regret_pressure = max(0.0, min(1.0, (failures + incidents + abandoned) / 12.0))
+    pride_drive = max(0.0, min(1.0, successes / 12.0))
+    identity_drift = max(0.0, min(1.0, drift / max(1.0, len(current.trait_trends))))
+    dissonance = max(0.0, min(1.0, regret_pressure * 0.6 + identity_drift * 0.4 - pride_drive * 0.3))
+    return {
+        "coherence_signal": coherence,
+        "regret_pressure": regret_pressure,
+        "pride_drive": pride_drive,
+        "identity_drift": identity_drift,
+        "dissonance_signal": dissonance,
+        "counts": {
+            "successes": successes,
+            "failures": failures,
+            "abandoned": abandoned,
+            "incidents": incidents,
+        },
+    }
+
+
 def _default_trait_trends() -> dict[str, TraitTrend]:
     return {key: TraitTrend() for key in _TRAIT_KEYS}
 
