@@ -10,6 +10,7 @@ class RewardContribution:
     resolved_quests: int = 0
     tech_debt_delta: float = 0.0
     user_satisfaction: float = 0.0
+    meta_objective_penalty: float = 0.0
 
 
 def apply_rewards(resource_manager: ResourceManager, contribution: RewardContribution) -> None:
@@ -23,5 +24,10 @@ def apply_rewards(resource_manager: ResourceManager, contribution: RewardContrib
         resource_manager.relational_debt = max(0.0, resource_manager.relational_debt - reduction * 0.5)
     if contribution.user_satisfaction > 0:
         resource_manager.add_warmth(min(10.0, contribution.user_satisfaction * 8.0))
+    if contribution.meta_objective_penalty > 0:
+        penalty = min(12.0, contribution.meta_objective_penalty)
+        resource_manager.consume_energy(penalty)
+        resource_manager.consume_food(penalty * 0.35)
+        resource_manager.cool_down(penalty * 0.25)
     resource_manager._clamp()
     resource_manager._save()

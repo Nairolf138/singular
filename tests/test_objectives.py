@@ -1,5 +1,5 @@
 from singular.psyche import Psyche, Mood
-from singular.motivation import GoalPolicy, Objective
+from singular.motivation import GoalPolicy, Objective, HierarchicalObjectivesManager
 from singular.goals.intrinsic import IntrinsicGoals
 
 
@@ -260,3 +260,14 @@ def test_intrinsic_goals_raise_robustesse_under_eco_relational_debt(tmp_path) ->
 
     assert pressured.robustesse > baseline.robustesse
     assert pressured.exploration < baseline.exploration
+
+
+def test_hierarchical_objectives_persist_and_penalize_meta_failure(tmp_path) -> None:
+    manager = HierarchicalObjectivesManager(path=tmp_path / "hierarchical_goals.json")
+    manager.state.immediate = {"ship_fix": 1.0}
+    manager.revise(perturbation={"interruption_pressure": 0.9})
+    assert manager.state.immediate["ship_fix"] < 1.0
+
+    manager.register_meta_outcome(success=False)
+    manager.register_meta_outcome(success=False)
+    assert manager.graded_vital_penalty() > 0.0
