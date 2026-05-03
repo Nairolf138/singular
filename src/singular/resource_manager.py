@@ -4,12 +4,20 @@ import argparse
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 from typing import List
 from uuid import uuid4
 
 from .memory import add_causal_trace
 from .memory import _atomic_write_text
+
+
+class CapabilityStatus(str, Enum):
+    VIABLE = "viable"
+    FATIGUED = "fatigued"
+    STARVING = "starving"
+    UNSTABLE = "unstable"
 
 
 @dataclass
@@ -30,6 +38,10 @@ class ResourceManager:
     energy_threshold: float = 20.0
     food_threshold: float = 20.0
     warmth_threshold: float = 20.0
+    minimum_viable_energy: float = 8.0
+    minimum_viable_food: float = 8.0
+    minimum_viable_warmth: float = 8.0
+    critical_debt_threshold: float = 85.0
 
     def __post_init__(self) -> None:
         if self.path.exists():
@@ -191,6 +203,44 @@ class ResourceManager:
         if not moods:
             moods.append("content")
         return moods
+
+    def viability_state(self) -> CapabilityStatus:
+        if (
+            self.ecological_debt >= self.critical_debt_threshold
+            or self.relational_debt >= self.critical_debt_threshold
+        ):
+            return CapabilityStatus.UNSTABLE
+        if self.food < self.minimum_viable_food:
+            return CapabilityStatus.STARVING
+        if self.energy < self.minimum_viable_energy or self.warmth < self.minimum_viable_warmth:
+            return CapabilityStatus.FATIGUED
+        return CapabilityStatus.VIABLE
+
+    def can_execute_capability(self, capability: str) -> tuple[bool, CapabilityStatus]:
+        state = self.viability_state()
+        if state in {CapabilityStatus.STARVING, CapabilityStatus.UNSTABLE}:
+            return False, state
+        if capability == "mutation" and self.energy < (self.minimum_viable_energy + 4.0):
+            return False, CapabilityStatus.FATIGUED
+        return True, state
+
+    def apply_capability_cost(self, capability: str) -> tuple[bool, CapabilityStatus]:
+        can_execute, state = self.can_execute_capability(capability)
+        if not can_execute:
+            return False, state
+        costs = {
+            "mutation": (1.8, 0.6, 0.2),
+            "communication": (0.6, 0.3, 0.4),
+            "dashboard": (0.2, 0.1, 0.0),
+            "test_coevolution": (1.0, 0.4, 0.1),
+        }
+        energy_cost, food_cost, warmth_cost = costs.get(capability, (0.3, 0.1, 0.0))
+        if state == CapabilityStatus.FATIGUED:
+            energy_cost *= 0.5
+        self.consume_energy(energy_cost)
+        self.consume_food(food_cost)
+        self.cool_down(warmth_cost)
+        return True, self.viability_state()
 
 
 # ---------------------------------------------------------------------------

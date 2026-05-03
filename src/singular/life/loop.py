@@ -41,6 +41,8 @@ from singular.environment.reputation import ReputationSystem
 from singular.environment.world_resources import CompetitorIntent, WorldResourcePool
 from singular.goals import IntrinsicGoals
 from singular.resource_manager import ResourceManager
+from singular.resource_manager import CapabilityStatus
+from singular.life.metabolism.rewards import RewardContribution, apply_rewards
 from singular.lives import load_registry, set_life_status
 from singular.life.effectors import perform_action
 from singular.life.world_state import PersistentWorldState
@@ -1136,13 +1138,18 @@ def run(
             detection_rate = 0.0
             test_delta = {"added": 0, "removed": 0}
             if coevolve_tests and test_pool is not None and not selected_org.degraded_mode:
-                detection_rate = test_pool.regression_detection_rate(original, mutated)
-                combined_mutated = mutated_score + (robustness_weight * detection_rate)
-                combined_base = base_score
-                accepted = combined_mutated <= combined_base
-                if accepted:
-                    candidates = propose_test_candidates(mutated, rng, max_test_candidates)
-                    test_delta = test_pool.evolve(mutated, candidates, rng)
+                can_run_coevo, coevo_state = resource_manager.apply_capability_cost("test_coevolution")
+                if not can_run_coevo:
+                    detection_rate = 0.0
+                    accepted = accepted and coevo_state != CapabilityStatus.UNSTABLE
+                else:
+                    detection_rate = test_pool.regression_detection_rate(original, mutated)
+                    combined_mutated = mutated_score + (robustness_weight * detection_rate)
+                    combined_base = base_score
+                    accepted = combined_mutated <= combined_base
+                    if accepted:
+                        candidates = propose_test_candidates(mutated, rng, max_test_candidates)
+                        test_delta = test_pool.evolve(mutated, candidates, rng)
                 logger.log_test_coevolution(
                     skill=skill_path.stem,
                     accepted=accepted,
@@ -1266,7 +1273,12 @@ def run(
             # Resource accounting
             cpu_ms = ms_base + ms_new
             moods = manage_resources(resource_manager, cpu_ms / 1000.0, test_runner)
-            resource_manager.consume_energy(0.5)
+            can_mutate, state_flag = resource_manager.apply_capability_cost("mutation")
+            if not can_mutate:
+                accepted = False
+                decision_reason = f"blocked_by_homeostasis:{state_flag.value}"
+            elif state_flag == CapabilityStatus.FATIGUED:
+                accepted = accepted and (mutated_score <= base_score)
             if "tired" in moods:
                 if hasattr(psyche, "feel"):
                     psyche.feel(Mood.FATIGUE)
@@ -1275,6 +1287,17 @@ def run(
                 psyche.feel(Mood.ANGER)
             if "cold" in moods and hasattr(psyche, "feel"):
                 psyche.feel(Mood.LONELY)
+            if state_flag == CapabilityStatus.UNSTABLE and hasattr(psyche, "feel"):
+                psyche.feel(Mood.ANXIETY)
+
+            apply_rewards(
+                resource_manager,
+                RewardContribution(
+                    resolved_quests=1 if accepted else 0,
+                    tech_debt_delta=-0.4 if accepted and reward_delta > 0 else 0.0,
+                    user_satisfaction=0.75 if accepted else 0.0,
+                ),
+            )
 
             if time.time() - last_post >= 0.05:
                 env_notifications.auto_post(
@@ -1601,6 +1624,7 @@ def run(
                 psyche,
                 action_succeeded=accepted,
                 resources=max(0.0, org.resources - persistent_world_state.rarity),
+                homeostasis_viable=resource_manager.viability_state() == CapabilityStatus.VIABLE,
             )
             if persistent_world_state.mortality_pressure > 0.35:
                 dead = True
