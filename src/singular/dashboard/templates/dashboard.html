@@ -264,19 +264,30 @@
     </section>
     <h3>Conversations</h3>
     <section id='conversations-section' class='panel panel-compact'>
-      <table class='table-base table-spacing-top'>
-        <thead>
-          <tr>
-            <th>Objectif</th>
-            <th>État</th>
-            <th>Priorité</th>
-            <th>Propriétaire</th>
-            <th>Dernière action</th>
-            <th>Blocage</th>
-          </tr>
-        </thead>
-        <tbody id='conversations-table-body'></tbody>
-      </table>
+      <div class='conversation-layout'>
+        <aside>
+          <h4 class='heading-reset-top'>Vies sélectionnables</h4>
+          <ul id='conversation-life-list' class='conversation-life-list list-reset-top'>
+            <li class='empty-state'>Aucune vie détectée.</li>
+          </ul>
+        </aside>
+        <div>
+          <div class='conversation-meta panel panel-compact panel-bordered'>
+            <strong id='conversation-selected-life'>Vie: aucune sélection</strong>
+            <div id='conversation-availability' class='text-muted-small'>Disponibilité: inconnue</div>
+            <div id='conversation-last-activity' class='text-muted-small'>Activité récente: non disponible</div>
+            <div id='conversation-last-message' class='text-muted-small'>Dernier message: aucun</div>
+            <div id='conversation-flow-state' class='summary-pill summary-muted'>État: indisponible</div>
+          </div>
+          <h4>Historique récent</h4>
+          <div id='conversation-history' class='conversation-history'>Aucun message.</div>
+          <div class='conversation-composer'>
+            <label for='conversation-input'>Message</label>
+            <textarea id='conversation-input' rows='3' placeholder='Écrire un message à la vie sélectionnée…'></textarea>
+            <button type='button' id='conversation-send'>Envoyer</button>
+          </div>
+        </div>
+      </div>
       <button type='button' id='conversations-json-toggle' class='toggle-more-btn content-top-gap' aria-expanded='false'>Voir JSON</button>
       <pre id='conversations-json-raw' class='panel-hidden content-top-gap'>{"items":[]}</pre>
     </section>

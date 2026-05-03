@@ -404,3 +404,9 @@ body.essential-mode #toggle-essential { border-color: var(--ok); color: var(--ok
   border-color: #ff7a9a;
   box-shadow: 0 0 0 2px rgba(255, 107, 141, 0.28);
 }
+.conversation-layout { display:grid; grid-template-columns:minmax(220px,1fr) minmax(0,2fr); gap:12px; }
+.conversation-life-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.conversation-history { border:1px solid var(--table-border); border-radius:8px; padding:8px; min-height:120px; max-height:240px; overflow:auto; background:rgba(10,20,48,.65); }
+.conversation-composer { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+.conversation-composer textarea { width:100%; }
+.conversation-meta { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
