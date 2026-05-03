@@ -89,6 +89,13 @@ class Psyche:
     social_states: Dict[str, Dict[str, float]] = field(default_factory=dict)
     schema_version: int = field(default=3, init=False)
     mood_history: list[str] = field(default_factory=list)
+    identity_commitments: dict[str, list[str]] = field(
+        default_factory=lambda: {
+            "values": ["coherence", "safety", "utility"],
+            "red_lines": ["harm_user", "silent_data_loss"],
+        }
+    )
+    identity_wounds: float = 0.0
 
     # ``last_mood`` is updated every time :meth:`feel` is called and can be
     # queried by other subsystems (interaction and mutation policies).
@@ -582,6 +589,8 @@ class Psyche:
                 for target, values in self.social_states.items()
                 if isinstance(values, dict)
             },
+            "identity_commitments": self.identity_commitments,
+            "identity_wounds": float(self.identity_wounds),
         }
         if self.objectives:
             state["objectives"] = {
@@ -661,6 +670,11 @@ class Psyche:
                 if isinstance(values, dict)
             },
             mood_history=[str(entry) for entry in mood_history[-256:]],
+            identity_commitments={
+                "values": [str(v) for v in data.get("identity_commitments", {}).get("values", ["coherence", "safety", "utility"])],
+                "red_lines": [str(v) for v in data.get("identity_commitments", {}).get("red_lines", ["harm_user", "silent_data_loss"])],
+            },
+            identity_wounds=_clamp(float(data.get("identity_wounds", 0.0))),
         )
         mood_val = data.get("last_mood")
         psyche.last_mood = Mood(mood_val) if mood_val else None

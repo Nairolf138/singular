@@ -155,6 +155,7 @@ class IntrinsicGoals:
         host_environmental_pressure = 0.0
         host_environmental_variance = 0.0
         narrative = (perception_signals or {}).get("narrative_indicators")
+        planner_narrative = (perception_signals or {}).get("planner_narrative_signals")
         execution_history = (perception_signals or {}).get("execution_history")
         risk_aversion = 0.0
         accumulated_confidence = 0.5
@@ -163,6 +164,11 @@ class IntrinsicGoals:
         repeated_failure_pressure = 0.0
         delayed_crisis_pressure = 0.0
         delayed_opportunity_pressure = 0.0
+        narrative_coherence = 0.5
+        narrative_regret = 0.0
+        narrative_pride = 0.0
+        identity_drift = 0.0
+        identity_wounds = _clamp(_as_float(getattr(psyche, "identity_wounds", 0.0), default=0.0)) if psyche else 0.0
         if isinstance(narrative, Mapping):
             risk_aversion = _mean_mapping_value(narrative.get("risk_aversion_by_action_family"))
             confidence_map = narrative.get("accumulated_confidence_by_action_family")
@@ -176,6 +182,11 @@ class IntrinsicGoals:
             repeated_failure_pressure = _clamp(
                 _as_float(execution_history.get("repeated_failure_pressure", 0.0), default=0.0)
             )
+        if isinstance(planner_narrative, Mapping):
+            narrative_coherence = _clamp(_as_float(planner_narrative.get("coherence_signal", 0.5), default=0.5))
+            narrative_regret = _clamp(_as_float(planner_narrative.get("regret_pressure", 0.0), default=0.0))
+            narrative_pride = _clamp(_as_float(planner_narrative.get("pride_drive", 0.0), default=0.0))
+            identity_drift = _clamp(_as_float(planner_narrative.get("identity_drift", 0.0), default=0.0))
         world_events = (perception_signals or {}).get("world_events")
         if isinstance(world_events, list):
             total_events = float(len(world_events))
@@ -251,6 +262,7 @@ class IntrinsicGoals:
             + 0.25 * resilience
             + 0.2 * telemetry_quality_pressure
             + 0.15 * (1.0 - repeated_failure_pressure),
+            # narrative-sensitive pressure
             robustesse=0.2
             + 0.35 * (1.0 - health_norm)
             + 0.25 * (1.0 - resource_stability)
@@ -284,6 +296,10 @@ class IntrinsicGoals:
             - 0.25 * risk_aversion
             - 0.18 * repeated_failure_pressure,
         )
+        base_weights.coherence += (0.25 * narrative_coherence) + (0.12 * narrative_pride) - (0.2 * identity_drift)
+        base_weights.robustesse += (0.2 * narrative_regret) + (0.25 * identity_wounds)
+        base_weights.efficacite += (0.12 * narrative_pride) - (0.1 * narrative_regret)
+        base_weights.exploration -= (0.15 * narrative_regret) + (0.2 * identity_wounds)
         modulation = apply_perception_rules(perception_signals)
         deltas = modulation["deltas"]
         weights = GoalWeights(
@@ -311,6 +327,11 @@ class IntrinsicGoals:
                     "host_environmental_variance": host_environmental_variance,
                     "narrative_risk_aversion": risk_aversion,
                     "narrative_accumulated_confidence": accumulated_confidence,
+                    "narrative_coherence": narrative_coherence,
+                    "narrative_regret": narrative_regret,
+                    "narrative_pride": narrative_pride,
+                    "identity_drift": identity_drift,
+                    "identity_wounds": identity_wounds,
                     "injuries_pressure": injuries_pressure,
                     "success_boost": success_boost,
                     "repeated_failure_pressure": repeated_failure_pressure,
@@ -489,6 +510,7 @@ class IntrinsicGoals:
         self,
         operator_stats: Mapping[str, Mapping[str, float]],
         skill_reputation: Mapping[str, Mapping[str, float | int]] | None = None,
+        planner_narrative_signals: Mapping[str, Any] | None = None,
     ) -> dict[str, float]:
         """Return per-operator biases using objective weights and usage telemetry."""
 
@@ -512,6 +534,8 @@ class IntrinsicGoals:
         reputation_failure_penalty = _clamp(reputation_failures / max(reputation_samples, 1.0) / 3.0, 0.0, 1.0)
 
         biases: dict[str, float] = {}
+        coherence_bonus = _clamp(_as_float((planner_narrative_signals or {}).get("coherence_signal", 0.0), default=0.0))
+        dissonance_malus = _clamp(_as_float((planner_narrative_signals or {}).get("dissonance_signal", 0.0), default=0.0))
         for name, stats in operator_stats.items():
             count = float(stats.get("count", 0.0))
             reward = float(stats.get("reward", 0.0))
@@ -527,4 +551,6 @@ class IntrinsicGoals:
                 resource_cost=_clamp((count / max_count) * 0.6 + mean_reputation_cost * 0.4),
                 novelty=exploration_signal,
             ) + self.state.weights.efficacite * efficiency_signal + self.state.weights.coherence * telemetry_alignment
+            biases[name] += (self.state.weights.coherence * 0.2 * coherence_bonus)
+            biases[name] -= (self.state.weights.robustesse * 0.25 * dissonance_malus)
         return biases

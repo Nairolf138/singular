@@ -40,6 +40,7 @@ from singular.environment import sim_world
 from singular.environment.reputation import ReputationSystem
 from singular.environment.world_resources import CompetitorIntent, WorldResourcePool
 from singular.goals import IntrinsicGoals
+from singular import self_narrative
 from singular.resource_manager import ResourceManager
 from singular.resource_manager import CapabilityStatus
 from singular.life.metabolism.rewards import RewardContribution, apply_rewards
@@ -958,6 +959,7 @@ def run(
                 continue
 
             policy = psyche.mutation_policy()
+            planner_narrative_signals = self_narrative.extract_planner_signals()
             last_health = (
                 float(state.health_history[-1].get("score", 50.0))
                 if state.health_history
@@ -974,7 +976,7 @@ def run(
                     "ecological_debt": resource_manager.ecological_debt,
                     "relational_debt": resource_manager.relational_debt,
                 },
-                perception_signals=signals,
+                perception_signals={**signals, "planner_narrative_signals": planner_narrative_signals},
             )
             baseline_failure_risk = (
                 float(state.health_counters.get("sandbox_failures", 0))
@@ -1038,6 +1040,7 @@ def run(
             combined_bias = intrinsic_goals.influence_operator_scores(
                 stats,
                 skill_reputation=logger.skill_reputation(),
+                planner_narrative_signals=planner_narrative_signals,
             )
             psyche_bias = getattr(psyche, "operator_bias", lambda names: {})(list(operators.keys()))
             for operator_name, extra_bias in belief_bias.items():
@@ -1106,6 +1109,29 @@ def run(
             elif mutated_score <= base_score:
                 if hasattr(psyche, "feel"):
                     psyche.feel(Mood.PLEASURE)
+
+            identity_violations: list[str] = []
+            commitments = getattr(psyche, "identity_commitments", {})
+            red_lines = commitments.get("red_lines", []) if isinstance(commitments, Mapping) else []
+            for red_line in red_lines:
+                token = str(red_line).strip().lower()
+                if token and token in f"{op_name} {reflection.decision_reason}".lower():
+                    identity_violations.append(token)
+            if identity_violations:
+                psyche.identity_wounds = min(1.0, float(getattr(psyche, "identity_wounds", 0.0)) + 0.15 * len(identity_violations))
+
+            _write_json(
+                Path("mem") / "decision_signal_audit.json",
+                {
+                    "iteration": state.iteration,
+                    "operator": op_name,
+                    "planner_narrative_signals": planner_narrative_signals,
+                    "weights_after": asdict(goal_weights),
+                    "combined_bias_after": combined_bias,
+                    "identity_violations": identity_violations,
+                    "identity_wounds": float(getattr(psyche, "identity_wounds", 0.0)),
+                },
+            )
 
             diff = "".join(
                 difflib.unified_diff(
