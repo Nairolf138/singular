@@ -24,14 +24,31 @@ def test_load_llm_client_local():
 
 def test_local_provider_timeout(monkeypatch):
     monkeypatch.setattr(llm_local, "_get_pipe", lambda: object())
+    timer_values = iter([20.0, 20.4])
 
     def fake_infer(_pipe, _prompt):
         raise ProviderTimeoutError("timed out")
 
     monkeypatch.setattr(llm_local, "_infer", fake_infer)
+    monkeypatch.setattr(llm_local.time, "perf_counter", lambda: next(timer_values))
 
     with pytest.raises(ProviderTimeoutError):
         llm_local.generate_reply("hello")
+    assert llm_local.LAST_METRICS.latency_ms == 400.0
+
+
+def test_local_provider_latency_uses_elapsed_time(monkeypatch):
+    monkeypatch.setattr(llm_local, "_get_pipe", lambda: object())
+    timer_values = iter([30.0, 30.04567])
+
+    def fake_infer(_pipe, _prompt):
+        return "hello world"
+
+    monkeypatch.setattr(llm_local, "_infer", fake_infer)
+    monkeypatch.setattr(llm_local.time, "perf_counter", lambda: next(timer_values))
+
+    assert llm_local.generate_reply("hello") == "world"
+    assert llm_local.LAST_METRICS.latency_ms == 45.67
 
 
 def test_local_retry_bounded(monkeypatch):

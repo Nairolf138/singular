@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+import time
 from typing import Any
 
 from . import ProviderExecutionError, ProviderMetrics, ProviderTimeoutError, ProviderUnavailableError
@@ -49,6 +50,7 @@ def generate(prompt: str, *, timeout: float = 8.0) -> str:
     """Generate a reply using a small local transformers model."""
 
     pipe = _get_pipe()
+    start = time.perf_counter()
     try:
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(_infer, pipe, prompt)
@@ -59,9 +61,11 @@ def generate(prompt: str, *, timeout: float = 8.0) -> str:
         raise
     except Exception as exc:
         raise ProviderExecutionError("Error running local model") from exc
+    finally:
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        LAST_METRICS.latency_ms = round(elapsed_ms, 2)
 
     reply = _filter(text[len(prompt) :].strip())
-    LAST_METRICS.latency_ms = min(timeout * 50.0, 400.0)
     LAST_METRICS.input_tokens = len(prompt.split())
     LAST_METRICS.output_tokens = len(reply.split())
     LAST_METRICS.estimated_cost_usd = cost_estimate(prompt, reply)
