@@ -2,13 +2,6 @@ import {bootstrapDashboard} from './bootstrap.js';
 
 bootstrapDashboard();
 
-const NON_ACTIONABLE_TEXTS=new Set([
-  'non disponible',
-  'pas encore mesuré',
-  'aucune action suggérée',
-  'aucune action immédiate',
-]);
-
 const parseFloatSafe=value=>{
   const match=String(value||'').replace(',', '.').match(/-?\d+(\.\d+)?/);
   return match?Number(match[0]):null;
@@ -29,31 +22,39 @@ const setActionableTone=(el,tone)=>{
 };
 
 const evaluateActionableSignals=()=>{
-  const healthEl=document.getElementById('kpi-health');
+  const expertMode=document.body?.dataset?.dashboardMode==='expert';
   const alertsEl=document.getElementById('kpi-alerts');
   const riskEl=document.getElementById('kpi-vital-risk');
-  const actionEl=document.getElementById('kpi-next-action');
-  const trendEl=document.getElementById('kpi-trend');
-  const autonomyStabilityEl=document.getElementById('kpi-autonomy-stability');
 
-  const health=parseFloatSafe(healthEl?.textContent);
-  if(health===null){setActionableTone(healthEl,null);}
-  else if(health<40){setActionableTone(healthEl,'critical');}
-  else if(health<65){setActionableTone(healthEl,'warn');}
-  else{setActionableTone(healthEl,null);}
-
+  // Mode standard : uniquement alertes d’observation + état d’urgence.
   const alerts=parseFloatSafe(alertsEl?.textContent);
   if(alerts===null||alerts<=0){setActionableTone(alertsEl,null);}
   else if(alerts>=3){setActionableTone(alertsEl,'critical');}
   else{setActionableTone(alertsEl,'warn');}
 
   const riskText=String(riskEl?.textContent||'').toLowerCase();
-  if(riskText.includes('critique')||riskText.includes('critical')){setActionableTone(riskEl,'critical');}
-  else if(riskText.includes('élevé')||riskText.includes('high')||riskText.includes('warn')){setActionableTone(riskEl,'warn');}
-  else{setActionableTone(riskEl,null);}
+  if(riskText.includes('critique')||riskText.includes('critical')||riskText.includes('urgence')||riskText.includes('emergency')){
+    setActionableTone(riskEl,'critical');
+  }else if(riskText.includes('élevé')||riskText.includes('high')||riskText.includes('warn')){
+    setActionableTone(riskEl,'warn');
+  }else{
+    setActionableTone(riskEl,null);
+  }
 
-  const actionText=String(actionEl?.textContent||'').trim().toLowerCase();
-  setActionableTone(actionEl,actionText&&!NON_ACTIONABLE_TEXTS.has(actionText)?'warn':null);
+  if(!expertMode){
+    ['kpi-health','kpi-next-action','kpi-trend','kpi-autonomy-stability'].forEach(id=>setActionableTone(document.getElementById(id),null));
+    return;
+  }
+
+  // Mode expert : conservation des signaux avancés existants.
+  const healthEl=document.getElementById('kpi-health');
+  const trendEl=document.getElementById('kpi-trend');
+  const autonomyStabilityEl=document.getElementById('kpi-autonomy-stability');
+  const health=parseFloatSafe(healthEl?.textContent);
+  if(health===null){setActionableTone(healthEl,null);}
+  else if(health<40){setActionableTone(healthEl,'critical');}
+  else if(health<65){setActionableTone(healthEl,'warn');}
+  else{setActionableTone(healthEl,null);}
 
   const trendText=String(trendEl?.textContent||'').toLowerCase();
   if(trendText.includes('dégradation')||trendText.includes('degradation')){setActionableTone(trendEl,'warn');}
