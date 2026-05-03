@@ -46,6 +46,7 @@ def generate_quests(
     value_performance_tension: Mapping[str, Any] | float | None,
     world_state: Mapping[str, Any] | None,
     resources: Mapping[str, Any] | None,
+    surprise_signals: Mapping[str, Any] | None = None,
 ) -> list[GeneratedQuest]:
     """Generate candidate quests from psyche, history, tensions, and world/resources."""
 
@@ -74,6 +75,11 @@ def generate_quests(
     opportunity = _clamp(_as_float(world.get("opportunity_pressure", 0.0), default=0.0))
 
     generated: list[GeneratedQuest] = []
+    surprise = surprise_signals or {}
+    surprise_level = _clamp(_as_float(surprise.get("surprise", 0.0), default=0.0))
+    frustration_level = _clamp(_as_float(surprise.get("frustration", 0.0), default=0.0))
+    curiosity_spike = _clamp(_as_float(surprise.get("curiosity", curiosity), default=curiosity))
+    repeated_operator_failures = _clamp(_as_float(surprise.get("operator_family_failure_pressure", 0.0), default=0.0))
 
     if tension >= 0.45:
         generated.append(
@@ -95,6 +101,23 @@ def generate_quests(
                 rationale="Historique récent orienté vers l'échec.",
                 origin="intrinsic",
                 priority=_clamp(0.4 + failure_pressure * 0.5 + (1.0 - resilience) * 0.2),
+            )
+        )
+
+    internal_quest_pressure = _clamp(
+        (surprise_level * 0.3)
+        + (frustration_level * 0.35)
+        + (curiosity_spike * 0.15)
+        + (repeated_operator_failures * 0.4)
+    )
+    if internal_quest_pressure >= 0.3:
+        generated.append(
+            GeneratedQuest(
+                name="probe_operator_failure_cluster",
+                objective="Diagnostiquer les échecs récurrents d'une famille d'opérateurs.",
+                rationale="Signaux internes surprise/frustration/curiosité indiquent un blocage durable.",
+                origin="intrinsic",
+                priority=_clamp(0.4 + internal_quest_pressure * 0.55),
             )
         )
 
