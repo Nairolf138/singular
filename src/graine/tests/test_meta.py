@@ -4,6 +4,7 @@ import random
 from pathlib import Path
 
 from graine.meta.dsl import MetaSpec, MetaValidationError, MAX_POPULATION_CAP
+from graine.meta.dsl import ALLOWED_MUTABLE_SURFACES
 from graine.meta.evolve import propose_mutation
 from graine.meta.phantom import replay_snapshots
 from graine.kernel.verifier import DIFF_LIMIT
@@ -101,3 +102,10 @@ def test_propose_mutation_obeys_population_ceiling():
     spec = build_spec(population_cap=MAX_POPULATION_CAP)
     mutated = propose_mutation(spec, rng=random.Random(1))
     assert mutated.population_cap <= MAX_POPULATION_CAP
+
+
+
+def test_mutable_surfaces_are_explicitly_listed():
+    assert "operator_mix" in ALLOWED_MUTABLE_SURFACES
+    assert "weights" in ALLOWED_MUTABLE_SURFACES
+    assert "selection_strategy" in ALLOWED_MUTABLE_SURFACES

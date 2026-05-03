@@ -14,7 +14,13 @@ class MetaValidationError(ValueError):
 MAX_POPULATION_CAP = 100
 _WEIGHT_TOLERANCE = 1e-6
 
-SELECTION_STRATEGIES = {"elitism"}
+SELECTION_STRATEGIES = {"elitism", "pareto"}
+ALLOWED_MUTABLE_SURFACES = {
+    "operator_mix",  # activer/désactiver partiellement des opérateurs autorisés
+    "weights",  # pondérations des IntrinsicGoals
+    "selection_strategy",  # sélecteurs de scheduler/selection
+    "population_cap",
+}
 
 # Minimal JSON schema describing a meta specification
 META_SCHEMA: Dict[str, Any] = {
@@ -79,7 +85,6 @@ class MetaSpec:
         )
 
     def validate(self) -> bool:
-        # Validate weights
         if not self.weights:
             raise MetaValidationError("Weights must be provided")
         total = sum(self.weights.values())
@@ -89,7 +94,6 @@ class MetaSpec:
         ):
             raise MetaValidationError("Weights must be within [0,1] and sum to 1")
 
-        # Validate operator mix
         if not self.operator_mix:
             raise MetaValidationError("Operator mix must be provided")
         unknown = [op for op in self.operator_mix if op not in OPERATOR_NAMES]
@@ -102,17 +106,24 @@ class MetaSpec:
         ):
             raise MetaValidationError("Operator mix must be non-negative and sum to 1")
 
-        # Validate population cap
         if not (0 < self.population_cap <= MAX_POPULATION_CAP):
             raise MetaValidationError("Population cap exceeds constitutional limit")
 
-        # Validate selection strategy
         if self.selection_strategy not in SELECTION_STRATEGIES:
             raise MetaValidationError("Unknown selection strategy")
 
-        # Validate constitutional limits
         if self.diff_max > DIFF_LIMIT:
             raise MetaValidationError("diff_max exceeds constitutional limit")
         if self.forbidden:
             raise MetaValidationError("Cannot relax constitutional forbiddens")
         return True
+
+
+__all__ = [
+    "MetaSpec",
+    "MetaValidationError",
+    "MAX_POPULATION_CAP",
+    "META_SCHEMA",
+    "ALLOWED_MUTABLE_SURFACES",
+    "SELECTION_STRATEGIES",
+]
