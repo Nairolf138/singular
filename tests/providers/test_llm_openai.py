@@ -27,7 +27,7 @@ def test_generate_reply_success(monkeypatch):
 
     class FakeCompletions:
         def create(self, *, model, messages, max_tokens, timeout):
-            assert model == "gpt-3.5-turbo"
+            assert model == llm_openai.DEFAULT_OPENAI_MODEL
             assert messages == [{"role": "user", "content": "hi"}]
             assert max_tokens == 100
             assert timeout == 3.0
@@ -42,6 +42,29 @@ def test_generate_reply_success(monkeypatch):
 
     monkeypatch.setattr(llm_openai, "OpenAI", FakeClient)
     assert llm_openai.generate_reply("hi", timeout=3.0) == "hello"
+
+
+def test_generate_reply_uses_openai_model_env(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_MODEL", " gpt-4.1-mini ")
+
+    class FakeCompletions:
+        def create(self, *, model, messages, max_tokens, timeout):
+            assert model == "gpt-4.1-mini"
+            assert messages == [{"role": "user", "content": "hi"}]
+            assert max_tokens == 100
+            assert timeout == 2.0
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="hello"))]
+            )
+
+    class FakeClient:
+        def __init__(self, api_key):
+            assert api_key == "test-key"
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    monkeypatch.setattr(llm_openai, "OpenAI", FakeClient)
+    assert llm_openai.generate_reply("hi", timeout=2.0) == "hello"
 
 
 def test_openai_quota_maps_to_typed_error(monkeypatch):
@@ -116,3 +139,21 @@ def test_openai_version():
     from packaging import version
 
     assert version.parse(openai.__version__) >= version.parse("1.0.0")
+
+
+def test_healthcheck_exposes_active_model_default(monkeypatch):
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(llm_openai, "OpenAI", object())
+
+    result = llm_openai.healthcheck()
+    assert result["model"] == llm_openai.DEFAULT_OPENAI_MODEL
+
+
+def test_healthcheck_exposes_active_model_from_env(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_MODEL", " gpt-4.1 ")
+    monkeypatch.setattr(llm_openai, "OpenAI", object())
+
+    result = llm_openai.healthcheck()
+    assert result["model"] == "gpt-4.1"

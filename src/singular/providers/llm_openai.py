@@ -16,6 +16,7 @@ from . import (
 )
 
 MAX_RETRIES = 2
+DEFAULT_OPENAI_MODEL = "gpt-3.5-turbo"
 
 LAST_METRICS = ProviderMetrics(provider="openai")
 
@@ -44,6 +45,7 @@ def generate(prompt: str, *, timeout: float = 8.0) -> str:
     """Generate a reply via OpenAI using typed errors for failures."""
 
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    model = (os.getenv("OPENAI_MODEL") or "").strip() or DEFAULT_OPENAI_MODEL
     if not api_key:
         raise ProviderMisconfiguredError("OPENAI_API_KEY not configured")
     if OpenAI is None:
@@ -53,7 +55,7 @@ def generate(prompt: str, *, timeout: float = 8.0) -> str:
     try:  # pragma: no cover - network call
         client = OpenAI(api_key=api_key)
         response: Any = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=100,
             timeout=timeout,
@@ -114,9 +116,15 @@ def embed(text: str, *, timeout: float = 8.0) -> list[float]:
 
 def healthcheck() -> dict[str, object]:
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    model = (os.getenv("OPENAI_MODEL") or "").strip() or DEFAULT_OPENAI_MODEL
     if not api_key:
-        return {"ok": False, "provider": "openai", "error": "missing OPENAI_API_KEY"}
-    return {"ok": OpenAI is not None, "provider": "openai"}
+        return {
+            "ok": False,
+            "provider": "openai",
+            "model": model,
+            "error": "missing OPENAI_API_KEY",
+        }
+    return {"ok": OpenAI is not None, "provider": "openai", "model": model}
 
 
 def cost_estimate(
