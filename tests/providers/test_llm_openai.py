@@ -4,6 +4,7 @@ import pytest
 
 from singular.providers import (
     LLMProviderClient,
+    ProviderExecutionError,
     ProviderMisconfiguredError,
     ProviderQuotaExceededError,
     ProviderRetryExhaustedError,
@@ -157,3 +158,59 @@ def test_healthcheck_exposes_active_model_from_env(monkeypatch):
 
     result = llm_openai.healthcheck()
     assert result["model"] == "gpt-4.1"
+
+
+def test_generate_reply_schema_error_empty_choices(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    class FakeCompletions:
+        def create(self, **_kwargs):
+            return SimpleNamespace(choices=[])
+
+    class FakeClient:
+        def __init__(self, api_key):
+            assert api_key == "test-key"
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    monkeypatch.setattr(llm_openai, "OpenAI", FakeClient)
+
+    with pytest.raises(ProviderExecutionError, match="empty choices"):
+        llm_openai.generate_reply("hi")
+
+
+def test_generate_reply_schema_error_missing_message_content(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    class FakeCompletions:
+        def create(self, **_kwargs):
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace())])
+
+    class FakeClient:
+        def __init__(self, api_key):
+            assert api_key == "test-key"
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    monkeypatch.setattr(llm_openai, "OpenAI", FakeClient)
+
+    with pytest.raises(ProviderExecutionError, match="missing message content"):
+        llm_openai.generate_reply("hi")
+
+
+def test_generate_reply_schema_error_non_string_content(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    class FakeCompletions:
+        def create(self, **_kwargs):
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=["not", "text"]))]
+            )
+
+    class FakeClient:
+        def __init__(self, api_key):
+            assert api_key == "test-key"
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    monkeypatch.setattr(llm_openai, "OpenAI", FakeClient)
+
+    with pytest.raises(ProviderExecutionError, match="not a string"):
+        llm_openai.generate_reply("hi")

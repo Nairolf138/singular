@@ -60,7 +60,23 @@ def generate(prompt: str, *, timeout: float = 8.0) -> str:
             max_tokens=100,
             timeout=timeout,
         )
-        text: str = response.choices[0].message.content
+        choices = getattr(response, "choices", None)
+        if not isinstance(choices, list):
+            raise ProviderExecutionError("OpenAI response schema error: choices is not a list")
+        if not choices:
+            raise ProviderExecutionError("OpenAI response schema error: empty choices")
+
+        message = getattr(choices[0], "message", None)
+        if message is None:
+            raise ProviderExecutionError("OpenAI response schema error: missing message")
+
+        content = getattr(message, "content", None)
+        if content is None:
+            raise ProviderExecutionError("OpenAI response schema error: missing message content")
+        if not isinstance(content, str):
+            raise ProviderExecutionError("OpenAI response schema error: message content is not a string")
+
+        text: str = content
     except APITimeoutError as exc:
         raise ProviderTimeoutError("OpenAI request timed out") from exc
     except TimeoutError as exc:
@@ -71,6 +87,8 @@ def generate(prompt: str, *, timeout: float = 8.0) -> str:
         raise ProviderMisconfiguredError("OpenAI credentials are invalid") from exc
     except APIConnectionError as exc:
         raise ProviderUnavailableError("Unable to connect to OpenAI") from exc
+    except ProviderExecutionError:
+        raise
     except Exception as exc:
         raise ProviderExecutionError("Unexpected OpenAI provider failure") from exc
     finally:
