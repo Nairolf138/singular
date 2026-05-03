@@ -47,6 +47,7 @@ from singular.life.metabolism.rewards import RewardContribution, apply_rewards
 from singular.lives import load_registry, set_life_status
 from singular.life.effectors import perform_action
 from singular.life.world_state import PersistentWorldState
+from singular.life.ecosystem import ARCHETYPES, EcosystemRulesConfig, compute_population_metrics, draw_global_event
 
 from . import sandbox
 from .death import DeathMonitor
@@ -104,6 +105,7 @@ class Organism:
     sandbox_violation_streak: int = 0
     degraded_mode: bool = False
     monitor: DeathMonitor = field(default_factory=DeathMonitor)
+    archetype: str = "explorer"
 
 
 @dataclass
@@ -755,6 +757,7 @@ def run(
     governance_policy: MutationGovernancePolicy | None = None,
     max_iterations: int | None = None,
     ecosystem_rules: EcosystemRules | None = None,
+    ecosystem_mode: str = "production",
 ) -> Checkpoint:
     """Run the evolutionary loop for at most ``budget_seconds`` seconds.
 
@@ -778,12 +781,29 @@ def run(
     organisms_input = _normalize_organism_inputs(skills_dirs)
 
     world = world or WorldState()
-    ecosystem_rules = ecosystem_rules or EcosystemRules()
+    if ecosystem_rules is None:
+        config_path = (
+            Path(__file__).resolve().parents[3] / "configs" / "ecosystem" / f"{ecosystem_mode}.json"
+        )
+        if config_path.exists():
+            config = EcosystemRulesConfig.from_file(config_path)
+            ecosystem_rules = EcosystemRules(
+                resource_competition_unit=config.resource_competition_unit,
+                passive_energy_decay=config.passive_energy_decay,
+                passive_resource_decay=config.passive_resource_decay,
+                crossover_interval=config.crossover_interval,
+                cooperation_probability=config.cooperation_probability,
+                competition_bid_ceiling=config.competition_bid_ceiling,
+                reputation_action_weights=config.reputation_action_weights,
+            )
+        else:
+            ecosystem_rules = EcosystemRules()
     for org_name, skills_dir in organisms_input.items():
         skills_dir.mkdir(parents=True, exist_ok=True)
         if org_name not in world.organisms:
             prototype = mortality or DeathMonitor()
-            world.organisms[org_name] = Organism(skills_dir, monitor=prototype)
+            archetype = list(ARCHETYPES)[len(world.organisms) % len(ARCHETYPES)]
+            world.organisms[org_name] = Organism(skills_dir, monitor=prototype, archetype=archetype)
 
     operators = operators or _load_default_operators()
     stats: Dict[str, Dict[str, float]] = state.stats
@@ -1453,6 +1473,32 @@ def run(
                 other.resources = max(
                     0.1,
                     other.resources - ecosystem_rules.passive_resource_decay,
+                )
+                profile = ARCHETYPES.get(other.archetype)
+                if profile is not None:
+                    other.energy = max(0.1, other.energy + profile.energy_bias)
+                    other.resources = max(0.1, other.resources + profile.resource_bias)
+
+            if state.iteration > 0 and state.iteration % 40 == 0:
+                shock_rng = random.Random(state.iteration)
+                global_event = draw_global_event(shock_rng)
+                pre_event = {name: (o.energy, o.resources) for name, o in world.organisms.items()}
+                for entity in world.organisms.values():
+                    entity.energy = max(0.1, entity.energy - (global_event.intensity * 0.4))
+                    entity.resources = max(0.1, entity.resources - (global_event.intensity * 0.5))
+                post_event = {name: (o.energy, o.resources) for name, o in world.organisms.items()}
+                reorg = compute_population_metrics(pre_event, post_event, global_event.duration_ticks)
+                event_bus.publish(
+                    "ecosystem.global_event",
+                    {
+                        "iteration": state.iteration,
+                        "event_type": global_event.event_type,
+                        "description": global_event.description,
+                        "intensity": global_event.intensity,
+                        "duration_ticks": global_event.duration_ticks,
+                        "population_reorganization": reorg,
+                    },
+                    payload_version=1,
                 )
 
             sandbox_failure = (
