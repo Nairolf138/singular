@@ -14,6 +14,7 @@
     <button type='button' class='tab-trigger' role='tab' id='tab-btn-technique' data-tab='technique' aria-controls='tab-technique'>Technique</button>
   </div>
   <button id='toggle-essential' class='nav-mode-toggle' type='button' aria-pressed='false'>Mode Essentiel : OFF</button>
+  <button id='toggle-technical-details' class='nav-mode-toggle' type='button' aria-pressed='false'>Afficher les détails techniques : OFF</button>
 </nav>
 
 <section class='critical-actions-bar' aria-label='Actions critiques'>
@@ -101,14 +102,14 @@
     <h2>Timeline des événements</h2>
     <p class='section-help'>Timeline + détail mutation pour expliquer rapidement un changement.</p>
     <div id='timeline' class='timeline-strip'></div>
-    <h3>Ce qui a changé grâce à quoi</h3>
-    <ul id='causal-timeline-list' class='list-tight-top'>
+    <h3 class='technical-only'>Ce qui a changé grâce à quoi</h3>
+    <ul id='causal-timeline-list' class='list-tight-top technical-only'>
       <li>Aucune trace causale disponible.</li>
     </ul>
-    <h3>Détail mutation</h3>
-    <p id='timeline-summary'>Cliquez sur un événement de mutation.</p>
-    <pre id='timeline-impact'></pre>
-    <pre id='timeline-diff' class='diff-preview'></pre>
+    <h3 class='technical-only'>Détail mutation</h3>
+    <p id='timeline-summary' class='technical-only'>Cliquez sur un événement de mutation.</p>
+    <pre id='timeline-impact' class='technical-only'></pre>
+    <pre id='timeline-diff' class='diff-preview technical-only'></pre>
   </section>
 </section>
 
@@ -164,7 +165,7 @@
         <ul id='dead-lives' class='list-compact'></ul>
       </div>
     </div>
-    <div class='panel panel-compact panel-bordered panel-top-gap' data-essential-level='2'>
+    <div class='panel panel-compact panel-bordered panel-top-gap technical-only' data-essential-level='2'>
       <div class='toolbar-wrap'>
         <strong>Diagnostic filtrage vies</strong>
         <button type='button' id='lives-reset-filters' class='filter-chip'>Réinitialiser les filtres</button>
