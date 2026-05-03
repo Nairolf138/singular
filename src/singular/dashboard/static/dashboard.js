@@ -11,60 +11,68 @@ const setActionableTone=(el,tone)=>{
   if(!el){return;}
   el.classList.remove('actionable-warn','actionable-critical');
   el.dataset.actionable='off';
-  if(tone==='warn'){
-    el.classList.add('actionable-warn');
-    el.dataset.actionable='on';
-  }
   if(tone==='critical'){
     el.classList.add('actionable-critical');
     el.dataset.actionable='on';
   }
 };
 
+const isUrgencyText=text=>{
+  const content=String(text||'').toLowerCase();
+  return content.includes('critique')||content.includes('critical')||content.includes('urgence')||content.includes('emergency');
+};
+
+const updateDailyNarrativeSummary=()=>{
+  const summaryList=document.getElementById('daily-autonomous-summary');
+  if(!summaryList){return;}
+
+  const healthText=document.getElementById('kpi-health')?.textContent?.trim()||'non disponible';
+  const activeLivesText=document.getElementById('kpi-active-lives')?.textContent?.trim()||'0';
+  const alertsText=document.getElementById('kpi-alerts')?.textContent?.trim()||'0';
+  const trendText=document.getElementById('kpi-trend')?.textContent?.trim()||'non disponible';
+  const riskText=document.getElementById('kpi-vital-risk')?.textContent?.trim()||'';
+
+  const alertsValue=parseFloatSafe(alertsText)||0;
+  const items=[
+    `Autonomie observée: ${healthText}.`,
+    `Stabilité collective: ${activeLivesText} vies actives suivies aujourd’hui.`,
+    `La tendance récente est ${trendText}.`,
+    alertsValue>0
+      ? `${alertsText} incidents critiques ont été enregistrés sans intervention humaine.`
+      : 'Aucun incident critique détecté sur la période observée.'
+  ];
+
+  if(isUrgencyText(riskText) || alertsValue>=3){
+    items.push(`🚨 Urgence humaine requise: ${riskText||'un signal critique demande une validation humaine immédiate.'}`);
+  }
+
+  summaryList.innerHTML='';
+  items.forEach(line=>{
+    const li=document.createElement('li');
+    const urgent=line.startsWith('🚨');
+    li.textContent=line;
+    if(urgent){
+      li.classList.add('actionable-critical');
+      li.dataset.humanRequired='true';
+      li.setAttribute('aria-label','Urgence humaine requise');
+    }
+    summaryList.appendChild(li);
+  });
+};
+
 const evaluateActionableSignals=()=>{
-  const expertMode=document.body?.dataset?.dashboardMode==='expert';
   const alertsEl=document.getElementById('kpi-alerts');
   const riskEl=document.getElementById('kpi-vital-risk');
 
-  // Mode standard : uniquement alertes d’observation + état d’urgence.
   const alerts=parseFloatSafe(alertsEl?.textContent);
-  if(alerts===null||alerts<=0){setActionableTone(alertsEl,null);}
-  else if(alerts>=3){setActionableTone(alertsEl,'critical');}
-  else{setActionableTone(alertsEl,'warn');}
+  if(alerts!==null&&alerts>=3){setActionableTone(alertsEl,'critical');}
+  else{setActionableTone(alertsEl,null);}
 
-  const riskText=String(riskEl?.textContent||'').toLowerCase();
-  if(riskText.includes('critique')||riskText.includes('critical')||riskText.includes('urgence')||riskText.includes('emergency')){
-    setActionableTone(riskEl,'critical');
-  }else if(riskText.includes('élevé')||riskText.includes('high')||riskText.includes('warn')){
-    setActionableTone(riskEl,'warn');
-  }else{
-    setActionableTone(riskEl,null);
-  }
+  if(isUrgencyText(riskEl?.textContent)){ setActionableTone(riskEl,'critical'); }
+  else{ setActionableTone(riskEl,null); }
 
-  if(!expertMode){
-    ['kpi-health','kpi-next-action','kpi-trend','kpi-autonomy-stability'].forEach(id=>setActionableTone(document.getElementById(id),null));
-    return;
-  }
-
-  // Mode expert : conservation des signaux avancés existants.
-  const healthEl=document.getElementById('kpi-health');
-  const trendEl=document.getElementById('kpi-trend');
-  const autonomyStabilityEl=document.getElementById('kpi-autonomy-stability');
-  const health=parseFloatSafe(healthEl?.textContent);
-  if(health===null){setActionableTone(healthEl,null);}
-  else if(health<40){setActionableTone(healthEl,'critical');}
-  else if(health<65){setActionableTone(healthEl,'warn');}
-  else{setActionableTone(healthEl,null);}
-
-  const trendText=String(trendEl?.textContent||'').toLowerCase();
-  if(trendText.includes('dégradation')||trendText.includes('degradation')){setActionableTone(trendEl,'warn');}
-  else{setActionableTone(trendEl,null);}
-
-  const stability=parseFloatSafe(autonomyStabilityEl?.textContent);
-  if(stability===null){setActionableTone(autonomyStabilityEl,null);}
-  else if(stability<50){setActionableTone(autonomyStabilityEl,'critical');}
-  else if(stability<70){setActionableTone(autonomyStabilityEl,'warn');}
-  else{setActionableTone(autonomyStabilityEl,null);}
+  ['kpi-health','kpi-next-action','kpi-trend','kpi-autonomy-stability'].forEach(id=>setActionableTone(document.getElementById(id),null));
+  updateDailyNarrativeSummary();
 };
 
 const bindSeeMoreToggles=()=>{
