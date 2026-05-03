@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "mode": "lab",
+  "resource_competition_unit": 0.8,
+  "passive_energy_decay": 0.04,
+  "passive_resource_decay": 0.015,
+  "crossover_interval": 30,
+  "cooperation_probability": 0.35,
+  "competition_bid_ceiling": 6.0,
+  "reputation_action_weights": {"share": 0.35, "steal": -0.3}
+}
