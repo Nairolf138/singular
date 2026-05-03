@@ -8,7 +8,7 @@
 <nav>
   <strong>Vues :</strong>
   <div class='tabs-nav' role='tablist' aria-label='Navigation des vues principales'>
-    <button type='button' class='tab-trigger' role='tab' id='tab-btn-decider' data-tab='decider-maintenant' aria-controls='tab-decider-maintenant'>Décider maintenant</button>
+    <button type='button' class='tab-trigger' role='tab' id='tab-btn-decider' data-tab='decider-maintenant' aria-controls='tab-decider-maintenant'>État de l’écosystème</button>
     <button type='button' class='tab-trigger' role='tab' id='tab-btn-diagnostiquer' data-tab='diagnostiquer' aria-controls='tab-diagnostiquer'>Diagnostiquer</button>
     <button type='button' class='tab-trigger' role='tab' id='tab-btn-comparer' data-tab='comparer-vies' aria-controls='tab-comparer-vies'>Comparer les vies</button>
     <button type='button' class='tab-trigger' role='tab' id='tab-btn-technique' data-tab='technique' aria-controls='tab-technique'>Technique</button>
@@ -19,44 +19,32 @@
 
 <section id='tab-decider-maintenant' class='tab-pane' role='tabpanel' aria-labelledby='tab-btn-decider'>
   <div class='intro-box'>
-    <strong>Décider maintenant</strong>
-    <ol class='intro-steps'>
-      <li><strong>Statut global</strong> : valider la santé et la tendance.</li>
-      <li><strong>Risques</strong> : traiter d’abord alertes critiques et risque vital.</li>
-      <li><strong>Prochaine action</strong> : appliquer l’action prioritaire recommandée.</li>
-    </ol>
+    <strong>État de l’écosystème</strong>
+    <p class='section-help'>Lecture observationnelle de l’écosystème : santé globale, vies actives, événements critiques et tendance.</p>
+    <p><strong>Les vies agissent de manière autonome ; aucune action humaine requise hors gouvernance.</strong></p>
   </div>
 
   <section id='cockpit'>
-    <h2>Cockpit décisionnel</h2>
-    <p class='section-help'>Vue structurée par niveaux: critique (toujours visible), suivi (repliable), détail (drawer).</p>
+    <h2>État de l’écosystème</h2>
+    <p class='section-help'>Vue synthétique d’observation de l’écosystème (sans prescriptions opérateur).</p>
     <div class='status-legend'>
       <span class='status-pill status-good'>● OK</span>
       <span class='status-pill status-warn'>▲ Alerte</span>
       <span class='status-pill status-bad'>■ Critique</span>
     </div>
     <div class='panel level-panel' data-essential-level='1'>
-      <h3 class='heading-reset-top'>Niveau Critique · action immédiate</h3>
+      <h3 class='heading-reset-top'>Indicateurs clés</h3>
       <div id='cockpit-status' class='card card-value'>Statut global: Non disponible</div>
       <div class='cards-grid'>
-        <div class='card'><div class='card-label kpi-label' title='Niveau global de santé de l’organisme'>Santé</div><div id='kpi-health' class='card-value actionable-signal'>Pas encore mesuré</div><div class='signal-threshold'>Action si &lt; 65 (critique si &lt; 40)</div></div>
-        <div class='card'><div class='card-label kpi-label' title='Nombre d’alertes de niveau critique'>Alertes critiques</div><div id='kpi-alerts' class='card-value actionable-signal'>0</div><div class='signal-threshold'>Action si ≥ 1 (critique si ≥ 3)</div></div>
-        <div class='card'><div class='card-label kpi-label' title='Risque vital courant'>Risque vital</div><div id='kpi-vital-risk' class='card-value actionable-signal'>Non disponible</div><div class='signal-threshold'>Action si risque élevé / critique</div></div>
-        <div class='card'><div class='card-label kpi-label' title='Action prioritaire recommandée'>Prochaine action</div><div id='kpi-next-action' class='card-value actionable-signal'>Non disponible</div><div class='signal-threshold'>Action si recommandation explicite</div></div>
+        <div class='card'><div class='card-label kpi-label' title='Niveau global de santé de l’organisme'>Santé globale</div><div id='kpi-health' class='card-value'>Pas encore mesuré</div></div>
+        <div class='card'><div class='card-label kpi-label' title='Nombre de vies actives'>Vies actives</div><div id='kpi-active-lives' class='card-value'>0</div></div>
+        <div class='card'><div class='card-label kpi-label' title='Nombre d’événements critiques en cours'>Événements critiques</div><div id='kpi-alerts' class='card-value'>0</div></div>
+        <div class='card'><div class='card-label kpi-label' title='Évolution récente du système'>Tendance</div><div id='kpi-trend' class='card-value'>Non disponible</div></div>
       </div>
     </div>
 
     <details id='cockpit-followup' class='panel level-panel' data-essential-level='2' open>
-      <summary>Niveau Suivi · tendances santé/autonomie/vital</summary>
-      <div class='cards-grid content-top-gap'>
-        <div class='card'><div class='card-label kpi-label' title='Évolution récente du système'>Tendance</div><div id='kpi-trend' class='card-value actionable-signal'>Non disponible</div></div>
-        <div class='card'><div class='card-label kpi-label' title='Part des mutations validées'>Mutations acceptées</div><div id='kpi-accepted' class='card-value'>Pas encore mesuré</div></div>
-        <div class='card'><div class='card-label kpi-label' title='Indice de vivacité basé sur des preuves concrètes'>Life liveness index</div><div id='kpi-liveness-index' class='card-value actionable-signal'>0.0</div></div>
-        <div class='card'><div class='card-label'>Stabilité long terme</div><div id='kpi-autonomy-stability' class='card-value actionable-signal'>Pas encore mesuré</div></div>
-        <div class='card'><div class='card-label'>Qualité décision</div><div id='kpi-autonomy-decision' class='card-value'>Pas encore mesuré</div></div>
-        <div class='card'><div class='card-label'>Initiatives</div><div id='kpi-autonomy-proactive' class='card-value'>Pas encore mesuré</div></div>
-        <div class='card'><div class='card-label'>Âge</div><div id='kpi-vital-age' class='card-value'>0</div></div>
-      </div>
+      <summary>Contexte d’observation</summary>
       <div class='panel panel-compact panel-top-gap'>
         <h4 class='heading-reset-top'>Preuves de vie</h4>
         <ul id='kpi-liveness-proofs' class='list-tight-top'><li>Aucune preuve récente.</li></ul>
@@ -87,8 +75,8 @@
       <div id='cockpit-context-more' class='panel-hidden'>
         <h3 class='heading-reset-top'>Dernière mutation notable</h3>
         <div id='kpi-notable-summary'>Aucune mutation notable</div>
-        <h4>Actions suggérées</h4>
-        <ul id='kpi-actions' class='list-tight-top'></ul>
+        <h4>Observations complémentaires</h4>
+        <ul id='kpi-actions' class='list-tight-top'><li>Aucune observation complémentaire.</li></ul>
       </div>
     </div>
   </section>
