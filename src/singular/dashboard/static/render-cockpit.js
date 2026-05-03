@@ -208,6 +208,17 @@ export const loadCockpit=()=>Promise.all([
   document.getElementById('kpi-autonomy-decision').textContent=`${fmtPct(decisionQuality.acceptance_rate)} / ${fmtPct(decisionQuality.regression_rate)}`;
   document.getElementById('kpi-autonomy-latency').textContent=fmtNum(autonomy.perception_to_action_latency_ms,' ms');
   document.getElementById('kpi-autonomy-cost').textContent=fmtNum(autonomy.resource_cost_per_gain);
+  const behavior=d.behavioral_regulation_metrics||{};
+  const behaviorAlerts=behavior.alerts||{};
+  const behaviorCorr=behavior.decision_correlation||{};
+  document.getElementById('kpi-behavior-diversity').textContent=fmtPct(behavior.behavioral_diversity);
+  document.getElementById('kpi-behavior-robustness').textContent=fmtPct(behavior.perturbation_robustness);
+  document.getElementById('kpi-behavior-recovery').textContent=fmtNum(behavior.recovery_time_seconds,' s');
+  document.getElementById('kpi-behavior-goals').textContent=fmtPct(behavior.goal_generation_autonomy);
+  document.getElementById('kpi-behavior-homeostasis').textContent=fmtPct(behavior.homeostatic_stability);
+  document.getElementById('kpi-behavior-trend').textContent=String(behavior.temporal_trend||na());
+  document.getElementById('kpi-behavior-correlation').textContent=`${behaviorCorr.major_decisions_count??0} décisions majeures`;
+  if(behaviorAlerts.homeostasis_unstable||behaviorAlerts.robustness_low){setStatusTone(document.getElementById('kpi-behavior-homeostasis'),'bad');}
   const vital=d.vital_timeline||{};
   const skillLifecycle=d.skills_lifecycle||{};
   const vitalMetrics=d.vital_metrics||{};

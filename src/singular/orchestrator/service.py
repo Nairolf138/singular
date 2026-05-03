@@ -41,6 +41,7 @@ from singular.quests import QuestRuntime
 from singular.sensors import load_host_sensor_thresholds
 from singular.skills.runtime import SkillRuntime
 from singular.routines import RoutinesOrchestrator
+from singular.metrics import compute_behavioral_regulation_metrics, compute_regulation_inputs
 
 log = logging.getLogger(__name__)
 
@@ -142,6 +143,7 @@ class OrchestratorService:
         self._introspection_tick_count = 0
         self._host_thresholds = load_host_sensor_thresholds()
         self._started_at = datetime.now(timezone.utc)
+        self._behavioral_metrics: dict[str, Any] = {}
 
         self._subscribe_external_stimuli()
 
@@ -386,9 +388,13 @@ class OrchestratorService:
             if mood.value == "fatigue":
                 tick_budget *= max(fatigue_slowdown, 1.0)
             adaptation = self._compute_runtime_adaptation()
+            behavior_metrics = self._compute_behavioral_metrics()
+            regulation_inputs = compute_regulation_inputs(behavior_metrics)
             tick_budget *= adaptation["tick_budget_scale"]
+            tick_budget *= regulation_inputs["mutation_rate_scale"]
             tick_budget = max(0.01, min(tick_budget, self.config.mutation_window_seconds))
             cpu_budget_percent *= adaptation["cpu_budget_scale"]
+            cpu_budget_percent *= regulation_inputs["metabolic_pressure_scale"]
             previous_safe_mode = bool(self.governance_policy.safe_mode)
             self.governance_policy.safe_mode = bool(adaptation["enforce_prudent_mode"])
             if (
@@ -407,6 +413,8 @@ class OrchestratorService:
                     "safe_mode": self.governance_policy.safe_mode,
                     "aggressive_exploration": adaptation["allow_aggressive_exploration"],
                     "skip_action_tick": adaptation["skip_action_tick"],
+                    "behavioral_metrics": behavior_metrics,
+                    "regulation_inputs": regulation_inputs,
                 }
                 self.bus.publish("orchestrator.adaptation", audit_payload, payload_version=1)
                 log.info("orchestrator adaptation applied: %s", audit_payload)
@@ -430,9 +438,9 @@ class OrchestratorService:
             if not self.config.dry_run:
                 strategy = self.goals.derive_execution_strategy(self._latest_signals)
                 execution_strategy = dict(strategy)
-                if adaptation["allow_aggressive_exploration"]:
+                if adaptation["allow_aggressive_exploration"] or regulation_inputs["exploration_intensity_scale"] > 1.15:
                     execution_strategy["exploration_intensity"] = "aggressive"
-                    execution_strategy["adaptation_source"] = "stable_resources"
+                    execution_strategy["adaptation_source"] = "stable_resources+behavioral_metrics"
                 routine_specs = [
                     {"id": spec.id, "prompt": spec.prompt, "priority": spec.priority}
                     for spec in self.routines.specs
@@ -627,6 +635,16 @@ class OrchestratorService:
                 "warmth": self.resource_manager.warmth,
             },
         }
+
+    def _compute_behavioral_metrics(self) -> dict[str, Any]:
+        records = self._load_recent_run_events(limit=80)
+        major_decisions = [
+            e for e in self.state.last_events
+            if isinstance(e, dict) and str(e.get("phase", "")) == LifecyclePhase.ACTION.value
+        ]
+        metrics = compute_behavioral_regulation_metrics(records, decision_events=major_decisions)
+        self._behavioral_metrics = metrics
+        return metrics
 
     def _track_action_failure_and_request_help(
         self,
