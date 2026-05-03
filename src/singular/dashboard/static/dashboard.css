@@ -368,3 +368,39 @@ body.essential-mode #toggle-essential { border-color: var(--ok); color: var(--ok
   background: rgba(255, 107, 141, 0.22);
   color: var(--bad);
 }
+
+
+.critical-actions-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: linear-gradient(120deg, rgba(17, 30, 70, 0.94), rgba(11, 22, 55, 0.96));
+  box-shadow: var(--glow);
+}
+
+.critical-action-btn {
+  font-weight: 700;
+  border-color: rgba(127, 166, 255, 0.6);
+}
+
+.critical-action-warning {
+  border-color: rgba(255, 191, 83, 0.75);
+}
+
+.critical-action-danger {
+  border-color: rgba(255, 107, 141, 0.9);
+  color: #ffd7e2;
+  background: linear-gradient(135deg, rgba(110, 24, 44, 0.95), rgba(82, 18, 33, 0.92));
+}
+
+.critical-action-danger:hover {
+  border-color: #ff7a9a;
+  box-shadow: 0 0 0 2px rgba(255, 107, 141, 0.28);
+}
