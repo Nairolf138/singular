@@ -247,6 +247,26 @@ const toggleEssentialMode=()=>{
 };
 
 const DASHBOARD_TAB_KEY='singular.dashboard.lastTab';
+const DASHBOARD_TECHNICAL_DETAILS_KEY='singular.dashboard.technicalDetails';
+
+const applyTechnicalDetailsVisibility=isEnabled=>{
+  document.body.dataset.dashboardMode=isEnabled?'expert':'operator';
+  document.body.classList.toggle('technical-details-enabled',isEnabled);
+  document.querySelectorAll('.technical-only').forEach(node=>{
+    node.classList.toggle('panel-hidden',!isEnabled);
+    node.setAttribute('aria-hidden',isEnabled?'false':'true');
+  });
+};
+
+const toggleTechnicalDetails=()=>{
+  const isEnabled=document.body?.dataset?.dashboardMode!=='expert';
+  applyTechnicalDetailsVisibility(isEnabled);
+  localStorage.setItem(DASHBOARD_TECHNICAL_DETAILS_KEY,isEnabled?'1':'0');
+  const btn=document.getElementById('toggle-technical-details');
+  if(!btn){return;}
+  btn.textContent=`Afficher les détails techniques : ${isEnabled?'ON':'OFF'}`;
+  btn.setAttribute('aria-pressed',isEnabled?'true':'false');
+};
 
 const activateDashboardTab=tabId=>{
   const panes=document.querySelectorAll('.tab-pane');
@@ -283,6 +303,15 @@ const bindTabNavigation=()=>{
 
 const bindCommonHandlers=()=>{
   bindTabNavigation();
+  const technicalDetailsBtn=document.getElementById('toggle-technical-details');
+  const technicalDetailsDefault=localStorage.getItem(DASHBOARD_TECHNICAL_DETAILS_KEY)==='1';
+  applyTechnicalDetailsVisibility(technicalDetailsDefault);
+  if(technicalDetailsBtn){
+    technicalDetailsBtn.textContent=`Afficher les détails techniques : ${technicalDetailsDefault?'ON':'OFF'}`;
+    technicalDetailsBtn.setAttribute('aria-pressed',technicalDetailsDefault?'true':'false');
+    technicalDetailsBtn.onclick=toggleTechnicalDetails;
+  }
+
   const essentialBtn=document.getElementById('toggle-essential');
   const defaultEssential=localStorage.getItem(ESSENTIAL_MODE_KEY)==='1';
   applyEssentialVisibility(defaultEssential);
