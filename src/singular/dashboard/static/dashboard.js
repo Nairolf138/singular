@@ -77,13 +77,17 @@ const evaluateActionableSignals=()=>{
 
 const bindSeeMoreToggles=()=>{
   document.querySelectorAll('[data-expand-target]').forEach(button=>{
+    if(button.dataset.bound==='true'){return;}
+    button.dataset.bound='true';
     button.addEventListener('click',()=>{
       const targetId=button.getAttribute('data-expand-target');
       const target=targetId?document.getElementById(targetId):null;
       if(!target){return;}
+      const openLabel=button.dataset.openLabel||'Voir moins';
+      const closedLabel=button.dataset.closedLabel||'Voir plus';
       const willOpen=target.classList.contains('panel-hidden');
       target.classList.toggle('panel-hidden',!willOpen);
-      button.textContent=willOpen?'Voir moins':'Voir plus';
+      button.textContent=willOpen?openLabel:closedLabel;
       button.setAttribute('aria-expanded',willOpen?'true':'false');
     });
   });

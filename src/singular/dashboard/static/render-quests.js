@@ -16,19 +16,6 @@ const normalizeItem=(item,fallbackTitle='quête')=>({
   blockage: requiredField(item,'blockage',String(item?.blocked_by||item?.blocker||'aucun')),
 });
 
-const bindJsonToggle=(buttonId,rawId)=>{
-  const button=document.getElementById(buttonId);
-  const raw=document.getElementById(rawId);
-  if(!button||!raw||button.dataset.bound==='true'){return;}
-  button.dataset.bound='true';
-  button.addEventListener('click',()=>{
-    const isHidden=raw.classList.contains('panel-hidden');
-    raw.classList.toggle('panel-hidden',!isHidden);
-    button.textContent=isHidden?'Masquer JSON':'Voir JSON';
-    button.setAttribute('aria-expanded',isHidden?'true':'false');
-  });
-};
-
 const renderRows=(rows,tbodyId)=>{
   const tbody=document.getElementById(tbodyId);
   if(!tbody){return;}
@@ -54,7 +41,6 @@ export const renderQuestsSection=payload=>{
   renderRows(rows,'quests-table-body');
   const raw=document.getElementById('quests-json-raw');
   if(raw){raw.textContent=JSON.stringify(payload||{active:[],completed:[]},null,2);}
-  bindJsonToggle('quests-json-toggle','quests-json-raw');
 };
 
 export {normalizeItem};
