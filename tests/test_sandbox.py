@@ -11,6 +11,11 @@ def test_spawn_context_simple_execution():
     assert run("result = 1") == 1
 
 
+def test_missing_result_raises_sandbox_error():
+    with pytest.raises(SandboxError, match="result"):
+        run("value = 1")
+
+
 def test_forbidden_import():
     with pytest.raises(SandboxError):
         run("import os")

@@ -23,6 +23,45 @@ from singular.life.reproduction import ReproductionDecisionPolicy  # noqa: E402
 from singular.events import EventBus  # noqa: E402
 
 
+def test_score_code_with_error_returns_structured_sandbox_score():
+    ok = life_loop.score_code_with_error("result = 3")
+    assert ok == life_loop.SandboxScore(score=3.0)
+    assert ok.ok is True
+    assert ok.error_type is None
+    assert life_loop.score_code("result = 3") == 3.0
+
+    missing = life_loop.score_code_with_error("value = 3")
+    assert missing.score == float("-inf")
+    assert missing.ok is False
+    assert missing.error_type == "missing_result"
+    assert "result" in (missing.error_message or "")
+    assert life_loop.score_code("value = 3") == float("-inf")
+
+    non_numeric = life_loop.score_code_with_error("result = 'bad'")
+    assert non_numeric.score == float("-inf")
+    assert non_numeric.ok is False
+    assert non_numeric.error_type == "non_numeric_result"
+    assert "not numeric" in (non_numeric.error_message or "")
+
+
+def test_score_code_result_legacy_keywords_remain_supported():
+    result = life_loop.ScoreCodeResult(
+        score=float("-inf"),
+        failed=True,
+        error_reason="runtime_exception",
+        exception_type="RuntimeError",
+        exception_message="boom",
+    )
+
+    assert result.ok is False
+    assert result.failed is True
+    assert result.error_type == "runtime_exception"
+    assert result.error_reason == "runtime_exception"
+    assert result.error_message == "boom"
+    assert result.exception_type == "RuntimeError"
+    assert result.exception_message == "boom"
+
+
 def _inc_operator(tree: ast.AST, rng=None) -> ast.AST:
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, int):
@@ -727,6 +766,10 @@ def test_sandbox_violation_burst_enters_degraded_mode_without_immediate_extincti
     assert diagnostic["mutation_failed"] is False
     assert diagnostic["sandbox_violation_streak"] >= 1
     assert diagnostic["governance_circuit_breaker_threshold"] == 3
+    assert diagnostic["source_error_type"] == "runtime_exception"
+    assert diagnostic["source_error_message"] == "synthetic sandbox failure"
+    assert diagnostic["mutation_error_type"] is None
+    assert diagnostic["mutation_error_message"] is None
     assert diagnostic["base_failure_reason"] == "runtime_exception"
     assert diagnostic["base_exception_type"] == "RuntimeError"
     assert diagnostic["base_exception_message"] == "synthetic sandbox failure"
