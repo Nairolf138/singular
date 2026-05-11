@@ -25,7 +25,14 @@ from singular.beliefs.meta_learning import (
     register_run_result,
 )
 from singular.events import EventBus, get_global_event_bus
-from singular.memory import add_causal_trace, add_episode, register_memory_event_handlers, update_score
+from singular.memory import (
+    add_causal_trace,
+    add_episode,
+    read_skills,
+    register_memory_event_handlers,
+    temporarily_disable_skill,
+    update_score,
+)
 from singular.psyche import Psyche, Mood
 from singular.runs.logger import RunLogger
 from singular.runs.explain import summarize_mutation
@@ -81,6 +88,12 @@ DEGRADED_DELAY_SECONDS = 0.05
 SKILL_GENESIS_TECH_DEBT_THRESHOLD = 8
 SKILL_GENESIS_FAILURE_STREAK_THRESHOLD = 3
 SKILL_GENESIS_COVERAGE_GAP_THRESHOLD = 0.6
+SKILL_SANDBOX_QUARANTINE_THRESHOLD = int(
+    os.environ.get("SINGULAR_SKILL_SANDBOX_QUARANTINE_THRESHOLD", "3")
+)
+SKILL_SANDBOX_QUARANTINE_HOURS = int(
+    os.environ.get("SINGULAR_SKILL_SANDBOX_QUARANTINE_HOURS", "1")
+)
 
 
 @dataclass(init=False, frozen=True)
@@ -781,10 +794,41 @@ def _compute_loop_modifications(original: str, mutated: str) -> dict[str, int]:
     }
 
 
+def _skill_memory_key(org_name: str, skill_path: Path, organism_count: int) -> str:
+    """Return the memory key used for a selected skill."""
+
+    return f"{org_name}:{skill_path.stem}" if organism_count > 1 else skill_path.stem
+
+
+def _inactive_skill_keys(skills_state: Mapping[str, object]) -> set[str]:
+    """Return skills that lifecycle metadata says should not be selected."""
+
+    inactive: set[str] = set()
+    for skill, raw_entry in skills_state.items():
+        entry = raw_entry if isinstance(raw_entry, Mapping) else {}
+        lifecycle = (
+            entry.get("lifecycle")
+            if isinstance(entry.get("lifecycle"), Mapping)
+            else {}
+        )
+        if lifecycle.get("state") in {"archived", "deleted", "temporarily_disabled"}:
+            inactive.add(str(skill))
+    return inactive
+
+
+def _first_sandbox_error_type(
+    base_result: SandboxScore, mutated_result: SandboxScore
+) -> str | None:
+    """Prefer mutation diagnostics, falling back to source diagnostics."""
+
+    return mutated_result.error_type or base_result.error_type
+
+
 def _choose_skill(
     rng: random.Random,
     organisms: Dict[str, Organism],
     skill_reputation: Mapping[str, Mapping[str, float | int]] | None = None,
+    excluded_skill_keys: set[str] | None = None,
 ) -> tuple[str, Path]:
     """Choose a skill with utility-aware priority and exploration fallback."""
 
@@ -792,19 +836,19 @@ def _choose_skill(
         raise RuntimeError("no organisms available")
 
     candidates: list[tuple[str, Path]] = []
+    excluded = excluded_skill_keys or set()
     for org_name, org in organisms.items():
         available = list(org.skills_dir.glob("*.py"))
         for skill_path in available:
+            key = _skill_memory_key(org_name, skill_path, len(organisms))
+            if key in excluded or str(skill_path) in excluded:
+                continue
             candidates.append((org_name, skill_path))
     if not candidates:
         raise RuntimeError("no skills available for any organism")
 
     def priority(org_name: str, skill_path: Path) -> float:
-        key = (
-            f"{org_name}:{skill_path.stem}"
-            if len(organisms) > 1
-            else skill_path.stem
-        )
+        key = _skill_memory_key(org_name, skill_path, len(organisms))
         rep = dict((skill_reputation or {}).get(key, {}))
         quality = float(rep.get("mean_quality", 0.5))
         use_count = float(rep.get("use_count", 0.0))
@@ -975,6 +1019,8 @@ def run(
         propose_mutations([])
     mortality = mortality or DeathMonitor()
     seen_diffs: set[str] = set()
+    skill_sandbox_failures: dict[str, int] = {}
+    quarantined_skill_keys: set[str] = set()
     sleep_ticks_remaining = 0
     intrinsic_goals = IntrinsicGoals(value_weights=value_weights)
     if coevolve_tests and test_pool is None:
@@ -1022,15 +1068,39 @@ def run(
                 _, org_name, skill_path = heapq.heappop(delayed)
                 decision = Psyche.Decision.ACCEPT
             else:
-                org_name, skill_path = _choose_skill(
-                    rng,
-                    world.organisms,
-                    skill_reputation=logger.skill_reputation(),
-                )
+                quarantined_skill_keys.update(_inactive_skill_keys(read_skills()))
+                try:
+                    org_name, skill_path = _choose_skill(
+                        rng,
+                        world.organisms,
+                        skill_reputation=logger.skill_reputation(),
+                        excluded_skill_keys=quarantined_skill_keys,
+                    )
+                except RuntimeError as exc:
+                    logger.log_interaction(
+                        "skill.quarantine_exhausted",
+                        reason=str(exc),
+                        excluded_skills=sorted(quarantined_skill_keys),
+                        alive=True,
+                    )
+                    break
                 decision = Psyche.Decision.ACCEPT
                 if hasattr(psyche, "irrational_decision"):
                     decision = psyche.irrational_decision(rng)
             selected_org = world.organisms[org_name]
+            selected_skill_key = _skill_memory_key(
+                org_name, skill_path, len(world.organisms)
+            )
+            if selected_skill_key in quarantined_skill_keys:
+                logger.log_interaction(
+                    "skill.quarantine_skip",
+                    organism=org_name,
+                    skill=selected_skill_key,
+                    skill_path=str(skill_path),
+                    alive=True,
+                )
+                tick_count += 1
+                continue
             for penalty in persistent_world_state.consume_due_penalties(state.iteration):
                 selected_org.energy += penalty.energy_delta
                 persistent_world_state.mortality_pressure = max(
@@ -1681,27 +1751,69 @@ def run(
             }
             if sandbox_failure:
                 org.sandbox_violation_streak += 1
+                attempts = skill_sandbox_failures.get(selected_skill_key, 0) + 1
+                skill_sandbox_failures[selected_skill_key] = attempts
                 sandbox_diagnostic["sandbox_violation_streak"] = (
                     org.sandbox_violation_streak
                 )
+                sandbox_diagnostic["skill_sandbox_failure_streak"] = attempts
                 logger.log_interaction("sandbox_violation", **sandbox_diagnostic)
-                breaker_state = governance_policy.record_violation(
-                    category="sandbox_violation",
-                    severity="critical",
+                quarantine_triggered = attempts >= max(
+                    SKILL_SANDBOX_QUARANTINE_THRESHOLD, 1
                 )
-                if breaker_state is not None:
-                    breaker_payload = breaker_state.to_payload()
-                    breaker_payload["last_sandbox_diagnostics"] = dict(sandbox_diagnostic)
-                    logger.log_event("governance.circuit_breaker_opened", **breaker_payload)
+                if quarantine_triggered:
+                    reason = "consecutive_sandbox_failures"
+                    skills_after_disable = temporarily_disable_skill(
+                        selected_skill_key,
+                        duration_hours=SKILL_SANDBOX_QUARANTINE_HOURS,
+                        reason=reason,
+                    )
+                    lifecycle = skills_after_disable[selected_skill_key]["lifecycle"]
+                    disabled_until = lifecycle.get("disabled_until")
+                    quarantined_skill_keys.add(selected_skill_key)
+                    quarantine_payload = {
+                        "skill": selected_skill_key,
+                        "reason": reason,
+                        "sandbox_error_type": _first_sandbox_error_type(
+                            base_score_result,
+                            mutated_score_result,
+                        ),
+                        "disabled_until": disabled_until,
+                        "attempts": attempts,
+                    }
+                    logger.log_event("skill.quarantined", **quarantine_payload)
                     event_bus.publish(
-                        "governance.circuit_breaker_opened",
+                        "skill.quarantined",
                         {
                             "life": org_name,
                             "iteration": state.iteration,
-                            **breaker_payload,
+                            "skill_path": str(skill_path),
+                            **quarantine_payload,
                         },
                         payload_version=1,
                     )
+                else:
+                    breaker_state = governance_policy.record_violation(
+                        category="sandbox_violation",
+                        severity="critical",
+                    )
+                    if breaker_state is not None:
+                        breaker_payload = breaker_state.to_payload()
+                        breaker_payload["last_sandbox_diagnostics"] = dict(
+                            sandbox_diagnostic
+                        )
+                        logger.log_event(
+                            "governance.circuit_breaker_opened", **breaker_payload
+                        )
+                        event_bus.publish(
+                            "governance.circuit_breaker_opened",
+                            {
+                                "life": org_name,
+                                "iteration": state.iteration,
+                                **breaker_payload,
+                            },
+                            payload_version=1,
+                        )
                 if (
                     org.sandbox_violation_streak >= SANDBOX_DEGRADED_MODE_THRESHOLD
                     and not org.degraded_mode
@@ -1730,6 +1842,7 @@ def run(
             elif org.sandbox_violation_streak > 0:
                 org.sandbox_violation_streak = 0
                 org.degraded_mode = False
+                skill_sandbox_failures[selected_skill_key] = 0
             failed = sandbox_failure or (not accepted)
             health_snapshot = health_tracker.update(
                 iteration=state.iteration,
@@ -1764,11 +1877,7 @@ def run(
                 alive=True,
             )
 
-            key = (
-                f"{org_name}:{skill_path.stem}"
-                if len(world.organisms) > 1
-                else skill_path.stem
-            )
+            key = selected_skill_key
             update_score(key, mutated_score)
             mutation_payload = {
                 "iteration": state.iteration,
