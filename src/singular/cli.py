@@ -285,6 +285,123 @@ def _normalize_windows_path_entry(entry: str) -> str:
     return os.path.normcase(os.path.normpath(entry.strip().strip('"')))
 
 
+def _short_diagnostic_message(message: str | None, *, limit: int = 96) -> str:
+    """Return a compact one-line diagnostic message for CLI tables."""
+
+    if not message:
+        return "-"
+    compact = " ".join(str(message).split())
+    if len(compact) <= limit:
+        return compact
+    return f"{compact[: max(0, limit - 1)]}…"
+
+
+def _sandbox_diagnosis_recommendation(
+    error_type: str | None, message: str | None
+) -> str:
+    """Map a structured sandbox scoring failure to an actionable recommendation."""
+
+    if error_type is None:
+        return "Aucune correction nécessaire."
+
+    message_lower = (message or "").lower()
+    recommendations = {
+        "missing_result": "Ajoutez une affectation numérique `result = ...` en fin de skill.",
+        "non_numeric_result": "Convertissez `result` en nombre (`int` ou `float`).",
+        "non_finite_result": "Retournez un nombre fini; évitez `inf`, `-inf` et `nan`.",
+        "timeout": "Réduisez les boucles ou ajoutez une borne de calcul déterministe.",
+        "syntax_error": "Corrigez la syntaxe Python du fichier.",
+        "runtime_exception": "Corrigez l'exception levée pendant l'exécution sandboxée.",
+    }
+    if error_type == "sandbox_error":
+        if "forbidden syntax" in message_lower:
+            return "Supprimez les imports/with; n'utilisez que le sous-ensemble sandbox autorisé."
+        if "forbidden" in message_lower:
+            return "Supprimez l'accès au nom interdit ou remplacez-le par une API autorisée."
+        return "Adaptez le code aux restrictions de la sandbox."
+    return recommendations.get(
+        error_type, "Inspectez le fichier puis adaptez-le au contrat sandbox."
+    )
+
+
+def _iter_sandbox_skill_files(skills_dir: Path) -> list[Path]:
+    """Return skill files that can be submitted to the Python sandbox."""
+
+    if not skills_dir.exists():
+        return []
+    return sorted(
+        path
+        for path in skills_dir.iterdir()
+        if path.is_file() and path.suffix == ".py" and not path.name.startswith(".")
+    )
+
+
+def _diagnose_sandbox(*, output_format: str = "plain") -> int:
+    """Run every skill in ``SINGULAR_HOME/skills`` through structured sandbox scoring."""
+
+    from .life.loop import SandboxScore, score_code_with_error
+
+    singular_home = Path(os.environ.get("SINGULAR_HOME", ".")).expanduser()
+    skills_dir = singular_home / "skills"
+    files = _iter_sandbox_skill_files(skills_dir)
+
+    if not skills_dir.exists():
+        print(f"Dossier skills introuvable: {skills_dir}", file=sys.stderr)
+        return 1
+
+    rows: list[dict[str, Any]] = []
+    for skill_file in files:
+        try:
+            source = skill_file.read_text(encoding="utf-8")
+        except OSError as exc:
+            result = SandboxScore(
+                score=float("-inf"),
+                ok=False,
+                error_type="read_error",
+                error_message=f"{type(exc).__name__}: {exc}",
+            )
+        else:
+            result = score_code_with_error(source)
+
+        recommendation = _sandbox_diagnosis_recommendation(
+            result.error_type, result.error_message
+        )
+        rows.append(
+            {
+                "file": skill_file.name,
+                "status": "OK" if result.ok else "KO",
+                "score": result.score if result.ok else None,
+                "error_type": result.error_type,
+                "message": _short_diagnostic_message(result.error_message),
+                "recommendation": recommendation,
+            }
+        )
+
+    if output_format == "json":
+        print(
+            json.dumps(
+                {"skills_dir": str(skills_dir), "diagnostics": rows},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        print(f"Diagnostic sandbox skills: {skills_dir}")
+        if not rows:
+            print("Aucun fichier .py compatible trouvé.")
+            return 0
+        print("fichier | statut | score | type_erreur | message | recommandation")
+        print("--- | --- | --- | --- | --- | ---")
+        for row in rows:
+            score = "-" if row["score"] is None else f"{float(row['score']):g}"
+            print(
+                f"{row['file']} | {row['status']} | {score} | "
+                f"{row['error_type'] or '-'} | {row['message']} | {row['recommendation']}"
+            )
+
+    return 0 if all(row["status"] == "OK" for row in rows) else 1
+
+
 def _doctor_fix_windows_user_path(scripts_path: Path) -> bool:
     """Add scripts_path to the Windows user Path variable when missing."""
 
@@ -1030,6 +1147,17 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Active les phases sans exécuter la mutation",
     )
+    diagnose_parser = subparsers.add_parser(
+        "diagnose", help="Exécuter des diagnostics techniques"
+    )
+    diagnose_subparsers = diagnose_parser.add_subparsers(
+        dest="diagnose_command", required=True
+    )
+    diagnose_subparsers.add_parser(
+        "sandbox",
+        help="Diagnostiquer les skills de SINGULAR_HOME/skills via la sandbox",
+    )
+
     retention_parser = subparsers.add_parser(
         "retention",
         help="Inspecte ou exécute la purge de rétention",
@@ -1495,6 +1623,10 @@ def main(argv: list[str] | None = None) -> int:
                 dry_run=args.dry_run,
                 safe_mode=args.safe_mode,
             )
+
+    elif args.command == "diagnose":
+        if args.diagnose_command == "sandbox":
+            return _diagnose_sandbox(output_format=args.output_format)
 
     elif args.command == "retention":
         _ensure_active_life(resolve_life, args.life)
