@@ -30,6 +30,8 @@ const STATUS_LABELS={
   message_missing:'indisponible',
 };
 
+const setText=(id,text)=>{const el=document.getElementById(id);if(el){el.textContent=text;}return el;};
+
 const escapeHtml=value=>String(value??'').replace(/[&<>'"]/g,char=>({
   '&':'&amp;',
   '<':'&lt;',
@@ -80,12 +82,12 @@ const renderHistory=(life)=>{
 
 const renderMeta=(life)=>{
   const meta=conversationState.lastMetaByLife.get(life)||{};
-  document.getElementById('conversation-selected-life').textContent=`Vie: ${life||'aucune sélection'}`;
-  document.getElementById('conversation-availability').textContent=`Disponibilité: ${meta.status||'inconnue'}`;
-  document.getElementById('conversation-last-activity').textContent=`Activité récente: ${meta.last_update||meta.last_activity||'non disponible'}`;
+  setText('conversation-selected-life',`Vie: ${life||'aucune sélection'}`);
+  setText('conversation-availability',`Disponibilité: ${meta.status||'inconnue'}`);
+  setText('conversation-last-activity',`Activité récente: ${meta.last_update||meta.last_activity||'non disponible'}`);
   const history=conversationState.historyByLife.get(life)||[];
   const lastMsg=history.length?history[history.length-1].text:'aucun';
-  document.getElementById('conversation-last-message').textContent=`Dernier message: ${lastMsg}`;
+  setText('conversation-last-message',`Dernier message: ${lastMsg}`);
   setFlowState(inferFlow(meta));
   renderHistory(life);
 };

@@ -1,6 +1,10 @@
 import {fetchJson} from './api.js';
 import {BADGE_TONE,liveState,livesTableState,na,scopeState,setPanelState} from './state.js';
 
+const byId=id=>document.getElementById(id);
+const setText=(id,text)=>{const el=byId(id);if(el){el.textContent=text;}return el;};
+const setTitle=(id,text)=>{const el=byId(id);if(el){el.title=text;}return el;};
+
 const badge=(label,tone)=>`<span class='badge ${tone}'>${label}</span>`;
 const safeText=value=>String(value??na());
 const escapeHtml=value=>safeText(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
@@ -133,20 +137,21 @@ const renderLivesBuckets=(rows,contract)=>{
   const labels=contract?.labels||{};
   const aliveList=document.getElementById('alive-lives');
   const deadList=document.getElementById('dead-lives');
-  document.getElementById('alive-count').textContent=String(counts.alive_lives??activeInRegistry.length);
-  document.getElementById('dead-count').textContent=String(counts.dead_lives??extinctInRuns.length);
-  document.getElementById('alive-count').title=labels.alive_lives||'Vies vivantes';
-  document.getElementById('dead-count').title=labels.dead_lives||'Vies mortes';
-  aliveList.innerHTML='';
-  deadList.innerHTML='';
-  for(const row of activeInRegistry){const li=document.createElement('li');li.textContent=row.life||na();aliveList.appendChild(li);} 
-  for(const row of extinctInRuns){const li=document.createElement('li');li.textContent=row.life||na();deadList.appendChild(li);} 
-  if(!activeInRegistry.length){const li=document.createElement('li');li.textContent='Aucune';aliveList.appendChild(li);} 
-  if(!extinctInRuns.length){const li=document.createElement('li');li.textContent='Aucune';deadList.appendChild(li);} 
+  setText('alive-count',String(counts.alive_lives??activeInRegistry.length));
+  setText('dead-count',String(counts.dead_lives??extinctInRuns.length));
+  setTitle('alive-count',labels.alive_lives||'Vies vivantes');
+  setTitle('dead-count',labels.dead_lives||'Vies mortes');
+  if(aliveList){aliveList.innerHTML='';}
+  if(deadList){deadList.innerHTML='';}
+  if(aliveList){for(const row of activeInRegistry){const li=document.createElement('li');li.textContent=row.life||na();aliveList.appendChild(li);}} 
+  if(deadList){for(const row of extinctInRuns){const li=document.createElement('li');li.textContent=row.life||na();deadList.appendChild(li);}} 
+  if(aliveList&&!activeInRegistry.length){const li=document.createElement('li');li.textContent='Aucune';aliveList.appendChild(li);} 
+  if(deadList&&!extinctInRuns.length){const li=document.createElement('li');li.textContent='Aucune';deadList.appendChild(li);} 
 };
 
 const renderLivesTable=(rows)=>{
-  const body=document.getElementById('lives-table-body');
+  const body=byId('lives-table-body');
+  if(!body){return;}
   body.innerHTML='';
   for(const row of rows||[]){
     const tr=document.createElement('tr');
@@ -240,12 +245,12 @@ const renderUnattachedRuns=(payload)=>{
   const runs=(payload?.runs)||[];
   const runsCount=Number(payload?.runs_count||0);
   const recordsCount=Number(payload?.records_count||0);
-  document.getElementById('unattached-runs-count').textContent=String(runsCount);
-  document.getElementById('unattached-records-count').textContent=String(recordsCount);
-  list.innerHTML='';
-  if(!runsCount){panel.classList.add('panel-hidden');return;}
-  panel.classList.remove('panel-hidden');
-  for(const item of runs){const li=document.createElement('li');li.textContent=`${item.run_id||'unknown'} · ${item.records_count||0} enregistrements`;list.appendChild(li);} 
+  setText('unattached-runs-count',String(runsCount));
+  setText('unattached-records-count',String(recordsCount));
+  if(list){list.innerHTML='';}
+  if(!runsCount){panel?.classList.add('panel-hidden');return;}
+  panel?.classList.remove('panel-hidden');
+  if(list){for(const item of runs){const li=document.createElement('li');li.textContent=`${item.run_id||'unknown'} · ${item.records_count||0} enregistrements`;list.appendChild(li);}} 
 };
 
 export const loadLivesBoard=()=>{
@@ -254,7 +259,7 @@ export const loadLivesBoard=()=>{
   const preset=SORT_PRESETS[presetKey]||SORT_PRESETS.watch;
   q.set('sort_by',preset.sortBy??livesTableState.sortBy);
   q.set('sort_order',preset.sortOrder??livesTableState.sortOrder);
-  const timeWindow=document.getElementById('filter-time-window').value||'all';
+  const timeWindow=byId('filter-time-window')?.value||'all';
   q.set('time_window',timeWindow);
   if(livesUiState.quickFilter==='active'){q.set('active_only','true');}
   if(livesUiState.quickFilter==='degrading'){q.set('degrading_only','true');}
@@ -298,15 +303,16 @@ export const loadLivesBoard=()=>{
 };
 
 export const renderLiveEvents=()=>{
-  const pre=document.getElementById('live-events');
+  const pre=byId('live-events');
+  if(!pre){return;}
   const rows=liveState.events.map(item=>`${item.ts||na()} | ${item.run_id||na()} | ${item.event||'unknown'}`);
   pre.textContent=rows.join('\n');
   if(liveState.autoScroll){pre.scrollTop=pre.scrollHeight;}
 };
 
 export const updateLiveStatus=()=>{
-  document.getElementById('live-status').textContent=liveState.paused?'Pause activée':'Lecture en direct';
-  document.getElementById('live-toggle').textContent=liveState.paused?'Reprendre':'Pause';
+  setText('live-status',liveState.paused?'Pause activée':'Lecture en direct');
+  setText('live-toggle',liveState.paused?'Reprendre':'Pause');
 };
 
 export const renderGenealogyTree=(payload)=>{
@@ -319,9 +325,9 @@ export const renderGenealogyTree=(payload)=>{
   const relationships=payload?.relationships||[];
   const relationRows=payload?.active_relations||[];
   if(!nodes.length){
-    treeEl.textContent='Aucune lignée enregistrée.';
-    socialEl.textContent='Aucun réseau social.';
-    conflictsEl.textContent='Aucun conflit.';
+    if(treeEl){treeEl.textContent='Aucune lignée enregistrée.';}
+    if(socialEl){socialEl.textContent='Aucun réseau social.';}
+    if(conflictsEl){conflictsEl.textContent='Aucun conflit.';}
     if(relationsBody){relationsBody.innerHTML=\"<tr><td colspan='6'>Aucune relation active.</td></tr>\";}
     return;
   }
@@ -335,16 +341,16 @@ export const renderGenealogyTree=(payload)=>{
   for(const root of roots){visit(root,0);} 
   const detached=nodes.filter(node=>!roots.includes(node.slug)&&!(node.parents||[]).every(parent=>bySlug.has(parent)));
   for(const node of detached){lines.push(`• ${node.name} (${node.slug}) [orphan]`);} 
-  treeEl.textContent=lines.join('\n');
+  if(treeEl){treeEl.textContent=lines.join('\n');}
   const socialLines=[];
   for(const node of nodes){
     const allies=relationships.filter(item=>item.type==='alliance'&&(item.source===node.slug||item.target===node.slug)).map(item=>item.source===node.slug?item.target:item.source).join(', ')||'-';
     const rivals=relationships.filter(item=>item.type==='rivalry'&&(item.source===node.slug||item.target===node.slug)).map(item=>item.source===node.slug?item.target:item.source).join(', ')||'-';
     socialLines.push(`${node.slug} | statut=${node.status} | proximité=${Number(node.proximity_score||0.5).toFixed(2)} | alliés: ${allies} | rivaux: ${rivals}`);
   } 
-  socialEl.textContent=socialLines.join('\n');
+  if(socialEl){socialEl.textContent=socialLines.join('\n');}
   const conflicts=payload?.active_conflicts||[];
-  conflictsEl.textContent=conflicts.length?conflicts.map(c=>`${c.life_a} ⚔ ${c.life_b} | sévérité=${c.severity??'-'} | MAJ=${c.updated_at||'n/a'}`).join('\n'):'Aucun conflit actif.';
+  if(conflictsEl){conflictsEl.textContent=conflicts.length?conflicts.map(c=>`${c.life_a} ⚔ ${c.life_b} | sévérité=${c.severity??'-'} | MAJ=${c.updated_at||'n/a'}`).join('\n'):'Aucun conflit actif.';}
   if(relationsBody){
     if(!relationRows.length){relationsBody.innerHTML=\"<tr><td colspan='6'>Aucune relation active pour ce filtre.</td></tr>\";}
     else{
@@ -359,12 +365,12 @@ export const renderGenealogyTree=(payload)=>{
     lifeFilterEl.onchange=()=>{
       const selected=lifeFilterEl.value;
       const route=selected&&selected!=='all'?`/lives/genealogy?life=${encodeURIComponent(selected)}`:'/lives/genealogy';
-      fetchJson(route).then(renderGenealogyTree).catch(error=>{document.getElementById('genealogy-tree').textContent='Impossible de charger la généalogie.';throw error;});
+      fetchJson(route).then(renderGenealogyTree).catch(error=>{setText('genealogy-tree','Impossible de charger la généalogie.');throw error;});
     };
   }
 };
 
-export const loadGenealogy=()=>fetchJson('/lives/genealogy').then(renderGenealogyTree).catch(error=>{document.getElementById('genealogy-tree').textContent='Impossible de charger la généalogie.';throw error;});
+export const loadGenealogy=()=>fetchJson('/lives/genealogy').then(renderGenealogyTree).catch(error=>{setText('genealogy-tree','Impossible de charger la généalogie.');throw error;});
 
 export const bindLivesHandlers=(reload=loadLivesBoard)=>{
   for(const button of document.querySelectorAll('#lives-table [data-sort]')){
@@ -399,12 +405,16 @@ export const bindLivesHandlers=(reload=loadLivesBoard)=>{
       reload();
     };
   });
-  document.getElementById('filter-sort-preset').onchange=()=>reload();
-  document.getElementById('filter-time-window').onchange=()=>reload();
+  const presetSelect=byId('filter-sort-preset');
+  if(presetSelect){presetSelect.onchange=()=>reload();}
+  const timeWindowSelect=byId('filter-time-window');
+  if(timeWindowSelect){timeWindowSelect.onchange=()=>reload();}
   document.getElementById('lives-reset-filters')?.addEventListener('click',()=>resetLivesFilters(reload));
 };
 
 export const bindLiveStreamHandlers=()=>{
-  document.getElementById('live-toggle').onclick=()=>{liveState.paused=!liveState.paused;updateLiveStatus();if(!liveState.paused){renderLiveEvents();}};
-  document.getElementById('live-autoscroll').onchange=e=>{liveState.autoScroll=Boolean(e.target.checked);if(liveState.autoScroll){renderLiveEvents();}};
+  const toggle=byId('live-toggle');
+  if(toggle){toggle.onclick=()=>{liveState.paused=!liveState.paused;updateLiveStatus();if(!liveState.paused){renderLiveEvents();}};}
+  const autoscroll=byId('live-autoscroll');
+  if(autoscroll){autoscroll.onchange=e=>{liveState.autoScroll=Boolean(e.target.checked);if(liveState.autoScroll){renderLiveEvents();}};}
 };
