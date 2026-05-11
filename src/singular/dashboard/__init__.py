@@ -23,6 +23,10 @@ from singular.dashboard.actions import DashboardActionService
 from singular.governance.policy import load_runtime_policy
 from singular.skills_daily import build_daily_skills_snapshot
 from fastapi.responses import HTMLResponse
+try:
+    from starlette.requests import Request as StarletteRequest
+except Exception:  # pragma: no cover - fastapi test stub does not expose Starlette
+    StarletteRequest = object
 
 from singular.schedulers.reevaluation import alerts_from_records
 from singular.dashboard.repositories.run_records import (
@@ -98,11 +102,11 @@ def create_app(
                 lives_paths.append(path)
         return lives_paths
 
-    def _resolve_life_dir(life: str) -> Path | None:
+    def _resolve_life_entry(life: str) -> tuple[str | None, object | None, Path | None]:
         registry = load_registry()
         raw_lives = registry.get("lives")
         if not isinstance(raw_lives, dict):
-            return None
+            return None, None, None
         for slug, meta in raw_lives.items():
             if not isinstance(slug, str):
                 continue
@@ -116,8 +120,44 @@ def create_app(
             if not isinstance(path_value, Path):
                 continue
             if life in {slug, str(display_name)}:
-                return path_value
-        return None
+                return slug, meta, path_value
+        return None, None, None
+
+    def _resolve_life_dir(life: str) -> Path | None:
+        _, _, path_value = _resolve_life_entry(life)
+        return path_value
+
+    def _life_status(meta: object | None) -> str:
+        status = getattr(meta, "status", None)
+        if isinstance(meta, dict):
+            status = meta.get("status", status)
+        return str(status or "unknown").strip().lower()
+
+    def _active_run_locks(life_dir: Path) -> list[str]:
+        runs = life_dir / "runs"
+        if not runs.exists():
+            return []
+        return [str(path) for path in sorted(runs.glob("*/.active.lock")) if path.is_file()]
+
+    def _chat_payload(
+        *,
+        life: str,
+        message: str,
+        response: str,
+        status: str,
+        timestamp: str | None = None,
+        details: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "life": life,
+            "message": message,
+            "response": response,
+            "status": status,
+            "timestamp": timestamp or datetime.now(timezone.utc).isoformat(),
+        }
+        if details:
+            payload["details"] = details
+        return payload
 
     def _registry_overview() -> dict[str, object]:
         registry = load_registry()
@@ -1089,11 +1129,27 @@ def create_app(
     def read_dashboard_context() -> dict[str, object]:
         policy = load_runtime_policy()
         registry_state = _registry_overview()
+        registry_lives = []
+        raw_lives = registry_state.get("lives")
+        if isinstance(raw_lives, dict):
+            for slug, meta in sorted(raw_lives.items()):
+                if not isinstance(slug, str):
+                    continue
+                registry_lives.append(
+                    {
+                        "slug": slug,
+                        "name": str(getattr(meta, "name", slug)),
+                        "path": str(getattr(meta, "path", "")),
+                        "status": str(getattr(meta, "status", "unknown")),
+                        "active": slug == registry_state["active"],
+                    }
+                )
         retention = retention_status_snapshot(base_dir=base_dir)
         return {
             "singular_root": str(registry_root),
             "singular_home": str(base_dir),
             "registry_lives_count": registry_state["lives_count"],
+            "registry_lives": registry_lives,
             "registry_state": {
                 "active": registry_state["active"],
                 "active_valid": registry_state["active_valid"],
@@ -1746,6 +1802,159 @@ def create_app(
             "most_risky": risky,
             "most_frequent": frequent,
         }
+
+    def _run_life_chat(life: str, body: object, token: str | None = None) -> dict[str, object]:
+        timestamp = datetime.now(timezone.utc).isoformat()
+        expected_token = os.environ.get("SINGULAR_DASHBOARD_ACTION_TOKEN")
+        if isinstance(body, dict):
+            raw_message = body.get("message", body.get("prompt", ""))
+            provider = body.get("provider")
+            seed = body.get("seed")
+        else:
+            raw_message = ""
+            provider = None
+            seed = None
+        message = raw_message.strip() if isinstance(raw_message, str) else ""
+        if not message:
+            return _chat_payload(
+                life=life,
+                message=message,
+                response="Message vide: saisissez un contenu à envoyer.",
+                status="message_missing",
+                timestamp=timestamp,
+            )
+        if expected_token and token is None:
+            return _chat_payload(
+                life=life,
+                message=message,
+                response="Jeton dashboard manquant: conversation non envoyée.",
+                status="token_missing",
+                timestamp=timestamp,
+            )
+        try:
+            actions.validate_token(token)
+        except PermissionError as exc:
+            return _chat_payload(
+                life=life,
+                message=message,
+                response=str(exc),
+                status="token_invalid",
+                timestamp=timestamp,
+            )
+
+        slug, meta, life_dir = _resolve_life_entry(life)
+        target = slug or life
+        if life_dir is None or not life_dir.exists():
+            return _chat_payload(
+                life=target,
+                message=message,
+                response="Vie indisponible ou introuvable.",
+                status="life_unavailable",
+                timestamp=timestamp,
+            )
+        status = _life_status(meta)
+        if status in {"archived", "extinct", "dead", "stopped"}:
+            return _chat_payload(
+                life=target,
+                message=message,
+                response="Vie archivée ou arrêtée: conversation bloquée.",
+                status="life_archived",
+                timestamp=timestamp,
+                details={"life_status": status},
+            )
+        locks = _active_run_locks(life_dir)
+        if locks:
+            return _chat_payload(
+                life=target,
+                message=message,
+                response="Run en cours: la vie est occupée, réessayez après la fin du run.",
+                status="run_in_progress",
+                timestamp=timestamp,
+                details={"active_run_locks": locks},
+            )
+
+        from singular.lives import resolve_life
+        from singular.organisms.talk import talk
+
+        previous_home = os.environ.get("SINGULAR_HOME")
+        resolved_life = resolve_life(target)
+        if resolved_life is None:
+            return _chat_payload(
+                life=target,
+                message=message,
+                response="Vie indisponible ou introuvable.",
+                status="life_unavailable",
+                timestamp=timestamp,
+            )
+        os.environ["SINGULAR_HOME"] = str(resolved_life)
+
+        def _run() -> dict[str, object]:
+            talk(
+                provider=provider if isinstance(provider, str) and provider.strip() else None,
+                seed=seed if isinstance(seed, int) else None,
+                prompt=message,
+            )
+            return {"life": target, "path": str(resolved_life)}
+
+        try:
+            data, log = actions._capture(_run)
+        except Exception as exc:  # pragma: no cover - defensive endpoint guard
+            if previous_home is None:
+                os.environ.pop("SINGULAR_HOME", None)
+            else:
+                os.environ["SINGULAR_HOME"] = previous_home
+            error_status = "provider_error" if "provider" in str(exc).lower() else "error"
+            return _chat_payload(
+                life=target,
+                message=message,
+                response=str(exc),
+                status=error_status,
+                timestamp=timestamp,
+            )
+        finally:
+            if previous_home is None:
+                os.environ.pop("SINGULAR_HOME", None)
+            else:
+                os.environ["SINGULAR_HOME"] = previous_home
+
+        lines = [line.strip() for line in log.splitlines() if line.strip()]
+        provider_lines = [line for line in lines if line.lower().startswith("provider ") or "provider '" in line.lower()]
+        response = lines[-1] if lines else "Conversation envoyée sans réponse textuelle."
+        response_status = "provider_error" if any("provider '" in line.lower() for line in provider_lines) else "ok"
+        return _chat_payload(
+            life=target,
+            message=message,
+            response=response,
+            status=response_status,
+            timestamp=timestamp,
+            details={"log": log, "data": data, "provider_events": provider_lines},
+        )
+
+    @app.get("/api/lives/{life}/chat")
+    def chat_with_life_get(
+        life: str, token: str | None = None, payload: str | None = None
+    ) -> dict[str, object]:
+        body: object = {}
+        if payload:
+            try:
+                candidate = json.loads(payload)
+                if isinstance(candidate, dict):
+                    body = candidate
+            except json.JSONDecodeError:
+                body = {}
+        return _run_life_chat(life, body, token=token)
+
+    if hasattr(app, "post"):
+        async def chat_with_life_post(
+            life: str, request: StarletteRequest, token: str | None = None
+        ) -> dict[str, object]:
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+            return _run_life_chat(life, body, token=token)
+
+        app.post("/api/lives/{life}/chat")(chat_with_life_post)
 
     @app.get("/api/actions/{action}")
     def run_action(action: str, token: str | None = None, payload: str | None = None) -> dict[str, object]:
