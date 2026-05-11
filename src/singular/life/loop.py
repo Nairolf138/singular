@@ -177,6 +177,65 @@ class SandboxScore:
 ScoreCodeResult = SandboxScore
 
 
+DANGEROUS_MUTATION_NAMES = frozenset(
+    {
+        "open",
+        "exec",
+        "eval",
+        "compile",
+        "__import__",
+        "input",
+        "os",
+        "sys",
+        "socket",
+        "subprocess",
+    }
+)
+
+
+def _has_explicit_dangerous_pattern(code: str) -> bool:
+    """Return True when code explicitly references dangerous capabilities."""
+
+    try:
+        tree = ast.parse(code, mode="exec")
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id in DANGEROUS_MUTATION_NAMES:
+            return True
+        if isinstance(node, ast.Attribute) and node.attr in DANGEROUS_MUTATION_NAMES:
+            return True
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            names = [alias.name.split(".", 1)[0] for alias in node.names]
+            module = []
+            if isinstance(node, ast.ImportFrom) and node.module:
+                module.append(node.module.split(".", 1)[0])
+            if any(name in DANGEROUS_MUTATION_NAMES for name in [*names, *module]):
+                return True
+    return False
+
+
+def _sandbox_failure_category(
+    base_failed: bool, mutation_failed: bool, mutated: str
+) -> tuple[str | None, str | None, bool]:
+    """Classify sandbox failures for governance escalation.
+
+    Returns ``(category, severity, record_global_violation)``. Original-code
+    failures mean the active skill is broken and remain critical. A failed
+    mutation over a healthy base is usually just a rejected candidate and should
+    not feed the global circuit breaker unless it explicitly contains dangerous
+    capabilities.
+    """
+
+    if base_failed:
+        return "source_sandbox_violation", "critical", True
+    if mutation_failed:
+        if _has_explicit_dangerous_pattern(mutated):
+            return "dangerous_mutation_violation", "critical", True
+        return "invalid_mutation_rejected", "medium", False
+    return None, None, False
+
+
 def _score_failure(
     error_type: str,
     exception: BaseException | None = None,
@@ -1340,6 +1399,17 @@ def run(
             mutated_score = mutated_score_result.score
             ms_new = (time.perf_counter() - t0) * 1000
 
+            base_failed = (not base_score_result.ok) or base_score == float("-inf")
+            mutation_failed = (
+                (not mutated_score_result.ok) or mutated_score == float("-inf")
+            )
+            (
+                sandbox_violation_category,
+                sandbox_violation_severity,
+                record_global_sandbox_violation,
+            ) = _sandbox_failure_category(base_failed, mutation_failed, mutated)
+            critical_sandbox_failure = sandbox_violation_severity == "critical"
+
             if mutated_score == float("-inf"):
                 if hasattr(psyche, "feel"):
                     psyche.feel(Mood.PAIN)
@@ -1386,9 +1456,13 @@ def run(
                 seen_diffs.add(diff)
 
             accepted = (
-                map_elites.add(mutated, mutated_score)
-                if map_elites
-                else mutated_score <= base_score
+                False
+                if mutation_failed
+                else (
+                    map_elites.add(mutated, mutated_score)
+                    if map_elites
+                    else mutated_score <= base_score
+                )
             )
             world_effects: list[dict[str, object]] = []
             security_metadata: dict[str, object] = {
@@ -1399,6 +1473,8 @@ def run(
                 "corrective_action": None,
             }
             detection_rate = 0.0
+            combined_base = base_score
+            combined_mutated = mutated_score
             test_delta = {"added": 0, "removed": 0}
             if coevolve_tests and test_pool is not None and not selected_org.degraded_mode:
                 can_run_coevo, coevo_state = resource_manager.apply_capability_cost("test_coevolution")
@@ -1425,6 +1501,7 @@ def run(
                     score_combined_base=combined_base,
                     score_combined_new=combined_mutated,
                 )
+            accepted = accepted and not mutation_failed
             org.last_score = mutated_score
             if accepted:
                 governance_root = skill_path.parent.parent if skill_path.parent.name == "skills" else skill_path.parent
@@ -1718,10 +1795,6 @@ def run(
                     payload_version=1,
                 )
 
-            base_failed = (not base_score_result.ok) or base_score == float("-inf")
-            mutation_failed = (
-                (not mutated_score_result.ok) or mutated_score == float("-inf")
-            )
             sandbox_failure = base_failed or mutation_failed
             sandbox_diagnostic = {
                 "organism": org_name,
@@ -1742,6 +1815,14 @@ def run(
                 "base_exception_message": base_score_result.error_message,
                 "mutation_exception_type": mutated_score_result.exception_type,
                 "mutation_exception_message": mutated_score_result.error_message,
+                "sandbox_violation_category": sandbox_violation_category,
+                "sandbox_violation_severity": sandbox_violation_severity,
+                "sandbox_violation_global_recorded": record_global_sandbox_violation,
+                "dangerous_mutation_pattern": (
+                    mutation_failed
+                    and not base_failed
+                    and sandbox_violation_category == "dangerous_mutation_violation"
+                ),
                 "sandbox_violation_streak": org.sandbox_violation_streak,
                 "governance_circuit_breaker_threshold": getattr(
                     governance_policy,
@@ -1750,15 +1831,17 @@ def run(
                 ),
             }
             if sandbox_failure:
-                org.sandbox_violation_streak += 1
-                attempts = skill_sandbox_failures.get(selected_skill_key, 0) + 1
-                skill_sandbox_failures[selected_skill_key] = attempts
+                attempts = skill_sandbox_failures.get(selected_skill_key, 0)
+                if critical_sandbox_failure:
+                    org.sandbox_violation_streak += 1
+                    attempts += 1
+                    skill_sandbox_failures[selected_skill_key] = attempts
                 sandbox_diagnostic["sandbox_violation_streak"] = (
                     org.sandbox_violation_streak
                 )
                 sandbox_diagnostic["skill_sandbox_failure_streak"] = attempts
                 logger.log_interaction("sandbox_violation", **sandbox_diagnostic)
-                quarantine_triggered = attempts >= max(
+                quarantine_triggered = critical_sandbox_failure and attempts >= max(
                     SKILL_SANDBOX_QUARANTINE_THRESHOLD, 1
                 )
                 if quarantine_triggered:
@@ -1792,10 +1875,10 @@ def run(
                         },
                         payload_version=1,
                     )
-                else:
+                elif record_global_sandbox_violation:
                     breaker_state = governance_policy.record_violation(
-                        category="sandbox_violation",
-                        severity="critical",
+                        category=sandbox_violation_category or "sandbox_violation",
+                        severity=sandbox_violation_severity or "high",
                     )
                     if breaker_state is not None:
                         breaker_payload = breaker_state.to_payload()
