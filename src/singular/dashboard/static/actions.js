@@ -52,15 +52,21 @@ export const bindCriticalActionHandlers=(handlers)=>{
 };
 
 export const bindActionHandlers=(handlers)=>{
-  const lifeName=()=>document.getElementById('action-life-name').value||'';
-  document.getElementById('act-birth').onclick=()=>runAction('birth',{name:lifeName()||'Nouvelle vie'},handlers);
-  document.getElementById('act-talk').onclick=()=>runAction('talk',{prompt:document.getElementById('action-prompt').value||''},handlers);
-  document.getElementById('act-loop').onclick=()=>runAction('loop',{budget_seconds:Number(document.getElementById('action-budget').value||0)},handlers);
-  document.getElementById('act-report').onclick=()=>runAction('report',{},handlers);
-  document.getElementById('act-lives-list').onclick=()=>runAction('lives_list',{},handlers);
-  document.getElementById('act-lives-use').onclick=()=>runAction('lives_use',{name:lifeName()},handlers);
-  document.getElementById('act-archive').onclick=()=>runAction('archive',{name:lifeName()},handlers);
-  document.getElementById('act-memorial').onclick=()=>runAction('memorial',{name:lifeName(),message:'Merci pour ce cycle de vie.'},handlers);
-  document.getElementById('act-clone').onclick=()=>runAction('clone',{name:lifeName(),new_name:`${lifeName()||'Vie'} clone`},handlers);
+  const lifeName=()=>document.getElementById('action-life-name')?.value||'';
+  const prompt=()=>document.getElementById('action-prompt')?.value||'';
+  const budget=()=>Number(document.getElementById('action-budget')?.value||0);
+  const bind=(id,handler)=>{
+    const button=document.getElementById(id);
+    if(button){button.onclick=handler;}
+  };
+  bind('act-birth',()=>runAction('birth',{name:lifeName()||'Nouvelle vie'},handlers));
+  bind('act-talk',()=>runAction('talk',{prompt:prompt()},handlers));
+  bind('act-loop',()=>runAction('loop',{budget_seconds:budget()},handlers));
+  bind('act-report',()=>runAction('report',{},handlers));
+  bind('act-lives-list',()=>runAction('lives_list',{},handlers));
+  bind('act-lives-use',()=>runAction('lives_use',{name:lifeName()},handlers));
+  bind('act-archive',()=>runAction('archive',{name:lifeName()},handlers));
+  bind('act-memorial',()=>runAction('memorial',{name:lifeName(),message:'Merci pour ce cycle de vie.'},handlers));
+  bind('act-clone',()=>runAction('clone',{name:lifeName(),new_name:`${lifeName()||'Vie'} clone`},handlers));
   bindCriticalActionHandlers(handlers);
 };

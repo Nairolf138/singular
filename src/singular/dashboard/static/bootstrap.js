@@ -195,7 +195,8 @@ const bootstrapPauseControls=()=>{
   wrap.className='panel';
   wrap.innerHTML="<h3 class='heading-reset-top'>Contrôle des mises à jour</h3><div id='updates-status'>Mises à jour globales: actives</div><button id='updates-toggle' type='button'>Pause updates</button>";
   section.prepend(wrap);
-  document.getElementById('updates-toggle').onclick=toggleSchedulerPause;
+  const toggle=document.getElementById('updates-toggle');
+  if(toggle){toggle.onclick=toggleSchedulerPause;}
 };
 
 const toggleViewPause=viewKey=>{
@@ -348,8 +349,13 @@ export const bootstrapDashboard=()=>{
 
   ws.onmessage=e=>{
     const m=JSON.parse(e.data);
-    if(m.type==='psyche'){document.getElementById('psyche').textContent=JSON.stringify(m.data,null,2);return;}
-    if(m.type==='quests'){document.getElementById('quests').textContent=JSON.stringify(m.data,null,2);return;}
+    if(m.type==='psyche'){const psyche=document.getElementById('psyche');if(psyche){psyche.textContent=JSON.stringify(m.data,null,2);}return;}
+    if(m.type==='quests'){
+      const raw=document.getElementById('quests-json-raw');
+      if(raw){raw.textContent=JSON.stringify(m.data,null,2);}
+      else{loadQuests();}
+      return;
+    }
     if(['timeline','run_event','alert','alerts'].includes(m.type)){
       const task=schedulerTasks.get('timeline');
       if(task){task.nextRunAt=0;}
