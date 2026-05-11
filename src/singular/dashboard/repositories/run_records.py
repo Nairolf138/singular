@@ -6,6 +6,38 @@ from pathlib import Path
 from typing import Callable
 
 
+def is_run_jsonl_file(path: Path) -> bool:
+    """Return whether *path* is a persisted or in-progress run JSONL file."""
+
+    return (
+        not path.name.endswith(".consciousness.jsonl")
+        and not path.name.endswith(".consciousness.jsonl.tmp")
+        and (path.suffix == ".jsonl" or path.suffixes[-2:] == [".jsonl", ".tmp"])
+    )
+
+
+def logical_run_file_stem(path: Path) -> str:
+    """Return the logical run identifier represented by a run JSONL path."""
+
+    stem = path.name
+    if stem.endswith(".jsonl.tmp"):
+        stem = stem[: -len(".jsonl.tmp")]
+    elif stem.endswith(".jsonl"):
+        stem = stem[: -len(".jsonl")]
+    else:
+        stem = path.stem
+
+    normalized = stem.strip()
+    if not normalized:
+        return "unknown"
+
+    if "-" in normalized:
+        candidate, suffix = normalized.rsplit("-", 1)
+        if candidate and suffix.isdigit() and len(suffix) >= 8:
+            return candidate
+    return normalized
+
+
 @dataclass
 class RunRecordsRepository:
     """Read dashboard run records from one or many life run directories."""
@@ -54,7 +86,7 @@ class RunRecordsRepository:
             if not directory.exists():
                 continue
             for file in directory.iterdir():
-                if not file.is_file() or file.suffix != ".jsonl":
+                if not file.is_file() or not is_run_jsonl_file(file):
                     continue
                 for line in file.read_text(encoding="utf-8").splitlines():
                     line = line.strip()
@@ -67,7 +99,7 @@ class RunRecordsRepository:
                     if not isinstance(payload, dict):
                         continue
                     if "_run_file" not in payload:
-                        payload["_run_file"] = file.stem
+                        payload["_run_file"] = logical_run_file_stem(file)
                     records.append(payload)
         return records
 
@@ -77,7 +109,7 @@ class RunRecordsRepository:
             if not directory.exists():
                 continue
             for path in directory.iterdir():
-                if path.is_file() and path.suffix == ".jsonl":
+                if path.is_file() and is_run_jsonl_file(path):
                     files.append(path)
         return sorted(
             files,
@@ -117,21 +149,37 @@ class RunRecordsRepository:
         )
 
     def resolve_run_file(self, run_id: str, current_life_only: bool = False) -> Path | None:
-        return next(
-            (
-                directory / f"{run_id}.jsonl"
-                for directory in self.runs_dirs(current_life_only=current_life_only)
-                if (directory / f"{run_id}.jsonl").exists()
-            ),
-            None,
-        )
+        for directory in self.runs_dirs(current_life_only=current_life_only):
+            for filename in (f"{run_id}.jsonl", f"{run_id}.jsonl.tmp"):
+                candidate = directory / filename
+                if candidate.exists():
+                    return candidate
+            if not directory.exists():
+                continue
+            for candidate in self.iter_run_files(current_life_only=current_life_only):
+                if candidate.parent == directory and logical_run_file_stem(candidate) == run_id:
+                    return candidate
+        return None
 
     def resolve_consciousness_path(
         self, run_id: str, current_life_only: bool = False
     ) -> Path | None:
-        raw_run_id = run_id.rsplit("-", 1)[0]
+        raw_run_id = run_id
+        if "-" in raw_run_id:
+            candidate_id, suffix = raw_run_id.rsplit("-", 1)
+            if candidate_id and suffix.isdigit() and len(suffix) >= 8:
+                raw_run_id = candidate_id
+        candidate_ids = [raw_run_id]
+        if run_id not in candidate_ids:
+            candidate_ids.append(run_id)
         for directory in self.runs_dirs(current_life_only=current_life_only):
-            candidate = directory / raw_run_id / "consciousness.jsonl"
-            if candidate.exists():
-                return candidate
+            for candidate_id in candidate_ids:
+                candidates = (
+                    directory / candidate_id / "consciousness.jsonl",
+                    directory / f"{candidate_id}.consciousness.jsonl",
+                    directory / f"{candidate_id}.consciousness.jsonl.tmp",
+                )
+                for candidate in candidates:
+                    if candidate.exists():
+                        return candidate
         return None

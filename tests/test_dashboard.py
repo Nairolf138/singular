@@ -242,6 +242,59 @@ def test_dashboard_latest_run_summary_endpoint(tmp_path: Path) -> None:
     assert len(latest_payload["records"]) == 3
 
 
+def test_dashboard_includes_temporary_jsonl_run_files(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run_file = runs_dir / "run-live-20260511090000.jsonl.tmp"
+    run_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "ts": "2026-05-11T09:00:00+00:00",
+                        "event": "interaction",
+                        "organism": "temp-life",
+                        "interaction": "signal",
+                        "energy": 7,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-05-11T09:01:00+00:00",
+                        "skill": "temp-life:skills/adapt.py",
+                        "operator": "swap",
+                        "accepted": True,
+                        "score_base": 10.0,
+                        "score_new": 8.0,
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+
+    latest_payload = app._routes["/runs/latest"]()
+    assert latest_payload["run"] == "run-live"
+    assert [record["ts"] for record in latest_payload["records"]] == [
+        "2026-05-11T09:00:00+00:00",
+        "2026-05-11T09:01:00+00:00",
+    ]
+
+    timeline_payload = app._routes["/api/runs/{run_id}/timeline"](run_id="run-live")
+    assert timeline_payload["pagination"]["total"] == 2
+    assert [item["event"] for item in timeline_payload["items"]] == [
+        "interaction",
+        "mutation",
+    ]
+
+    ecosystem_payload = app._routes["/ecosystem"]()
+    assert ecosystem_payload["organisms"]["temp-life"]["last_interaction"] == "signal"
+    assert ecosystem_payload["organisms"]["temp-life"]["energy"] == 7
+
+
 def test_dashboard_cockpit_endpoint_schema(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
@@ -1271,7 +1324,7 @@ def test_psyche_missing_returns_404(tmp_path: Path) -> None:
 def test_websocket_stream_incremental_events_and_growth_stability(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
-    run_file = runs_dir / "run-live.jsonl"
+    run_file = runs_dir / "run-live-20260511090000.jsonl.tmp"
     run_file.write_text(
         json.dumps({"ts": "2026-04-12T10:00:00", "event": "interaction"}) + "\n",
         encoding="utf-8",
