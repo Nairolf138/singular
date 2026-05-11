@@ -83,6 +83,50 @@ SKILL_GENESIS_FAILURE_STREAK_THRESHOLD = 3
 SKILL_GENESIS_COVERAGE_GAP_THRESHOLD = 0.6
 
 
+@dataclass(frozen=True)
+class ScoreCodeResult:
+    """Sandbox scoring outcome with a machine-readable failure reason."""
+
+    score: float
+    failed: bool = False
+    error_reason: str | None = None
+    exception_type: str | None = None
+    exception_message: str | None = None
+
+
+def _score_failure(
+    reason: str,
+    exception: BaseException | None = None,
+    *,
+    message: str | None = None,
+) -> ScoreCodeResult:
+    """Build a failed scoring result with optional exception metadata."""
+
+    return ScoreCodeResult(
+        score=float("-inf"),
+        failed=True,
+        error_reason=reason,
+        exception_type=type(exception).__name__ if exception is not None else None,
+        exception_message=str(exception) if exception is not None else message,
+    )
+
+
+def _classify_score_exception(exception: BaseException) -> str:
+    """Map sandbox exceptions to stable diagnostic categories."""
+
+    if isinstance(exception, TimeoutError):
+        return "timeout"
+    if isinstance(exception, SyntaxError):
+        return "forbidden_syntax"
+    if isinstance(exception, sandbox.SandboxError):
+        message = str(exception).lower()
+        if "forbidden syntax" in message:
+            return "forbidden_syntax"
+        if "forbidden" in message:
+            return "forbidden_name"
+    return "runtime_exception"
+
+
 @dataclass
 class Checkpoint:
     """Simple persistent state for the evolutionary loop."""
@@ -455,20 +499,36 @@ def select_operator(
     return max(names, key=expected)
 
 
+def score_code_with_error(code: str) -> ScoreCodeResult:
+    """Execute ``code`` in the sandbox and return score plus failure details.
+
+    Failure reasons are intentionally stable for diagnostics: forbidden syntax,
+    forbidden names, timeout, runtime exception, non-numeric result, or non-finite
+    result.
+    """
+
+    try:
+        result = sandbox.run(code)
+    except Exception as exc:
+        return _score_failure(_classify_score_exception(exc), exc)
+    if not isinstance(result, (int, float)):
+        return _score_failure(
+            "non_numeric_result",
+            message=f"sandbox result type is {type(result).__name__}",
+        )
+    score = float(result)
+    if not math.isfinite(score):
+        return _score_failure("non_finite_result", message=f"sandbox result is {score}")
+    return ScoreCodeResult(score=score)
+
+
 def score_code(code: str) -> float:
     """Execute ``code`` in the sandbox and return a numeric score.
 
     Non-numeric or failing executions yield ``-inf``.
     """
 
-    try:
-        result = sandbox.run(code)
-    except Exception:
-        return float("-inf")
-    if not isinstance(result, (int, float)):
-        return float("-inf")
-    score = float(result)
-    return score if math.isfinite(score) else float("-inf")
+    return score_code_with_error(code).score
 
 
 def manage_resources(
@@ -1117,10 +1177,12 @@ def run(
             org = world.organisms[org_name]
 
             t0 = time.perf_counter()
-            base_score = score_code(original)
+            base_score_result = score_code_with_error(original)
+            base_score = base_score_result.score
             ms_base = (time.perf_counter() - t0) * 1000
             t0 = time.perf_counter()
-            mutated_score = score_code(mutated)
+            mutated_score_result = score_code_with_error(mutated)
+            mutated_score = mutated_score_result.score
             ms_new = (time.perf_counter() - t0) * 1000
 
             if mutated_score == float("-inf"):
@@ -1501,11 +1563,38 @@ def run(
                     payload_version=1,
                 )
 
-            sandbox_failure = (
-                base_score == float("-inf") or mutated_score == float("-inf")
+            base_failed = base_score_result.failed or base_score == float("-inf")
+            mutation_failed = (
+                mutated_score_result.failed or mutated_score == float("-inf")
             )
+            sandbox_failure = base_failed or mutation_failed
+            sandbox_diagnostic = {
+                "organism": org_name,
+                "skill_path": str(skill_path),
+                "operator": op_name,
+                "base_score": base_score,
+                "mutated_score": mutated_score,
+                "base_failed": base_failed,
+                "mutation_failed": mutation_failed,
+                "base_failure_reason": base_score_result.error_reason,
+                "mutation_failure_reason": mutated_score_result.error_reason,
+                "base_exception_type": base_score_result.exception_type,
+                "base_exception_message": base_score_result.exception_message,
+                "mutation_exception_type": mutated_score_result.exception_type,
+                "mutation_exception_message": mutated_score_result.exception_message,
+                "sandbox_violation_streak": org.sandbox_violation_streak,
+                "governance_circuit_breaker_threshold": getattr(
+                    governance_policy,
+                    "circuit_breaker_threshold",
+                    None,
+                ),
+            }
             if sandbox_failure:
                 org.sandbox_violation_streak += 1
+                sandbox_diagnostic["sandbox_violation_streak"] = (
+                    org.sandbox_violation_streak
+                )
+                logger.log_interaction("sandbox_violation", **sandbox_diagnostic)
                 governance_policy.record_violation(
                     category="sandbox_violation",
                     severity="critical",
