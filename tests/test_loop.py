@@ -388,6 +388,206 @@ def _noop_operator(tree: ast.AST, rng=None) -> ast.AST:
     return tree
 
 
+def _missing_result_operator(tree: ast.AST, rng=None) -> ast.AST:
+    return ast.parse("value = 1")
+
+
+def _dangerous_open_operator(tree: ast.AST, rng=None) -> ast.AST:
+    return ast.parse("result = open('secret.txt')")
+
+
+def _stable_psyche(monkeypatch):
+    class StablePsyche:
+        energy = 1000.0
+        curiosity = 1.0
+        patience = 1.0
+        playfulness = 1.0
+        sleeping = False
+
+        def mutation_policy(self):
+            return "default"
+
+        def process_run_record(self, record):
+            pass
+
+        def save_state(self):
+            pass
+
+        def consume(self):
+            pass
+
+        def feel(self, mood):
+            pass
+
+    monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: StablePsyche()))
+
+
+def _run_sandbox_case(
+    tmp_path: Path,
+    monkeypatch,
+    operator,
+    *,
+    max_iterations: int = 1,
+    score_func=None,
+    governance_policy=None,
+):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    (skills_dir / "foo.py").write_text("result = 1", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    monkeypatch.setattr(life_loop, "propose_mutations", lambda *_a, **_k: [])
+    monkeypatch.setattr(life_loop, "SKILL_GENESIS_TECH_DEBT_THRESHOLD", 10_000)
+    monkeypatch.setattr(life_loop, "SKILL_GENESIS_FAILURE_STREAK_THRESHOLD", 10_000)
+    monkeypatch.setattr(life_loop, "SKILL_GENESIS_COVERAGE_GAP_THRESHOLD", 10_000.0)
+    if score_func is not None:
+        monkeypatch.setattr(life_loop, "score_code_with_error", score_func)
+    _stable_psyche(monkeypatch)
+
+    from singular.runs.logger import RunLogger as RL
+
+    monkeypatch.setattr(
+        life_loop, "RunLogger", functools.partial(RL, root=tmp_path / "logs")
+    )
+
+    state = life_loop.run(
+        skills_dir,
+        checkpoint,
+        budget_seconds=10.0,
+        max_iterations=max_iterations,
+        rng=random.Random(0),
+        operators={"case": operator},
+        governance_policy=governance_policy,
+    )
+    events_path = tmp_path / "logs" / "loop" / "events.jsonl"
+    events = [
+        json.loads(line)
+        for line in events_path.read_text(encoding="utf-8").splitlines()
+    ]
+    return state, events
+
+
+def _event_payloads(events: list[dict], event_type: str) -> list[dict]:
+    return [event["payload"] for event in events if event.get("event_type") == event_type]
+
+
+def _sandbox_diagnostics(events: list[dict]) -> list[dict]:
+    return [
+        payload
+        for payload in _event_payloads(events, "interaction")
+        if payload.get("interaction") == "sandbox_violation"
+    ]
+
+
+def test_base_ok_mutation_failure_is_noncritical_rejection(tmp_path: Path, monkeypatch):
+    _state, events = _run_sandbox_case(
+        tmp_path,
+        monkeypatch,
+        _missing_result_operator,
+        max_iterations=1,
+    )
+
+    diagnostics = _sandbox_diagnostics(events)
+    assert diagnostics
+    diagnostic = diagnostics[0]
+    assert diagnostic["base_score"] == 1.0
+    assert diagnostic["mutated_score"] == float("-inf")
+    assert diagnostic["base_failed"] is False
+    assert diagnostic["mutation_failed"] is True
+    assert diagnostic["sandbox_violation_category"] == "invalid_mutation_rejected"
+    assert diagnostic["sandbox_violation_severity"] == "medium"
+    assert diagnostic["sandbox_violation_global_recorded"] is False
+    assert diagnostic["dangerous_mutation_pattern"] is False
+    assert diagnostic["sandbox_violation_streak"] == 0
+    assert not _event_payloads(events, "governance.circuit_breaker_opened")
+
+
+def test_base_failure_remains_critical_violation(tmp_path: Path, monkeypatch):
+    score_calls = {"n": 0}
+
+    def base_fails_first(_code: str) -> life_loop.ScoreCodeResult:
+        score_calls["n"] += 1
+        if score_calls["n"] % 2 == 1:
+            return life_loop.ScoreCodeResult(
+                score=float("-inf"),
+                failed=True,
+                error_reason="runtime_exception",
+                exception_type="RuntimeError",
+                exception_message="base is broken",
+            )
+        return life_loop.ScoreCodeResult(score=1.0)
+
+    policy = MutationGovernancePolicy(circuit_breaker_threshold=1)
+    _state, events = _run_sandbox_case(
+        tmp_path,
+        monkeypatch,
+        _noop_operator,
+        max_iterations=1,
+        score_func=base_fails_first,
+        governance_policy=policy,
+    )
+
+    diagnostic = _sandbox_diagnostics(events)[0]
+    assert diagnostic["base_failed"] is True
+    assert diagnostic["mutation_failed"] is False
+    assert diagnostic["sandbox_violation_category"] == "source_sandbox_violation"
+    assert diagnostic["sandbox_violation_severity"] == "critical"
+    assert diagnostic["sandbox_violation_global_recorded"] is True
+    breaker = _event_payloads(events, "governance.circuit_breaker_opened")[0]
+    assert breaker["category"] == "source_sandbox_violation"
+    assert breaker["severity"] == "critical"
+
+
+def test_dangerous_mutation_failure_can_escalate_to_critical(tmp_path: Path, monkeypatch):
+    policy = MutationGovernancePolicy(circuit_breaker_threshold=1)
+    _state, events = _run_sandbox_case(
+        tmp_path,
+        monkeypatch,
+        _dangerous_open_operator,
+        max_iterations=1,
+        governance_policy=policy,
+    )
+
+    diagnostic = _sandbox_diagnostics(events)[0]
+    assert diagnostic["base_failed"] is False
+    assert diagnostic["mutation_failed"] is True
+    assert diagnostic["mutation_error_type"] == "sandbox_error"
+    assert diagnostic["sandbox_violation_category"] == "dangerous_mutation_violation"
+    assert diagnostic["sandbox_violation_severity"] == "critical"
+    assert diagnostic["sandbox_violation_global_recorded"] is True
+    assert diagnostic["dangerous_mutation_pattern"] is True
+    breaker = _event_payloads(events, "governance.circuit_breaker_opened")[0]
+    assert breaker["category"] == "dangerous_mutation_violation"
+    assert breaker["severity"] == "critical"
+
+
+def test_noncritical_mutation_failures_do_not_immediately_block_orchestrator(
+    tmp_path: Path, monkeypatch
+):
+    policy = MutationGovernancePolicy(circuit_breaker_threshold=1)
+    state, events = _run_sandbox_case(
+        tmp_path,
+        monkeypatch,
+        _missing_result_operator,
+        max_iterations=4,
+        governance_policy=policy,
+    )
+
+    diagnostics = _sandbox_diagnostics(events)
+    assert len(diagnostics) == 4
+    assert state.iteration >= 4
+    assert all(
+        diagnostic["sandbox_violation_category"] == "invalid_mutation_rejected"
+        for diagnostic in diagnostics
+    )
+    assert all(
+        diagnostic["sandbox_violation_global_recorded"] is False
+        for diagnostic in diagnostics
+    )
+    assert not _event_payloads(events, "governance.circuit_breaker_opened")
+    assert policy.mutations_enabled() is True
+
+
 def test_run_nan_score_does_not_contaminate_stats(tmp_path: Path):
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -775,7 +975,7 @@ def test_sandbox_violation_burst_enters_degraded_mode_without_immediate_extincti
     ]
     assert breaker_events
     breaker = breaker_events[0]
-    assert breaker["category"] == "sandbox_violation"
+    assert breaker["category"] == "source_sandbox_violation"
     assert breaker["severity"] == "critical"
     assert breaker["threshold"] == 3
     assert breaker["cooldown_seconds"] == 300.0
