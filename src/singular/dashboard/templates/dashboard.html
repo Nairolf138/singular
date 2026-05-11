@@ -18,17 +18,29 @@
 </nav>
 
 <section class='critical-actions-bar' aria-label='Actions critiques'>
-  <button type='button' class='critical-action-btn'>Créer une vie</button>
-  <button type='button' class='critical-action-btn critical-action-warning' onclick="return confirm('Confirmer la suppression/l’archivage ? Portée : la vie ciblée et ses données associées (historique, artefacts, contexte).');">Supprimer/archiver une vie</button>
-  <button type='button' class='critical-action-btn'>Parler à une vie</button>
+  <button id='critical-birth' type='button' class='critical-action-btn' data-dashboard-action='birth'>Créer une vie</button>
   <button
+    id='critical-archive'
+    type='button'
+    class='critical-action-btn critical-action-warning'
+    data-dashboard-action='archive'
+    data-confirm="Confirmer la suppression/l’archivage ? Portée : la vie ciblée et ses données associées (historique, artefacts, contexte)."
+  >
+    Supprimer/archiver une vie
+  </button>
+  <button id='critical-talk' type='button' class='critical-action-btn' data-dashboard-action='talk'>Parler à une vie</button>
+  <button
+    id='critical-emergency-stop'
     type='button'
     class='critical-action-btn critical-action-danger'
-    onclick="if (!confirm('ARRÊT D’URGENCE : cette action stoppe immédiatement les opérations en cours. Confirmez-vous ?')) return false; return confirm('DOUBLE VALIDATION — Confirmez à nouveau l’arrêt d’urgence global.');"
+    data-dashboard-action='emergency_stop'
+    data-confirm="ARRÊT D’URGENCE : cette action stoppe immédiatement les opérations en cours. Confirmez-vous ?"
+    data-confirm-again="DOUBLE VALIDATION — Confirmez à nouveau l’arrêt d’urgence global."
   >
     Arrêt d’urgence
   </button>
 </section>
+<div id='critical-action-result' class='critical-action-result' role='status' aria-live='polite'>Aucune action critique exécutée.</div>
 
 <div id='stale-data-banner' class='stale-banner panel-hidden' role='status' aria-live='polite'></div>
 

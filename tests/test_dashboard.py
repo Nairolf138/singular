@@ -6,6 +6,7 @@ import pytest
 from fastapi_stub import TestClient
 
 from singular.dashboard import create_app, run
+from singular.lives import create_life
 
 
 def _receive_with_timeout(ws: TestClient._WSConnection, timeout: float = 2.0) -> dict[str, object]:
@@ -1421,6 +1422,15 @@ def test_dashboard_actions_endpoint_and_ui_panel(tmp_path: Path, monkeypatch: py
     body = client.get("/").json()
     assert "Actions rapides" in body
     assert "action-result" in body
+    assert "critical-action-result" in body
+    assert "critical-birth" in body
+    assert "data-dashboard-action='birth'" in body
+    assert "critical-talk" in body
+    assert "data-dashboard-action='talk'" in body
+    assert "critical-archive" in body
+    assert "data-dashboard-action='archive'" in body
+    assert "critical-emergency-stop" in body
+    assert "data-dashboard-action='emergency_stop'" in body
     assert "Créer vie" in body
     assert "Discuter" in body
     assert "Archiver" in body
@@ -1437,6 +1447,32 @@ def test_dashboard_actions_endpoint_and_ui_panel(tmp_path: Path, monkeypatch: py
     with pytest.raises(Exception):
         app._routes["/api/actions/{action}"]("lives_list", token="wrong", payload="{}")
 
+
+def test_dashboard_emergency_stop_action_writes_active_life_stop_signal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    monkeypatch.setenv("SINGULAR_ROOT", str(root))
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    meta = create_life("Urgence")
+
+    app = create_app(
+        runs_dir=meta.path / "runs", psyche_file=meta.path / "mem" / "psyche.json"
+    )
+    route = app._routes["/api/actions/{action}"]
+
+    result = route("emergency_stop", payload=json.dumps({"scope": "active_life"}))
+
+    assert result["ok"] is True
+    assert result["action"] == "emergency_stop"
+    stop_path = meta.path / "mem" / "orchestrator.stop.json"
+    assert result["data"]["stop_signal_path"] == str(stop_path)
+    payload = json.loads(stop_path.read_text(encoding="utf-8"))
+    assert payload["stop"] is True
+    assert payload["reason"] == "dashboard_emergency_stop"
+    assert payload["requested_by"] == "dashboard"
+    assert payload["life"] == meta.slug
 
 def test_dashboard_actions_validation_robustness(tmp_path: Path) -> None:
     app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")

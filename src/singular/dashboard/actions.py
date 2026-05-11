@@ -312,6 +312,8 @@ class DashboardActionService:
                 result = self._memorial(params)
             elif action == "clone":
                 result = self._clone(params)
+            elif action == "emergency_stop":
+                result = self._emergency_stop(params)
             else:
                 payload = ActionResult(
                     ok=False,
@@ -521,6 +523,50 @@ class DashboardActionService:
 
         data, log = self._capture(_run)
         return ActionResult(ok=True, action="archive", data=data, log=log)
+
+    def _emergency_stop(self, params: dict[str, Any]) -> ActionResult:
+        scope = params.get("scope", "active_life")
+        if scope != "active_life":
+            raise ValueError("emergency_stop only supports scope=active_life")
+
+        from singular.lives import load_registry, resolve_life
+
+        life = resolve_life(None)
+        if life is None:
+            raise ValueError("no active life")
+        registry = load_registry()
+        active = registry.get("active")
+        lives = registry.get("lives") if isinstance(registry.get("lives"), dict) else {}
+        metadata = lives.get(active) if isinstance(active, str) else None
+        mem_dir = Path(life) / "mem"
+        stop_path = mem_dir / "orchestrator.stop.json"
+        requested_at = datetime.now(timezone.utc).isoformat()
+
+        def _run() -> dict[str, Any]:
+            mem_dir.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "stop": True,
+                "reason": "dashboard_emergency_stop",
+                "requested_at": requested_at,
+                "requested_by": "dashboard",
+                "scope": scope,
+                "life": active,
+            }
+            stop_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            return {
+                "life": active,
+                "name": getattr(metadata, "name", active),
+                "path": str(life),
+                "stop_signal_path": str(stop_path),
+                "requested_at": requested_at,
+                "guided_message": "Arrêt d’urgence demandé: le signal d’arrêt sera honoré par l’orchestrateur actif.",
+            }
+
+        data, log = self._capture(_run)
+        return ActionResult(ok=True, action="emergency_stop", data=data, log=log)
 
     def _memorial(self, params: dict[str, Any]) -> ActionResult:
         name = self._require_non_empty_text(params.get("name"), field="name", max_len=80)
