@@ -131,10 +131,22 @@ def test_policy_logs_circuit_breaker_opened_only_once_when_already_open(
     policy._now = lambda: clock["now"]  # type: ignore[method-assign]
     caplog.set_level(logging.ERROR, logger="singular.governance.policy")
 
+    first = policy.record_violation(category="quota", severity="high")
+    opened = policy.record_violation(category="quota", severity="high")
+    repeated = policy.record_violation(category="quota", severity="high")
     policy.record_violation(category="quota", severity="high")
-    policy.record_violation(category="quota", severity="high")
-    policy.record_violation(category="quota", severity="high")
-    policy.record_violation(category="quota", severity="high")
+
+    assert first is None
+    assert opened is not None
+    assert opened.category == "quota"
+    assert opened.severity == "high"
+    assert opened.threshold == 2
+    assert opened.cooldown_seconds == 120.0
+    assert opened.open_until == "2026-01-01T00:02:00+00:00"
+    assert opened.corrective_action
+    assert opened.to_payload()["open_until"] == opened.open_until
+    assert policy.last_circuit_breaker_state() == opened
+    assert repeated is None
 
     opened_events = [
         record for record in caplog.records if "governance circuit breaker opened" in record.message

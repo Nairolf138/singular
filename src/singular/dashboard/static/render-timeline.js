@@ -17,6 +17,24 @@ export const showMutationDetail=(runId,index)=>fetch(`/api/runs/${runId}/mutatio
   document.getElementById('timeline-diff').innerHTML=paintDiff(d.diff)||'Aucun diff.';
 });
 
+
+const showGovernanceBreakerDetail=(item)=>{
+  const summary=document.getElementById('timeline-summary');
+  const impact=document.getElementById('timeline-impact');
+  const diff=document.getElementById('timeline-diff');
+  summary.textContent=`Breaker gouvernance ouvert (${item.category||na()} · ${item.severity||na()}) jusqu'à ${item.open_until||na()}.`;
+  impact.textContent=JSON.stringify({
+    category:item.category,
+    severity:item.severity,
+    threshold:item.threshold,
+    cooldown_seconds:item.cooldown_seconds,
+    open_until:item.open_until,
+    corrective_action:item.corrective_action,
+    last_sandbox_diagnostics:item.last_sandbox_diagnostics,
+  },null,2);
+  diff.textContent='';
+};
+
 export const loadTimeline=()=>fetchJson(withScope('/runs/latest')).then(meta=>{
   if(!meta.run){return {run_id:null,items:[]};}
   return fetchJson(`/api/runs/${meta.run}/timeline?page=1&page_size=120`);
@@ -33,6 +51,12 @@ export const loadTimeline=()=>fetchJson(withScope('/runs/latest')).then(meta=>{
     const btn=document.createElement('button');
     btn.className='timeline-button';
     btn.textContent=`${item.event} · ${item.timestamp||na()}`;
+    if(item.event==='governance.circuit_breaker_opened'){
+      row.classList.add('timeline-item-critical');
+      btn.classList.add('timeline-button-critical');
+      btn.title='Circuit breaker gouvernance ouvert';
+      btn.onclick=()=>showGovernanceBreakerDetail(item);
+    }
     row.appendChild(btn);
     if(item.event==='mutation'&&data.run_id){
       const currentIndex=mutationIndex;

@@ -416,7 +416,14 @@ def create_app(
 
     def _timeline_entry(record: dict[str, object], run_id: str) -> dict[str, object] | None:
         event = _event_type(record)
-        if event not in {"mutation", "delay", "refuse", "death", "interaction"}:
+        if event not in {
+            "mutation",
+            "delay",
+            "refuse",
+            "death",
+            "interaction",
+            "governance.circuit_breaker_opened",
+        }:
             return None
 
         accepted: bool | None = None
@@ -444,6 +451,13 @@ def create_app(
             "score_after": score_after,
             "interaction": record.get("interaction"),
             "resume_at": record.get("resume_at"),
+            "category": record.get("category"),
+            "severity": record.get("severity"),
+            "threshold": record.get("threshold"),
+            "cooldown_seconds": record.get("cooldown_seconds"),
+            "open_until": record.get("open_until"),
+            "corrective_action": record.get("corrective_action"),
+            "last_sandbox_diagnostics": record.get("last_sandbox_diagnostics"),
         }
 
     def _normalize_mutation_metrics(record: dict[str, object]) -> dict[str, object]:

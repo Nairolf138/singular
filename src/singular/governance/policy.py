@@ -575,6 +575,30 @@ def _dump_policy_payload(payload: Mapping[str, Any]) -> str:
     return yaml.safe_dump(dict(payload), sort_keys=False)
 
 
+
+
+@dataclass(frozen=True)
+class CircuitBreakerState:
+    """Structured state emitted when the governance circuit breaker opens."""
+
+    category: str
+    severity: str
+    threshold: int
+    cooldown_seconds: float
+    open_until: str
+    corrective_action: str
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "category": self.category,
+            "severity": self.severity,
+            "threshold": self.threshold,
+            "cooldown_seconds": self.cooldown_seconds,
+            "open_until": self.open_until,
+            "corrective_action": self.corrective_action,
+        }
+
+
 @dataclass(frozen=True)
 class GovernanceDecision:
     """Decision returned by policy simulation or enforcement."""
@@ -768,6 +792,7 @@ class MutationGovernancePolicy:
         self._skill_creation_timestamps: deque[datetime] = deque()
         self._violation_timestamps: deque[datetime] = deque()
         self._circuit_open_until: datetime | None = None
+        self._last_circuit_breaker_state: CircuitBreakerState | None = None
         self._runtime_call_timestamps: deque[datetime] = deque()
         self._skill_failure_timestamps: dict[str, deque[datetime]] = {}
         self._skill_cost_totals: dict[str, float] = {}
@@ -924,13 +949,36 @@ class MutationGovernancePolicy:
         if self._social_prudent_until is not None and now >= self._social_prudent_until:
             self._social_prudent_until = None
 
-    def record_violation(self, *, category: str, severity: str = "high") -> None:
+    def last_circuit_breaker_state(self) -> CircuitBreakerState | None:
+        """Return the latest circuit-breaker opening state, if any."""
+
+        return self._last_circuit_breaker_state
+
+    def record_violation(
+        self, *, category: str, severity: str = "high"
+    ) -> CircuitBreakerState | None:
+        """Record a policy violation and return state when the breaker opens.
+
+        The Python log remains the human-facing alert, while the returned value
+        and :meth:`last_circuit_breaker_state` expose a structured signal that
+        callers such as the life loop can turn into run events.
+        """
+
         self._prune_history()
         now = self._now()
         was_open = self._circuit_open_until is not None and now < self._circuit_open_until
         self._violation_timestamps.append(now)
         if not was_open and len(self._violation_timestamps) >= self.circuit_breaker_threshold:
             self._circuit_open_until = now + timedelta(seconds=self.circuit_breaker_cooldown_seconds)
+            state = CircuitBreakerState(
+                category=category,
+                severity=severity,
+                threshold=self.circuit_breaker_threshold,
+                cooldown_seconds=self.circuit_breaker_cooldown_seconds,
+                open_until=self._circuit_open_until.isoformat(),
+                corrective_action="halt mutations until the circuit-breaker cooldown expires",
+            )
+            self._last_circuit_breaker_state = state
             log.error(
                 "governance circuit breaker opened: category=%s severity=%s threshold=%s cooldown=%ss",
                 category,
@@ -938,6 +986,8 @@ class MutationGovernancePolicy:
                 self.circuit_breaker_threshold,
                 self.circuit_breaker_cooldown_seconds,
             )
+            return state
+        return None
 
     def _relative(self, target: Path, root: Path) -> Path:
         target_resolved = target.resolve()

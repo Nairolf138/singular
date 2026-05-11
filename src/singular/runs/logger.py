@@ -423,6 +423,18 @@ class RunLogger:
         self._write_event("interaction", record, record["ts"])
         add_episode(record)
 
+    def log_event(self, event: str, **info: Any) -> None:
+        """Record a named run event without wrapping it as an interaction."""
+
+        record: dict[str, Any] = {
+            "ts": datetime.utcnow().isoformat(timespec="seconds"),
+            "event": event,
+            **info,
+        }
+        self._write_record(record)
+        self._write_event(event, record, record["ts"])
+        add_episode(record)
+
     def log_test_coevolution(
         self,
         *,
