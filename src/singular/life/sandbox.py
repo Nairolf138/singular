@@ -77,7 +77,10 @@ def _sandbox_worker(
     """Execute sandboxed code in a child process and return output through *queue*."""
     if resource_module is not None and sys.platform != "win32":
         resource_module.setrlimit(resource_module.RLIMIT_AS, (memory_limit, memory_limit))
-        cpu_seconds = max(1, int(timeout))
+        # Keep the OS CPU limit slightly above the parent wall-clock timeout so
+        # tight loops are reported as sandbox timeouts instead of opaque worker
+        # exits on platforms that enforce RLIMIT_CPU aggressively.
+        cpu_seconds = max(1, int(timeout) + 1)
         resource_module.setrlimit(resource_module.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
 
     tree = ast.parse(code, mode="exec")
