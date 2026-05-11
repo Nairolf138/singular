@@ -83,31 +83,104 @@ SKILL_GENESIS_FAILURE_STREAK_THRESHOLD = 3
 SKILL_GENESIS_COVERAGE_GAP_THRESHOLD = 0.6
 
 
-@dataclass(frozen=True)
-class ScoreCodeResult:
-    """Sandbox scoring outcome with a machine-readable failure reason."""
+@dataclass(init=False, frozen=True)
+class SandboxScore:
+    """Structured sandbox scoring outcome.
+
+    ``score`` keeps the historical algorithmic contract: failed sandbox scoring
+    yields ``-inf``.  ``ok`` and the error fields carry diagnostics so callers
+    can distinguish a failing source from a failing mutation without parsing the
+    score itself.
+    """
 
     score: float
-    failed: bool = False
-    error_reason: str | None = None
-    exception_type: str | None = None
-    exception_message: str | None = None
+    ok: bool
+    error_type: str | None
+    error_message: str | None
+    _legacy_exception_type: str | None
+
+    def __init__(
+        self,
+        score: float,
+        ok: bool = True,
+        error_type: str | None = None,
+        error_message: str | None = None,
+        *,
+        failed: bool | None = None,
+        error_reason: str | None = None,
+        exception_type: str | None = None,
+        exception_message: str | None = None,
+    ) -> None:
+        """Create a score result, accepting legacy keyword names.
+
+        Older tests and extensions used ``ScoreCodeResult(failed=...,
+        error_reason=..., exception_message=...)``.  The compatibility keywords
+        are folded into the structured ``ok/error_type/error_message`` shape.
+        """
+
+        if failed is not None:
+            ok = not failed
+        resolved_error_type = error_type or error_reason
+        resolved_error_message = error_message or exception_message
+        if resolved_error_message is None and exception_type is not None:
+            resolved_error_message = exception_type
+        object.__setattr__(self, "score", score)
+        object.__setattr__(self, "ok", ok)
+        object.__setattr__(self, "error_type", resolved_error_type)
+        object.__setattr__(self, "error_message", resolved_error_message)
+        object.__setattr__(self, "_legacy_exception_type", exception_type)
+
+    @property
+    def failed(self) -> bool:
+        """Backward-compatible inverse of ``ok``."""
+
+        return not self.ok
+
+    @property
+    def error_reason(self) -> str | None:
+        """Backward-compatible alias for ``error_type``."""
+
+        return self.error_type
+
+    @property
+    def exception_type(self) -> str | None:
+        """Best-effort legacy exception type derived from ``error_type``."""
+
+        if self._legacy_exception_type is not None:
+            return self._legacy_exception_type
+        if self.error_type == "runtime_exception" and self.error_message:
+            # Runtime exception messages generated below include the concrete class.
+            return self.error_message.split(":", 1)[0]
+        return self.error_type
+
+    @property
+    def exception_message(self) -> str | None:
+        """Backward-compatible alias for ``error_message``."""
+
+        return self.error_message
+
+
+# Compatibility name retained for tests and downstream callers.
+ScoreCodeResult = SandboxScore
 
 
 def _score_failure(
-    reason: str,
+    error_type: str,
     exception: BaseException | None = None,
     *,
     message: str | None = None,
-) -> ScoreCodeResult:
-    """Build a failed scoring result with optional exception metadata."""
+) -> SandboxScore:
+    """Build a failed scoring result with a human-readable message."""
 
-    return ScoreCodeResult(
+    exception_type = type(exception).__name__ if exception is not None else None
+    if message is None and exception is not None:
+        message = f"{exception_type}: {exception}"
+    return SandboxScore(
         score=float("-inf"),
-        failed=True,
-        error_reason=reason,
-        exception_type=type(exception).__name__ if exception is not None else None,
-        exception_message=str(exception) if exception is not None else message,
+        ok=False,
+        error_type=error_type,
+        error_message=message,
+        exception_type=exception_type,
     )
 
 
@@ -117,13 +190,12 @@ def _classify_score_exception(exception: BaseException) -> str:
     if isinstance(exception, TimeoutError):
         return "timeout"
     if isinstance(exception, SyntaxError):
-        return "forbidden_syntax"
+        return "syntax_error"
     if isinstance(exception, sandbox.SandboxError):
         message = str(exception).lower()
-        if "forbidden syntax" in message:
-            return "forbidden_syntax"
-        if "forbidden" in message:
-            return "forbidden_name"
+        if "result" in message and ("missing" in message or "did not set" in message):
+            return "missing_result"
+        return "sandbox_error"
     return "runtime_exception"
 
 
@@ -499,7 +571,7 @@ def select_operator(
     return max(names, key=expected)
 
 
-def score_code_with_error(code: str) -> ScoreCodeResult:
+def score_code_with_error(code: str) -> SandboxScore:
     """Execute ``code`` in the sandbox and return score plus failure details.
 
     Failure reasons are intentionally stable for diagnostics: forbidden syntax,
@@ -511,15 +583,20 @@ def score_code_with_error(code: str) -> ScoreCodeResult:
         result = sandbox.run(code)
     except Exception as exc:
         return _score_failure(_classify_score_exception(exc), exc)
+    if result is None:
+        return _score_failure(
+            "missing_result",
+            message="sandbox code did not set a numeric result",
+        )
     if not isinstance(result, (int, float)):
         return _score_failure(
             "non_numeric_result",
-            message=f"sandbox result type is {type(result).__name__}",
+            message=f"sandbox result is not numeric (type: {type(result).__name__})",
         )
     score = float(result)
     if not math.isfinite(score):
         return _score_failure("non_finite_result", message=f"sandbox result is {score}")
-    return ScoreCodeResult(score=score)
+    return SandboxScore(score=score)
 
 
 def score_code(code: str) -> float:
@@ -572,6 +649,10 @@ def log_mutation(
     alternative_scores: list[tuple[int, str, float]] | None = None,
     decision_reason: str | None = None,
     health: dict[str, float | int] | None = None,
+    source_error_type: str | None = None,
+    source_error_message: str | None = None,
+    mutation_error_type: str | None = None,
+    mutation_error_message: str | None = None,
 ) -> None:
     """Record mutation outcome and notify observers."""
 
@@ -624,6 +705,10 @@ def log_mutation(
         loop_modifications=loop_modifications,
         health=health,
         usage_metrics=usage_metrics,
+        source_error_type=source_error_type,
+        source_error_message=source_error_message,
+        mutation_error_type=mutation_error_type,
+        mutation_error_message=mutation_error_message,
     )
 
 
@@ -1563,9 +1648,9 @@ def run(
                     payload_version=1,
                 )
 
-            base_failed = base_score_result.failed or base_score == float("-inf")
+            base_failed = (not base_score_result.ok) or base_score == float("-inf")
             mutation_failed = (
-                mutated_score_result.failed or mutated_score == float("-inf")
+                (not mutated_score_result.ok) or mutated_score == float("-inf")
             )
             sandbox_failure = base_failed or mutation_failed
             sandbox_diagnostic = {
@@ -1576,12 +1661,17 @@ def run(
                 "mutated_score": mutated_score,
                 "base_failed": base_failed,
                 "mutation_failed": mutation_failed,
-                "base_failure_reason": base_score_result.error_reason,
-                "mutation_failure_reason": mutated_score_result.error_reason,
+                "source_error_type": base_score_result.error_type,
+                "source_error_message": base_score_result.error_message,
+                "mutation_error_type": mutated_score_result.error_type,
+                "mutation_error_message": mutated_score_result.error_message,
+                # Legacy diagnostic names retained for existing consumers.
+                "base_failure_reason": base_score_result.error_type,
+                "mutation_failure_reason": mutated_score_result.error_type,
                 "base_exception_type": base_score_result.exception_type,
-                "base_exception_message": base_score_result.exception_message,
+                "base_exception_message": base_score_result.error_message,
                 "mutation_exception_type": mutated_score_result.exception_type,
-                "mutation_exception_message": mutated_score_result.exception_message,
+                "mutation_exception_message": mutated_score_result.error_message,
                 "sandbox_violation_streak": org.sandbox_violation_streak,
                 "governance_circuit_breaker_threshold": getattr(
                     governance_policy,
@@ -1761,6 +1851,10 @@ def run(
                 alternative_scores=reflection.alternative_scores,
                 decision_reason=reflection.decision_reason,
                 health=health_snapshot.to_dict(),
+                source_error_type=base_score_result.error_type,
+                source_error_message=base_score_result.error_message,
+                mutation_error_type=mutated_score_result.error_type,
+                mutation_error_message=mutated_score_result.error_message,
             )
 
             if hasattr(psyche, "consume"):

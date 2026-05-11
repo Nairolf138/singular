@@ -90,7 +90,10 @@ def _sandbox_worker(
             env: Dict[str, Any] = {"__builtins__": allowed}
             try:
                 exec(compile(tree, "<sandbox>", "exec"), env, env)
-                queue.put(env.get("result"))
+                if "result" not in env:
+                    queue.put(SandboxError("sandbox code did not set a result"))
+                else:
+                    queue.put(env["result"])
             except Exception as exc:  # pragma: no cover - delivered to parent
                 queue.put(exc)
         finally:
