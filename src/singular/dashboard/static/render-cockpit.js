@@ -66,6 +66,38 @@ const extractEnergy=(row,eco)=>{
   return firstDefined(row?.emotional_state?.energy,row?.energy,row?.psyche?.energy,organism?.energy);
 };
 
+
+const formatCooldownSeconds=value=>{
+  const seconds=Number(value||0);
+  if(!Number.isFinite(seconds)||seconds<=0){return '0 s';}
+  const minutes=Math.floor(seconds/60);
+  const remainingSeconds=Math.floor(seconds%60);
+  if(minutes<=0){return `${remainingSeconds} s`;}
+  const hours=Math.floor(minutes/60);
+  const remainingMinutes=minutes%60;
+  if(hours<=0){return `${minutes} min ${remainingSeconds} s`; }
+  return `${hours} h ${remainingMinutes} min`;
+};
+
+const renderSandboxGovernance=governance=>{
+  const payload=(governance&&typeof governance==='object')?governance:{};
+  const violations=Number(payload.recent_violations_count||0);
+  const status=String(payload.circuit_breaker_status||'fermé');
+  const emptyEl=byId('sandbox-governance-empty');
+  if(emptyEl){
+    emptyEl.textContent=violations>0?'Violations sandbox récentes détectées.':(payload.empty_state||'aucune violation sandbox récente');
+  }
+  setText('sandbox-breaker-status',status);
+  setText('sandbox-recent-violations',String(violations));
+  setText('sandbox-last-skill',payload.last_faulty_skill||na());
+  setText('sandbox-cooldown-remaining',formatCooldownSeconds(payload.cooldown_remaining_seconds));
+  setText('sandbox-corrective-action',payload.recommended_corrective_action||'Surveiller le prochain run.');
+  const riskTone=status.includes('ouvert')||status.includes('arrêtées')?'bad':(violations>0?'warn':'good');
+  setTone('sandbox-breaker-status',riskTone);
+  setTone('sandbox-recent-violations',violations>0?'warn':'good');
+  setTone('sandbox-cooldown-remaining',Number(payload.cooldown_remaining_seconds||0)>0?'warn':'good');
+};
+
 const renderOperatorSummary=()=>{
   const root=document.getElementById('operator-lives-summary');
   if(!root){return;}
@@ -266,6 +298,7 @@ export const loadCockpit=()=>Promise.all([
     else if(globalStatus==='critical'){setStatusTone(statusBox,'bad');applyStatusIndicator(statusBox,'bad');}
   }
 
+  renderSandboxGovernance(d.sandbox_governance||{});
   const healthValue=d.health_score===null?na():Number(d.health_score).toFixed(1);
   const trend=d.trend||na();
   const accepted=d.accepted_mutation_rate===null?na():`${(d.accepted_mutation_rate*100).toFixed(1)}%`;
