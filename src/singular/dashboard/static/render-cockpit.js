@@ -227,10 +227,18 @@ export const loadEco=()=>Promise.all([fetchJson(withScope('/ecosystem')),fetchJs
   document.getElementById('raw-eco-json').textContent=JSON.stringify(eco,null,2);
 });
 
-export const loadQuests=()=>fetchJson('/api/dashboard/work-items').then(data=>{
+export const loadQuests=()=>Promise.all([
+  fetchJson('/api/dashboard/work-items'),
+  fetchJson('/dashboard/context'),
+  fetchJson('/lives/comparison?sort_by=last_activity&sort_order=desc'),
+]).then(([data,context,comparison])=>{
   renderQuestsSection(data?.quests||{active:[],completed:[]});
   renderObjectivesSection(data?.objectives||{items:[]});
-  renderConversationsSection(data?.conversations||{items:[]});
+  renderConversationsSection({
+    ...(data?.conversations||{items:[]}),
+    context,
+    comparison,
+  });
 });
 
 export const loadHostVitals=()=>fetchJson(withScope('/runs/latest')).then(data=>{
