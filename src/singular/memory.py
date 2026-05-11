@@ -414,10 +414,11 @@ def record_skill_metric(
     metrics["average_cost"] = metrics["total_cost"] / usage_count
     metrics["last_used_at"] = _utc_now_iso()
 
-    lifecycle["state"] = "active"
-    lifecycle["state_reason"] = "recent_usage"
-    lifecycle["disabled_until"] = None
-    lifecycle["last_transition_at"] = _utc_now_iso()
+    if lifecycle.get("state") not in {"temporarily_disabled", "deleted"}:
+        lifecycle["state"] = "active"
+        lifecycle["state_reason"] = "recent_usage"
+        lifecycle["disabled_until"] = None
+        lifecycle["last_transition_at"] = _utc_now_iso()
 
     skills[skill] = entry
     write_skills(skills, path)
