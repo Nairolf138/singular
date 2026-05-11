@@ -360,6 +360,94 @@ def test_dashboard_cockpit_endpoint_schema(tmp_path: Path) -> None:
     assert "objective_narrative_links" in payload["trajectory"]
 
 
+def test_dashboard_cockpit_sandbox_governance_summary(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "sandbox.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "ts": "2026-05-11T08:00:00+00:00",
+                        "event": "interaction",
+                        "interaction": "sandbox_violation",
+                        "organism": "life-a",
+                        "skill": "life-a:skills/bad.py",
+                        "severity": "critical",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-05-11T08:05:00+00:00",
+                        "event": "governance.circuit_breaker_opened",
+                        "category": "sandbox_violation",
+                        "severity": "critical",
+                        "cooldown_seconds": 300.0,
+                        "open_until": "2099-05-11T08:10:00+00:00",
+                        "corrective_action": "halt mutations until cooldown",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-05-11T08:06:00+00:00",
+                        "event": "skill.quarantined",
+                        "skill": "life-a:skills/bad.py",
+                        "disabled_until": "2099-05-11T09:00:00+00:00",
+                        "reason": "consecutive_sandbox_failures",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-05-11T08:07:00+00:00",
+                        "event": "interaction",
+                        "interaction": "mutation_halted",
+                        "organism": "life-a",
+                        "target": "life-a:skills/bad.py",
+                        "severity": "critical",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    payload = TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")).get(
+        "/api/cockpit"
+    ).json()
+
+    governance = payload["sandbox_governance"]
+    assert governance["circuit_breaker_status"] == "ouvert"
+    assert governance["recent_violations_count"] == 2
+    assert governance["last_faulty_skill"] == "life-a:skills/bad.py"
+    assert governance["cooldown_remaining_seconds"] > 0
+    assert governance["recommended_corrective_action"] == "halt mutations until cooldown"
+    assert governance["empty_state"] is None
+    assert {item["event"] for item in governance["events"]} >= {
+        "sandbox_violation",
+        "governance.circuit_breaker_opened",
+        "skill.quarantined",
+        "mutation_halted",
+    }
+
+
+def test_dashboard_cockpit_sandbox_governance_empty_state(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "empty-sandbox.jsonl").write_text(
+        json.dumps({"ts": "2026-05-11T08:00:00+00:00", "health": {"score": 99.0}}) + "\n",
+        encoding="utf-8",
+    )
+
+    payload = TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")).get(
+        "/api/cockpit"
+    ).json()
+
+    governance = payload["sandbox_governance"]
+    assert governance["recent_violations_count"] == 0
+    assert governance["empty_state"] == "aucune violation sandbox récente"
+
+
 def test_dashboard_cockpit_essential_projection_schema(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
@@ -419,6 +507,9 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     body = response.json()
     assert "kpi-retention-usage" in body
     assert "kpi-retention-thresholds" in body
+    assert "sandbox-governance-card" in body
+    assert "aucune violation sandbox récente" in body
+    assert "Action corrective recommandée" in body
     assert "Cockpit" in body
     assert "Prochaine action" in body
     assert "Métriques d’autonomie" in body

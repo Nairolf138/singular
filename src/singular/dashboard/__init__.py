@@ -505,6 +505,134 @@ def create_app(
             },
         }
 
+
+    def _record_event_name(record: dict[str, object]) -> str:
+        event = record.get("event")
+        interaction = record.get("interaction")
+        if event == "interaction" and isinstance(interaction, str):
+            return interaction
+        if isinstance(event, str):
+            return event
+        if isinstance(interaction, str):
+            return interaction
+        return ""
+
+    def _seconds_until(value: object, *, now: datetime | None = None) -> int:
+        parsed = _parse_iso8601(value)
+        if parsed is None:
+            return 0
+        reference = now or datetime.now(timezone.utc)
+        return max(0, int((parsed.astimezone(timezone.utc) - reference).total_seconds()))
+
+    def _summarize_sandbox_governance(records: list[dict[str, object]]) -> dict[str, object]:
+        target_events = {
+            "sandbox_violation",
+            "governance.circuit_breaker_opened",
+            "skill.quarantined",
+            "mutation_halted",
+        }
+        now = datetime.now(timezone.utc)
+        latest_ts = None
+        for record in records:
+            parsed = _parse_iso8601(record.get("ts") or record.get("timestamp"))
+            if parsed is not None and (latest_ts is None or parsed > latest_ts):
+                latest_ts = parsed
+
+        recent_cutoff = (latest_ts or now) - timedelta(hours=24)
+        events: list[dict[str, object]] = []
+        sandbox_violations: list[dict[str, object]] = []
+        breaker_events: list[dict[str, object]] = []
+        quarantine_events: list[dict[str, object]] = []
+        halted_events: list[dict[str, object]] = []
+
+        for record in records:
+            event_name = _record_event_name(record)
+            category = str(record.get("category", ""))
+            is_target = event_name in target_events
+            is_sandbox_violation = event_name == "sandbox_violation" or (
+                event_name == "governance.circuit_breaker_opened"
+                and "sandbox" in category.lower()
+            )
+            if not is_target and not is_sandbox_violation:
+                continue
+
+            ts_value = record.get("ts") or record.get("timestamp")
+            parsed_ts = _parse_iso8601(ts_value)
+            skill = record.get("skill") or record.get("skill_path") or record.get("target")
+            event_item = {
+                "event": event_name or "sandbox_violation",
+                "timestamp": ts_value,
+                "life": _record_life(record),
+                "skill": str(skill) if isinstance(skill, str) and skill else None,
+                "severity": record.get("severity"),
+                "category": record.get("category"),
+                "reason": record.get("reason"),
+                "cooldown_seconds": record.get("cooldown_seconds"),
+                "open_until": record.get("open_until"),
+                "disabled_until": record.get("disabled_until"),
+                "corrective_action": record.get("corrective_action"),
+            }
+            events.append(event_item)
+            if is_sandbox_violation and (parsed_ts is None or parsed_ts >= recent_cutoff):
+                sandbox_violations.append(event_item)
+            if event_name == "governance.circuit_breaker_opened":
+                breaker_events.append(event_item)
+            elif event_name == "skill.quarantined":
+                quarantine_events.append(event_item)
+            elif event_name == "mutation_halted":
+                halted_events.append(event_item)
+
+        latest_breaker = breaker_events[-1] if breaker_events else None
+        latest_quarantine = quarantine_events[-1] if quarantine_events else None
+        latest_halted = halted_events[-1] if halted_events else None
+        latest_fault = None
+        for event_item in reversed(events):
+            if event_item.get("skill") and event_item.get("event") in {
+                "sandbox_violation",
+                "skill.quarantined",
+                "mutation_halted",
+            }:
+                latest_fault = event_item
+                break
+
+        cooldown_remaining = 0
+        if latest_breaker:
+            cooldown_remaining = max(
+                cooldown_remaining, _seconds_until(latest_breaker.get("open_until"), now=now)
+            )
+        if latest_quarantine:
+            cooldown_remaining = max(
+                cooldown_remaining, _seconds_until(latest_quarantine.get("disabled_until"), now=now)
+            )
+
+        breaker_status = "fermé"
+        if latest_breaker and cooldown_remaining > 0:
+            breaker_status = "ouvert"
+        elif latest_breaker:
+            breaker_status = "fermé (cooldown expiré)"
+        if latest_halted and not latest_breaker:
+            breaker_status = "mutations arrêtées"
+
+        corrective_action = "Surveiller le prochain run."
+        if latest_breaker and latest_breaker.get("corrective_action"):
+            corrective_action = str(latest_breaker["corrective_action"])
+        elif latest_quarantine:
+            corrective_action = "Inspecter la skill en quarantaine avant réactivation."
+        elif sandbox_violations:
+            corrective_action = "Auditer la sandbox, les chemins modifiables et les quotas avant reprise."
+        elif latest_halted:
+            corrective_action = "Attendre la fin du verrou de mutation puis relancer une mutation sûre."
+
+        return {
+            "circuit_breaker_status": breaker_status,
+            "recent_violations_count": len(sandbox_violations),
+            "last_faulty_skill": latest_fault.get("skill") if latest_fault else None,
+            "cooldown_remaining_seconds": cooldown_remaining,
+            "recommended_corrective_action": corrective_action,
+            "empty_state": "aucune violation sandbox récente" if not sandbox_violations else None,
+            "events": events[-10:],
+        }
+
     def _summarize_cockpit(current_life_only: bool = False) -> dict[str, object]:
         latest = _latest_run_file(current_life_only=current_life_only)
         if latest is None:
@@ -514,6 +642,7 @@ def create_app(
                 "trend": "plateau",
                 "accepted_mutation_rate": None,
                 "critical_alerts": [],
+                "sandbox_governance": _summarize_sandbox_governance([]),
                 "last_notable_mutation": None,
                 "next_action": "Aucune donnée: démarrer un run pour remplir le cockpit.",
                 "suggested_actions": [
@@ -598,6 +727,7 @@ def create_app(
             for alert in alerts
             if str(alert.get("severity", "")).lower() in {"critical", "high"}
         ]
+        sandbox_governance = _summarize_sandbox_governance(records)
 
         last_notable_mutation = None
         for record in reversed(mutations):
@@ -730,6 +860,7 @@ def create_app(
             "trend": trend,
             "accepted_mutation_rate": accepted_rate,
             "critical_alerts": critical_alerts,
+            "sandbox_governance": sandbox_governance,
             "last_notable_mutation": last_notable_mutation,
             "next_action": next_action,
             "suggested_actions": suggested_actions,

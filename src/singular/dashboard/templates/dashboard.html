@@ -100,8 +100,8 @@
     <pre id='conversations-json-raw' class='panel-hidden content-top-gap'>{"items":[]}</pre>
   </section>
 
-  <section id='cockpit'>
-    <h2>État de l’écosystème</h2>
+  <section id="cockpit">
+    <h2>Cockpit · État de l’écosystème</h2>
     <p class='section-help'>Vue synthétique d’observation de l’écosystème (sans prescriptions opérateur).</p>
     <div class='status-legend'>
       <span class='status-pill status-good'>● OK</span>
@@ -116,6 +116,26 @@
         <div class='card'><div class='card-label kpi-label' title='Cohérence observée entre les vies actives'>Stabilité collective</div><div id='kpi-active-lives' class='card-value'>0</div></div>
         <div class='card'><div class='card-label kpi-label' title='Nombre d’incidents critiques en cours'>Incidents critiques</div><div id='kpi-alerts' class='card-value'>0</div></div>
         <div class='card'><div class='card-label kpi-label' title='Évolution récente du système'>Tendance</div><div id='kpi-trend' class='card-value'>Non disponible</div></div>
+      </div>
+    </div>
+
+
+    <div id='sandbox-governance-card' class='panel level-panel' data-essential-level='1' aria-live='polite'>
+      <h3 class='heading-reset-top'>Gouvernance sandbox</h3>
+      <p id='sandbox-governance-empty' class='section-help'>aucune violation sandbox récente</p>
+      <div class='cards-grid'>
+        <div class='card'><div class='card-label'>Statut circuit breaker</div><div id='sandbox-breaker-status' class='card-value'>Chargement…</div></div>
+        <div class='card'><div class='card-label'>Violations récentes</div><div id='sandbox-recent-violations' class='card-value'>Chargement…</div></div>
+        <div class='card'><div class='card-label'>Dernière skill fautive</div><div id='sandbox-last-skill' class='card-value'>Chargement…</div></div>
+        <div class='card'><div class='card-label'>Cooldown restant</div><div id='sandbox-cooldown-remaining' class='card-value'>Chargement…</div></div>
+      </div>
+      <div class='card content-top-gap'>
+        <div class='card-label'>Action corrective recommandée</div>
+        <div id='sandbox-corrective-action' class='card-value'>Chargement…</div>
+      </div>
+      <div class='card content-top-gap'>
+        <div class='card-label'>Prochaine action</div>
+        <div id='kpi-next-action' class='card-value'>Chargement…</div>
       </div>
     </div>
 
