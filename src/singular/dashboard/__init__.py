@@ -25,7 +25,11 @@ from singular.skills_daily import build_daily_skills_snapshot
 from fastapi.responses import HTMLResponse
 
 from singular.schedulers.reevaluation import alerts_from_records
-from singular.dashboard.repositories.run_records import RunRecordsRepository
+from singular.dashboard.repositories.run_records import (
+    RunRecordsRepository,
+    is_run_jsonl_file,
+    logical_run_file_stem,
+)
 from singular.dashboard.services.trajectory import (
     build_trajectory as build_trajectory_service,
     extract_objective_priorities as extract_objective_priorities_service,
@@ -169,7 +173,11 @@ def create_app(
         normalized = run.strip()
         if not normalized:
             return "unknown"
-        # Legacy JSONL files often follow <run_id>-<timestamp>.jsonl.
+        if normalized.endswith(".jsonl.tmp"):
+            normalized = normalized[: -len(".jsonl.tmp")]
+        elif normalized.endswith(".jsonl"):
+            normalized = normalized[: -len(".jsonl")]
+        # Legacy JSONL files often follow <run_id>-<timestamp>.jsonl(.tmp).
         # Normalize back to <run_id> so registry run mappings can resolve life names.
         if "-" in normalized:
             candidate, suffix = normalized.rsplit("-", 1)
@@ -245,7 +253,7 @@ def create_app(
             if not directory.exists():
                 continue
             for file in directory.iterdir():
-                if not file.is_file() or file.suffix != ".jsonl":
+                if not file.is_file() or not is_run_jsonl_file(file):
                     continue
                 for line in file.read_text(encoding="utf-8").splitlines():
                     if not line.strip():
@@ -333,6 +341,9 @@ def create_app(
 
     def _read_jsonl_records(file: Path) -> list[dict[str, object]]:
         return run_repository.read_jsonl_records(file)
+
+    def _run_file_id(file: Path) -> str:
+        return logical_run_file_stem(file)
 
     def _latest_run_file(current_life_only: bool = False) -> Path | None:
         return run_repository.latest_run_file(current_life_only=current_life_only)
@@ -660,7 +671,7 @@ def create_app(
         )
 
         return {
-            "run": latest.stem,
+            "run": _run_file_id(latest),
             "health_score": health_score,
             "trend": trend,
             "accepted_mutation_rate": accepted_rate,
@@ -813,7 +824,7 @@ def create_app(
         latest = _latest_run_file(current_life_only=current_life_only)
         if latest is not None:
             consciousness_path = _resolve_consciousness_path(
-                latest.stem, current_life_only=current_life_only
+                _run_file_id(latest), current_life_only=current_life_only
             )
             if consciousness_path is not None:
                 for line in consciousness_path.read_text(encoding="utf-8").splitlines():
@@ -841,7 +852,7 @@ def create_app(
         return {
             "quests": quests,
             "objectives": {"items": objectives_items},
-            "conversations": {"run_id": latest.stem if latest is not None else None, "items": conversations_items},
+            "conversations": {"run_id": _run_file_id(latest) if latest is not None else None, "items": conversations_items},
         }
 
     @app.get("/ecosystem")
@@ -854,14 +865,14 @@ def create_app(
         if latest is None:
             return {"run": None, "alerts": []}
         records = _read_jsonl_records(latest)
-        return {"run": latest.stem, "alerts": alerts_from_records(records)}
+        return {"run": _run_file_id(latest), "alerts": alerts_from_records(records)}
 
     @app.get("/runs/latest")
     def read_latest_run(current_life_only: bool = False) -> dict[str, object]:
         latest = _latest_run_file(current_life_only=current_life_only)
         if latest is None:
             return {"run": None, "records": []}
-        return {"run": latest.stem, "records": _read_jsonl_records(latest)}
+        return {"run": _run_file_id(latest), "records": _read_jsonl_records(latest)}
 
     @app.get("/api/runs/{run_id}/timeline")
     def read_run_timeline(
@@ -1055,7 +1066,7 @@ def create_app(
                 last_timestamp = ts
 
         return {
-            "run": latest.stem,
+            "run": _run_file_id(latest),
             "summary": {
                 "entries": len(records),
                 "mutations": mutation_count,
@@ -1789,7 +1800,7 @@ def create_app(
             ts = payload.get("ts")
             return {
                 "type": "run_event",
-                "run_id": file.stem,
+                "run_id": _run_file_id(file),
                 "event": event,
                 "ts": ts if isinstance(ts, str) else None,
             }
@@ -1818,7 +1829,7 @@ def create_app(
                         if not directory.exists():
                             continue
                         for file in directory.iterdir():
-                            if not file.is_file() or file.suffix != ".jsonl":
+                            if not file.is_file() or not is_run_jsonl_file(file):
                                 continue
                             key = f"{directory.parent.name}/{file.name}"
                             current_files.add(key)
