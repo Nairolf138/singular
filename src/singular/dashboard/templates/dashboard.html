@@ -96,7 +96,7 @@
         </div>
       </div>
     </div>
-    <button type='button' id='conversations-json-toggle' class='toggle-more-btn content-top-gap' aria-expanded='false'>Voir JSON</button>
+    <button type='button' id='conversations-json-toggle' class='toggle-more-btn content-top-gap' data-expand-target='conversations-json-raw' data-open-label='Masquer JSON' data-closed-label='Voir JSON' aria-expanded='false'>Voir JSON</button>
     <pre id='conversations-json-raw' class='panel-hidden content-top-gap'>{"items":[]}</pre>
   </section>
 
@@ -311,7 +311,7 @@
         </thead>
         <tbody id='quests-table-body'></tbody>
       </table>
-      <button type='button' id='quests-json-toggle' class='toggle-more-btn content-top-gap' aria-expanded='false'>Voir JSON</button>
+      <button type='button' id='quests-json-toggle' class='toggle-more-btn content-top-gap' data-expand-target='quests-json-raw' data-open-label='Masquer JSON' data-closed-label='Voir JSON' aria-expanded='false'>Voir JSON</button>
       <pre id='quests-json-raw' class='panel-hidden content-top-gap'>{"active":[],"completed":[]}</pre>
     </section>
     <h3>Objectifs</h3>
@@ -329,7 +329,7 @@
         </thead>
         <tbody id='objectives-table-body'></tbody>
       </table>
-      <button type='button' id='objectives-json-toggle' class='toggle-more-btn content-top-gap' aria-expanded='false'>Voir JSON</button>
+      <button type='button' id='objectives-json-toggle' class='toggle-more-btn content-top-gap' data-expand-target='objectives-json-raw' data-open-label='Masquer JSON' data-closed-label='Voir JSON' aria-expanded='false'>Voir JSON</button>
       <pre id='objectives-json-raw' class='panel-hidden content-top-gap'>{"items":[]}</pre>
     </section>
     <h3>Organismes (résumé)</h3>

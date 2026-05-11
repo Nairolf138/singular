@@ -1,18 +1,5 @@
 import {normalizeItem} from './render-quests.js';
 
-const bindJsonToggle=(buttonId,rawId)=>{
-  const button=document.getElementById(buttonId);
-  const raw=document.getElementById(rawId);
-  if(!button||!raw||button.dataset.bound==='true'){return;}
-  button.dataset.bound='true';
-  button.addEventListener('click',()=>{
-    const isHidden=raw.classList.contains('panel-hidden');
-    raw.classList.toggle('panel-hidden',!isHidden);
-    button.textContent=isHidden?'Masquer JSON':'Voir JSON';
-    button.setAttribute('aria-expanded',isHidden?'true':'false');
-  });
-};
-
 export const renderObjectivesSection=payload=>{
   const rows=(Array.isArray(payload?.items)?payload.items:[]).map(item=>normalizeItem(item,'objectif'));
   const tbody=document.getElementById('objectives-table-body');
@@ -33,5 +20,4 @@ export const renderObjectivesSection=payload=>{
 
   const raw=document.getElementById('objectives-json-raw');
   if(raw){raw.textContent=JSON.stringify(payload||{items:[]},null,2);}
-  bindJsonToggle('objectives-json-toggle','objectives-json-raw');
 };

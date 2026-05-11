@@ -40,19 +40,6 @@ const escapeHtml=value=>String(value??'').replace(/[&<>'"]/g,char=>({
   '"':'&quot;',
 }[char]));
 
-const bindJsonToggle=(buttonId,rawId)=>{
-  const button=document.getElementById(buttonId);
-  const raw=document.getElementById(rawId);
-  if(!button||!raw||button.dataset.bound==='true'){return;}
-  button.dataset.bound='true';
-  button.addEventListener('click',()=>{
-    const isHidden=raw.classList.contains('panel-hidden');
-    raw.classList.toggle('panel-hidden',!isHidden);
-    button.textContent=isHidden?'Masquer JSON':'Voir JSON';
-    button.setAttribute('aria-expanded',isHidden?'true':'false');
-  });
-};
-
 const setFlowState=(flow)=>{
   conversationState.flow=flow;
   const el=document.getElementById('conversation-flow-state');
@@ -209,5 +196,4 @@ export const renderConversationsSection=payload=>{
 
   const raw=document.getElementById('conversations-json-raw');
   if(raw){raw.textContent=JSON.stringify(payload||{items:[]},null,2);}
-  bindJsonToggle('conversations-json-toggle','conversations-json-raw');
 };
