@@ -614,12 +614,26 @@ def test_sandbox_violation_burst_enters_degraded_mode_without_immediate_extincti
 
     score_calls = {"n": 0}
 
-    def failing_score(_code: str) -> float:
+    def failing_score(_code: str) -> life_loop.ScoreCodeResult:
         score_calls["n"] += 1
-        return float("-inf") if score_calls["n"] % 2 == 1 else 0.0
+        if score_calls["n"] % 2 == 1:
+            return life_loop.ScoreCodeResult(
+                score=float("-inf"),
+                failed=True,
+                error_reason="runtime_exception",
+                exception_type="RuntimeError",
+                exception_message="synthetic sandbox failure",
+            )
+        return life_loop.ScoreCodeResult(score=0.0)
 
-    monkeypatch.setattr(life_loop, "score_code", failing_score)
+    monkeypatch.setattr(life_loop, "score_code_with_error", failing_score)
     monkeypatch.setattr(life_loop, "propose_mutations", lambda *_a, **_k: [])
+
+    from singular.runs.logger import RunLogger as RL
+
+    monkeypatch.setattr(
+        life_loop, "RunLogger", functools.partial(RL, root=tmp_path / "logs")
+    )
 
     class StablePsyche:
         energy = 1000.0
@@ -657,7 +671,7 @@ def test_sandbox_violation_burst_enters_degraded_mode_without_immediate_extincti
             self.max_failures = max_failures
             self.failures = 0
 
-        def check(self, iteration, psyche, action_succeeded, resources=None):
+        def check(self, iteration, psyche, action_succeeded, resources=None, **_kwargs):
             if not action_succeeded:
                 self.failures += 1
             else:
@@ -669,7 +683,7 @@ def test_sandbox_violation_burst_enters_degraded_mode_without_immediate_extincti
     state = life_loop.run(
         skills_dir,
         checkpoint,
-        budget_seconds=2.0,
+        budget_seconds=10.0,
         max_iterations=4,
         rng=random.Random(0),
         operators={"noop": _noop_operator},
@@ -691,6 +705,32 @@ def test_sandbox_violation_burst_enters_degraded_mode_without_immediate_extincti
     assert events
     assert events[0]["sandbox_violation_streak"] >= life_loop.SANDBOX_DEGRADED_MODE_THRESHOLD
 
+    events_path = tmp_path / "logs" / "loop" / "events.jsonl"
+    run_events = [
+        json.loads(line)
+        for line in events_path.read_text(encoding="utf-8").splitlines()
+    ]
+    diagnostics = [
+        event["payload"]
+        for event in run_events
+        if event.get("event_type") == "interaction"
+        and event.get("payload", {}).get("interaction") == "sandbox_violation"
+    ]
+    assert diagnostics
+    diagnostic = diagnostics[0]
+    assert diagnostic["organism"] == skills_dir.name
+    assert diagnostic["skill_path"] == str(skills_dir / "foo.py")
+    assert diagnostic["operator"] == "noop"
+    assert diagnostic["base_score"] == float("-inf")
+    assert diagnostic["mutated_score"] == 0.0
+    assert diagnostic["base_failed"] is True
+    assert diagnostic["mutation_failed"] is False
+    assert diagnostic["sandbox_violation_streak"] >= 1
+    assert diagnostic["governance_circuit_breaker_threshold"] == 3
+    assert diagnostic["base_failure_reason"] == "runtime_exception"
+    assert diagnostic["base_exception_type"] == "RuntimeError"
+    assert diagnostic["base_exception_message"] == "synthetic sandbox failure"
+
 
 def test_prolonged_sandbox_violation_persistence_triggers_controlled_extinction(
     tmp_path: Path, monkeypatch
@@ -702,11 +742,17 @@ def test_prolonged_sandbox_violation_persistence_triggers_controlled_extinction(
 
     score_calls = {"n": 0}
 
-    def failing_score(_code: str) -> float:
+    def failing_score(_code: str) -> life_loop.ScoreCodeResult:
         score_calls["n"] += 1
-        return float("-inf") if score_calls["n"] % 2 == 1 else 0.0
+        if score_calls["n"] % 2 == 1:
+            return life_loop.ScoreCodeResult(
+                score=float("-inf"),
+                failed=True,
+                error_reason="runtime_exception",
+            )
+        return life_loop.ScoreCodeResult(score=0.0)
 
-    monkeypatch.setattr(life_loop, "score_code", failing_score)
+    monkeypatch.setattr(life_loop, "score_code_with_error", failing_score)
     monkeypatch.setattr(life_loop, "propose_mutations", lambda *_a, **_k: [])
     monkeypatch.setattr(life_loop, "SANDBOX_DEGRADED_MODE_THRESHOLD", 1)
     monkeypatch.setattr(life_loop, "SANDBOX_EXTINCTION_THRESHOLD", 2)
@@ -740,7 +786,7 @@ def test_prolonged_sandbox_violation_persistence_triggers_controlled_extinction(
             self.max_failures = max_failures
             self.failures = 0
 
-        def check(self, iteration, psyche, action_succeeded, resources=None):
+        def check(self, iteration, psyche, action_succeeded, resources=None, **_kwargs):
             if not action_succeeded:
                 self.failures += 1
             else:
@@ -752,7 +798,7 @@ def test_prolonged_sandbox_violation_persistence_triggers_controlled_extinction(
     state = life_loop.run(
         skills_dir,
         checkpoint,
-        budget_seconds=2.0,
+        budget_seconds=10.0,
         max_iterations=12,
         rng=random.Random(0),
         operators={"noop": _noop_operator},
