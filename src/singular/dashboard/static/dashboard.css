@@ -385,6 +385,18 @@ body.essential-mode #toggle-essential { border-color: var(--ok); color: var(--ok
   box-shadow: var(--glow);
 }
 
+.critical-action-result {
+  margin: -4px 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: rgba(9, 16, 39, 0.92);
+  color: #dbe6ff;
+  white-space: pre-wrap;
+  max-height: 180px;
+  overflow: auto;
+}
+
 .critical-action-btn {
   font-weight: 700;
   border-color: rgba(127, 166, 255, 0.6);
