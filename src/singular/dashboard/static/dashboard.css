@@ -254,6 +254,7 @@ button:hover {
 .fallback-box { margin-top:8px; padding:8px; border-radius:8px; }
 .timeline-item { display:inline-flex; gap:4px; }
 .timeline-button { padding:6px; }
+.timeline-button-critical { border-color:#dc2626; color:#b91c1c; font-weight:700; }
 .timeline-link { align-self:center; }
 .diff-added { color:#3ff9a8; }
 .diff-removed { color:#ff6b8d; }

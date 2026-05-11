@@ -798,6 +798,19 @@ def test_run_timeline_endpoint_filters_pagination_and_event_coherence(tmp_path: 
                 ),
                 json.dumps(
                     {
+                        "ts": "2026-04-11T09:05:00",
+                        "event": "governance.circuit_breaker_opened",
+                        "category": "sandbox_violation",
+                        "severity": "critical",
+                        "threshold": 3,
+                        "cooldown_seconds": 300.0,
+                        "open_until": "2026-04-11T09:10:00+00:00",
+                        "corrective_action": "halt mutations until cooldown",
+                        "last_sandbox_diagnostics": {"sandbox_violation_streak": 3},
+                    }
+                ),
+                json.dumps(
+                    {
                         "ts": "2026-04-11T09:10:00",
                         "skill": "orgb:skills/b.py",
                         "operator": "swap",
@@ -819,7 +832,7 @@ def test_run_timeline_endpoint_filters_pagination_and_event_coherence(tmp_path: 
     route = app._routes["/api/runs/{run_id}/timeline"]
 
     all_payload = route(run_id="run-42", page=1, page_size=2)
-    assert all_payload["pagination"] == {"page": 1, "page_size": 2, "total": 6, "total_pages": 3}
+    assert all_payload["pagination"] == {"page": 1, "page_size": 2, "total": 7, "total_pages": 4}
     assert [item["event"] for item in all_payload["items"]] == ["mutation", "delay"]
 
     page_two = route(run_id="run-42", page=2, page_size=2)
@@ -844,7 +857,24 @@ def test_run_timeline_endpoint_filters_pagination_and_event_coherence(tmp_path: 
     assert item["score_after"] == 6.0
 
     event_types = {entry["event"] for entry in route(run_id="run-42")["items"]}
-    assert {"mutation", "delay", "refuse", "death", "interaction"}.issubset(event_types)
+    assert {
+        "mutation",
+        "delay",
+        "refuse",
+        "death",
+        "interaction",
+        "governance.circuit_breaker_opened",
+    }.issubset(event_types)
+    breaker_item = next(
+        entry for entry in route(run_id="run-42")["items"]
+        if entry["event"] == "governance.circuit_breaker_opened"
+    )
+    assert breaker_item["category"] == "sandbox_violation"
+    assert breaker_item["severity"] == "critical"
+    assert breaker_item["threshold"] == 3
+    assert breaker_item["cooldown_seconds"] == 300.0
+    assert breaker_item["open_until"] == "2026-04-11T09:10:00+00:00"
+    assert breaker_item["last_sandbox_diagnostics"] == {"sandbox_violation_streak": 3}
 
 
 def test_run_mutation_detail_endpoint_returns_diff_metrics_and_ast(tmp_path: Path) -> None:

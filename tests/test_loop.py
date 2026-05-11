@@ -768,6 +768,21 @@ def test_sandbox_violation_burst_enters_degraded_mode_without_immediate_extincti
     assert diagnostic["governance_circuit_breaker_threshold"] == 3
     assert diagnostic["source_error_type"] == "runtime_exception"
     assert diagnostic["source_error_message"] == "synthetic sandbox failure"
+    breaker_events = [
+        event["payload"]
+        for event in run_events
+        if event.get("event_type") == "governance.circuit_breaker_opened"
+    ]
+    assert breaker_events
+    breaker = breaker_events[0]
+    assert breaker["category"] == "sandbox_violation"
+    assert breaker["severity"] == "critical"
+    assert breaker["threshold"] == 3
+    assert breaker["cooldown_seconds"] == 300.0
+    assert breaker["open_until"]
+    assert breaker["corrective_action"]
+    assert breaker["last_sandbox_diagnostics"]["organism"] == skills_dir.name
+
     assert diagnostic["mutation_error_type"] is None
     assert diagnostic["mutation_error_message"] is None
     assert diagnostic["base_failure_reason"] == "runtime_exception"

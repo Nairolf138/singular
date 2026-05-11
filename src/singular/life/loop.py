@@ -1685,10 +1685,23 @@ def run(
                     org.sandbox_violation_streak
                 )
                 logger.log_interaction("sandbox_violation", **sandbox_diagnostic)
-                governance_policy.record_violation(
+                breaker_state = governance_policy.record_violation(
                     category="sandbox_violation",
                     severity="critical",
                 )
+                if breaker_state is not None:
+                    breaker_payload = breaker_state.to_payload()
+                    breaker_payload["last_sandbox_diagnostics"] = dict(sandbox_diagnostic)
+                    logger.log_event("governance.circuit_breaker_opened", **breaker_payload)
+                    event_bus.publish(
+                        "governance.circuit_breaker_opened",
+                        {
+                            "life": org_name,
+                            "iteration": state.iteration,
+                            **breaker_payload,
+                        },
+                        payload_version=1,
+                    )
                 if (
                     org.sandbox_violation_streak >= SANDBOX_DEGRADED_MODE_THRESHOLD
                     and not org.degraded_mode
