@@ -51,6 +51,24 @@
     <p><strong>Les vies agissent de manière autonome ; aucune action humaine requise hors gouvernance.</strong></p>
   </div>
 
+  <section id='operator-lives-summary' class='panel level-panel' data-essential-level='1' aria-live='polite'>
+    <h2 class='heading-reset-top'>Résumé opérateur des vies</h2>
+    <p class='section-help'>Vue accessible sans mode technique : registre, activité, humeur/énergie, tendance et liveness.</p>
+    <div class='cards-grid'>
+      <div class='card'><div class='card-label'>Nombre de vies</div><div id='operator-lives-total' class='card-value'>Chargement…</div></div>
+      <div class='card'><div class='card-label'>Vie active / sélectionnée</div><div id='operator-selected-life' class='card-value'>Chargement…</div></div>
+      <div class='card'><div class='card-label'>Vies vivantes</div><div id='operator-alive-lives' class='card-value'>Chargement…</div></div>
+      <div class='card'><div class='card-label'>Vies en risque</div><div id='operator-risk-lives' class='card-value'>Chargement…</div></div>
+      <div class='card'><div class='card-label'>Dernière activité</div><div id='operator-last-activity' class='card-value'>Chargement…</div></div>
+      <div class='card'><div class='card-label'>Humeur / énergie</div><div id='operator-mood-energy' class='card-value'>Chargement…</div></div>
+      <div class='card'><div class='card-label'>Tendance</div><div id='operator-trend' class='card-value'>Chargement…</div></div>
+      <div class='card'><div class='card-label'>Liveness</div><div id='operator-liveness' class='card-value'>Chargement…</div></div>
+    </div>
+    <ul id='operator-lives-empty-states' class='list-tight-top'>
+      <li>Chargement du registre des vies…</li>
+    </ul>
+  </section>
+
   <section id='cockpit'>
     <h2>État de l’écosystème</h2>
     <p class='section-help'>Vue synthétique d’observation de l’écosystème (sans prescriptions opérateur).</p>

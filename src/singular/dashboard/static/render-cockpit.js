@@ -47,6 +47,66 @@ const sparkline=(values)=>{
 const toneByRisk=(el,risk)=>{el.classList.remove('status-good','status-warn','status-bad','status-muted');if(risk==='ok'){el.classList.add('status-good');return;}if(risk==='warn'){el.classList.add('status-warn');return;}if(risk==='critical'){el.classList.add('status-bad');return;}el.classList.add('status-muted');};
 const extractHostMetrics=(record)=>{if(record&&typeof record.host_metrics==='object'&&record.host_metrics){return record.host_metrics;}if(record&&typeof record.signals==='object'&&record.signals&&typeof record.signals.host_metrics==='object'){return record.signals.host_metrics;}if(record&&typeof record.payload==='object'&&record.payload&&typeof record.payload.host_metrics==='object'){return record.payload.host_metrics;}return null;};
 
+const operatorSummaryState={context:null,lives:null,eco:null,cockpit:null};
+
+const firstDefined=(...values)=>values.find(value=>value!==null&&value!==undefined&&value!=='');
+const formatOneDecimal=value=>value===null||value===undefined||Number.isNaN(Number(value))?na():Number(value).toFixed(1);
+const riskRows=rows=>(rows||[]).filter(row=>row.extinction_seen_in_runs===true||row.trend==='dégradation'||Number(row.alerts_count||0)>0);
+const extractMood=row=>firstDefined(row?.emotional_state?.mood,row?.mood,row?.latest_mood,row?.psyche?.mood);
+const extractEnergy=(row,eco)=>{
+  const life=row?.life;
+  const organisms=eco?.organisms||{};
+  const organism=life?organisms[life]:null;
+  return firstDefined(row?.emotional_state?.energy,row?.energy,row?.psyche?.energy,organism?.energy);
+};
+
+const renderOperatorSummary=()=>{
+  const root=document.getElementById('operator-lives-summary');
+  if(!root){return;}
+  const ctx=operatorSummaryState.context||{};
+  const lives=operatorSummaryState.lives||{};
+  const eco=operatorSummaryState.eco||{};
+  const cockpit=operatorSummaryState.cockpit||{};
+  const rows=Array.isArray(lives.table)?lives.table:[];
+  const counts=(lives.life_metrics_contract||eco.life_metrics_contract||{}).counts||{};
+  const total=Number(Object.prototype.hasOwnProperty.call(ctx,'registry_lives_count')?ctx.registry_lives_count:firstDefined(counts.total_lives,rows.length,0));
+  const alive=Number(Object.prototype.hasOwnProperty.call(counts,'alive_lives')?counts.alive_lives:rows.filter(row=>row.is_registry_active_life===true).length);
+  const risks=riskRows(rows);
+  const selected=rows.find(row=>row.selected_life===true);
+  const latest=rows.find(row=>row.last_activity)||rows[0];
+  const focus=selected||latest;
+  const activeLife=ctx.registry_state?.active;
+  const selectedLabel=selected?.life||cockpit.selected_life||null;
+  const activeSelectedLabel=activeLife&&selectedLabel&&activeLife!==selectedLabel?`active=${activeLife} · sélectionnée=${selectedLabel}`:(selectedLabel||activeLife||'Aucune');
+  const lastActivity=latest?.last_activity||(total>0?'run en cours non encore indexé':na());
+  const mood=extractMood(focus);
+  const energy=extractEnergy(focus,eco);
+  const moodLabel=mood||'données de mood absentes';
+  const energyLabel=energy===null||energy===undefined?na():formatOneDecimal(energy);
+  const trend=focus?.trend||cockpit.trend||na();
+  const liveness=firstDefined(focus?.life_liveness_index,cockpit.liveness_index);
+
+  document.getElementById('operator-lives-total').textContent=total>0?String(total):'aucune vie dans le registre';
+  document.getElementById('operator-selected-life').textContent=activeSelectedLabel;
+  document.getElementById('operator-alive-lives').textContent=String(alive);
+  document.getElementById('operator-risk-lives').textContent=String(risks.length);
+  document.getElementById('operator-last-activity').textContent=lastActivity;
+  document.getElementById('operator-mood-energy').textContent=`${moodLabel} · énergie=${energyLabel}`;
+  document.getElementById('operator-trend').textContent=String(trend);
+  document.getElementById('operator-liveness').textContent=formatOneDecimal(liveness);
+
+  const states=document.getElementById('operator-lives-empty-states');
+  states.innerHTML='';
+  const messages=[];
+  if(total<=0){messages.push('aucune vie dans le registre');}
+  if(total>0&&!rows.some(row=>row.last_activity)){messages.push('run en cours non encore indexé');}
+  if(!mood){messages.push('données de mood absentes');}
+  if(!messages.length){messages.push('Synthèse opérateur à jour.');}
+  for(const message of messages){const li=document.createElement('li');li.textContent=message;states.appendChild(li);}
+  setStatusTone(document.getElementById('operator-risk-lives'),risks.length?'warn':'good');
+  setStatusTone(document.getElementById('operator-trend'),trend==='amélioration'?'good':(trend==='dégradation'?'bad':'warn'));
+};
+
 const renderHostMetrics=(records)=>{
   const metricDef=[
     {key:'cpu',label:'host-cpu',trend:'host-cpu-trend',raw:'cpu_percent',suffix:'%'},
@@ -94,7 +154,13 @@ const renderHostMetrics=(records)=>{
   return unsupportedCount<metricDef.length;
 };
 
-export const loadContext=()=>fetchJson('/dashboard/context').then(ctx=>{
+export const loadContext=()=>Promise.all([
+  fetchJson('/dashboard/context'),
+  fetchJson('/lives/comparison?sort_by=last_activity&sort_order=desc'),
+]).then(([ctx,lives])=>{
+  operatorSummaryState.context=ctx;
+  operatorSummaryState.lives=lives;
+  renderOperatorSummary();
   document.getElementById('ctx-root').textContent=ctx.singular_root||na();
   document.getElementById('ctx-home').textContent=ctx.singular_home||na();
   document.getElementById('ctx-lives-count').textContent=String(ctx.registry_lives_count||0);
@@ -142,6 +208,9 @@ export const loadEco=()=>Promise.all([fetchJson(withScope('/ecosystem')),fetchJs
   document.getElementById('eco-total-lives').textContent=String(total);
   document.getElementById('eco-alive-lives').textContent=String(alive);
   document.getElementById('eco-dead-lives').textContent=String(dead);
+  operatorSummaryState.eco=eco;
+  operatorSummaryState.lives=lives;
+  renderOperatorSummary();
   const rows=lives.table||[];
   const selected=rows.find(row=>row.selected_life===true);
   document.getElementById('eco-selected-life').textContent=selected?.life||'Aucune';
@@ -193,6 +262,8 @@ export const loadCockpit=()=>Promise.all([
   const fmtPct=(value)=>value===null||value===undefined?na():`${(Number(value)*100).toFixed(1)}%`;
   const fmtNum=(value,suffix='')=>value===null||value===undefined?na():`${Number(value).toFixed(2)}${suffix}`;
 
+  operatorSummaryState.cockpit={trend,liveness_index:livenessIndex,selected_life:essentialPayload.selected_life};
+  renderOperatorSummary();
   document.getElementById('kpi-health').textContent=healthValue;
   document.getElementById('kpi-trend').textContent=trend;
   document.getElementById('kpi-accepted').textContent=accepted;
