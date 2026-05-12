@@ -26,21 +26,25 @@
 
 <section class='critical-actions-bar' aria-label='Actions critiques'>
   <span id='critical-current-life-target' class='critical-target-badge' aria-live='polite'>Vie ciblée: aucune sélection</span>
-  <button id='critical-birth' type='button' class='critical-action-btn' data-dashboard-action='birth'>Créer une vie</button>
+  <button id='critical-birth' type='button' class='critical-action-btn' data-dashboard-action='birth' aria-disabled='false'>Créer une vie</button>
   <button
     id='critical-archive'
     type='button'
     class='critical-action-btn critical-action-warning'
+    disabled
+    aria-disabled='true'
     data-dashboard-action='archive'
     data-confirm="Confirmer la suppression/l’archivage ? Portée : la vie ciblée et ses données associées (historique, artefacts, contexte)."
   >
     Supprimer/archiver une vie
   </button>
-  <button id='critical-talk' type='button' class='critical-action-btn' data-dashboard-action='talk'>Parler à une vie</button>
+  <button id='critical-talk' type='button' class='critical-action-btn' data-dashboard-action='talk' disabled aria-disabled='true'>Parler à une vie</button>
   <button
     id='critical-emergency-stop'
     type='button'
     class='critical-action-btn critical-action-danger'
+    disabled
+    aria-disabled='true'
     data-dashboard-action='emergency_stop'
     data-confirm="ARRÊT D’URGENCE : cette action stoppe immédiatement les opérations en cours. Confirmez-vous ?"
     data-confirm-again="DOUBLE VALIDATION — Confirmez à nouveau l’arrêt d’urgence global."
@@ -51,8 +55,8 @@
 <section class='operator-action-form' aria-label='Paramètres opérateur des actions critiques'>
   <div class='operator-field'>
     <label for='operator-action-life-select'>Vie ciblée</label>
-    <select id='operator-action-life-select' aria-describedby='operator-action-help'>
-      <option value=''>Sélectionner une vie existante…</option>
+    <select id='operator-action-life-select' aria-describedby='operator-action-help' data-registry-state='loading'>
+      <option value=''>Chargement des vies…</option>
     </select>
   </div>
   <div class='operator-field operator-birth-field'>
@@ -63,7 +67,7 @@
     <label for='operator-action-message'>Message pour “Parler à une vie”</label>
     <textarea id='operator-action-message' rows='2' placeholder='Écrire le message à envoyer à la vie sélectionnée…'></textarea>
   </div>
-  <p id='operator-action-help' class='operator-action-help' role='status' aria-live='polite'>Sélectionnez une vie existante pour activer “Supprimer/archiver” et “Parler”.</p>
+  <p id='operator-action-help' class='operator-action-help' role='status' aria-live='polite'>Les données de vies n’ont pas encore chargé</p>
 </section>
 <div id='critical-action-result' class='critical-action-result' role='status' aria-live='polite'>Aucune action critique exécutée.</div>
 
