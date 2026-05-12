@@ -9,6 +9,14 @@ const setTitle=(id,text)=>{const el=byId(id);if(el){el.title=text;}return el;};
 const badge=(label,tone)=>`<span class='badge ${tone}'>${label}</span>`;
 const safeText=value=>String(value??na());
 const escapeHtml=value=>safeText(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
+const compareNullableNumberAsc=(left,right)=>{
+  const leftMissing=left===null||left===undefined;
+  const rightMissing=right===null||right===undefined;
+  if(leftMissing&&rightMissing){return 0;}
+  if(leftMissing){return 1;}
+  if(rightMissing){return -1;}
+  return Number(left)-Number(right);
+};
 
 const SORT_PRESETS={
   watch:{
@@ -20,7 +28,9 @@ const SORT_PRESETS={
       const trendA=a.trend==='dégradation'?0:(a.trend==='plateau'?1:2);
       const trendB=b.trend==='dégradation'?0:(b.trend==='plateau'?1:2);
       if(trendA!==trendB){return trendA-trendB;}
-      return Number(b.alerts_count||0)-Number(a.alerts_count||0);
+      const alertDiff=Number(b.alerts_count||0)-Number(a.alerts_count||0);
+      if(alertDiff!==0){return alertDiff;}
+      return compareNullableNumberAsc(a.current_health_score,b.current_health_score)||String(a.life||'').localeCompare(String(b.life||''));
     }),
   },
   active:{
