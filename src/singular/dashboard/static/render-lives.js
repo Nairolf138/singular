@@ -161,13 +161,12 @@ const renderLivesTable=(rows)=>{
     if(row.life&&row.life===livesUiState.selectedLife){tr.classList.add('selected');}
     const score=row.current_health_score===null||row.current_health_score===undefined?na():Number(row.current_health_score).toFixed(1);
     const liveness=row.life_liveness_index===null||row.life_liveness_index===undefined?na():Number(row.life_liveness_index).toFixed(1);
-    const stability=row.stability===null||row.stability===undefined?na():`${(Number(row.stability)*100).toFixed(1)}%`;
     const lastActivity=row.last_activity||na();
     const state=rowStateSummary(row);
     const risk=rowRiskSummary(row);
     const activity=rowActivitySummary(row);
     const codeEvolutionEndpoint=row.code_evolution_endpoint||`/api/lives/${encodeURIComponent(row.life||'')}/code-evolution`;
-    tr.innerHTML=`<td>${escapeHtml(row.life||na())}<br/><a href='${escapeHtml(codeEvolutionEndpoint)}' target='_blank' rel='noopener noreferrer'>audit code</a></td><td>${score}</td><td>${escapeHtml(row.trend||na())}</td><td>${stability}</td><td>${escapeHtml(lastActivity)}</td><td>${row.iterations??0}</td><td>${liveness}</td><td><span class='summary-pill ${state.tone}'>${state.label}</span></td><td><span class='summary-pill ${risk.tone}'>${risk.label}</span></td><td><span class='summary-pill ${activity.tone}'>${activity.label}</span></td>`;
+    tr.innerHTML=`<td>${escapeHtml(row.life||na())}<br/><a href='${escapeHtml(codeEvolutionEndpoint)}' target='_blank' rel='noopener noreferrer'>audit code</a></td><td>${score}</td><td>${escapeHtml(lastActivity)}</td><td>${liveness}</td><td><span class='summary-pill ${state.tone}'>${state.label}</span></td><td><span class='summary-pill ${risk.tone}'>${risk.label}</span></td><td><span class='summary-pill ${activity.tone}'>${activity.label}</span></td>`;
     tr.onclick=()=>showLifeDetails(row.life||'');
     tr.onkeydown=event=>{
       if(event.key==='Enter'||event.key===' '){
@@ -177,7 +176,7 @@ const renderLivesTable=(rows)=>{
     };
     body.appendChild(tr);
   }
-  if(!(rows||[]).length){const tr=document.createElement('tr');tr.innerHTML="<td colspan='10'>Aucune vie ne correspond aux filtres.</td>";body.appendChild(tr);}
+  if(!(rows||[]).length){const tr=document.createElement('tr');tr.innerHTML="<td colspan='7'>Aucune vie ne correspond aux filtres.</td>";body.appendChild(tr);}
 };
 
 const renderEssentialLivesSummary=rows=>{
@@ -204,22 +203,25 @@ const showLifeDetails=lifeName=>{
   }
   panel.classList.remove('panel-hidden');
   livesUiState.selectedLife=lifeName;
-  const metadata=[
+  const operatorMetadata=[
     ['Vie',row.life],
     ['Statut registre',row.life_status],
     ['Score courant',row.current_health_score===null||row.current_health_score===undefined?na():Number(row.current_health_score).toFixed(1)],
-    ['Stabilité',row.stability===null||row.stability===undefined?na():`${(Number(row.stability)*100).toFixed(1)}%`],
-    ['Tendance',row.trend],
     ['Dernière activité',row.last_activity],
-    ['Itérations',row.iterations??0],
     ['Life liveness index',row.life_liveness_index===null||row.life_liveness_index===undefined?na():Number(row.life_liveness_index).toFixed(1)],
     ['Alertes',row.alerts_count??0],
+  ];
+  const expertMetadata=[
+    ['Stabilité',row.stability===null||row.stability===undefined?na():`${(Number(row.stability)*100).toFixed(1)}%`],
+    ['Tendance',row.trend],
+    ['Itérations',row.iterations??0],
     ['Run terminé',row.run_terminated?'oui':'non'],
     ['Extinction runs',row.extinction_seen_in_runs?'oui':'non'],
     ['Audit code evolution',row.code_evolution_endpoint||`/api/lives/${encodeURIComponent(row.life||'')}/code-evolution`],
   ];
-  const metadataRows=metadata.map(([key,value])=>`<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(value)}</td></tr>`).join('');
-  content.innerHTML=`<div class='detail-badges'>${summarizeBadges(row)||badge('Aucun badge',BADGE_TONE.info)}</div><table class='table-base life-meta-table'><tbody>${metadataRows}</tbody></table><h4>Timeline vitale</h4><pre>${escapeHtml(JSON.stringify(row.vital_timeline||{},null,2))}</pre>`;
+  const metadataRows=operatorMetadata.map(([key,value])=>`<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(value)}</td></tr>`).join('');
+  const expertRows=expertMetadata.map(([key,value])=>`<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(value)}</td></tr>`).join('');
+  content.innerHTML=`<div class='detail-badges'>${summarizeBadges(row)||badge('Aucun badge',BADGE_TONE.info)}</div><table class='table-base life-meta-table'><tbody>${metadataRows}</tbody></table><section class='technical-only' aria-label='Métriques expertes de la vie'><h4>Métriques expertes</h4><table class='table-base life-meta-table'><tbody>${expertRows}</tbody></table><h4>Timeline vitale</h4><pre>${escapeHtml(JSON.stringify(row.vital_timeline||{},null,2))}</pre></section>`;
   if(proofs){
     proofs.innerHTML='';
     const recentProofs=Array.isArray(row.life_liveness_proofs)?row.life_liveness_proofs:[];
