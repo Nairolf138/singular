@@ -1,6 +1,10 @@
 {
   "profiles": {
-    "minimal": ["addition", "subtraction", "multiplication"],
+    "minimal": [
+      "addition",
+      "subtraction",
+      "multiplication"
+    ],
     "assistant": [
       "addition",
       "subtraction",
@@ -19,6 +23,14 @@
       "summary",
       "intent_classification"
     ],
-    "creative": ["summary", "entity_extraction", "planning", "addition"]
+    "creative": [
+      "summary",
+      "entity_extraction",
+      "planning",
+      "addition"
+    ]
+  },
+  "scoring_contract": {
+    "result": "Every generated starter skill must assign a finite numeric sandbox result."
   }
 }

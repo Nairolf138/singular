@@ -4,3 +4,5 @@
 def multiply(a: float, b: float) -> float:
     """Return the product of ``a`` and ``b``."""
     return a * b
+
+result = multiply(2, 3)

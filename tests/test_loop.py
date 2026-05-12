@@ -23,6 +23,13 @@ from singular.life.reproduction import ReproductionDecisionPolicy  # noqa: E402
 from singular.events import EventBus  # noqa: E402
 
 
+def test_repository_addition_skill_satisfies_sandbox_scoring_contract():
+    assert (
+        life_loop.score_code_with_error(Path("skills/addition.py").read_text()).ok
+        is True
+    )
+
+
 def test_score_code_with_error_returns_structured_sandbox_score():
     ok = life_loop.score_code_with_error("result = 3")
     assert ok == life_loop.SandboxScore(score=3.0)
@@ -279,7 +286,10 @@ def test_reproduction_decision_is_logged_with_cooldown(tmp_path: Path, monkeypat
     )
 
     events_path = tmp_path / "logs" / "repro-loop" / "events.jsonl"
-    events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
+    events = [
+        json.loads(line)
+        for line in events_path.read_text(encoding="utf-8").splitlines()
+    ]
     decisions = [
         e["payload"]
         for e in events
@@ -419,7 +429,9 @@ def _stable_psyche(monkeypatch):
         def feel(self, mood):
             pass
 
-    monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: StablePsyche()))
+    monkeypatch.setattr(
+        life_loop.Psyche, "load_state", staticmethod(lambda: StablePsyche())
+    )
 
 
 def _run_sandbox_case(
@@ -468,7 +480,9 @@ def _run_sandbox_case(
 
 
 def _event_payloads(events: list[dict], event_type: str) -> list[dict]:
-    return [event["payload"] for event in events if event.get("event_type") == event_type]
+    return [
+        event["payload"] for event in events if event.get("event_type") == event_type
+    ]
 
 
 def _sandbox_diagnostics(events: list[dict]) -> list[dict]:
@@ -538,7 +552,9 @@ def test_base_failure_remains_critical_violation(tmp_path: Path, monkeypatch):
     assert breaker["severity"] == "critical"
 
 
-def test_dangerous_mutation_failure_can_escalate_to_critical(tmp_path: Path, monkeypatch):
+def test_dangerous_mutation_failure_can_escalate_to_critical(
+    tmp_path: Path, monkeypatch
+):
     policy = MutationGovernancePolicy(circuit_breaker_threshold=1)
     _state, events = _run_sandbox_case(
         tmp_path,
@@ -896,7 +912,9 @@ def test_sandbox_violation_burst_enters_degraded_mode_without_immediate_extincti
         def feel(self, mood):
             pass
 
-    monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: StablePsyche()))
+    monkeypatch.setattr(
+        life_loop.Psyche, "load_state", staticmethod(lambda: StablePsyche())
+    )
 
     events: list[dict] = []
     bus = EventBus()
@@ -942,7 +960,10 @@ def test_sandbox_violation_burst_enters_degraded_mode_without_immediate_extincti
 
     assert state.iteration >= life_loop.SANDBOX_DEGRADED_MODE_THRESHOLD
     assert events
-    assert events[0]["sandbox_violation_streak"] >= life_loop.SANDBOX_DEGRADED_MODE_THRESHOLD
+    assert (
+        events[0]["sandbox_violation_streak"]
+        >= life_loop.SANDBOX_DEGRADED_MODE_THRESHOLD
+    )
 
     events_path = tmp_path / "logs" / "loop" / "events.jsonl"
     run_events = [
@@ -1037,7 +1058,9 @@ def test_prolonged_sandbox_violation_persistence_triggers_controlled_extinction(
         def feel(self, mood):
             pass
 
-    monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: StablePsyche()))
+    monkeypatch.setattr(
+        life_loop.Psyche, "load_state", staticmethod(lambda: StablePsyche())
+    )
 
     class FailureOnlyMonitor:
         def __init__(self, max_failures: int):

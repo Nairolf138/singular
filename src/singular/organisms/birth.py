@@ -20,12 +20,13 @@ from ..memory import ensure_memory_structure, update_score, write_profile
 from ..psyche import Psyche
 from ..life.skill_catalog import refresh_skill_catalog
 
-
 _PSYCHE_TRAITS = ("curiosity", "patience", "playfulness", "optimism", "resilience")
 _PSYCHE_DEFAULTS = {trait: 0.5 for trait in _PSYCHE_TRAITS}
 _DEFAULT_STARTER_PROFILE = "minimal"
 _BIRTH_SCHEMA_VERSION = 1
-_STARTER_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "starter_skills.yaml"
+_STARTER_CONFIG_PATH = (
+    Path(__file__).resolve().parents[3] / "configs" / "starter_skills.yaml"
+)
 _DEFAULT_STARTER_PROFILES: dict[str, list[str]] = {
     "minimal": ["addition", "subtraction", "multiplication"],
 }
@@ -34,32 +35,37 @@ _SKILL_TEMPLATES: dict[str, str] = {
         '"""Simple addition skill."""\n\n'
         "def add(a: float, b: float) -> float:\n"
         '    """Return the sum of ``a`` and ``b``."""\n'
-        "    return a + b\n"
+        "    return a + b\n\n"
+        "result = add(1, 2)\n"
     ),
     "subtraction": (
         '"""Simple subtraction skill."""\n\n'
         "def subtract(a: float, b: float) -> float:\n"
         '    """Return the difference of ``a`` and ``b``."""\n'
-        "    return a - b\n"
+        "    return a - b\n\n"
+        "result = subtract(3, 1)\n"
     ),
     "multiplication": (
         '"""Simple multiplication skill."""\n\n'
         "def multiply(a: float, b: float) -> float:\n"
         '    """Return the product of ``a`` and ``b``."""\n'
-        "    return a * b\n"
+        "    return a * b\n\n"
+        "result = multiply(2, 3)\n"
     ),
     "validation": (
         '"""Validation helpers for basic input checks."""\n\n'
         "def validate_non_empty_text(text: str) -> bool:\n"
         '    """Return ``True`` when ``text`` contains non-whitespace characters."""\n'
-        "    return bool(text.strip())\n"
+        '    return text.strip() != ""\n\n'
+        'result = 1.0 if validate_non_empty_text("ready") else 0.0\n'
     ),
     "summary": (
         '"""Summary helpers for short text snippets."""\n\n'
         "def summarize_preview(text: str, max_words: int = 12) -> str:\n"
         '    """Return the first ``max_words`` words from ``text`` for quick previews."""\n'
         "    words = text.split()\n"
-        "    return \" \".join(words[:max_words])\n"
+        '    return " ".join(words[:max_words])\n\n'
+        'result = len(summarize_preview("one two three").split())\n'
     ),
     "intent_classification": (
         '"""Intent classification helper using simple keyword heuristics."""\n\n'
@@ -68,25 +74,27 @@ _SKILL_TEMPLATES: dict[str, str] = {
         "    lowered = message.strip().lower()\n"
         "    if not lowered:\n"
         '        return "statement"\n'
-        "    if lowered.endswith(\"?\"):\n"
+        '    if lowered.endswith("?"):\n'
         '        return "question"\n'
-        "    request_markers = (\"please\", \"peux-tu\", \"merci de\", \"fais\")\n"
+        '    request_markers = ("please", "peux-tu", "merci de", "fais")\n'
         "    if any(marker in lowered for marker in request_markers):\n"
         '        return "request"\n'
-        '    return "statement"\n'
+        '    return "statement"\n\n'
+        'result = 1.0 if classify_intent("please help") == "request" else 0.0\n'
     ),
     "entity_extraction": (
         '"""Entity extraction helper for lightweight token detection."""\n\n'
         "def extract_capitalized_entities(text: str) -> list[str]:\n"
         '    """Return unique capitalized tokens found in ``text`` preserving order."""\n'
         "    entities: list[str] = []\n"
-        "    seen: set[str] = set()\n"
+        "    seen: list[str] = []\n"
         "    for token in text.split():\n"
-        "        cleaned = token.strip(\".,;:!?()[]{}\\\"'\")\n"
+        '        cleaned = token.strip(".,;:!?()[]{}\\"\'")\n'
         "        if cleaned and cleaned[0].isupper() and cleaned not in seen:\n"
         "            entities.append(cleaned)\n"
-        "            seen.add(cleaned)\n"
-        "    return entities\n"
+        "            seen.append(cleaned)\n"
+        "    return entities\n\n"
+        'result = len(extract_capitalized_entities("Ada Lovelace wrote Notes"))\n'
     ),
     "planning": (
         '"""Planning helper to build a simple ordered checklist."""\n\n'
@@ -97,7 +105,8 @@ _SKILL_TEMPLATES: dict[str, str] = {
         '        "goal": goal.strip(),\n'
         '        "steps": cleaned_steps,\n'
         '        "total_steps": len(cleaned_steps),\n'
-        "    }\n"
+        "    }\n\n"
+        'result = build_plan("learn", ["read", "practice"])["total_steps"]\n'
     ),
     "metrics": (
         '"""Metrics helper to compute simple completion ratios."""\n\n'
@@ -106,7 +115,8 @@ _SKILL_TEMPLATES: dict[str, str] = {
         "    if total <= 0:\n"
         "        return 0.0\n"
         "    ratio = completed / total\n"
-        "    return max(0.0, min(1.0, ratio))\n"
+        "    return max(0.0, min(1.0, ratio))\n\n"
+        "result = completion_ratio(1, 2)\n"
     ),
 }
 
@@ -126,14 +136,18 @@ def _resolve_psyche_overrides(
         try:
             value = float(raw_value)
         except (TypeError, ValueError) as exc:
-            raise ValueError(f"invalid psyche trait override for {key}: {raw_value!r}") from exc
+            raise ValueError(
+                f"invalid psyche trait override for {key}: {raw_value!r}"
+            ) from exc
         if not isfinite(value) or value < 0.0 or value > 1.0:
             raise ValueError(f"psyche trait override out of range for {key}: {value!r}")
         normalized[key] = value
     return normalized
 
 
-def _load_starter_profiles(config_path: Path = _STARTER_CONFIG_PATH) -> dict[str, list[str]]:
+def _load_starter_profiles(
+    config_path: Path = _STARTER_CONFIG_PATH,
+) -> dict[str, list[str]]:
     """Load starter skill profiles from configuration with a safe default fallback."""
 
     if not config_path.exists():
@@ -223,7 +237,9 @@ def _build_birth_snapshot(
         "goals": goals_payload,
         "world": world_payload,
     }
-    canonical = json.dumps(initial_state, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    canonical = json.dumps(
+        initial_state, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
     checksum = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     snapshot = {
         "schema_version": _BIRTH_SCHEMA_VERSION,
@@ -312,11 +328,15 @@ def birth(
     goals_init = GoalState().to_dict()
     world_init = default_world_state()
     save_world_state(world_init, path=mem_dir / "world_state.json")
-    _atomic_write_json(mem_dir / "world_effects.json", {"schema_version": 1, "events": []})
+    _atomic_write_json(
+        mem_dir / "world_effects.json", {"schema_version": 1, "events": []}
+    )
 
     snapshot_payload, initial_checksum = _build_birth_snapshot(
         identity_payload=identity.__dict__,
-        psyche_payload=json.loads((mem_dir / "psyche.json").read_text(encoding="utf-8")),
+        psyche_payload=json.loads(
+            (mem_dir / "psyche.json").read_text(encoding="utf-8")
+        ),
         values_payload={"values": values_defaults},
         goals_payload={"schema_version": 1, **goals_init},
         world_payload={"schema_version": 1, **world_init},
@@ -331,7 +351,11 @@ def birth(
         "schema_version": _BIRTH_SCHEMA_VERSION,
         "event_type": "birth_certificate",
         "issued_at": birth_time,
-        "identity": {"id": identity.id, "name": identity.name, "soulseed": identity.soulseed},
+        "identity": {
+            "id": identity.id,
+            "name": identity.name,
+            "soulseed": identity.soulseed,
+        },
         "artifacts": {
             "initial_snapshot": "mem/initial_snapshot.json",
             "psyche_state": "mem/psyche.json",
