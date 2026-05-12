@@ -1595,14 +1595,21 @@ def create_app(
         }
         key_name = sort_key_map.get(sort_by, "current_health_score")
         reverse = sort_order != "asc"
-        lives_rows.sort(
-            key=lambda row: (
-                row.get(key_name) is None,
-                row.get(key_name),
-                str(row.get("life", "")),
-            ),
+
+        def _sort_value(row: dict[str, object]) -> object:
+            return row.get(key_name)
+
+        def _life_sort_value(row: dict[str, object]) -> str:
+            return str(row.get("life", ""))
+
+        non_null_rows = [row for row in lives_rows if _sort_value(row) is not None]
+        null_rows = [row for row in lives_rows if _sort_value(row) is None]
+        non_null_rows.sort(
+            key=lambda row: (_sort_value(row), _life_sort_value(row)),
             reverse=reverse,
         )
+        null_rows.sort(key=_life_sort_value)
+        lives_rows = non_null_rows + null_rows
         filter_steps.append(
             {
                 "step": "sorted",

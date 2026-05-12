@@ -1330,6 +1330,66 @@ def test_lives_comparison_table_aggregation_filters_and_sorting(
     assert [row["life"] for row in by_life_asc] == ["life-a", "life-b", "life-c"]
 
 
+def test_lives_comparison_sorting_keeps_none_values_last(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    comparison = {
+        "alpha": {
+            "current_health_score": 10.0,
+            "last_activity": "2026-04-10T10:00:00+00:00",
+            "iterations": 2,
+            "life_liveness_index": 60.0,
+        },
+        "bravo": {
+            "current_health_score": None,
+            "last_activity": None,
+            "iterations": None,
+            "life_liveness_index": None,
+        },
+        "charlie": {
+            "current_health_score": 90.0,
+            "last_activity": "2026-04-12T10:00:00+00:00",
+            "iterations": 7,
+            "life_liveness_index": 20.0,
+        },
+        "delta": {
+            "current_health_score": 50.0,
+            "last_activity": "2026-04-11T10:00:00+00:00",
+            "iterations": 4,
+            "life_liveness_index": 80.0,
+        },
+    }
+
+    def fake_aggregate_lives_service(*args: object, **kwargs: object):
+        return comparison, {"records_count": 0, "runs_count": 0, "runs": []}
+
+    monkeypatch.setattr(
+        dashboard_module, "aggregate_lives_service", fake_aggregate_lives_service
+    )
+    monkeypatch.setattr(
+        dashboard_module,
+        "load_registry",
+        lambda: {"active": None, "lives": {}},
+    )
+    app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
+    route = app._routes["/lives/comparison"]
+
+    expected = {
+        ("score", "asc"): ["alpha", "delta", "charlie", "bravo"],
+        ("score", "desc"): ["charlie", "delta", "alpha", "bravo"],
+        ("last_activity", "asc"): ["alpha", "delta", "charlie", "bravo"],
+        ("last_activity", "desc"): ["charlie", "delta", "alpha", "bravo"],
+        ("iterations", "asc"): ["alpha", "delta", "charlie", "bravo"],
+        ("iterations", "desc"): ["charlie", "delta", "alpha", "bravo"],
+        ("liveness", "asc"): ["charlie", "alpha", "delta", "bravo"],
+        ("liveness", "desc"): ["delta", "alpha", "charlie", "bravo"],
+    }
+    for (sort_by, sort_order), lives in expected.items():
+        payload = route(sort_by=sort_by, sort_order=sort_order)
+        assert [row["life"] for row in payload["table"]] == lives
+        assert payload["table"][-1]["life"] == "bravo"
+
+
 def test_lives_comparison_compare_lives_filter(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
