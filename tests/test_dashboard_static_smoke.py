@@ -290,3 +290,184 @@ if (!raw.includes('"global_status": "warning"')) {{ throw new Error(`fallback co
     )
 
     subprocess.run(["node", str(script)], check=True)
+
+
+def test_dashboard_bootstrap_keeps_local_handlers_when_websocket_fails(tmp_path: Path) -> None:
+    """A WebSocket construction error must not disable local dashboard controls."""
+    script = tmp_path / "dashboard_websocket_failure_check.mjs"
+    module_path = (Path.cwd() / DASHBOARD_STATIC / "bootstrap.js").as_uri()
+    script.write_text(
+        f"""
+class ClassList {{
+  constructor() {{ this.values = new Set(); }}
+  add(...names) {{ names.forEach(name => this.values.add(name)); }}
+  remove(...names) {{ names.forEach(name => this.values.delete(name)); }}
+  toggle(name, force) {{
+    const shouldAdd = force === undefined ? !this.values.has(name) : Boolean(force);
+    if (shouldAdd) {{ this.values.add(name); }} else {{ this.values.delete(name); }}
+    return shouldAdd;
+  }}
+  contains(name) {{ return this.values.has(name); }}
+}}
+
+class Element {{
+  constructor(tagName, id = '') {{
+    this.tagName = tagName.toUpperCase();
+    this.id = id;
+    this.children = [];
+    this.parentElement = null;
+    this.dataset = {{}};
+    this.attributes = {{}};
+    this.classList = new ClassList();
+    this.style = {{}};
+    this.value = '';
+    this.disabled = false;
+    this.onclick = null;
+    this.onchange = null;
+    this.eventListeners = {{}};
+    this.offsetParent = {{}};
+    this._textContent = '';
+    this._innerHTML = null;
+    this._className = '';
+    this.open = true;
+    this.tabIndex = 0;
+  }}
+  appendChild(child) {{ child.parentElement = this; this.children.push(child); return child; }}
+  prepend(child) {{ child.parentElement = this; this.children.unshift(child); return child; }}
+  insertBefore(child, before) {{
+    child.parentElement = this;
+    const index = this.children.indexOf(before);
+    if (index < 0) {{ this.children.unshift(child); }} else {{ this.children.splice(index, 0, child); }}
+    return child;
+  }}
+  replaceChildren(...children) {{ this.children = []; children.forEach(child => this.appendChild(child)); }}
+  querySelector(selector) {{ return this.querySelectorAll(selector)[0] ?? null; }}
+  querySelectorAll(selector) {{ return queryWithin(this.children, selector); }}
+  addEventListener(type, handler) {{ this.eventListeners[type] = handler; }}
+  setAttribute(name, value) {{ this.attributes[name] = String(value); }}
+  getAttribute(name) {{ return this.attributes[name] ?? null; }}
+  matches(selector) {{ return selector === 'details' && this.tagName === 'DETAILS'; }}
+  closest(selector) {{
+    let node = this;
+    while (node) {{
+      if (selector === '.tab-pane' && node.classList.contains('tab-pane')) {{ return node; }}
+      node = node.parentElement;
+    }}
+    return null;
+  }}
+  set textContent(value) {{ this._textContent = String(value ?? ''); this._innerHTML = null; }}
+  get textContent() {{ return this._textContent + this.children.map(child => child.textContent ?? '').join(''); }}
+  set innerHTML(value) {{ this._innerHTML = String(value ?? ''); this.children = []; }}
+  get innerHTML() {{ return this._innerHTML ?? this.textContent; }}
+  set className(value) {{
+    this._className = String(value ?? '');
+    this.classList = new ClassList();
+    this._className.split(/\\s+/).filter(Boolean).forEach(name => this.classList.add(name));
+  }}
+  get className() {{ return this._className; }}
+  set title(value) {{ this.attributes.title = String(value); }}
+  get firstChild() {{ return this.children[0] ?? null; }}
+  get options() {{ return this.children.filter(child => child.tagName === 'OPTION'); }}
+}}
+
+const allElements = [];
+const elements = new Map();
+const register = element => {{ allElements.push(element); if (element.id) {{ elements.set(element.id, element); }} return element; }};
+const make = (tagName, id = '', className = '') => {{ const el = register(new Element(tagName, id)); if (className) {{ el.className = className; }} return el; }};
+const queryWithin = (roots, selector) => {{
+  const visited = [];
+  const walk = node => {{ visited.push(node); node.children.forEach(walk); }};
+  roots.forEach(walk);
+  if (selector === '.tab-trigger') {{ return visited.filter(el => el.classList.contains('tab-trigger')); }}
+  if (selector === '.tab-pane') {{ return visited.filter(el => el.classList.contains('tab-pane')); }}
+  if (selector === '[data-essential-level]') {{ return visited.filter(el => el.dataset.essentialLevel !== undefined); }}
+  if (selector === '.technical-only') {{ return visited.filter(el => el.classList.contains('technical-only')); }}
+  if (selector === '.critical-actions-bar [data-dashboard-action]') {{ return visited.filter(el => el.dataset.dashboardAction !== undefined); }}
+  if (selector === '[data-expand-target]') {{ return []; }}
+  if (selector === ':scope > .state-layer') {{ return []; }}
+  return [];
+}};
+
+const body = make('body');
+const liveStatus = make('span', 'live-status');
+liveStatus.textContent = 'Lecture en direct';
+const result = make('div', 'critical-action-result');
+const essential = make('button', 'toggle-essential');
+const technical = make('button', 'toggle-technical-details');
+const actionBar = make('div', '', 'critical-actions-bar');
+const birth = make('button', 'critical-birth');
+birth.dataset.dashboardAction = 'birth';
+actionBar.appendChild(birth);
+const birthName = make('input', 'operator-birth-name');
+birthName.value = '';
+const help = make('div', 'operator-action-help');
+const target = make('div', 'critical-current-life-target');
+const operatorSelect = make('select', 'operator-action-life-select');
+const tabButton = make('button', 'tab-btn-technique', 'tab-trigger');
+tabButton.dataset.tab = 'technique';
+const defaultTabButton = make('button', 'tab-btn-decider', 'tab-trigger');
+defaultTabButton.dataset.tab = 'decider-maintenant';
+const tabPane = make('section', 'tab-technique', 'tab-pane panel-hidden');
+const defaultPane = make('section', 'tab-decider-maintenant', 'tab-pane');
+const essentialContent = make('div');
+essentialContent.dataset.essentialLevel = '3';
+body.appendChild(liveStatus);
+body.appendChild(result);
+body.appendChild(essential);
+body.appendChild(technical);
+body.appendChild(actionBar);
+body.appendChild(birthName);
+body.appendChild(help);
+body.appendChild(target);
+body.appendChild(operatorSelect);
+body.appendChild(defaultTabButton);
+body.appendChild(tabButton);
+body.appendChild(defaultPane);
+body.appendChild(tabPane);
+body.appendChild(essentialContent);
+
+const storage = new Map();
+globalThis.document = {{
+  body,
+  visibilityState: 'hidden',
+  createElement: tagName => register(new Element(tagName)),
+  getElementById: id => elements.get(id) ?? null,
+  querySelectorAll: selector => queryWithin([body], selector),
+}};
+globalThis.window = {{
+  location: {{ host: 'localhost', hash: '' }},
+  __singularSelectedLifeActionBinding: 'false',
+  addEventListener() {{}},
+  dispatchEvent() {{}},
+  confirm: () => true,
+}};
+globalThis.location = globalThis.window.location;
+globalThis.localStorage = {{
+  getItem: key => storage.get(key) ?? null,
+  setItem: (key, value) => storage.set(key, String(value)),
+}};
+globalThis.CustomEvent = class CustomEvent {{ constructor(type, init) {{ this.type = type; this.detail = init?.detail; }} }};
+globalThis.MutationObserver = class MutationObserver {{ observe() {{}} }};
+globalThis.fetch = async () => {{ throw new Error('fetch should not run while document is hidden'); }};
+globalThis.setInterval = () => 0;
+globalThis.clearInterval = () => {{}};
+globalThis.WebSocket = class WebSocket {{ constructor() {{ throw new Error('socket denied'); }} }};
+
+const {{ bootstrapDashboard }} = await import('{module_path}');
+bootstrapDashboard();
+
+if (liveStatus.textContent !== 'temps réel indisponible') {{ throw new Error(`unexpected live status: ${{liveStatus.textContent}}`); }}
+if (typeof essential.onclick !== 'function') {{ throw new Error('toggle-essential has no handler'); }}
+essential.onclick();
+if (!body.classList.contains('essential-mode')) {{ throw new Error('toggle-essential handler did not toggle essential mode'); }}
+if (typeof tabButton.onclick !== 'function') {{ throw new Error('tab trigger has no handler'); }}
+tabButton.onclick();
+if (tabPane.classList.contains('panel-hidden')) {{ throw new Error('tab trigger handler did not activate the pane'); }}
+if (typeof birth.onclick !== 'function') {{ throw new Error('dashboard action has no handler'); }}
+birth.onclick();
+if (!result.textContent.includes('Saisissez le nom exact')) {{ throw new Error(`dashboard action handler did not validate locally: ${{result.textContent}}`); }}
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(["node", str(script)], check=True)

@@ -1,6 +1,22 @@
 import {bootstrapDashboard} from './bootstrap.js';
 
-bootstrapDashboard();
+const writeBootstrapError=error=>{
+  const message=`Erreur d’initialisation du dashboard: ${error?.message||'échec inconnu'}`;
+  const target=document.getElementById('critical-action-result');
+  if(target){target.textContent=message;return;}
+  const banner=document.createElement('div');
+  banner.className='critical-action-result';
+  banner.setAttribute('role','alert');
+  banner.textContent=message;
+  document.body?.prepend(banner);
+};
+
+try{
+  bootstrapDashboard();
+}catch(error){
+  writeBootstrapError(error);
+  console.error('Dashboard bootstrap failed',error);
+}
 
 const parseFloatSafe=value=>{
   const match=String(value||'').replace(',', '.').match(/-?\d+(\.\d+)?/);
