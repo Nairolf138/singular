@@ -1,4 +1,5 @@
 import {fetchJson} from './api.js';
+import {updateOperatorLifeOptions} from './actions.js';
 import {BADGE_TONE,liveState,livesTableState,na,scopeState,setPanelState} from './state.js';
 
 const byId=id=>document.getElementById(id);
@@ -281,6 +282,7 @@ export const loadLivesBoard=()=>{
     if(livesUiState.focus==='at_risk'){tableRows=tableRows.filter(row=>(row.__riskLevel||0)>=1);}
     clientSteps.push({step:'client_focus',label:`Après focus ${livesUiState.focus}`,applied:livesUiState.focus!=='all',count:tableRows.length});
     livesUiState.rowsByLife=new Map(mappedRows.map(row=>[row.life,row]));
+    updateOperatorLifeOptions(mappedRows);
     renderLivesBuckets(Object.entries(d.lives||{}).map(([life,payload])=>({life,...payload})),d.life_metrics_contract);
     renderLivesTable(tableRows);
     if(livesUiState.selectedLife&&livesUiState.rowsByLife.has(livesUiState.selectedLife)){showLifeDetails(livesUiState.selectedLife);}

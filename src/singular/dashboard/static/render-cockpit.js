@@ -1,4 +1,5 @@
 import {fetchJson,withScope} from './api.js';
+import {updateOperatorLifeOptions} from './actions.js';
 import {HOST_SENSORS_THRESHOLD,na,setPanelState,setStatusTone,applyStatusIndicator} from './state.js';
 import {renderQuestsSection} from './render-quests.js';
 import {renderObjectivesSection} from './render-objectives.js';
@@ -266,6 +267,7 @@ export const loadEco=()=>Promise.all([fetchJson(withScope('/ecosystem')),fetchJs
   setText('eco-dead-lives',String(dead));
   operatorSummaryState.eco=eco;
   operatorSummaryState.lives=lives;
+  updateOperatorLifeOptions(lives.table||[]);
   renderOperatorSummary();
   const rows=lives.table||[];
   const selected=rows.find(row=>row.selected_life===true);
@@ -304,7 +306,8 @@ export const loadHostVitals=()=>fetchJson(withScope('/runs/latest')).then(data=>
 export const loadCockpit=()=>Promise.all([
   fetchJson(withScope('/api/cockpit/essential')),
   fetchJson(withScope('/api/cockpit')),
-]).then(([essential,d])=>{
+  fetchJson(withScope('/lives/comparison?sort_by=last_activity&sort_order=desc')),
+]).then(([essential,d,lives])=>{
   if(!d||typeof d!=='object'){setPanelState('cockpit','empty','Aucune donnée cockpit disponible.');return;}
   const essentialPayload=(essential&&typeof essential==='object')?essential:{};
   const statusBox=byId('cockpit-status');
@@ -330,6 +333,8 @@ export const loadCockpit=()=>Promise.all([
   const fmtNum=(value,suffix='')=>value===null||value===undefined?na():`${Number(value).toFixed(2)}${suffix}`;
 
   operatorSummaryState.cockpit={trend,liveness_index:livenessIndex,selected_life:essentialPayload.selected_life};
+  operatorSummaryState.lives=lives||operatorSummaryState.lives;
+  updateOperatorLifeOptions(lives?.table||[]);
   renderOperatorSummary();
   setText('kpi-health',healthValue);
   setText('kpi-trend',trend);

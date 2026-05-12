@@ -388,6 +388,9 @@ class DashboardActionService:
 
     def _talk(self, params: dict[str, Any]) -> ActionResult:
         prompt = self._require_non_empty_text(params.get("prompt"), field="prompt", max_len=400)
+        name = params.get("name")
+        if name is not None:
+            name = self._require_non_empty_text(name, field="name", max_len=80)
         provider = params.get("provider")
         if provider is not None:
             provider = self._require_non_empty_text(provider, field="provider", max_len=40)
@@ -398,14 +401,14 @@ class DashboardActionService:
         from singular.lives import resolve_life
         from singular.organisms.talk import talk
 
-        life = resolve_life(None)
+        life = resolve_life(name)
         if life is None:
-            raise ValueError("no active life")
+            raise ValueError(f"unknown life: {name}" if name else "no active life")
         os.environ["SINGULAR_HOME"] = str(life)
 
         def _run() -> dict[str, Any]:
             talk(provider=provider, seed=seed, prompt=prompt)
-            return {"life": str(life), "prompt": prompt}
+            return {"life": str(life), "name": name, "prompt": prompt}
 
         data, log = self._capture(_run)
         return ActionResult(ok=True, action="talk", data=data, log=log)

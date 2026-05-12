@@ -336,7 +336,7 @@ const bindCommonHandlers=()=>{
 export const bootstrapDashboard=()=>{
   bootstrapPauseControls();
   bootstrapViewPauseControls();
-  bindActionHandlers({onAfterAction:()=>Promise.all([loadEco(),loadCockpit(),loadTimeline()])});
+  bindActionHandlers({onAfterAction:()=>Promise.all([loadEco(),loadCockpit(),loadLivesBoard(),loadTimeline()])});
   bindLivesHandlers(loadLivesBoard);
   bindLiveStreamHandlers();
   bindReflectionHandlers(loadReflections);
