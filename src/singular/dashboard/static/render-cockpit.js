@@ -63,6 +63,7 @@ const toneByRisk=(el,risk)=>{if(!el){return;}el.classList.remove('status-good','
 const extractHostMetrics=(record)=>{if(record&&typeof record.host_metrics==='object'&&record.host_metrics){return record.host_metrics;}if(record&&typeof record.signals==='object'&&record.signals&&typeof record.signals.host_metrics==='object'){return record.signals.host_metrics;}if(record&&typeof record.payload==='object'&&record.payload&&typeof record.payload.host_metrics==='object'){return record.payload.host_metrics;}return null;};
 
 const operatorSummaryState={context:null,lives:null,eco:null,cockpit:null,essential:null,workItems:null};
+let lastCockpitPayload=null;
 const cockpitFallbackPayload={
   global_status:'warning',
   health_score:null,
@@ -91,23 +92,42 @@ const endpointFallbacks={
   essential:{},
   cockpit:cockpitFallbackPayload,
 };
-const settledValue=(result,key)=>result.status==='fulfilled'?result.value:endpointFallbacks[key];
+const endpointLabels={
+  context:'/dashboard/context',
+  comparison:'/lives/comparison',
+  essential:'/api/cockpit/essential',
+  cockpit:'/api/cockpit',
+};
+const settledValue=(result,key,previousValue)=>result.status==='fulfilled'?result.value:(previousValue||endpointFallbacks[key]);
 const endpointFailureMessage=result=>{
   const reason=result.reason;
   if(reason?.message){return reason.message;}
   return String(reason||'erreur inconnue');
 };
-const showCockpitEndpointWarnings=failures=>{
+const invalidPayloadMessage=key=>`${endpointLabels[key]||key}: payload invalide`;
+const showCockpitEndpointWarnings=issues=>{
   const banner=byId('stale-data-banner');
   if(!banner){return;}
-  if(!failures.length){
+  if(!issues.length){
     if(!staleTimeoutTasks.size){banner.classList.add('panel-hidden');banner.textContent='';}
     return;
   }
-  const labels=failures.map(([key,result])=>`${key}: ${endpointFailureMessage(result)}`).join(' · ');
+  const labels=issues.map(issue=>{
+    const label=endpointLabels[issue.key]||issue.key;
+    if(issue.type==='invalid'){return `${label}: payload invalide`;}
+    return `${label}: endpoint indisponible (${endpointFailureMessage(issue.result)})`;
+  }).join(' · ');
   banner.classList.remove('panel-hidden');
-  banner.textContent=`⚠️ Données cockpit partielles : ${labels}. Les données disponibles restent affichées.`;
+  banner.textContent=`⚠️ Données cockpit partielles : ${labels}. Les données disponibles restent affichées, sans confondre données vides et erreur API.`;
 };
+const cockpitLoadError=issues=>{
+  const message=issues.map(issue=>issue.type==='invalid'?invalidPayloadMessage(issue.key):`${endpointLabels[issue.key]||issue.key}: ${endpointFailureMessage(issue.result)}`).join(' · ');
+  const error=new Error(`Chargement cockpit incomplet : ${message}`);
+  error.code=issues.some(issue=>issue.result?.reason?.code==='timeout')?'timeout':'cockpit_partial_failure';
+  return error;
+};
+const isObjectPayload=value=>Boolean(value)&&typeof value==='object'&&!Array.isArray(value);
+const isComparisonPayload=value=>isObjectPayload(value)&&Array.isArray(value.table);
 
 const firstDefined=(...values)=>values.find(value=>value!==null&&value!==undefined&&value!=='');
 const formatOneDecimal=value=>value===null||value===undefined||Number.isNaN(Number(value))?na():Number(value).toFixed(1);
@@ -427,15 +447,29 @@ export const loadCockpit=()=>Promise.allSettled([
   fetchJson(withScope('/api/cockpit')),
 ]).then(results=>{
   const endpointKeys=['context','comparison','essential','cockpit'];
-  const failures=results.map((result,index)=>[endpointKeys[index],result]).filter(([,result])=>result.status==='rejected');
-  showCockpitEndpointWarnings(failures);
   const [ctxResult,livesResult,essentialResult,cockpitResult]=results;
-  const ctx=settledValue(ctxResult,'context');
-  const lives=settledValue(livesResult,'comparison');
-  const essential=settledValue(essentialResult,'essential');
-  const d=settledValue(cockpitResult,'cockpit');
-  if(!d||typeof d!=='object'){setPanelState('cockpit','empty','Aucune donnée cockpit disponible.');return;}
-  const essentialPayload=(essential&&typeof essential==='object')?essential:{};
+  const endpointIssues=results.map((result,index)=>({key:endpointKeys[index],result,type:'unavailable'})).filter(issue=>issue.result.status==='rejected');
+  const invalidIssues=[];
+  if(ctxResult.status==='fulfilled'&&!isObjectPayload(ctxResult.value)){invalidIssues.push({key:'context',result:ctxResult,type:'invalid'});}
+  if(livesResult.status==='fulfilled'&&!isComparisonPayload(livesResult.value)){invalidIssues.push({key:'comparison',result:livesResult,type:'invalid'});}
+  if(essentialResult.status==='fulfilled'&&!isObjectPayload(essentialResult.value)){invalidIssues.push({key:'essential',result:essentialResult,type:'invalid'});}
+  if(cockpitResult.status==='fulfilled'&&!isObjectPayload(cockpitResult.value)){invalidIssues.push({key:'cockpit',result:cockpitResult,type:'invalid'});}
+  const issues=[...endpointIssues,...invalidIssues];
+  showCockpitEndpointWarnings(issues);
+  const shouldRethrow=issues.filter(issue=>['context','comparison','cockpit'].includes(issue.key));
+  if(cockpitResult.status==='rejected'){
+    setPanelState('cockpit','error',`Endpoint principal ${endpointLabels.cockpit} indisponible : ${endpointFailureMessage(cockpitResult)}.`);
+  }
+  if(invalidIssues.some(issue=>issue.key==='cockpit')){
+    setPanelState('cockpit','error',`Endpoint principal ${endpointLabels.cockpit} invalide : payload invalide.`);
+    throw cockpitLoadError(shouldRethrow);
+  }
+  const ctx=isObjectPayload(ctxResult.value)?settledValue(ctxResult,'context',operatorSummaryState.context):settledValue({status:'rejected'},'context',operatorSummaryState.context);
+  const lives=isComparisonPayload(livesResult.value)?settledValue(livesResult,'comparison',operatorSummaryState.lives):settledValue({status:'rejected'},'comparison',operatorSummaryState.lives);
+  const essential=isObjectPayload(essentialResult.value)?settledValue(essentialResult,'essential',operatorSummaryState.essential):settledValue({status:'rejected'},'essential',operatorSummaryState.essential);
+  const d=settledValue(cockpitResult,'cockpit',lastCockpitPayload);
+  const essentialPayload=isObjectPayload(essential)?essential:{};
+  if(cockpitResult.status==='fulfilled'){lastCockpitPayload=d;}
   operatorSummaryState.context=ctx||operatorSummaryState.context;
   operatorSummaryState.essential=essentialPayload;
   const statusBox=byId('cockpit-status');
@@ -461,8 +495,11 @@ export const loadCockpit=()=>Promise.allSettled([
   const fmtNum=(value,suffix='')=>value===null||value===undefined?na():`${Number(value).toFixed(2)}${suffix}`;
 
   operatorSummaryState.cockpit={trend,liveness_index:livenessIndex,life_liveness_index:d.life_liveness_index,health_score:d.health_score,selected_life:essentialPayload.selected_life};
-  operatorSummaryState.lives=lives||operatorSummaryState.lives;
-  updateOperatorLifeOptions(lives?.table||[]);
+  const comparisonAvailable=livesResult.status==='fulfilled'&&isComparisonPayload(livesResult.value);
+  if(comparisonAvailable){
+    operatorSummaryState.lives=lives;
+    updateOperatorLifeOptions(lives.table||[]);
+  }
   renderOperatorSummary();
   setText('kpi-health',healthValue);
   setText('kpi-trend',trend);
@@ -550,4 +587,5 @@ export const loadCockpit=()=>Promise.allSettled([
   if(actionsEl){for(const action of (d.suggested_actions||[])){const li=document.createElement('li');li.textContent=String(action);actionsEl.appendChild(li);} 
   if((d.suggested_actions||[]).length===0){const li=document.createElement('li');li.textContent='Aucune action suggérée';actionsEl.appendChild(li);} } 
   setText('raw-cockpit-json',JSON.stringify(d,null,2));
+  if(shouldRethrow.length){throw cockpitLoadError(shouldRethrow);}
 });
