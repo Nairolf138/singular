@@ -1,3 +1,4 @@
+import {updateOperatorLifeOptions} from './actions.js';
 import {normalizeItem} from './render-quests.js';
 
 const conversationState={
@@ -191,6 +192,7 @@ export const renderConversationsSection=payload=>{
     const selected=[...lives.entries()].find(([,meta])=>meta.active||meta.selected_life);
     conversationState.selectedLife=selected?.[0]||[...lives.keys()][0];
   }
+  updateOperatorLifeOptions([...lives.entries()].map(([life,meta])=>({life,...meta})));
   renderMeta(conversationState.selectedLife);
   bindSend();
 

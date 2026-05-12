@@ -40,6 +40,23 @@
     Arrêt d’urgence
   </button>
 </section>
+<section class='operator-action-form' aria-label='Paramètres opérateur des actions critiques'>
+  <div class='operator-field'>
+    <label for='operator-action-life-select'>Vie ciblée</label>
+    <select id='operator-action-life-select' aria-describedby='operator-action-help'>
+      <option value=''>Sélectionner une vie existante…</option>
+    </select>
+  </div>
+  <div class='operator-field operator-birth-field'>
+    <label for='operator-birth-name'>Nom exact à créer</label>
+    <input id='operator-birth-name' placeholder='Saisir le nom exact de la nouvelle vie' autocomplete='off'/>
+  </div>
+  <div class='operator-field operator-message-field'>
+    <label for='operator-action-message'>Message pour “Parler à une vie”</label>
+    <textarea id='operator-action-message' rows='2' placeholder='Écrire le message à envoyer à la vie sélectionnée…'></textarea>
+  </div>
+  <p id='operator-action-help' class='operator-action-help' role='status' aria-live='polite'>Sélectionnez une vie existante pour activer “Supprimer/archiver” et “Parler”.</p>
+</section>
 <div id='critical-action-result' class='critical-action-result' role='status' aria-live='polite'>Aucune action critique exécutée.</div>
 
 <div id='stale-data-banner' class='stale-banner panel-hidden' role='status' aria-live='polite'></div>
@@ -396,7 +413,7 @@
   <section id='actions'><h2>Actions rapides</h2><pre id='action-result'>Aucune exécution</pre>
     <div class='panel actions-panel'>
       <label>Jeton dashboard <input id='action-token' type='password' placeholder='optionnel'/></label>
-      <label>Nom de vie (créer/utiliser) <input id='action-life-name' placeholder='Nouvelle vie'/></label>
+      <label>Nom de vie (créer/utiliser) <input id='action-life-name' placeholder='Nom exact requis pour créer une vie'/></label>
       <label>Prompt de discussion <input id='action-prompt' placeholder='Prompt unique'/></label>
       <label>Budget boucle (s) <input id='action-budget' type='number' min='0.1' step='0.1' value='1.0'/></label>
       <div class='toolbar-wrap'>
