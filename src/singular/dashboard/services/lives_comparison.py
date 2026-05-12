@@ -362,7 +362,7 @@ def aggregate_lives(
                 display_name = name_value
         is_selected = isinstance(active_life, str) and active_life in {slug, display_name}
         is_extinct = registry_status == "extinct"
-        comparison[display_name] = {
+        comparison[slug] = {
             "health_score": None,
             "progression_slope": None,
             "failure_rate": None,
