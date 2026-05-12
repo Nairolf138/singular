@@ -9,10 +9,11 @@ from typing import Callable
 def is_run_jsonl_file(path: Path) -> bool:
     """Return whether *path* is a persisted or in-progress run JSONL file."""
 
+    name = path.name
     return (
-        not path.name.endswith(".consciousness.jsonl")
-        and not path.name.endswith(".consciousness.jsonl.tmp")
-        and (path.suffix == ".jsonl" or path.suffixes[-2:] == [".jsonl", ".tmp"])
+        not name.endswith(".consciousness.jsonl")
+        and not name.endswith(".consciousness.jsonl.tmp")
+        and (name.endswith(".jsonl") or name.endswith(".jsonl.tmp"))
     )
 
 

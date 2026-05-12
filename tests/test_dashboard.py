@@ -303,6 +303,81 @@ def test_dashboard_includes_temporary_jsonl_run_files(tmp_path: Path) -> None:
     assert ecosystem_payload["organisms"]["temp-life"]["energy"] == 7
 
 
+def test_dashboard_surfaces_sandbox_events_from_temporary_run(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run_file = runs_dir / "run-live-20260511090000.jsonl.tmp"
+    run_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "ts": "2026-05-11T09:00:00+00:00",
+                        "event": "interaction",
+                        "interaction": "sandbox_violation",
+                        "organism": "temp-life",
+                        "skill": "temp-life:skills/bad.py",
+                        "severity": "critical",
+                        "category": "sandbox_violation",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-05-11T09:01:00+00:00",
+                        "event": "governance.circuit_breaker_opened",
+                        "category": "sandbox_violation",
+                        "severity": "critical",
+                        "threshold": 3,
+                        "cooldown_seconds": 300.0,
+                        "open_until": "2099-05-11T09:06:00+00:00",
+                        "corrective_action": "halt mutations until cooldown",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-05-11T09:02:00+00:00",
+                        "event": "interaction",
+                        "interaction": "mutation_halted",
+                        "organism": "temp-life",
+                        "target": "temp-life:skills/bad.py",
+                        "severity": "critical",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+
+    cockpit_payload = app._routes["/api/cockpit"]()
+    governance = cockpit_payload["sandbox_governance"]
+    assert governance["circuit_breaker_status"] == "ouvert"
+    assert governance["recent_violations_count"] == 2
+    assert governance["last_faulty_skill"] == "temp-life:skills/bad.py"
+    assert {item["event"] for item in governance["events"]} >= {
+        "sandbox_violation",
+        "governance.circuit_breaker_opened",
+        "mutation_halted",
+    }
+
+    timeline_payload = app._routes["/api/runs/{run_id}/timeline"](run_id="run-live")
+    assert [item["event"] for item in timeline_payload["items"]] == [
+        "sandbox_violation",
+        "governance.circuit_breaker_opened",
+        "mutation_halted",
+    ]
+
+    client = TestClient(app)
+    with client.websocket_connect("/ws") as ws:
+        assert [_receive_with_timeout(ws)["event"] for _ in range(3)] == [
+            "sandbox_violation",
+            "governance.circuit_breaker_opened",
+            "mutation_halted",
+        ]
+
+
 def test_dashboard_cockpit_endpoint_schema(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
