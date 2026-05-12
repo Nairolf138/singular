@@ -50,6 +50,7 @@ class FastAPI:
 
     def __init__(self) -> None:
         self._routes: Dict[str, Callable[[], Any]] = {}
+        self._post_routes: Dict[str, Callable[[], Any]] = {}
         self._ws_routes: Dict[str, Callable[[WebSocket], Any]] = {}
         self._mounts: Dict[str, Any] = {}
 
@@ -68,6 +69,17 @@ class FastAPI:
 
         return decorator
 
+
+    def post(
+        self, path: str, **_kwargs: Any
+    ) -> Callable[[Callable[[], Any]], Callable[[], Any]]:
+        """Register a POST handler for ``path``."""
+
+        def decorator(func: Callable[[], Any]) -> Callable[[], Any]:
+            self._post_routes[path] = func
+            return func
+
+        return decorator
 
     def mount(self, path: str, app: Any, name: str | None = None) -> None:
         self._mounts[path] = {"app": app, "name": name}

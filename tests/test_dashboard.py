@@ -1653,7 +1653,7 @@ def test_dashboard_actions_endpoint_and_ui_panel(tmp_path: Path, monkeypatch: py
     assert "Mémorial" in body
     assert "Cloner" in body
 
-    ok = app._routes["/api/actions/{action}"]("lives_list", token="secret", payload="{}")
+    ok = client.post("/api/actions/lives_list?token=secret", json={}).json()
     assert ok["ok"] is True
     assert ok["action"] == "lives_list"
     assert "context" in ok
@@ -1678,7 +1678,12 @@ def test_dashboard_emergency_stop_action_writes_active_life_stop_signal(
     )
     route = app._routes["/api/actions/{action}"]
 
-    result = route("emergency_stop", payload=json.dumps({"scope": "active_life"}))
+    with pytest.raises(Exception):
+        route("emergency_stop", payload=json.dumps({"scope": "active_life"}))
+
+    result = TestClient(app).post(
+        "/api/actions/emergency_stop", json={"scope": "active_life"}
+    ).json()
 
     assert result["ok"] is True
     assert result["action"] == "emergency_stop"

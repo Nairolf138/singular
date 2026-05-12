@@ -88,13 +88,49 @@ export const updateOperatorLifeOptions=(rows=[])=>{
   updateOperatorActionState();
 };
 
+const readActionError=async response=>{
+  let detail='';
+  try{
+    const data=await response.json();
+    detail=typeof data?.detail==='string'?data.detail:JSON.stringify(data?.detail||data);
+  }catch(_err){
+    detail=await response.text().catch(()=>'' );
+  }
+  if(response.status===403){
+    return detail||'Jeton dashboard requis ou invalide: renseignez le champ “Jeton dashboard”.';
+  }
+  if(response.status===400){
+    return detail||'Payload invalide: vérifiez les paramètres de l’action.';
+  }
+  if(response.status===405){
+    return detail||'Méthode non autorisée pour cette action: utilisez POST.';
+  }
+  return detail||`HTTP ${response.status}`;
+};
+
 export const runAction=(action,payload,{onAfterAction}={})=>{
   const token=document.getElementById('action-token')?.value||'';
+  const bodyPayload=payload??{};
+  if(typeof bodyPayload!=='object'||Array.isArray(bodyPayload)){
+    writeActionResult(`Erreur action ${action}: payload invalide, un objet JSON est attendu.`);
+    return Promise.resolve(false);
+  }
+  let body='{}';
+  try{
+    body=JSON.stringify(bodyPayload);
+  }catch(err){
+    writeActionResult(`Erreur action ${action}: payload invalide (${err.message}).`);
+    return Promise.resolve(false);
+  }
   const q=new URLSearchParams();
   if(token){q.set('token',token);}
-  if(payload){q.set('payload',JSON.stringify(payload));}
-  return fetch(`/api/actions/${action}?${q.toString()}`).then(async r=>{
-    if(!r.ok){throw new Error(`HTTP ${r.status}`);}
+  const suffix=q.toString()?`?${q.toString()}`:'';
+  return fetch(`/api/actions/${encodeURIComponent(action)}${suffix}`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body,
+  }).then(async r=>{
+    if(!r.ok){throw new Error(await readActionError(r));}
     return r.json();
   }).then(async data=>{
     writeActionResult(JSON.stringify(data,null,2));
