@@ -88,6 +88,42 @@ def test_dashboard_starts_with_empty_registry_and_exposes_onboarding(tmp_path: P
     }
 
 
+def test_lives_comparison_current_life_only_uses_registry_after_life_creation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry_root = tmp_path / "registry-root"
+    registry_root.mkdir()
+    monkeypatch.setenv("SINGULAR_ROOT", str(registry_root))
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    app = create_app()
+
+    life = create_life("active-life")
+    runs_dir = life.path / "runs"
+    runs_dir.mkdir(parents=True)
+    (runs_dir / "active-run.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": "2026-05-12T10:00:00+00:00",
+                "life": life.slug,
+                "accepted": True,
+                "score_base": 10.0,
+                "score_new": 8.0,
+                "health": {"score": 91.0, "sandbox_stability": 0.98},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # Equivalent to GET /lives/comparison?current_life_only=true; the test
+    # FastAPI stub dispatches query parameters via direct route kwargs.
+    payload = app._routes["/lives/comparison"](current_life_only=True)
+    assert set(payload["lives"]) == {life.slug}
+    assert payload["lives"][life.slug]["health_score"] == 91.0
+    assert payload["table"][0]["life"] == life.slug
+
+
 def test_dashboard_quests_endpoint(tmp_path: Path, monkeypatch) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()

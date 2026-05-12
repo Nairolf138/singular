@@ -9,9 +9,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from singular.lives import get_registry_root
+from singular.lives import get_registry_root, load_registry
 from singular.sensors import load_host_sensor_thresholds
 from singular.skills_daily import build_daily_skills_snapshot
+from singular.dashboard.repositories.run_records import resolve_current_life_home
 
 
 @dataclass(slots=True)
@@ -43,7 +44,7 @@ class DashboardActionService:
             self.home = Path(os.environ.get("SINGULAR_HOME", self.root))
 
     def _context_payload(self) -> dict[str, Any]:
-        current_home = Path(os.environ.get("SINGULAR_HOME", str(self.home)))
+        current_home = resolve_current_life_home(load_registry, self.home)
         runs_dir = current_home / "runs"
         vital_metrics = self._consolidated_vital_metrics(runs_dir=runs_dir)
         host_metrics = self._consolidated_host_metrics(runs_dir=runs_dir)

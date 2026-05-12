@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -39,6 +40,35 @@ def logical_run_file_stem(path: Path) -> str:
     return normalized
 
 
+def resolve_current_life_home(
+    registry_loader: Callable[[], dict[str, object]],
+    fallback_base_dir: Path,
+) -> Path:
+    """Resolve the active life directory from the registry, with a stable fallback."""
+
+    fallback_home = Path(os.environ.get("SINGULAR_HOME", str(fallback_base_dir)))
+    try:
+        registry = registry_loader()
+    except Exception:
+        return fallback_home
+
+    active = registry.get("active")
+    raw_lives = registry.get("lives")
+    if not isinstance(active, str) or not isinstance(raw_lives, dict):
+        return fallback_home
+
+    active_meta = raw_lives.get(active)
+    path_value = getattr(active_meta, "path", None)
+    if isinstance(active_meta, dict):
+        path_value = active_meta.get("path", path_value)
+    if isinstance(path_value, str):
+        path_value = Path(path_value)
+    if isinstance(path_value, Path):
+        return path_value
+
+    return fallback_home
+
+
 @dataclass
 class RunRecordsRepository:
     """Read dashboard run records from one or many life run directories."""
@@ -67,7 +97,11 @@ class RunRecordsRepository:
         if self.runs_path is not None:
             return [self.runs_path]
         if current_life_only:
-            return [self.base_dir / "runs"]
+            current_life_home = resolve_current_life_home(
+                self.registry_loader,
+                self.base_dir,
+            )
+            return [current_life_home / "runs"]
         dirs: list[Path] = []
         seen: set[str] = set()
         for life_dir in self._registry_lives_paths():
