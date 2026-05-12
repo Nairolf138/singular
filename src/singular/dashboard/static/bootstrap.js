@@ -248,6 +248,16 @@ const toggleEssentialMode=()=>{
 
 const DASHBOARD_TAB_KEY='singular.dashboard.lastTab';
 const DASHBOARD_TECHNICAL_DETAILS_KEY='singular.dashboard.technicalDetails';
+const DEFAULT_DASHBOARD_TAB='decider-maintenant';
+const LEGACY_DASHBOARD_ANCHORS={
+  'cockpit':'decider-maintenant',
+  'conversations-section':'decider-maintenant',
+  'timeline-section':'diagnostiquer',
+  'vies':'comparer-vies',
+  'parametres':'technique',
+  'logs-live':'technique',
+  'reflections-section':'technique',
+};
 
 const applyTechnicalDetailsVisibility=isEnabled=>{
   document.body.dataset.dashboardMode=isEnabled?'expert':'operator';
@@ -292,13 +302,23 @@ const activateDashboardTab=tabId=>{
   }
 };
 
+const normalizeDashboardTabHash=(hash,validTabs)=>{
+  const raw=(hash||'').replace(/^#/,'');
+  if(!raw){return '';}
+  const candidate=raw.startsWith('tab-')?raw.slice(4):LEGACY_DASHBOARD_ANCHORS[raw];
+  return candidate&&validTabs.has(candidate)?candidate:DEFAULT_DASHBOARD_TAB;
+};
+
 const bindTabNavigation=()=>{
   const triggers=document.querySelectorAll('.tab-trigger');
   if(!triggers.length){return;}
-  triggers.forEach(trigger=>{trigger.onclick=()=>activateDashboardTab(trigger.dataset.tab||'decider-maintenant');});
-  const fromHash=(window.location.hash||'').replace('#tab-','');
+  const validTabs=new Set(Array.from(triggers).map(trigger=>trigger.dataset.tab).filter(Boolean));
+  const activateFromHash=()=>activateDashboardTab(normalizeDashboardTabHash(window.location.hash,validTabs)||DEFAULT_DASHBOARD_TAB);
+  triggers.forEach(trigger=>{trigger.onclick=()=>activateDashboardTab(trigger.dataset.tab||DEFAULT_DASHBOARD_TAB);});
+  window.addEventListener('hashchange',activateFromHash);
+  const fromHash=normalizeDashboardTabHash(window.location.hash,validTabs);
   const fromStorage=localStorage.getItem(DASHBOARD_TAB_KEY)||'';
-  activateDashboardTab(fromHash||fromStorage||'decider-maintenant');
+  activateDashboardTab(fromHash||(validTabs.has(fromStorage)?fromStorage:'')||DEFAULT_DASHBOARD_TAB);
 };
 
 const bindCommonHandlers=()=>{
