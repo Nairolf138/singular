@@ -18,7 +18,6 @@ import {
   setPanelState,
 } from './state.js';
 
-const ws=new WebSocket(`ws://${location.host}/ws`);
 const blockFreshness=new Map();
 const ESSENTIAL_MODE_KEY='singular.dashboard.essentialMode';
 
@@ -333,20 +332,22 @@ const bindCommonHandlers=()=>{
   }
 };
 
-export const bootstrapDashboard=()=>{
-  bootstrapPauseControls();
-  bootstrapViewPauseControls();
-  bindActionHandlers({onAfterAction:()=>Promise.all([loadEco(),loadCockpit(),loadLivesBoard(),loadTimeline()])});
-  bindLivesHandlers(loadLivesBoard);
-  bindLiveStreamHandlers();
-  bindReflectionHandlers(loadReflections);
-  bindCommonHandlers();
+const markRealtimeUnavailable=error=>{
+  const status=document.getElementById('live-status');
+  if(status){status.textContent='temps réel indisponible';}
+  console.warn('Dashboard WebSocket unavailable',error);
+};
 
-  Object.entries(taskDefinitions).forEach(([name,definition])=>registerTask(name,definition.loader,definition.intervalMs));
+export const initWebSocket=()=>{
+  let ws;
+  try{
+    ws=new WebSocket(`ws://${location.host}/ws`);
+  }catch(error){
+    markRealtimeUnavailable(error);
+    return null;
+  }
 
-  startScheduler();
-  updateLiveStatus();
-
+  ws.onerror=event=>{markRealtimeUnavailable(event);};
   ws.onmessage=e=>{
     const m=JSON.parse(e.data);
     if(m.type==='psyche'){const psyche=document.getElementById('psyche');if(psyche){psyche.textContent=JSON.stringify(m.data,null,2);}return;}
@@ -370,4 +371,26 @@ export const bootstrapDashboard=()=>{
     }
     schedulerTick();
   };
+  return ws;
+};
+
+const bindLocalCriticalHandlers=()=>{
+  bootstrapPauseControls();
+  bootstrapViewPauseControls();
+  bindCommonHandlers();
+};
+
+export const bootstrapDashboard=()=>{
+  bindLocalCriticalHandlers();
+
+  bindActionHandlers({onAfterAction:()=>Promise.all([loadEco(),loadCockpit(),loadLivesBoard(),loadTimeline()])});
+  bindLivesHandlers(loadLivesBoard);
+  bindLiveStreamHandlers();
+  bindReflectionHandlers(loadReflections);
+
+  Object.entries(taskDefinitions).forEach(([name,definition])=>registerTask(name,definition.loader,definition.intervalMs));
+
+  startScheduler();
+  updateLiveStatus();
+  initWebSocket();
 };
