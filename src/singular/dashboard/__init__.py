@@ -31,7 +31,6 @@ except Exception:  # pragma: no cover - fastapi test stub does not expose Starle
 from singular.schedulers.reevaluation import alerts_from_records
 from singular.dashboard.repositories.run_records import (
     RunRecordsRepository,
-    is_run_jsonl_file,
     logical_run_file_stem,
 )
 from singular.dashboard.services.trajectory import (
@@ -1020,13 +1019,6 @@ def create_app(
     def read_dashboard_work_items(current_life_only: bool = False) -> dict[str, object]:
         quests = read_quests()
         active = quests.get("active") if isinstance(quests.get("active"), list) else []
-        completed = quests.get("completed") if isinstance(quests.get("completed"), list) else []
-
-        quests_items = [
-            _normalize_work_item(item, fallback_title="quête", default_owner="système")
-            for item in [*active, *completed]
-            if isinstance(item, dict)
-        ]
         objectives_items = [
             _normalize_work_item(item, fallback_title="objectif", default_owner="système")
             for item in active
@@ -1451,7 +1443,6 @@ def create_app(
             as_float=_as_float,
             alerts_from_records=alerts_from_records,
             compute_vital_timeline=compute_vital_timeline,
-            set_life_status=set_life_status,
             registry_life_meta=_registry_life_meta,
         )
 
@@ -1622,11 +1613,22 @@ def create_app(
         )
 
         registry_state = _registry_overview()
+        status_reconciliation = [
+            {
+                "life": name,
+                "registry_status": payload.get("life_status"),
+                "extinction_seen_in_runs": payload.get("extinction_seen_in_runs"),
+                "suggestion": payload.get("status_reconciliation_suggestion"),
+            }
+            for name, payload in sorted(comparison.items())
+            if payload.get("status_reconciliation_suggestion") is not None
+        ]
         return {
             "lives": comparison,
             "table": lives_rows,
             "life_metrics_contract": metrics_contract,
             "unattached_runs": unattached,
+            "status_reconciliation": status_reconciliation,
             "onboarding": {
                 "required": bool(registry_state["is_empty"]),
                 "message": registry_state["onboarding_message"],
@@ -1644,6 +1646,41 @@ def create_app(
                 "before_filter_count": len(base_rows),
                 "steps": filter_steps,
             },
+        }
+
+
+    @app.post("/api/lives/reconcile-status")
+    async def reconcile_lives_status(request: StarletteRequest) -> dict[str, object]:
+        comparison, _ = _aggregate_lives(current_life_only=False)
+        applied: list[dict[str, object]] = []
+        skipped: list[dict[str, object]] = []
+        for life_name, payload in sorted(comparison.items()):
+            suggestion = payload.get("status_reconciliation_suggestion")
+            if suggestion == "mark_extinct":
+                slug, _ = _registry_life_meta(life_name, load_registry().get("lives", {}))
+                if slug is None:
+                    skipped.append(
+                        {
+                            "life": life_name,
+                            "suggestion": suggestion,
+                            "reason": "life_not_found_in_registry",
+                        }
+                    )
+                    continue
+                set_life_status(slug, "extinct")
+                applied.append(
+                    {
+                        "life": life_name,
+                        "slug": slug,
+                        "from_status": payload.get("life_status"),
+                        "to_status": "extinct",
+                        "suggestion": suggestion,
+                    }
+                )
+        return {
+            "applied_count": len(applied),
+            "applied": applied,
+            "skipped": skipped,
         }
 
     @app.get("/lives/genealogy")

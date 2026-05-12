@@ -1922,3 +1922,125 @@ def test_dashboard_registry_scope_aggregates_multiple_lives_and_can_filter_curre
     timeline_current = app._routes["/timeline"](current_life_only=True)
     assert timeline_current["count"] == 1
     assert timeline_current["items"][0]["life"] == "alpha"
+
+
+def test_lives_comparison_get_does_not_reconcile_registry_silently(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    registry_dir = tmp_path / "lives"
+    registry_dir.mkdir(parents=True)
+    registry_file = registry_dir / "registry.json"
+    registry_payload = {
+        "active": "alpha",
+        "lives": {
+            "alpha": {
+                "name": "alpha",
+                "slug": "alpha",
+                "path": str(tmp_path / "alpha"),
+                "created_at": "2026-05-12T00:00:00+00:00",
+                "status": "active",
+            }
+        },
+    }
+    registry_file.write_text(json.dumps(registry_payload, indent=2), encoding="utf-8")
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "run-death.jsonl").write_text(
+        json.dumps(
+            {
+                "life": "alpha",
+                "ts": "2026-05-12T01:00:00+00:00",
+                "event": "death",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    client = TestClient(app)
+
+    before = registry_file.read_text(encoding="utf-8")
+    first_payload = client.get("/lives/comparison").json()
+    between = registry_file.read_text(encoding="utf-8")
+    second_payload = client.get("/lives/comparison").json()
+    after = registry_file.read_text(encoding="utf-8")
+
+    assert before == between == after
+    assert json.loads(after)["lives"]["alpha"]["status"] == "active"
+    assert first_payload["lives"]["alpha"]["life_status"] == "active"
+    assert first_payload["lives"]["alpha"]["extinction_seen_in_runs"] is True
+    assert first_payload["lives"]["alpha"]["registry_run_status_inconsistency"] is True
+    assert first_payload["lives"]["alpha"]["status_reconciliation_suggestion"] == "mark_extinct"
+    assert first_payload["status_reconciliation"] == second_payload["status_reconciliation"] == [
+        {
+            "life": "alpha",
+            "registry_status": "active",
+            "extinction_seen_in_runs": True,
+            "suggestion": "mark_extinct",
+        }
+    ]
+
+
+def test_lives_status_reconciliation_action_marks_suggested_extinctions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+
+    registry_dir = tmp_path / "lives"
+    registry_dir.mkdir(parents=True)
+    registry_file = registry_dir / "registry.json"
+    registry_file.write_text(
+        json.dumps(
+            {
+                "active": "alpha",
+                "lives": {
+                    "alpha": {
+                        "name": "alpha",
+                        "slug": "alpha",
+                        "path": str(tmp_path / "alpha"),
+                        "created_at": "2026-05-12T00:00:00+00:00",
+                        "status": "active",
+                    }
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "run-death.jsonl").write_text(
+        json.dumps(
+            {
+                "life": "alpha",
+                "ts": "2026-05-12T01:00:00+00:00",
+                "event": "death",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    client = TestClient(app)
+
+    response = client.post("/api/lives/reconcile-status")
+
+    assert response.status_code == 200
+    assert response.json()["applied"] == [
+        {
+            "life": "alpha",
+            "slug": "alpha",
+            "from_status": "active",
+            "to_status": "extinct",
+            "suggestion": "mark_extinct",
+        }
+    ]
+    assert json.loads(registry_file.read_text(encoding="utf-8"))["lives"]["alpha"]["status"] == "extinct"

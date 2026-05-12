@@ -62,7 +62,6 @@ def test_lives_comparison_service_aggregates_metrics() -> None:
         as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
         alerts_from_records=lambda _: [],
         compute_vital_timeline=lambda **_: {"ok": True},
-        set_life_status=lambda *_: None,
         registry_life_meta=lambda life_name, lives: (life_name, lives.get(life_name)),
     )
 
@@ -98,7 +97,6 @@ def test_lives_comparison_includes_registry_life_without_records_in_table() -> N
         as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
         alerts_from_records=lambda _: [],
         compute_vital_timeline=lambda **_: {"ok": True},
-        set_life_status=lambda *_: None,
         registry_life_meta=lambda life_name, lives: (life_name, lives.get(life_name)),
     )
 
@@ -128,7 +126,6 @@ def test_lives_comparison_marks_selected_active_life_without_records() -> None:
         as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
         alerts_from_records=lambda _: [],
         compute_vital_timeline=lambda **_: {"ok": True},
-        set_life_status=lambda *_: None,
         registry_life_meta=lambda life_name, lives: (life_name, lives.get(life_name)),
     )
 
@@ -154,7 +151,6 @@ def test_lives_comparison_default_rows_follow_active_and_dead_filters() -> None:
         as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
         alerts_from_records=lambda _: [],
         compute_vital_timeline=lambda **_: {"ok": True},
-        set_life_status=lambda *_: None,
         registry_life_meta=lambda life_name, lives: (life_name, lives.get(life_name)),
     )
 
