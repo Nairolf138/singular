@@ -582,3 +582,89 @@ for (const [label, button] of [['archive', archive], ['talk', talk], ['emergency
     )
 
     subprocess.run(["node", str(script)], check=True)
+
+
+def test_archived_dead_or_stopped_lives_disable_operator_actions(tmp_path: Path) -> None:
+    """Operator talk/archive/emergency stop are blocked for non-runnable life statuses."""
+    script = tmp_path / "blocked_life_action_check.mjs"
+    module_path = (Path.cwd() / DASHBOARD_STATIC / "actions.js").as_uri()
+    script.write_text(
+        f"""
+class ClassList {{
+  constructor() {{ this.values = new Set(); }}
+  add(...names) {{ names.forEach(name => this.values.add(name)); }}
+  remove(...names) {{ names.forEach(name => this.values.delete(name)); }}
+  toggle(name, force) {{
+    const shouldAdd = force === undefined ? !this.values.has(name) : Boolean(force);
+    if (shouldAdd) {{ this.values.add(name); }} else {{ this.values.delete(name); }}
+    return shouldAdd;
+  }}
+  contains(name) {{ return this.values.has(name); }}
+}}
+
+class Element {{
+  constructor(tagName, id = '') {{
+    this.tagName = tagName.toUpperCase();
+    this.id = id;
+    this.children = [];
+    this.dataset = {{}};
+    this.attributes = {{}};
+    this.classList = new ClassList();
+    this.value = '';
+    this.disabled = false;
+    this._textContent = '';
+    this._innerHTML = null;
+  }}
+  appendChild(child) {{ this.children.push(child); return child; }}
+  addEventListener() {{}}
+  setAttribute(name, value) {{ this.attributes[name] = String(value); }}
+  getAttribute(name) {{ return this.attributes[name] ?? null; }}
+  set textContent(value) {{ this._textContent = String(value ?? ''); this.children = []; this._innerHTML = null; }}
+  get textContent() {{ return this._textContent + this.children.map(child => child.textContent ?? '').join(''); }}
+  set innerHTML(value) {{ this._innerHTML = String(value ?? ''); this.children = []; this._textContent = ''; }}
+  get innerHTML() {{ return this._innerHTML ?? this.textContent; }}
+  set title(value) {{ this.attributes.title = String(value); }}
+  get title() {{ return this.attributes.title ?? ''; }}
+  get options() {{ return this.children.filter(child => child.tagName === 'OPTION'); }}
+}}
+
+const elements = new Map();
+const register = (tagName, id) => {{ const el = new Element(tagName, id); elements.set(id, el); return el; }};
+register('select', 'operator-action-life-select').dataset.registryState = 'loading';
+register('p', 'operator-action-help');
+register('span', 'critical-current-life-target');
+register('input', 'operator-birth-name').value = 'Nouvelle Vie';
+register('button', 'critical-birth');
+const criticalArchive = register('button', 'critical-archive');
+const criticalTalk = register('button', 'critical-talk');
+const criticalEmergency = register('button', 'critical-emergency-stop');
+const archive = register('button', 'act-archive');
+const talk = register('button', 'act-talk');
+const livesUse = register('button', 'act-lives-use');
+register('button', 'act-memorial');
+register('button', 'act-clone');
+register('div', 'critical-action-result');
+
+globalThis.document = {{
+  createElement: tagName => new Element(tagName),
+  getElementById: id => elements.get(id) ?? null,
+}};
+globalThis.window = {{ dispatchEvent() {{}} }};
+globalThis.CustomEvent = class CustomEvent {{ constructor(type, init) {{ this.type = type; this.detail = init?.detail; }} }};
+
+const {{ updateOperatorLifeOptions }} = await import('{module_path}');
+for (const [life, status, expectedLabel] of [['beta', 'archived', 'vie archivée'], ['gamma', 'dead', 'vie morte'], ['omega', 'extinct', 'vie morte'], ['delta', 'stopped', 'vie arrêtée']]) {{
+  updateOperatorLifeOptions([{{ life, life_status: status, selected_life: true }}]);
+  for (const [label, button] of [['critical archive', criticalArchive], ['critical talk', criticalTalk], ['critical emergency', criticalEmergency], ['archive', archive], ['talk', talk]]) {{
+    if (!button.disabled) {{ throw new Error(`${{label}} should be disabled for ${{status}} life`); }}
+    if (button.getAttribute('aria-disabled') !== 'true') {{ throw new Error(`${{label}} aria-disabled missing`); }}
+  }}
+  if (!livesUse || livesUse.disabled) {{ throw new Error('lives_use should remain available for a valid selected life'); }}
+  const help = elements.get('operator-action-help').textContent;
+  if (!help.includes(expectedLabel)) {{ throw new Error(`unexpected help message for ${{status}}: ${{help}}`); }}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(["node", str(script)], check=True)

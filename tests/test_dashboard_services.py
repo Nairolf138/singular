@@ -162,6 +162,46 @@ def test_lives_comparison_default_rows_follow_active_and_dead_filters() -> None:
     assert [row["life"] for row in dead_only] == ["beta"]
 
 
+def test_lives_comparison_normalizes_registry_life_statuses() -> None:
+    comparison, _ = aggregate_lives(
+        [
+            {"life": "gamma", "event": "mutation", "ts": "2026-01-01T00:00:00Z"},
+        ],
+        registry={
+            "active": "alpha",
+            "lives": {
+                "alpha": {"name": "alpha", "status": "ACTIVE"},
+                "beta": {"name": "beta", "status": "archived"},
+                "gamma": {"name": "gamma", "status": "Dead"},
+                "delta": {"name": "delta", "status": "stopped"},
+                "epsilon": {"name": "epsilon", "status": "unknown"},
+                "zeta": {"name": "zeta", "status": "unexpected"},
+            },
+        },
+        compare_lives=None,
+        time_window="all",
+        record_life=lambda rec: str(rec.get("life", "unknown")),
+        record_run_id=lambda rec: str(rec.get("run_id", "unknown")),
+        is_mutation_record=lambda rec: "score_base" in rec,
+        as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
+        alerts_from_records=lambda _: [],
+        compute_vital_timeline=lambda **kwargs: {"registry_status": kwargs["registry_status"]},
+        registry_life_meta=lambda life_name, lives: (life_name, lives.get(life_name)),
+    )
+
+    assert comparison["alpha"]["life_status"] == "active"
+    assert comparison["alpha"]["is_registry_active_life"] is True
+    assert comparison["beta"]["life_status"] == "archived"
+    assert comparison["beta"]["is_registry_active_life"] is False
+    assert comparison["gamma"]["life_status"] == "dead"
+    assert comparison["gamma"]["extinction_seen_in_runs"] is True
+    assert comparison["gamma"]["run_terminated"] is True
+    assert comparison["gamma"]["status_reconciliation_suggestion"] is None
+    assert comparison["delta"]["life_status"] == "stopped"
+    assert comparison["delta"]["run_terminated"] is True
+    assert comparison["epsilon"]["life_status"] == "unknown"
+    assert comparison["zeta"]["life_status"] == "unknown"
+
 def test_code_evolution_service_aggregates_by_life_and_metrics() -> None:
     payload = aggregate_code_evolution(
         [

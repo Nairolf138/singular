@@ -70,6 +70,23 @@ def life_trend_rank(trend: str) -> int:
     return -1
 
 
+def normalize_life_status(value: object) -> str:
+    if not isinstance(value, str):
+        return "unknown"
+    normalized = value.strip().lower()
+    if normalized in {"active", "archived", "extinct", "dead", "stopped", "unknown"}:
+        return normalized
+    return "unknown"
+
+
+def _status_is_dead(status: str) -> bool:
+    return status in {"extinct", "dead"}
+
+
+def _status_is_terminated(status: str) -> bool:
+    return status in {"extinct", "dead", "stopped"}
+
+
 def _normalized_event(record: dict[str, object]) -> str:
     event = record.get("event")
     if isinstance(event, str):
@@ -346,21 +363,18 @@ def aggregate_lives(
         registry_status = "active"
         display_name = slug
         if isinstance(raw_meta, dict):
-            status_value = raw_meta.get("status")
-            if isinstance(status_value, str) and status_value in {"active", "extinct"}:
-                registry_status = status_value
+            registry_status = normalize_life_status(raw_meta.get("status", "active"))
             name_value = raw_meta.get("name")
             if isinstance(name_value, str) and name_value:
                 display_name = name_value
         else:
-            status_value = getattr(raw_meta, "status", None)
-            if isinstance(status_value, str) and status_value in {"active", "extinct"}:
-                registry_status = status_value
+            registry_status = normalize_life_status(getattr(raw_meta, "status", "active"))
             name_value = getattr(raw_meta, "name", None)
             if isinstance(name_value, str) and name_value:
                 display_name = name_value
         is_selected = isinstance(active_life, str) and active_life in {slug, display_name}
-        is_extinct = registry_status == "extinct"
+        is_extinct = _status_is_dead(registry_status)
+        is_terminated = _status_is_terminated(registry_status)
         comparison[slug] = {
             "health_score": None,
             "progression_slope": None,
@@ -380,7 +394,7 @@ def aggregate_lives(
             "is_registry_active_life": registry_status == "active",
             "has_recent_activity": False,
             "extinction_seen_in_runs": is_extinct,
-            "run_terminated": False,
+            "run_terminated": is_terminated,
             "registry_run_status_inconsistency": False,
             "status_reconciliation_suggestion": None,
             "vital_timeline": compute_vital_timeline(
@@ -478,16 +492,16 @@ def aggregate_lives(
         slug, raw_meta = registry_life_meta(life_name, registry_lives)
         registry_status = "active"
         if isinstance(raw_meta, dict):
-            status_value = raw_meta.get("status")
-            if isinstance(status_value, str) and status_value in {"active", "extinct"}:
-                registry_status = status_value
+            registry_status = normalize_life_status(raw_meta.get("status", "active"))
         elif slug is not None:
             registry_meta = registry_lives.get(slug)
-            status_value = getattr(registry_meta, "status", None)
-            if isinstance(status_value, str) and status_value in {"active", "extinct"}:
-                registry_status = status_value
+            registry_status = normalize_life_status(getattr(registry_meta, "status", "active"))
+        if registry_status == "unknown" and life_name in comparison:
+            registry_status = str(comparison[life_name].get("life_status", "unknown"))
+        extinction_seen = extinction_seen or _status_is_dead(registry_status)
+        run_terminated = run_terminated or _status_is_terminated(registry_status)
         registry_run_status_inconsistency = (
-            extinction_seen and slug is not None and registry_status != "extinct"
+            extinction_seen and slug is not None and not _status_is_dead(registry_status)
         )
         status_reconciliation_suggestion = (
             "mark_extinct" if registry_run_status_inconsistency else None
