@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import asyncio
 import inspect
@@ -35,6 +36,38 @@ class TestClient:
             status = 200
         except HTTPException as exc:  # pragma: no cover - simple error path
             data = None
+            status = exc.status_code
+        return Response(status, data)
+
+    def post(self, path: str, json: Any = None) -> Response:
+        parsed = urlsplit(path)
+        handler = self.app._post_routes.get(parsed.path)
+        params = {key: values[-1] for key, values in parse_qs(parsed.query).items()}
+        if handler is None and parsed.path.startswith("/api/actions/"):
+            handler = self.app._post_routes["/api/actions/{action}"]
+            params["action"] = parsed.path.rsplit("/", 1)[-1]
+        if handler is None and parsed.path.endswith("/chat"):
+            handler = self.app._post_routes["/api/lives/{life}/chat"]
+            params["life"] = parsed.path.split("/")[3]
+
+        class Request:
+            async def body(self) -> bytes:
+                import json as json_module
+
+                if json is None:
+                    return b""
+                return json_module.dumps(json).encode("utf-8")
+
+            async def json(self) -> Any:
+                return json
+
+        try:
+            data = handler(request=Request(), **params)
+            if inspect.iscoroutine(data):
+                data = asyncio.run(data)
+            status = 200
+        except HTTPException as exc:  # pragma: no cover - simple error path
+            data = {"detail": exc.detail}
             status = exc.status_code
         return Response(status, data)
 

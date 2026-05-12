@@ -2103,27 +2103,93 @@ def create_app(
 
         app.post("/api/lives/{life}/chat")(chat_with_life_post)
 
-    @app.get("/api/actions/{action}")
-    def run_action(action: str, token: str | None = None, payload: str | None = None) -> dict[str, object]:
+    DESTRUCTIVE_GET_ACTIONS = {"archive", "emergency_stop", "clone"}
+
+    def _validate_action_token(token: str | None) -> None:
         try:
             actions.validate_token(token)
         except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=403,
+                detail="Jeton dashboard requis ou invalide pour exécuter cette action.",
+            ) from exc
 
-        params: dict[str, object] = {}
-        if payload:
-            try:
-                candidate = json.loads(payload)
-            except json.JSONDecodeError as exc:
-                raise HTTPException(status_code=400, detail="payload must be valid JSON") from exc
-            if not isinstance(candidate, dict):
-                raise HTTPException(status_code=400, detail="payload must be an object")
-            params = candidate
+    def _parse_action_payload(payload: str | None) -> dict[str, object]:
+        if not payload:
+            return {}
+        try:
+            candidate = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="Payload invalide: le corps JSON doit être un objet valide.",
+            ) from exc
+        if not isinstance(candidate, dict):
+            raise HTTPException(
+                status_code=400,
+                detail="Payload invalide: le corps JSON doit être un objet.",
+            )
+        return candidate
 
+    def _execute_dashboard_action(
+        action: str, params: dict[str, object], token: str | None = None
+    ) -> dict[str, object]:
+        _validate_action_token(token)
         result = actions.execute(action, params)
         if not result.get("ok"):
             raise HTTPException(status_code=400, detail=str(result.get("error") or "action failed"))
         return result
+
+    @app.get("/api/actions/{action}")
+    def run_action_get(
+        action: str, token: str | None = None, payload: str | None = None
+    ) -> dict[str, object]:
+        if action in DESTRUCTIVE_GET_ACTIONS:
+            raise HTTPException(
+                status_code=405,
+                detail=(
+                    "Méthode GET dépréciée et bloquée pour cette action destructive; "
+                    "utilisez POST avec un corps JSON."
+                ),
+            )
+        params = _parse_action_payload(payload)
+        result = _execute_dashboard_action(action, params, token=token)
+        result["deprecated"] = "GET /api/actions/{action} is deprecated; use POST with a JSON body."
+        return result
+
+    if hasattr(app, "post"):
+        async def run_action_post(
+            action: str, request: StarletteRequest, token: str | None = None
+        ) -> dict[str, object]:
+            try:
+                body = await request.body()
+            except AttributeError:
+                try:
+                    candidate = await request.json()
+                except Exception as exc:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Payload invalide: le corps JSON doit être un objet valide.",
+                    ) from exc
+                if not isinstance(candidate, dict):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Payload invalide: le corps JSON doit être un objet.",
+                    )
+                return _execute_dashboard_action(action, candidate, token=token)
+            if not body:
+                return _execute_dashboard_action(action, {}, token=token)
+            try:
+                raw_payload = body.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Payload invalide: le corps JSON doit être encodé en UTF-8.",
+                ) from exc
+            params = _parse_action_payload(raw_payload)
+            return _execute_dashboard_action(action, params, token=token)
+
+        app.post("/api/actions/{action}")(run_action_post)
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket) -> None:
