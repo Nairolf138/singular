@@ -710,13 +710,12 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "Qu’est-ce que ce score ?" in body
     assert "Pourquoi cette alerte ?" in body
     assert "Navigation" in body
-    assert "#cockpit" in body
-    assert "#timeline-section" in body
+    assert "#tab-decider-maintenant" in body
+    assert "#tab-diagnostiquer" in body
     assert "Timeline des réflexions" in body
     assert "reflection-objective" in body
-    assert "#vies" in body
-    assert "#logs-live" in body
-    assert "#parametres" in body
+    assert "#tab-comparer-vies" in body
+    assert "#tab-technique" in body
     assert "Registre courant (SINGULAR_ROOT)" in body
     assert "Vie courante (SINGULAR_HOME)" in body
     assert "Nombre de vies détectées" in body

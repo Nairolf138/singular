@@ -60,6 +60,34 @@ def test_dashboard_quests_websocket_targets_existing_raw_panel() -> None:
     assert "getElementById('quests-json-raw')" in bootstrap or "loadQuests()" in bootstrap
 
 
+def test_dashboard_tab_navigation_supports_legacy_hashes() -> None:
+    bootstrap = (DASHBOARD_STATIC / "bootstrap.js").read_text(encoding="utf-8")
+    template = DASHBOARD_TEMPLATE.read_text(encoding="utf-8")
+
+    for legacy_anchor, tab in {
+        "cockpit": "decider-maintenant",
+        "conversations-section": "decider-maintenant",
+        "timeline-section": "diagnostiquer",
+        "vies": "comparer-vies",
+        "parametres": "technique",
+        "logs-live": "technique",
+        "reflections-section": "technique",
+    }.items():
+        assert f"'{legacy_anchor}':'{tab}'" in bootstrap
+
+    assert "raw.startsWith('tab-')" in bootstrap
+    assert "DEFAULT_DASHBOARD_TAB='decider-maintenant'" in bootstrap
+    for current_tab in [
+        "#tab-decider-maintenant",
+        "#tab-diagnostiquer",
+        "#tab-comparer-vies",
+        "#tab-technique",
+    ]:
+        assert current_tab in template
+    for legacy_href in ["#cockpit", "#timeline-section", "#vies", "#logs-live", "#parametres"]:
+        assert f"href='{legacy_href}'" not in template
+
+
 def test_genealogy_renderer_escapes_malicious_life_names(tmp_path: Path) -> None:
     """Exercise the genealogy DOM renderer with a life name that looks like XSS."""
     script = tmp_path / "genealogy_escape_check.mjs"
