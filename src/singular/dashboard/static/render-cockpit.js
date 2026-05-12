@@ -1,6 +1,6 @@
 import {fetchJson,withScope} from './api.js';
 import {fetchSharedDashboardContext,fetchSharedLivesComparison,fetchSharedCockpitEssential} from './dashboard-data.js';
-import {updateOperatorLifeOptions} from './actions.js';
+import {mergeLifeRows,updateOperatorLifeOptions} from './actions.js';
 import {HOST_SENSORS_THRESHOLD,na,setPanelState,setStatusTone,applyStatusIndicator,getSelectedLife,setSelectedLife,staleTimeoutTasks} from './state.js';
 import {renderQuestsSection} from './render-quests.js';
 import {renderObjectivesSection} from './render-objectives.js';
@@ -390,7 +390,7 @@ export const loadRetentionStatus=()=>fetchJson('/api/retention/status').then(pay
   setText('kpi-retention-thresholds',exceeded.length?`${thresholdLabel} · dépassement: ${exceeded.join(', ')}`:thresholdLabel);
 });
 
-export const loadEco=()=>Promise.all([fetchJson(withScope('/ecosystem')),fetchSharedLivesComparison()]).then(([eco,lives])=>{
+export const loadEco=()=>Promise.all([fetchJson(withScope('/ecosystem')),fetchSharedDashboardContext(),fetchSharedLivesComparison()]).then(([eco,context,lives])=>{
   const contract=eco.life_metrics_contract||lives.life_metrics_contract||{};
   const counts=contract.counts||{};
   const labels=contract.labels||{};
@@ -401,8 +401,9 @@ export const loadEco=()=>Promise.all([fetchJson(withScope('/ecosystem')),fetchSh
   setText('eco-alive-lives',String(alive));
   setText('eco-dead-lives',String(dead));
   operatorSummaryState.eco=eco;
+  operatorSummaryState.context=context;
   operatorSummaryState.lives=lives;
-  updateOperatorLifeOptions(lives.table||[]);
+  updateOperatorLifeOptions(mergeLifeRows(context,lives));
   renderOperatorSummary();
   const rows=lives.table||[];
   const selected=rows.find(row=>row.selected_life===true);
@@ -496,10 +497,8 @@ export const loadCockpit=()=>Promise.allSettled([
 
   operatorSummaryState.cockpit={trend,liveness_index:livenessIndex,life_liveness_index:d.life_liveness_index,health_score:d.health_score,selected_life:essentialPayload.selected_life};
   const comparisonAvailable=livesResult.status==='fulfilled'&&isComparisonPayload(livesResult.value);
-  if(comparisonAvailable){
-    operatorSummaryState.lives=lives;
-    updateOperatorLifeOptions(lives.table||[]);
-  }
+  if(comparisonAvailable){operatorSummaryState.lives=lives;}
+  updateOperatorLifeOptions(mergeLifeRows(ctx,comparisonAvailable?lives:{}));
   renderOperatorSummary();
   setText('kpi-health',healthValue);
   setText('kpi-trend',trend);
