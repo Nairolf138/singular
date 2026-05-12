@@ -524,6 +524,16 @@ def create_app(
         reference = now or datetime.now(timezone.utc)
         return max(0, int((parsed.astimezone(timezone.utc) - reference).total_seconds()))
 
+    def _governance_policy_diagnostics() -> dict[str, object]:
+        policy = load_runtime_policy()
+        return {
+            "circuit_breaker_threshold": policy.circuit_breaker_threshold,
+            "circuit_breaker_window_seconds": policy.circuit_breaker_window_seconds,
+            "circuit_breaker_cooldown_seconds": policy.circuit_breaker_cooldown_seconds,
+            "safe_mode": policy.safe_mode,
+            "mutation_quota_per_window": policy.mutation_quota_per_window,
+        }
+
     def _summarize_sandbox_governance(records: list[dict[str, object]]) -> dict[str, object]:
         target_events = {
             "sandbox_violation",
@@ -643,6 +653,7 @@ def create_app(
                 "accepted_mutation_rate": None,
                 "critical_alerts": [],
                 "sandbox_governance": _summarize_sandbox_governance([]),
+                "governance_policy": _governance_policy_diagnostics(),
                 "last_notable_mutation": None,
                 "next_action": "Aucune donnée: démarrer un run pour remplir le cockpit.",
                 "suggested_actions": [
@@ -861,6 +872,7 @@ def create_app(
             "accepted_mutation_rate": accepted_rate,
             "critical_alerts": critical_alerts,
             "sandbox_governance": sandbox_governance,
+            "governance_policy": _governance_policy_diagnostics(),
             "last_notable_mutation": last_notable_mutation,
             "next_action": next_action,
             "suggested_actions": suggested_actions,
@@ -1305,6 +1317,7 @@ def create_app(
                 "message": registry_state["onboarding_message"],
             },
             "policy": policy.to_payload(),
+            "governance_policy": _governance_policy_diagnostics(),
             "policy_impact": policy.impact_summary(),
             "skills_lifecycle": _skill_lifecycle_summary(),
             "retention": retention,

@@ -34,6 +34,13 @@ def test_dashboard_endpoints(tmp_path: Path, monkeypatch) -> None:
     context = client.get("/dashboard/context").json()
     assert context["policy"]["version"] == 1
     assert isinstance(context["policy_impact"], list)
+    assert context["governance_policy"] == {
+        "circuit_breaker_threshold": 3,
+        "circuit_breaker_window_seconds": 180.0,
+        "circuit_breaker_cooldown_seconds": 300.0,
+        "safe_mode": False,
+        "mutation_quota_per_window": 25,
+    }
     assert "skills_lifecycle" in context
     assert "retention" in context
     retention = client.get("/api/retention/status").json()
@@ -415,6 +422,12 @@ def test_dashboard_cockpit_sandbox_governance_summary(tmp_path: Path) -> None:
     payload = TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")).get(
         "/api/cockpit"
     ).json()
+
+    assert payload["governance_policy"]["circuit_breaker_threshold"] == 3
+    assert payload["governance_policy"]["circuit_breaker_window_seconds"] == 180.0
+    assert payload["governance_policy"]["circuit_breaker_cooldown_seconds"] == 300.0
+    assert payload["governance_policy"]["safe_mode"] is False
+    assert payload["governance_policy"]["mutation_quota_per_window"] == 25
 
     governance = payload["sandbox_governance"]
     assert governance["circuit_breaker_status"] == "ouvert"
