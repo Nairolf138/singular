@@ -20,6 +20,16 @@ const operatorLifeSelect=()=>document.getElementById('operator-action-life-selec
 const selectedOperatorLife=()=>getSelectedLife()||readValue('operator-action-life-select','action-life-name');
 const operatorMessage=()=>readValue('operator-action-message','action-prompt');
 const birthName=()=>readValue('operator-birth-name','action-life-name');
+const normalizeLifeStatus=value=>String(value||'').trim().toLowerCase();
+const blockedOperatorActionStatuses=new Set(['archived','dead','extinct','stopped']);
+const statusBlocksOperatorAction=status=>blockedOperatorActionStatuses.has(normalizeLifeStatus(status));
+const statusLabel=status=>{
+  const normalized=normalizeLifeStatus(status);
+  if(normalized==='archived'){return 'archivée';}
+  if(normalized==='dead'||normalized==='extinct'){return 'morte';}
+  if(normalized==='stopped'){return 'arrêtée';}
+  return normalized||'inconnue';
+};
 
 const validOperatorLives=()=>{
   const select=operatorLifeSelect();
@@ -64,18 +74,31 @@ const setActionHelp=text=>{
 };
 
 const requiresValidLife=action=>['archive','talk','emergency_stop','lives_use','memorial','clone'].includes(action);
+const requiresRunnableLife=action=>['archive','talk','emergency_stop'].includes(action);
+
+const selectedOperatorLifeStatus=()=>{
+  const select=operatorLifeSelect();
+  const selected=selectedOperatorLife();
+  if(!select||!selected){return '';}
+  const option=[...select.options].find(candidate=>candidate.value===selected);
+  return normalizeLifeStatus(option?.dataset?.lifeStatus);
+};
 
 export const updateOperatorActionState=()=>{
   syncOperatorSelectToShared();
   const registryState=operatorRegistryState();
   const hasSelection=registryState==='valid';
   const selected=selectedOperatorLife();
+  const selectedStatus=selectedOperatorLifeStatus();
+  const blocksOperatorActions=hasSelection&&statusBlocksOperatorAction(selectedStatus);
   const help=document.getElementById('operator-action-help');
   const helpMessages={
     loading:'Les données de vies n’ont pas encore chargé',
     empty:'Aucune vie détectée dans le registre',
     invalid:'Sélectionnez une vie valide dans le registre pour activer “Supprimer/archiver” et “Parler”.',
-    valid:`Vie ciblée: ${selected}. “Supprimer/archiver” et “Parler” sont disponibles.`,
+    valid:blocksOperatorActions
+      ?`Vie ciblée: ${selected}. Actions “Parler”, “Supprimer/archiver” et “Arrêt d’urgence” désactivées: vie ${statusLabel(selectedStatus)}.`
+      :`Vie ciblée: ${selected}. “Supprimer/archiver” et “Parler” sont disponibles.`,
   };
   const helpText=helpMessages[registryState]||helpMessages.invalid;
   if(help){help.textContent=helpText;}
@@ -88,13 +111,24 @@ export const updateOperatorActionState=()=>{
     button.setAttribute('aria-disabled','false');
     button.title=birthName()?'Créer la vie nommée dans le champ “Nom exact à créer”':'Saisissez un nom dans “Nom exact à créer” pour créer une vie.';
   });
-  ['critical-archive','critical-talk','critical-emergency-stop','act-archive','act-talk','act-lives-use','act-memorial','act-clone'].forEach(id=>{
+  [
+    ['critical-archive','archive'],
+    ['critical-talk','talk'],
+    ['critical-emergency-stop','emergency_stop'],
+    ['act-archive','archive'],
+    ['act-talk','talk'],
+    ['act-lives-use','lives_use'],
+    ['act-memorial','memorial'],
+    ['act-clone','clone'],
+  ].forEach(([id,action])=>{
     const button=document.getElementById(id);
     if(!button){return;}
-    button.disabled=!hasSelection;
-    button.classList.toggle('is-disabled',!hasSelection);
-    button.setAttribute('aria-disabled',hasSelection?'false':'true');
-    button.title=hasSelection?'':helpText;
+    const blockedByStatus=hasSelection&&requiresRunnableLife(action)&&blocksOperatorActions;
+    const disabled=!hasSelection||blockedByStatus;
+    button.disabled=disabled;
+    button.classList.toggle('is-disabled',disabled);
+    button.setAttribute('aria-disabled',disabled?'true':'false');
+    button.title=disabled?helpText:'';
   });
 };
 
@@ -146,10 +180,12 @@ export const updateOperatorLifeOptions=(rows=[])=>{
   if(!select){return;}
   const previous=select.value;
   select.dataset.registryState='loaded';
-  const names=[...new Set((rows||[]).map(row=>{
-    if(typeof row==='string'){return row;}
-    return row?.life||row?.slug||row?.name||'';
-  }).map(name=>String(name||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const rowByName=new Map();
+  for(const row of rows||[]){
+    const name=String(lifeRowName(row)||'').trim();
+    if(name&&!rowByName.has(name)){rowByName.set(name,row);}
+  }
+  const names=[...rowByName.keys()].sort((a,b)=>a.localeCompare(b));
   select.innerHTML='';
   const placeholder=document.createElement('option');
   placeholder.value='';
@@ -159,6 +195,8 @@ export const updateOperatorLifeOptions=(rows=[])=>{
     const option=document.createElement('option');
     option.value=name;
     option.textContent=name;
+    const row=rowByName.get(name);
+    option.dataset.lifeStatus=normalizeLifeStatus(row?.life_status||row?.registry_status||row?.status);
     select.appendChild(option);
   }
   const shared=getSelectedLife();
@@ -237,6 +275,10 @@ const actionPayload=(action,lifeName=selectedOperatorLife)=>{
 const validateAction=(action,payload)=>{
   if(requiresValidLife(action)&&!hasValidSelectedLife()){
     return 'Sélectionnez une vie valide dans le sélecteur opérateur avant de lancer cette action.';
+  }
+  const selectedStatus=selectedOperatorLifeStatus();
+  if(requiresRunnableLife(action)&&statusBlocksOperatorAction(selectedStatus)){
+    return `Action ${action} indisponible: la vie sélectionnée est ${statusLabel(selectedStatus)}.`;
   }
   if(action==='talk'&&!payload.prompt){
     return 'Écrivez un message dans le champ “Parler à une vie” avant d’envoyer.';
