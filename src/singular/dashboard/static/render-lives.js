@@ -6,9 +6,22 @@ const byId=id=>document.getElementById(id);
 const setText=(id,text)=>{const el=byId(id);if(el){el.textContent=text;}return el;};
 const setTitle=(id,text)=>{const el=byId(id);if(el){el.title=text;}return el;};
 
-const badge=(label,tone)=>`<span class='badge ${tone}'>${label}</span>`;
 const safeText=value=>String(value??na());
 const escapeHtml=value=>safeText(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
+const badge=(label,tone)=>`<span class='badge ${tone}'>${escapeHtml(label)}</span>`;
+
+const clearChildren=element=>{if(element){element.replaceChildren();}return element;};
+const appendCell=(row,value,tag='td')=>{const cell=document.createElement(tag);cell.textContent=safeText(value);row.appendChild(cell);return cell;};
+const appendEmptyRow=(tbody,colspan,message)=>{
+  const tr=document.createElement('tr');
+  const td=document.createElement('td');
+  td.colSpan=colspan;
+  td.textContent=message;
+  tr.appendChild(td);
+  tbody.appendChild(tr);
+  return tr;
+};
+
 const compareNullableNumberAsc=(left,right)=>{
   const leftMissing=left===null||left===undefined;
   const rightMissing=right===null||right===undefined;
@@ -177,7 +190,25 @@ const renderLivesTable=(rows)=>{
     const risk=rowRiskSummary(row);
     const activity=rowActivitySummary(row);
     const codeEvolutionEndpoint=row.code_evolution_endpoint||`/api/lives/${encodeURIComponent(row.life||'')}/code-evolution`;
-    tr.innerHTML=`<td>${escapeHtml(row.life||na())}<br/><a href='${escapeHtml(codeEvolutionEndpoint)}' target='_blank' rel='noopener noreferrer'>audit code</a></td><td>${score}</td><td>${escapeHtml(lastActivity)}</td><td>${liveness}</td><td><span class='summary-pill ${state.tone}'>${state.label}</span></td><td><span class='summary-pill ${risk.tone}'>${risk.label}</span></td><td><span class='summary-pill ${activity.tone}'>${activity.label}</span></td>`;
+    const lifeCell=appendCell(tr,row.life||na());
+    lifeCell.appendChild(document.createElement('br'));
+    const auditLink=document.createElement('a');
+    auditLink.href=codeEvolutionEndpoint;
+    auditLink.target='_blank';
+    auditLink.rel='noopener noreferrer';
+    auditLink.textContent='audit code';
+    lifeCell.appendChild(auditLink);
+    appendCell(tr,score);
+    appendCell(tr,lastActivity);
+    appendCell(tr,liveness);
+    for(const summary of [state,risk,activity]){
+      const cell=document.createElement('td');
+      const pill=document.createElement('span');
+      pill.className=`summary-pill ${summary.tone}`;
+      pill.textContent=summary.label;
+      cell.appendChild(pill);
+      tr.appendChild(cell);
+    }
     tr.onclick=()=>showLifeDetails(row.life||'');
     tr.onkeydown=event=>{
       if(event.key==='Enter'||event.key===' '){
@@ -187,7 +218,7 @@ const renderLivesTable=(rows)=>{
     };
     body.appendChild(tr);
   }
-  if(!(rows||[]).length){const tr=document.createElement('tr');tr.innerHTML="<td colspan='7'>Aucune vie ne correspond aux filtres.</td>";body.appendChild(tr);}
+  if(!(rows||[]).length){appendEmptyRow(body,7,'Aucune vie ne correspond aux filtres.');}
 };
 
 const renderEssentialLivesSummary=rows=>{
@@ -344,7 +375,7 @@ export const renderGenealogyTree=(payload)=>{
     if(treeEl){treeEl.textContent='Aucune lignée enregistrée.';}
     if(socialEl){socialEl.textContent='Aucun réseau social.';}
     if(conflictsEl){conflictsEl.textContent='Aucun conflit.';}
-    if(relationsBody){relationsBody.innerHTML=\"<tr><td colspan='6'>Aucune relation active.</td></tr>\";}
+    if(relationsBody){clearChildren(relationsBody);appendEmptyRow(relationsBody,6,'Aucune relation active.');}
     return;
   }
   const bySlug=new Map(nodes.map(node=>[node.slug,node]));
@@ -368,14 +399,24 @@ export const renderGenealogyTree=(payload)=>{
   const conflicts=payload?.active_conflicts||[];
   if(conflictsEl){conflictsEl.textContent=conflicts.length?conflicts.map(c=>`${c.life_a} ⚔ ${c.life_b} | sévérité=${c.severity??'-'} | MAJ=${c.updated_at||'n/a'}`).join('\n'):'Aucun conflit actif.';}
   if(relationsBody){
-    if(!relationRows.length){relationsBody.innerHTML=\"<tr><td colspan='6'>Aucune relation active pour ce filtre.</td></tr>\";}
+    clearChildren(relationsBody);
+    if(!relationRows.length){appendEmptyRow(relationsBody,6,'Aucune relation active pour ce filtre.');}
     else{
-      relationsBody.innerHTML=relationRows.map(row=>`<tr><td>${row.type||'unknown'}</td><td>${row.source||'-'}</td><td>${row.target||'-'}</td><td>${row.status||'unknown'}</td><td>${row.severity??'-'}</td><td>${row.updated_at||'n/a'}</td></tr>`).join('');
+      for(const row of relationRows){
+        const tr=document.createElement('tr');
+        appendCell(tr,row.type||'unknown');
+        appendCell(tr,row.source||'-');
+        appendCell(tr,row.target||'-');
+        appendCell(tr,row.status||'unknown');
+        appendCell(tr,row.severity??'-');
+        appendCell(tr,row.updated_at||'n/a');
+        relationsBody.appendChild(tr);
+      }
     }
   }
   if(lifeFilterEl){
     const currentValue=(payload?.filters?.life)||'all';
-    const options=['<option value=\"all\">Toutes les vies</option>',...nodes.map(node=>`<option value=\"${node.slug}\">${node.name} (${node.slug})</option>`)];
+    const options=['<option value="all">Toutes les vies</option>',...nodes.map(node=>`<option value="${escapeHtml(node.slug)}">${escapeHtml(node.name)} (${escapeHtml(node.slug)})</option>`)];
     lifeFilterEl.innerHTML=options.join('');
     lifeFilterEl.value=currentValue;
     lifeFilterEl.onchange=()=>{

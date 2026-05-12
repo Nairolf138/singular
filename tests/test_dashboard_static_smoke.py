@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 DASHBOARD_STATIC = Path("src/singular/dashboard/static")
@@ -57,3 +58,115 @@ def test_dashboard_quests_websocket_targets_existing_raw_panel() -> None:
     bootstrap = (DASHBOARD_STATIC / "bootstrap.js").read_text(encoding="utf-8")
     assert "getElementById('quests')" not in bootstrap
     assert "getElementById('quests-json-raw')" in bootstrap or "loadQuests()" in bootstrap
+
+
+def test_genealogy_renderer_escapes_malicious_life_names(tmp_path: Path) -> None:
+    """Exercise the genealogy DOM renderer with a life name that looks like XSS."""
+    script = tmp_path / "genealogy_escape_check.mjs"
+    module_path = (Path.cwd() / DASHBOARD_STATIC / "render-lives.js").as_uri()
+    script.write_text(
+        f"""
+const encode = value => String(value ?? '')
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#39;');
+
+class Element {{
+  constructor(tagName) {{
+    this.tagName = tagName;
+    this.children = [];
+    this.attributes = {{}};
+    this.dataset = {{}};
+    this._textContent = '';
+    this._innerHTML = null;
+    this.value = '';
+    this.onchange = null;
+  }}
+  appendChild(child) {{
+    this.children.push(child);
+    this._innerHTML = null;
+    return child;
+  }}
+  replaceChildren(...children) {{
+    this.children = [];
+    this._textContent = '';
+    this._innerHTML = null;
+    for (const child of children) {{ this.appendChild(child); }}
+  }}
+  set textContent(value) {{
+    this._textContent = String(value ?? '');
+    this.children = [];
+    this._innerHTML = null;
+  }}
+  get textContent() {{
+    return this._textContent + this.children.map(child => child.textContent ?? '').join('');
+  }}
+  set innerHTML(value) {{
+    this._innerHTML = String(value ?? '');
+    this.children = [];
+    this._textContent = '';
+  }}
+  get innerHTML() {{
+    if (this._innerHTML !== null) {{ return this._innerHTML; }}
+    return encode(this._textContent) + this.children.map(child => child.outerHTML ?? encode(child.textContent ?? '')).join('');
+  }}
+  set colSpan(value) {{ this.attributes.colspan = String(value); }}
+  set className(value) {{ this.attributes.class = String(value); }}
+  set href(value) {{ this.attributes.href = String(value); }}
+  set target(value) {{ this.attributes.target = String(value); }}
+  set rel(value) {{ this.attributes.rel = String(value); }}
+  get outerHTML() {{
+    const attrs = Object.entries(this.attributes).map(([key, value]) => ` ${{key}}="${{encode(value)}}"`).join('');
+    return `<${{this.tagName}}${{attrs}}>${{this.innerHTML}}</${{this.tagName}}>`;
+  }}
+}}
+
+const elements = new Map();
+globalThis.document = {{
+  createElement: tagName => new Element(tagName),
+  getElementById: id => {{
+    if (!elements.has(id)) {{ elements.set(id, new Element('div')); }}
+    return elements.get(id);
+  }},
+}};
+globalThis.window = {{ location: {{ origin: 'http://localhost' }}, dispatchEvent() {{}} }};
+globalThis.CustomEvent = class CustomEvent {{ constructor(type, init) {{ this.type = type; this.detail = init?.detail; }} }};
+
+const {{ renderGenealogyTree }} = await import('{module_path}');
+const maliciousName = 'Vie <script>alert(1)</script>';
+const maliciousSlug = 'life-<img src=x onerror=alert(1)>';
+renderGenealogyTree({{
+  nodes: [{{ slug: maliciousSlug, name: maliciousName, status: 'active', active: true, parents: [] }}],
+  relationships: [],
+  active_relations: [{{
+    type: '<img src=x onerror=alert(2)>',
+    source: maliciousSlug,
+    target: maliciousName,
+    status: '<script>alert(3)</script>',
+    severity: '<img src=x onerror=alert(4)>',
+    updated_at: '<script>alert(5)</script>',
+  }}],
+  filters: {{ life: maliciousSlug }},
+}});
+
+const relationsHtml = elements.get('active-relations-table-body').innerHTML;
+const optionsHtml = elements.get('genealogy-relations-life-filter').innerHTML;
+if (relationsHtml.includes('<script>') || relationsHtml.includes('<img')) {{
+  throw new Error(`relations HTML was not escaped: ${{relationsHtml}}`);
+}}
+if (optionsHtml.includes('<script>') || optionsHtml.includes('<img')) {{
+  throw new Error(`option HTML was not escaped: ${{optionsHtml}}`);
+}}
+if (!relationsHtml.includes('&lt;script&gt;alert(3)&lt;/script&gt;')) {{
+  throw new Error(`escaped relation script fixture missing: ${{relationsHtml}}`);
+}}
+if (!optionsHtml.includes('Vie &lt;script&gt;alert(1)&lt;/script&gt;')) {{
+  throw new Error(`escaped option fixture missing: ${{optionsHtml}}`);
+}}
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(["node", str(script)], check=True)
