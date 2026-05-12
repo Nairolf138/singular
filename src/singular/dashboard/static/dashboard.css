@@ -301,6 +301,7 @@ button:hover {
 .status-legend { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .status-pill { border: 1px solid var(--panel-border); border-radius: 999px; padding: 2px 10px; font-size: 0.82rem; font-weight: 600; }
 .status-with-icon::before { content: attr(data-status-icon); margin-right: 6px; }
+body[data-dashboard-mode='operator'] .technical-only,
 body.essential-mode .technical-only { display: none !important; }
 
 @media (max-width: 1080px) {

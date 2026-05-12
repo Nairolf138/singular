@@ -646,6 +646,12 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "Nouvelles" in body
     assert "filter-time-window" in body
     assert "life-detail-panel" in body
+    assert "<th><button data-sort='life'>Nom</button></th>" in body
+    assert "<th><button data-sort='score'>Score / santé</button></th>" in body
+    assert "<th><button data-sort='last_activity'>Dernière activité</button></th>" in body
+    assert "<th><button data-sort='liveness'>Liveness</button></th>" in body
+    assert "<th>Statut</th>" in body
+    assert "<th>Risques</th>" in body
     assert "essential-selected-life" in body
     assert "essential-active-incidents" in body
     assert "data-essential-level='1'" in body
@@ -667,7 +673,8 @@ def test_dashboard_essential_mode_critical_blocks_and_visibility_markers(tmp_pat
         assert marker in body
 
     assert "id='cockpit-detail' class='panel level-panel technical-only' data-essential-level='3'" in body
-    assert "class='lives-grid technical-only' data-essential-level='3'" in body
+    assert "class='lives-grid' data-essential-level='2'" in body
+    assert "class='lives-grid technical-only'" not in body
 
 
 def test_dashboard_index_renders_main_sections(tmp_path: Path) -> None:
