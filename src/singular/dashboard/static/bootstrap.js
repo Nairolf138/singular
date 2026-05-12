@@ -30,7 +30,7 @@ const taskDefinitions={
   timeline:{loader:loadTimeline,intervalMs:schedulerConfig.frequencies.timeline,viewKey:'diagnostiquer',blockId:'timeline-section',stream:'hot'},
   lives:{loader:loadLivesBoard,intervalMs:schedulerConfig.frequencies.lives,viewKey:'comparer-vies',blockId:'vies',stream:'cold'},
   genealogy:{loader:loadGenealogy,intervalMs:schedulerConfig.frequencies.genealogy,viewKey:'technique',blockId:'parametres',stream:'cold'},
-  quests:{loader:loadQuests,intervalMs:schedulerConfig.frequencies.quests,viewKey:'technique',blockId:'parametres',stream:'cold'},
+  quests:{loader:loadQuests,intervalMs:schedulerConfig.frequencies.quests,viewKey:'decider-maintenant',blockId:'conversations-section',stream:'cold'},
   hostVitals:{loader:loadHostVitals,intervalMs:schedulerConfig.frequencies.hostVitals,viewKey:'technique',blockId:'host-vitals-panel',stream:'cold'},
   reflections:{loader:loadReflections,intervalMs:schedulerConfig.frequencies.reflections,viewKey:'technique',blockId:'reflections-section',stream:'cold'},
 };

@@ -1,4 +1,5 @@
 import {fetchJson} from './api.js';
+import {fetchSharedDashboardData} from './dashboard-data.js';
 import {updateOperatorLifeOptions} from './actions.js';
 import {BADGE_TONE,liveState,livesTableState,na,scopeState,setPanelState,setSelectedLife} from './state.js';
 
@@ -29,6 +30,23 @@ const compareNullableNumberAsc=(left,right)=>{
   if(leftMissing){return 1;}
   if(rightMissing){return -1;}
   return Number(left)-Number(right);
+};
+
+
+const cutoffForWindow=windowKey=>{
+  if(windowKey==='24h'){return Date.now()-24*60*60*1000;}
+  if(windowKey==='7d'){return Date.now()-7*24*60*60*1000;}
+  if(windowKey==='30d'){return Date.now()-30*24*60*60*1000;}
+  return null;
+};
+
+const filterRowsByTimeWindow=(rows,windowKey)=>{
+  const cutoff=cutoffForWindow(windowKey);
+  if(!cutoff){return rows;}
+  return rows.filter(row=>{
+    const parsed=Date.parse(row.last_activity||row.updated_at||row.created_at||'');
+    return Number.isFinite(parsed)&&parsed>=cutoff;
+  });
 };
 
 const SORT_PRESETS={
@@ -197,6 +215,7 @@ const renderLivesTable=(rows)=>{
     auditLink.target='_blank';
     auditLink.rel='noopener noreferrer';
     auditLink.textContent='audit code';
+    auditLink.className='technical-only';
     lifeCell.appendChild(auditLink);
     appendCell(tr,score);
     appendCell(tr,lastActivity);
@@ -300,25 +319,29 @@ const renderUnattachedRuns=(payload)=>{
 };
 
 export const loadLivesBoard=()=>{
-  const q=new URLSearchParams();
   const presetKey=document.getElementById('filter-sort-preset')?.value||'watch';
   const preset=SORT_PRESETS[presetKey]||SORT_PRESETS.watch;
-  q.set('sort_by',preset.sortBy??livesTableState.sortBy);
-  q.set('sort_order',preset.sortOrder??livesTableState.sortOrder);
   const timeWindow=byId('filter-time-window')?.value||'all';
-  q.set('time_window',timeWindow);
-  if(livesUiState.quickFilter==='active'){q.set('active_only','true');}
-  if(livesUiState.quickFilter==='degrading'){q.set('degrading_only','true');}
-  if(livesUiState.quickFilter==='dead'){q.set('dead_only','true');}
-  if(scopeState.currentLifeOnly){q.set('current_life_only','true');}
-  return fetchJson(`/lives/comparison?${q.toString()}`).then(d=>{
-    const mappedRows=(d.table||[]).map(row=>{
+  return fetchSharedDashboardData().then(({context,comparison,essential})=>{
+    const d=comparison||{};
+    let mappedRows=(d.table||[]).map(row=>{
       const risk=rowRiskSummary(row);
       return {...row,__riskLevel:risk.level,__stateSummary:rowStateSummary(row),__riskSummary:risk,__activitySummary:rowActivitySummary(row)};
     });
     const clientSteps=[
+      {step:'shared_context',label:`Contexte partagé /dashboard/context (${context?.registry_lives_count??0} vies registre)`,applied:true,count:context?.registry_lives_count??mappedRows.length},
+      {step:'shared_comparison',label:'Comparaison partagée /lives/comparison',applied:true,count:mappedRows.length},
+      {step:'shared_essential',label:`Cockpit essentiel partagé /api/cockpit/essential (${essential?.global_status||'statut inconnu'})`,applied:true,count:mappedRows.length},
       {step:'client_before_focus',label:'Avant focus client',applied:true,count:mappedRows.length},
     ];
+    if(livesUiState.quickFilter==='active'){mappedRows=mappedRows.filter(row=>row.is_registry_active_life===true);}
+    if(livesUiState.quickFilter==='degrading'){mappedRows=mappedRows.filter(row=>row.trend==='dégradation');}
+    if(livesUiState.quickFilter==='dead'){mappedRows=mappedRows.filter(row=>row.extinction_seen_in_runs===true);}
+    clientSteps.push({step:'client_quick_filter',label:`Après filtre rapide ${livesUiState.quickFilter}`,applied:livesUiState.quickFilter!=='all',count:mappedRows.length});
+    mappedRows=filterRowsByTimeWindow(mappedRows,timeWindow);
+    clientSteps.push({step:'client_time_window',label:`Après fenêtre ${timeWindow}`,applied:timeWindow!=='all',count:mappedRows.length});
+    if(scopeState.currentLifeOnly){mappedRows=mappedRows.filter(row=>row.selected_life===true||row.life===context?.registry_state?.active);}
+    clientSteps.push({step:'client_current_life_only',label:'Après portée vie courante',applied:scopeState.currentLifeOnly,count:mappedRows.length});
     let tableRows=preset.apply(mappedRows);
     clientSteps.push({step:'client_after_preset',label:`Après preset ${presetKey}`,applied:true,count:tableRows.length});
     if(livesUiState.focus==='selected'){tableRows=tableRows.filter(row=>row.selected_life);}

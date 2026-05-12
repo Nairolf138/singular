@@ -1,6 +1,7 @@
 import {fetchJson,withScope} from './api.js';
+import {fetchSharedDashboardContext,fetchSharedLivesComparison,fetchSharedCockpitEssential} from './dashboard-data.js';
 import {updateOperatorLifeOptions} from './actions.js';
-import {HOST_SENSORS_THRESHOLD,na,setPanelState,setStatusTone,applyStatusIndicator} from './state.js';
+import {HOST_SENSORS_THRESHOLD,na,setPanelState,setStatusTone,applyStatusIndicator,getSelectedLife,setSelectedLife,staleTimeoutTasks} from './state.js';
 import {renderQuestsSection} from './render-quests.js';
 import {renderObjectivesSection} from './render-objectives.js';
 import {renderConversationsSection} from './render-conversations.js';
@@ -61,7 +62,7 @@ const sparkline=(values)=>{
 const toneByRisk=(el,risk)=>{if(!el){return;}el.classList.remove('status-good','status-warn','status-bad','status-muted');if(risk==='ok'){el.classList.add('status-good');return;}if(risk==='warn'){el.classList.add('status-warn');return;}if(risk==='critical'){el.classList.add('status-bad');return;}el.classList.add('status-muted');};
 const extractHostMetrics=(record)=>{if(record&&typeof record.host_metrics==='object'&&record.host_metrics){return record.host_metrics;}if(record&&typeof record.signals==='object'&&record.signals&&typeof record.signals.host_metrics==='object'){return record.signals.host_metrics;}if(record&&typeof record.payload==='object'&&record.payload&&typeof record.payload.host_metrics==='object'){return record.payload.host_metrics;}return null;};
 
-const operatorSummaryState={context:null,lives:null,eco:null,cockpit:null};
+const operatorSummaryState={context:null,lives:null,eco:null,cockpit:null,essential:null,workItems:null};
 
 const firstDefined=(...values)=>values.find(value=>value!==null&&value!==undefined&&value!=='');
 const formatOneDecimal=value=>value===null||value===undefined||Number.isNaN(Number(value))?na():Number(value).toFixed(1);
@@ -72,6 +73,17 @@ const extractEnergy=(row,eco)=>{
   const organisms=eco?.organisms||{};
   const organism=life?organisms[life]:null;
   return firstDefined(row?.emotional_state?.energy,row?.energy,row?.psyche?.energy,organism?.energy);
+};
+
+const hasAnyRun=rows=>(rows||[]).some(row=>row.last_activity||Number(row.iterations||0)>0||row.run_id||row.latest_run_id);
+const isArchived=row=>String(row?.life_status||row?.registry_status||row?.status||'').toLowerCase().includes('archiv');
+const isStaleSummary=()=>staleTimeoutTasks.has('cockpit')||staleTimeoutTasks.has('lives')||staleTimeoutTasks.has('context')||staleTimeoutTasks.has('ecosystem');
+const extractLastMessage=row=>firstDefined(row?.last_message,row?.latest_message,row?.conversation?.last_message,row?.chat?.last_message);
+const activeObjectivesCount=(cockpit,workItems)=>{
+  const vitalCount=cockpit?.vital_metrics?.active_objectives?.count;
+  if(vitalCount!==null&&vitalCount!==undefined){return Number(vitalCount)||0;}
+  const objectives=workItems?.objectives?.items||[];
+  return objectives.filter(item=>['active','in_progress','open'].includes(String(item?.status||item?.state||'').toLowerCase())).length;
 };
 
 
@@ -130,26 +142,32 @@ const renderOperatorSummary=()=>{
   const lives=operatorSummaryState.lives||{};
   const eco=operatorSummaryState.eco||{};
   const cockpit=operatorSummaryState.cockpit||{};
+  const workItems=operatorSummaryState.workItems||{};
   const rows=Array.isArray(lives.table)?lives.table:[];
   const counts=(lives.life_metrics_contract||eco.life_metrics_contract||{}).counts||{};
   const total=Number(Object.prototype.hasOwnProperty.call(ctx,'registry_lives_count')?ctx.registry_lives_count:firstDefined(counts.total_lives,rows.length,0));
   const alive=Number(Object.prototype.hasOwnProperty.call(counts,'alive_lives')?counts.alive_lives:rows.filter(row=>row.is_registry_active_life===true).length);
   const risks=riskRows(rows);
-  const selected=rows.find(row=>row.selected_life===true);
+  const sharedSelection=getSelectedLife();
+  const selected=rows.find(row=>row.life&&row.life===sharedSelection)||rows.find(row=>row.selected_life===true);
   const latest=rows.find(row=>row.last_activity)||rows[0];
   const focus=selected||latest;
   const activeLife=ctx.registry_state?.active;
-  const selectedLabel=selected?.life||cockpit.selected_life||null;
+  const selectedLabel=selected?.life||sharedSelection||cockpit.selected_life||null;
   const activeSelectedLabel=activeLife&&selectedLabel&&activeLife!==selectedLabel?`active=${activeLife} · sélectionnée=${selectedLabel}`:(selectedLabel||activeLife||'Aucune');
-  const lastActivity=latest?.last_activity||(total>0?'run en cours non encore indexé':na());
+  const lastActivity=focus?.last_activity||latest?.last_activity||(total>0?'vie créée mais aucun run':na());
   const mood=extractMood(focus);
   const energy=extractEnergy(focus,eco);
   const moodLabel=mood||'données de mood absentes';
   const energyLabel=energy===null||energy===undefined?na():formatOneDecimal(energy);
   const trend=focus?.trend||cockpit.trend||na();
-  const liveness=firstDefined(focus?.life_liveness_index,cockpit.liveness_index);
+  const liveness=firstDefined(focus?.life_liveness_index,cockpit.life_liveness_index,cockpit.liveness_index);
+  const status=isArchived(focus)?'vie archivée':(focus?.life_status||focus?.registry_status||focus?.status||(total>0?'vie créée':'aucune vie créée'));
+  const health=firstDefined(focus?.current_health_score,cockpit.health_score);
+  const objectivesCount=activeObjectivesCount(cockpit,workItems);
+  const lastMessage=extractLastMessage(focus)||workItems?.conversations?.items?.[0]?.title||'aucun message';
 
-  setText('operator-lives-total',total>0?String(total):'aucune vie dans le registre');
+  setText('operator-lives-total',total>0?String(total):'aucune vie créée');
   setText('operator-selected-life',activeSelectedLabel);
   setText('operator-alive-lives',String(alive));
   setText('operator-risk-lives',String(risks.length));
@@ -157,17 +175,62 @@ const renderOperatorSummary=()=>{
   setText('operator-mood-energy',`${moodLabel} · énergie=${energyLabel}`);
   setText('operator-trend',String(trend));
   setText('operator-liveness',formatOneDecimal(liveness));
+  setText('digital-life-status',String(status));
+  setText('digital-life-health',formatOneDecimal(health));
+  setText('digital-life-active-objectives',`${objectivesCount} actif${objectivesCount>1?'s':''}`);
+  setText('digital-life-last-message',String(lastMessage));
+
+  const select=byId('digital-life-select');
+  if(select){
+    const currentValue=selectedLabel||'';
+    select.innerHTML='';
+    if(!rows.length){
+      const option=document.createElement('option');
+      option.value='';
+      option.textContent='aucune vie créée';
+      select.appendChild(option);
+    }else{
+      const emptyOption=document.createElement('option');
+      emptyOption.value='';
+      emptyOption.textContent='Choisir une vie…';
+      select.appendChild(emptyOption);
+      for(const row of rows){
+        const option=document.createElement('option');
+        option.value=row.life||'';
+        option.textContent=row.life||na();
+        select.appendChild(option);
+      }
+      select.value=currentValue&&rows.some(row=>row.life===currentValue)?currentValue:'';
+    }
+    if(select.dataset.bound!=='true'){
+      select.dataset.bound='true';
+      select.addEventListener('change',event=>setSelectedLife(event.target.value,{source:'digital-life-select'}));
+    }
+  }
+
+  const actions=clearElement('digital-life-safe-actions');
+  if(actions){
+    const items=[];
+    if(total<=0){items.push('Créer une vie depuis la barre d’actions critiques.');}
+    else if(isArchived(focus)){items.push('Consulter les détails ou sélectionner une autre vie active.');}
+    else{items.push('Observer les signaux avant toute action destructrice.','Parler à la vie sélectionnée si elle est en écoute.','Ouvrir les détails pour vérifier les preuves de vie.');}
+    for(const message of items){const li=document.createElement('li');li.textContent=message;actions.appendChild(li);}
+  }
 
   const states=clearElement('operator-lives-empty-states');
   if(!states){return;}
   const messages=[];
-  if(total<=0){messages.push('aucune vie dans le registre');}
-  if(total>0&&!rows.some(row=>row.last_activity)){messages.push('run en cours non encore indexé');}
-  if(!mood){messages.push('données de mood absentes');}
-  if(!messages.length){messages.push('Synthèse opérateur à jour.');}
+  if(total<=0){messages.push('aucune vie créée');}
+  if(total>0&&!hasAnyRun(rows)){messages.push('vie créée mais aucun run');}
+  if(total>0&&rows.some(row=>row.run_terminated===false&&!row.last_activity)){messages.push('run en cours');}
+  if(rows.some(row=>isArchived(row))){messages.push('vie archivée');}
+  if(isStaleSummary()){messages.push('données obsolètes');}
+  if(!mood&&total>0){messages.push('données de mood absentes');}
+  if(!messages.length){messages.push('Synthèse Vie numérique à jour.');}
   for(const message of messages){const li=document.createElement('li');li.textContent=message;states.appendChild(li);}
   setTone('operator-risk-lives',risks.length?'warn':'good');
   setTone('operator-trend',trend==='amélioration'?'good':(trend==='dégradation'?'bad':'warn'));
+  setTone('digital-life-status',isArchived(focus)?'warn':(total<=0?'warn':'good'));
 };
 
 const renderHostMetrics=(records)=>{
@@ -219,8 +282,8 @@ const renderHostMetrics=(records)=>{
 };
 
 export const loadContext=()=>Promise.all([
-  fetchJson('/dashboard/context'),
-  fetchJson('/lives/comparison?sort_by=last_activity&sort_order=desc'),
+  fetchSharedDashboardContext(),
+  fetchSharedLivesComparison(),
 ]).then(([ctx,lives])=>{
   operatorSummaryState.context=ctx;
   operatorSummaryState.lives=lives;
@@ -262,7 +325,7 @@ export const loadRetentionStatus=()=>fetchJson('/api/retention/status').then(pay
   setText('kpi-retention-thresholds',exceeded.length?`${thresholdLabel} · dépassement: ${exceeded.join(', ')}`:thresholdLabel);
 });
 
-export const loadEco=()=>Promise.all([fetchJson(withScope('/ecosystem')),fetchJson(withScope('/lives/comparison?sort_by=last_activity&sort_order=desc'))]).then(([eco,lives])=>{
+export const loadEco=()=>Promise.all([fetchJson(withScope('/ecosystem')),fetchSharedLivesComparison()]).then(([eco,lives])=>{
   const contract=eco.life_metrics_contract||lives.life_metrics_contract||{};
   const counts=contract.counts||{};
   const labels=contract.labels||{};
@@ -293,9 +356,11 @@ export const loadEco=()=>Promise.all([fetchJson(withScope('/ecosystem')),fetchJs
 
 export const loadQuests=()=>Promise.all([
   fetchJson('/api/dashboard/work-items'),
-  fetchJson('/dashboard/context'),
-  fetchJson('/lives/comparison?sort_by=last_activity&sort_order=desc'),
+  fetchSharedDashboardContext(),
+  fetchSharedLivesComparison(),
 ]).then(([data,context,comparison])=>{
+  operatorSummaryState.workItems=data||{};
+  renderOperatorSummary();
   renderQuestsSection(data?.quests||{active:[],completed:[]});
   renderObjectivesSection(data?.objectives||{items:[]});
   renderConversationsSection({
@@ -311,12 +376,15 @@ export const loadHostVitals=()=>fetchJson(withScope('/runs/latest')).then(data=>
 }).catch(error=>{renderHostMetrics([]);throw error;});
 
 export const loadCockpit=()=>Promise.all([
-  fetchJson(withScope('/api/cockpit/essential')),
+  fetchSharedDashboardContext(),
+  fetchSharedLivesComparison(),
+  fetchSharedCockpitEssential(),
   fetchJson(withScope('/api/cockpit')),
-  fetchJson(withScope('/lives/comparison?sort_by=last_activity&sort_order=desc')),
-]).then(([essential,d,lives])=>{
+]).then(([ctx,lives,essential,d])=>{
   if(!d||typeof d!=='object'){setPanelState('cockpit','empty','Aucune donnée cockpit disponible.');return;}
   const essentialPayload=(essential&&typeof essential==='object')?essential:{};
+  operatorSummaryState.context=ctx||operatorSummaryState.context;
+  operatorSummaryState.essential=essentialPayload;
   const statusBox=byId('cockpit-status');
   const globalStatus=essentialPayload.global_status||d.global_status;
   if(statusBox){
@@ -339,7 +407,7 @@ export const loadCockpit=()=>Promise.all([
   const fmtPct=(value)=>value===null||value===undefined?na():`${(Number(value)*100).toFixed(1)}%`;
   const fmtNum=(value,suffix='')=>value===null||value===undefined?na():`${Number(value).toFixed(2)}${suffix}`;
 
-  operatorSummaryState.cockpit={trend,liveness_index:livenessIndex,selected_life:essentialPayload.selected_life};
+  operatorSummaryState.cockpit={trend,liveness_index:livenessIndex,life_liveness_index:d.life_liveness_index,health_score:d.health_score,selected_life:essentialPayload.selected_life};
   operatorSummaryState.lives=lives||operatorSummaryState.lives;
   updateOperatorLifeOptions(lives?.table||[]);
   renderOperatorSummary();
