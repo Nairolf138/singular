@@ -289,52 +289,35 @@ def create_app(
 
     def _compute_ecosystem(current_life_only: bool = False) -> dict:
         organisms: dict[str, dict[str, object]] = {}
-        for directory in _runs_dirs(current_life_only=current_life_only):
-            if not directory.exists():
-                continue
-            for file in directory.iterdir():
-                if not file.is_file() or not is_run_jsonl_file(file):
-                    continue
-                for line in file.read_text(encoding="utf-8").splitlines():
-                    if not line.strip():
-                        continue
-                    try:
-                        record = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
+        for record in _load_run_records(current_life_only=current_life_only):
+            event = record.get("event")
+            interaction = record.get("interaction")
 
-                    event = record.get("event")
-                    interaction = record.get("interaction")
-
-                    if event == "interaction" and isinstance(
-                        record.get("organism"), str
-                    ):
-                        name = str(record["organism"])
-                        state = organisms.setdefault(name, {"status": "alive"})
-                        if "energy" in record:
-                            state["energy"] = record["energy"]
-                        if "resources" in record:
-                            state["resources"] = record["resources"]
-                        if "score" in record:
-                            state["score"] = record["score"]
-                        if "alive" in record:
-                            state["status"] = (
-                                "alive" if bool(record["alive"]) else "extinct"
-                            )
-                        if interaction:
-                            state["last_interaction"] = interaction
-                    elif event == "death":
-                        skill = str(record.get("skill", ""))
-                        if ":" in skill:
-                            name, _ = skill.split(":", 1)
-                            state = organisms.setdefault(name, {})
-                            state["status"] = "extinct"
-                    elif event is None and isinstance(record.get("skill"), str):
-                        skill = record["skill"]
-                        if ":" in skill:
-                            name, _ = skill.split(":", 1)
-                            state = organisms.setdefault(name, {"status": "alive"})
-                            state["score"] = record.get("score_new")
+            if event == "interaction" and isinstance(record.get("organism"), str):
+                name = str(record["organism"])
+                state = organisms.setdefault(name, {"status": "alive"})
+                if "energy" in record:
+                    state["energy"] = record["energy"]
+                if "resources" in record:
+                    state["resources"] = record["resources"]
+                if "score" in record:
+                    state["score"] = record["score"]
+                if "alive" in record:
+                    state["status"] = "alive" if bool(record["alive"]) else "extinct"
+                if interaction:
+                    state["last_interaction"] = interaction
+            elif event == "death":
+                skill = str(record.get("skill", ""))
+                if ":" in skill:
+                    name, _ = skill.split(":", 1)
+                    state = organisms.setdefault(name, {})
+                    state["status"] = "extinct"
+            elif event is None and isinstance(record.get("skill"), str):
+                skill = record["skill"]
+                if ":" in skill:
+                    name, _ = skill.split(":", 1)
+                    state = organisms.setdefault(name, {"status": "alive"})
+                    state["score"] = record.get("score_new")
 
         alive = sum(1 for state in organisms.values() if state.get("status") != "extinct")
         total_energy = sum(
@@ -416,13 +399,19 @@ def create_app(
 
     def _timeline_entry(record: dict[str, object], run_id: str) -> dict[str, object] | None:
         event = _event_type(record)
+        interaction_event = _record_event_name(record)
+        visible_interaction_events = {"sandbox_violation", "mutation_halted"}
+        if event == "interaction" and interaction_event in visible_interaction_events:
+            event = interaction_event
         if event not in {
             "mutation",
             "delay",
             "refuse",
             "death",
             "interaction",
+            "sandbox_violation",
             "governance.circuit_breaker_opened",
+            "mutation_halted",
         }:
             return None
 
@@ -2162,6 +2151,10 @@ def create_app(
 
         def _normalize_stream_event(file: Path, payload: dict[str, object]) -> dict[str, object] | None:
             event = _event_type(payload)
+            interaction_event = _record_event_name(payload)
+            visible_interaction_events = {"sandbox_violation", "mutation_halted"}
+            if event == "interaction" and interaction_event in visible_interaction_events:
+                event = interaction_event
             if event is None:
                 return None
             ts = payload.get("ts")
@@ -2189,21 +2182,16 @@ def create_app(
                         await ws.send_json({"type": "quests", "data": data})
 
                 incremental_events: list[dict[str, object]] = []
-                run_directories = _runs_dirs()
-                if run_directories:
+                run_files = _iter_run_files()
+                if run_files:
                     current_files: set[str] = set()
-                    for directory in run_directories:
-                        if not directory.exists():
-                            continue
-                        for file in directory.iterdir():
-                            if not file.is_file() or not is_run_jsonl_file(file):
-                                continue
-                            key = f"{directory.parent.name}/{file.name}"
-                            current_files.add(key)
-                            entries, next_cursor = await asyncio.to_thread(
-                                _read_new_entries, file, log_cursors.get(key)
-                            )
-                            log_cursors[key] = next_cursor
+                    for file in run_files:
+                        key = str(file)
+                        current_files.add(key)
+                        entries, next_cursor = await asyncio.to_thread(
+                            _read_new_entries, file, log_cursors.get(key)
+                        )
+                        log_cursors[key] = next_cursor
                         for line in entries:
                             try:
                                 payload = json.loads(line)
