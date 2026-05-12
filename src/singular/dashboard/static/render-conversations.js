@@ -1,4 +1,4 @@
-import {updateOperatorLifeOptions} from './actions.js';
+import {mergeLifeRows,updateOperatorLifeOptions} from './actions.js';
 import {normalizeItem} from './render-quests.js';
 import {getSelectedLife,SELECTED_LIFE_CHANGED_EVENT,setSelectedLife} from './state.js';
 
@@ -235,7 +235,7 @@ export const renderConversationsSection=payload=>{
     setSelectedLife(conversationState.selectedLife,{source:'conversation-default',metadata:lives.get(conversationState.selectedLife)||{}});
   }
   bindSelectedLifeListener();
-  updateOperatorLifeOptions([...lives.entries()].map(([life,meta])=>({life,...meta})));
+  updateOperatorLifeOptions(mergeLifeRows(payload?.context,payload?.comparison));
   syncConversationSelection(conversationState.selectedLife);
   bindSend();
 

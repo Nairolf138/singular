@@ -98,6 +98,49 @@ export const updateOperatorActionState=()=>{
   });
 };
 
+
+const lifeRowName=row=>{
+  if(typeof row==='string'){return row;}
+  return row?.life||row?.slug||row?.name||'';
+};
+
+const mergeDefined=(base,extra)=>{
+  const merged={...base};
+  for(const [key,value] of Object.entries(extra||{})){
+    if(value!==undefined&&value!==null){merged[key]=value;}
+  }
+  return merged;
+};
+
+export const mergeLifeRows=(context={},comparison={})=>{
+  const rowsByLife=new Map();
+  const pushRow=(life,row)=>{
+    const key=String(life||'').trim();
+    if(!key){return;}
+    rowsByLife.set(key,mergeDefined(rowsByLife.get(key)||{},row));
+  };
+  const registryLives=Array.isArray(context?.registry_lives)?context.registry_lives:[];
+  for(const item of registryLives){
+    const slug=String(item?.slug||'').trim();
+    const name=String(item?.name||'').trim();
+    const life=slug||name;
+    pushRow(life,{
+      life,
+      slug,
+      name,
+      status:item?.status,
+      active:item?.active,
+    });
+  }
+  const comparisonRows=Array.isArray(comparison?.table)?comparison.table:[];
+  for(const row of comparisonRows){
+    const candidates=[row?.life,row?.slug,row?.name].map(value=>String(value||'').trim()).filter(Boolean);
+    const life=candidates.find(candidate=>rowsByLife.has(candidate))||candidates[0]||lifeRowName(row);
+    pushRow(life,row);
+  }
+  return [...rowsByLife.values()];
+};
+
 export const updateOperatorLifeOptions=(rows=[])=>{
   const select=operatorLifeSelect();
   if(!select){return;}
