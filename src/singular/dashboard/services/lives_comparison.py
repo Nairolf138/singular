@@ -316,7 +316,6 @@ def aggregate_lives(
     as_float: Callable[[object], float | None],
     alerts_from_records: Callable[[list[dict[str, object]]], list[dict[str, object]]],
     compute_vital_timeline: Callable[..., dict[str, object]],
-    set_life_status: Callable[[str, str], object],
     registry_life_meta: Callable[[str, dict[str, object]], tuple[str | None, dict[str, object] | None]],
 ) -> tuple[dict[str, dict[str, object]], dict[str, object]]:
     active_life = registry.get("active")
@@ -382,6 +381,8 @@ def aggregate_lives(
             "has_recent_activity": False,
             "extinction_seen_in_runs": is_extinct,
             "run_terminated": False,
+            "registry_run_status_inconsistency": False,
+            "status_reconciliation_suggestion": None,
             "vital_timeline": compute_vital_timeline(
                 age=0,
                 current_health=None,
@@ -485,9 +486,12 @@ def aggregate_lives(
             status_value = getattr(registry_meta, "status", None)
             if isinstance(status_value, str) and status_value in {"active", "extinct"}:
                 registry_status = status_value
-        if extinction_seen and slug is not None and registry_status != "extinct":
-            set_life_status(slug, "extinct")
-            registry_status = "extinct"
+        registry_run_status_inconsistency = (
+            extinction_seen and slug is not None and registry_status != "extinct"
+        )
+        status_reconciliation_suggestion = (
+            "mark_extinct" if registry_run_status_inconsistency else None
+        )
         is_selected = isinstance(active_life, str) and active_life in {life_name, slug}
         trend = life_trend_label(health_score_points)
         alerts = alerts_from_records(mutation_records) if mutation_records else []
@@ -521,6 +525,8 @@ def aggregate_lives(
             "has_recent_activity": last_timestamp is not None,
             "extinction_seen_in_runs": extinction_seen,
             "run_terminated": run_terminated,
+            "registry_run_status_inconsistency": registry_run_status_inconsistency,
+            "status_reconciliation_suggestion": status_reconciliation_suggestion,
             "vital_timeline": compute_vital_timeline(
                 age=len(mutation_records),
                 current_health=current_health_score,

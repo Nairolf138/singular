@@ -109,7 +109,6 @@ def test_lives_comparison_exposes_liveness_fields() -> None:
         as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
         alerts_from_records=lambda _: [],
         compute_vital_timeline=lambda **_: {"ok": True},
-        set_life_status=lambda *_: None,
         registry_life_meta=lambda life_name, lives: (life_name, lives.get(life_name)),
     )
 
