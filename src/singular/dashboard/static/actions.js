@@ -34,6 +34,14 @@ const hasValidSelectedLife=()=>{
   return lives.size===0?false:lives.has(selected);
 };
 
+const operatorRegistryState=()=>{
+  const select=operatorLifeSelect();
+  if(!select){return 'loading';}
+  if(select.dataset.registryState!=='loaded'){return 'loading';}
+  if(validOperatorLives().size===0){return 'empty';}
+  return hasValidSelectedLife()?'valid':'invalid';
+};
+
 const updateCriticalTargetLabel=()=>{
   const target=document.getElementById('critical-current-life-target');
   if(!target){return;}
@@ -58,20 +66,32 @@ const setActionHelp=text=>{
 const requiresValidLife=action=>['archive','talk','emergency_stop','lives_use','memorial','clone'].includes(action);
 
 export const updateOperatorActionState=()=>{
-  const hasSelection=hasValidSelectedLife();
-  const select=operatorLifeSelect();
   syncOperatorSelectToShared();
+  const registryState=operatorRegistryState();
+  const hasSelection=registryState==='valid';
   const selected=selectedOperatorLife();
   const help=document.getElementById('operator-action-help');
-  const helpText=hasSelection
-    ? `Vie ciblée: ${selected}. “Supprimer/archiver” et “Parler” sont disponibles.`
-    : 'Sélectionnez une vie existante pour activer “Supprimer/archiver” et “Parler”.';
+  const helpMessages={
+    loading:'Les données de vies n’ont pas encore chargé',
+    empty:'Aucune vie détectée dans le registre',
+    invalid:'Sélectionnez une vie valide dans le registre pour activer “Supprimer/archiver” et “Parler”.',
+    valid:`Vie ciblée: ${selected}. “Supprimer/archiver” et “Parler” sont disponibles.`,
+  };
+  const helpText=helpMessages[registryState]||helpMessages.invalid;
   if(help){help.textContent=helpText;}
   updateCriticalTargetLabel();
-  ['critical-archive','critical-talk','critical-emergency-stop','act-archive','act-talk','act-lives-use','act-memorial','act-clone'].forEach(id=>{
+  ['critical-birth','act-birth'].forEach(id=>{
     const button=document.getElementById(id);
     if(!button){return;}
     button.disabled=false;
+    button.classList.remove('is-disabled');
+    button.setAttribute('aria-disabled','false');
+    button.title=birthName()?'Créer la vie nommée dans le champ “Nom exact à créer”':'Saisissez un nom dans “Nom exact à créer” pour créer une vie.';
+  });
+  ['critical-archive','critical-talk','critical-emergency-stop','act-archive','act-talk','act-lives-use','act-memorial','act-clone'].forEach(id=>{
+    const button=document.getElementById(id);
+    if(!button){return;}
+    button.disabled=!hasSelection;
     button.classList.toggle('is-disabled',!hasSelection);
     button.setAttribute('aria-disabled',hasSelection?'false':'true');
     button.title=hasSelection?'':helpText;
@@ -82,6 +102,7 @@ export const updateOperatorLifeOptions=(rows=[])=>{
   const select=operatorLifeSelect();
   if(!select){return;}
   const previous=select.value;
+  select.dataset.registryState='loaded';
   const names=[...new Set((rows||[]).map(row=>{
     if(typeof row==='string'){return row;}
     return row?.life||row?.slug||row?.name||'';

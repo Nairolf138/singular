@@ -471,3 +471,86 @@ if (!result.textContent.includes('Saisissez le nom exact')) {{ throw new Error(`
     )
 
     subprocess.run(["node", str(script)], check=True)
+
+
+def test_empty_lives_comparison_keeps_birth_action_enabled(tmp_path: Path) -> None:
+    """Critical birth action remains usable when /lives/comparison has no lives."""
+    script = tmp_path / "empty_lives_birth_action_check.mjs"
+    module_path = (Path.cwd() / DASHBOARD_STATIC / "actions.js").as_uri()
+    script.write_text(
+        f"""
+class ClassList {{
+  constructor() {{ this.values = new Set(); }}
+  add(...names) {{ names.forEach(name => this.values.add(name)); }}
+  remove(...names) {{ names.forEach(name => this.values.delete(name)); }}
+  toggle(name, force) {{
+    const shouldAdd = force === undefined ? !this.values.has(name) : Boolean(force);
+    if (shouldAdd) {{ this.values.add(name); }} else {{ this.values.delete(name); }}
+    return shouldAdd;
+  }}
+  contains(name) {{ return this.values.has(name); }}
+}}
+
+class Element {{
+  constructor(tagName, id = '') {{
+    this.tagName = tagName.toUpperCase();
+    this.id = id;
+    this.children = [];
+    this.dataset = {{}};
+    this.attributes = {{}};
+    this.classList = new ClassList();
+    this.value = '';
+    this.disabled = false;
+    this._textContent = '';
+    this._innerHTML = null;
+  }}
+  appendChild(child) {{ this.children.push(child); return child; }}
+  addEventListener() {{}}
+  setAttribute(name, value) {{ this.attributes[name] = String(value); }}
+  getAttribute(name) {{ return this.attributes[name] ?? null; }}
+  set textContent(value) {{ this._textContent = String(value ?? ''); this.children = []; this._innerHTML = null; }}
+  get textContent() {{ return this._textContent + this.children.map(child => child.textContent ?? '').join(''); }}
+  set innerHTML(value) {{ this._innerHTML = String(value ?? ''); this.children = []; this._textContent = ''; }}
+  get innerHTML() {{ return this._innerHTML ?? this.textContent; }}
+  set title(value) {{ this.attributes.title = String(value); }}
+  get title() {{ return this.attributes.title ?? ''; }}
+  get options() {{ return this.children.filter(child => child.tagName === 'OPTION'); }}
+}}
+
+const elements = new Map();
+const register = (tagName, id) => {{ const el = new Element(tagName, id); elements.set(id, el); return el; }};
+register('select', 'operator-action-life-select').dataset.registryState = 'loading';
+register('p', 'operator-action-help');
+register('span', 'critical-current-life-target');
+register('input', 'operator-birth-name').value = 'Nouvelle Vie';
+const birth = register('button', 'critical-birth');
+const archive = register('button', 'critical-archive');
+const talk = register('button', 'critical-talk');
+const emergency = register('button', 'critical-emergency-stop');
+register('div', 'critical-action-result');
+
+globalThis.document = {{
+  createElement: tagName => new Element(tagName),
+  getElementById: id => elements.get(id) ?? null,
+}};
+globalThis.window = {{ dispatchEvent() {{}} }};
+globalThis.CustomEvent = class CustomEvent {{ constructor(type, init) {{ this.type = type; this.detail = init?.detail; }} }};
+
+const {{ updateOperatorLifeOptions }} = await import('{module_path}');
+const emptyComparison = {{ table: [] }};
+updateOperatorLifeOptions(emptyComparison.table);
+
+const help = elements.get('operator-action-help').textContent;
+if (help !== 'Aucune vie détectée dans le registre') {{ throw new Error(`unexpected help message: ${{help}}`); }}
+if (birth.disabled) {{ throw new Error('Créer une vie was disabled for an empty /lives/comparison table'); }}
+if (birth.getAttribute('aria-disabled') !== 'false') {{ throw new Error('Créer une vie was not exposed as active'); }}
+if (birth.classList.contains('is-disabled')) {{ throw new Error('Créer une vie looked disabled'); }}
+for (const [label, button] of [['archive', archive], ['talk', talk], ['emergency_stop', emergency]]) {{
+  if (!button.disabled) {{ throw new Error(`${{label}} should be disabled without a valid life`); }}
+  if (button.getAttribute('aria-disabled') !== 'true') {{ throw new Error(`${{label}} aria-disabled missing`); }}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(["node", str(script)], check=True)
