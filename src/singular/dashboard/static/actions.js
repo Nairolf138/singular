@@ -1,3 +1,4 @@
+import {getSelectedLife,SELECTED_LIFE_CHANGED_EVENT,setSelectedLife} from './state.js';
 const actionResultTargets=()=>[
   document.getElementById('action-result'),
   document.getElementById('critical-action-result'),
@@ -16,7 +17,7 @@ const readValue=(...ids)=>{
 };
 
 const operatorLifeSelect=()=>document.getElementById('operator-action-life-select');
-const selectedOperatorLife=()=>readValue('operator-action-life-select','action-life-name');
+const selectedOperatorLife=()=>getSelectedLife()||readValue('operator-action-life-select','action-life-name');
 const operatorMessage=()=>readValue('operator-action-message','action-prompt');
 const birthName=()=>readValue('operator-birth-name','action-life-name');
 
@@ -27,10 +28,25 @@ const validOperatorLives=()=>{
 };
 
 const hasValidSelectedLife=()=>{
-  const selected=operatorLifeSelect()?.value?.trim()||'';
+  const selected=selectedOperatorLife();
   if(!selected){return false;}
   const lives=validOperatorLives();
   return lives.size===0?false:lives.has(selected);
+};
+
+const updateCriticalTargetLabel=()=>{
+  const target=document.getElementById('critical-current-life-target');
+  if(!target){return;}
+  const selected=selectedOperatorLife();
+  target.textContent=selected?`Vie ciblée: ${selected}`:'Vie ciblée: aucune sélection';
+  target.classList.toggle('target-missing',!selected);
+};
+
+const syncOperatorSelectToShared=()=>{
+  const select=operatorLifeSelect();
+  const selected=getSelectedLife();
+  if(select&&selected&&[...select.options].some(option=>option.value===selected)){select.value=selected;}
+  updateCriticalTargetLabel();
 };
 
 const setActionHelp=text=>{
@@ -39,18 +55,20 @@ const setActionHelp=text=>{
   if(text){writeActionResult(text);}
 };
 
-const requiresValidLife=action=>['archive','talk'].includes(action);
+const requiresValidLife=action=>['archive','talk','emergency_stop','lives_use','memorial','clone'].includes(action);
 
 export const updateOperatorActionState=()=>{
   const hasSelection=hasValidSelectedLife();
   const select=operatorLifeSelect();
-  const selected=select?.value?.trim()||'';
+  syncOperatorSelectToShared();
+  const selected=selectedOperatorLife();
   const help=document.getElementById('operator-action-help');
   const helpText=hasSelection
     ? `Vie ciblée: ${selected}. “Supprimer/archiver” et “Parler” sont disponibles.`
     : 'Sélectionnez une vie existante pour activer “Supprimer/archiver” et “Parler”.';
   if(help){help.textContent=helpText;}
-  ['critical-archive','critical-talk','act-archive','act-talk'].forEach(id=>{
+  updateCriticalTargetLabel();
+  ['critical-archive','critical-talk','critical-emergency-stop','act-archive','act-talk','act-lives-use','act-memorial','act-clone'].forEach(id=>{
     const button=document.getElementById(id);
     if(!button){return;}
     button.disabled=false;
@@ -79,12 +97,16 @@ export const updateOperatorLifeOptions=(rows=[])=>{
     option.textContent=name;
     select.appendChild(option);
   }
-  if(previous&&names.includes(previous)){select.value=previous;}
+  const shared=getSelectedLife();
+  if(shared&&names.includes(shared)){select.value=shared;}
+  else if(previous&&names.includes(previous)){select.value=previous;}
   else{
     const selectedRow=(rows||[]).find(row=>row?.selected_life===true||row?.active===true||row?.is_registry_active_life===true);
     const selectedName=selectedRow?.life||selectedRow?.slug||selectedRow?.name||'';
     if(selectedName&&names.includes(selectedName)){select.value=selectedName;}
   }
+  if(select.value){setSelectedLife(select.value,{source:'operator-options'});}
+  else{setSelectedLife(null,{source:'operator-options'});}
   updateOperatorActionState();
 };
 
@@ -144,7 +166,7 @@ const actionPayload=(action,lifeName=selectedOperatorLife)=>{
   if(action==='birth'){return {name:birthName()};}
   if(action==='talk'){return {name:lifeName(),prompt:operatorMessage()};}
   if(action==='archive'){return {name:lifeName()};}
-  if(action==='emergency_stop'){return {scope:'active_life'};}
+  if(action==='emergency_stop'){return {scope:'active_life',name:lifeName(),target_life:lifeName()};}
   return {};
 };
 
@@ -163,11 +185,12 @@ const validateAction=(action,payload)=>{
 
 const confirmBirth=payload=>window.confirm(`Créer la vie nommée exactement “${payload.name}” ?`);
 
-const confirmCriticalAction=button=>{
+const confirmCriticalAction=(button,payload={})=>{
+  const target=payload.name||payload.target_life||selectedOperatorLife()||'aucune sélection';
   const message=button.dataset.confirm;
-  if(message&&!window.confirm(message)){return false;}
+  if(message&&!window.confirm(`${message}\n\nVie actuellement ciblée: ${target}`)){return false;}
   const secondMessage=button.dataset.confirmAgain;
-  if(secondMessage&&!window.confirm(secondMessage)){return false;}
+  if(secondMessage&&!window.confirm(`${secondMessage}\n\nVie actuellement ciblée: ${target}`)){return false;}
   return true;
 };
 
@@ -175,7 +198,7 @@ const runValidatedAction=(action,payload,handlers,button=null)=>{
   const help=validateAction(action,payload);
   if(help){setActionHelp(help);updateOperatorActionState();return false;}
   if(action==='birth'&&!confirmBirth(payload)){return false;}
-  if(button&&!confirmCriticalAction(button)){return false;}
+  if(button&&!confirmCriticalAction(button,payload)){return false;}
   return runAction(action,payload,handlers);
 };
 
@@ -183,7 +206,10 @@ export const bindCriticalActionHandlers=(handlers)=>{
   const select=operatorLifeSelect();
   if(select&&select.dataset.bound!=='true'){
     select.dataset.bound='true';
-    select.addEventListener('change',updateOperatorActionState);
+    select.addEventListener('change',()=>{
+      setSelectedLife(select.value,{source:'operator-select'});
+      updateOperatorActionState();
+    });
   }
   ['operator-action-message','operator-birth-name','action-life-name','action-prompt'].forEach(id=>{
     const el=document.getElementById(id);
@@ -192,6 +218,10 @@ export const bindCriticalActionHandlers=(handlers)=>{
       el.addEventListener('input',updateOperatorActionState);
     }
   });
+  if(typeof window!=='undefined'&&window.__singularSelectedLifeActionBinding!=='true'){
+    window.__singularSelectedLifeActionBinding='true';
+    window.addEventListener(SELECTED_LIFE_CHANGED_EVENT,()=>updateOperatorActionState());
+  }
   updateOperatorActionState();
   document.querySelectorAll('.critical-actions-bar [data-dashboard-action]').forEach(button=>{
     if(button.offsetParent===null){return;}
@@ -216,9 +246,9 @@ export const bindActionHandlers=(handlers)=>{
   bind('act-loop',()=>runAction('loop',{budget_seconds:budget()},handlers));
   bind('act-report',()=>runAction('report',{},handlers));
   bind('act-lives-list',()=>runAction('lives_list',{},handlers));
-  bind('act-lives-use',()=>runAction('lives_use',{name:lifeName()},handlers));
+  bind('act-lives-use',()=>runValidatedAction('lives_use',{name:lifeName()},handlers));
   bind('act-archive',()=>runValidatedAction('archive',{name:lifeName()},handlers));
-  bind('act-memorial',()=>runAction('memorial',{name:lifeName(),message:'Merci pour ce cycle de vie.'},handlers));
-  bind('act-clone',()=>runAction('clone',{name:lifeName(),new_name:`${lifeName()||'Vie'} clone`},handlers));
+  bind('act-memorial',()=>runValidatedAction('memorial',{name:lifeName(),message:'Merci pour ce cycle de vie.'},handlers));
+  bind('act-clone',()=>runValidatedAction('clone',{name:lifeName(),new_name:`${lifeName()||'Vie'} clone`},handlers));
   bindCriticalActionHandlers(handlers);
 };

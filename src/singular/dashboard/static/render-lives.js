@@ -1,6 +1,6 @@
 import {fetchJson} from './api.js';
 import {updateOperatorLifeOptions} from './actions.js';
-import {BADGE_TONE,liveState,livesTableState,na,scopeState,setPanelState} from './state.js';
+import {BADGE_TONE,liveState,livesTableState,na,scopeState,setPanelState,setSelectedLife} from './state.js';
 
 const byId=id=>document.getElementById(id);
 const setText=(id,text)=>{const el=byId(id);if(el){el.textContent=text;}return el;};
@@ -200,10 +200,12 @@ const showLifeDetails=lifeName=>{
     content.textContent='Aucune vie sélectionnée.';
     if(proofs){proofs.innerHTML='<li>Aucune vie sélectionnée.</li>';}
     livesUiState.selectedLife=null;
+    setSelectedLife(null,{source:'lives-detail'});
     return;
   }
   panel.classList.remove('panel-hidden');
   livesUiState.selectedLife=lifeName;
+  setSelectedLife(lifeName,{source:'lives-detail',metadata:row});
   const operatorMetadata=[
     ['Vie',row.life],
     ['Statut registre',row.life_status],
