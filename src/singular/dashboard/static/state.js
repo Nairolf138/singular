@@ -10,6 +10,26 @@ export const MISSING_TEXT={notAvailable:'Non disponible',notMeasured:'Pas encore
 export const na=()=>MISSING_TEXT.notAvailable;
 export const nm=()=>MISSING_TEXT.notMeasured;
 
+
+export const SELECTED_LIFE_CHANGED_EVENT='singular:selected-life-changed';
+export const selectedLifeState={name:null,source:null,metadata:{}};
+
+export const setSelectedLife=(name,{source='unknown',metadata={}}={})=>{
+  const normalized=String(name||'').trim()||null;
+  const previous=selectedLifeState.name;
+  selectedLifeState.name=normalized;
+  selectedLifeState.source=source;
+  selectedLifeState.metadata=metadata&&typeof metadata==='object'?metadata:{};
+  if(typeof window!=='undefined'){
+    window.dispatchEvent(new CustomEvent(SELECTED_LIFE_CHANGED_EVENT,{
+      detail:{name:normalized,previous,source,metadata:selectedLifeState.metadata},
+    }));
+  }
+  return normalized;
+};
+
+export const getSelectedLife=()=>selectedLifeState.name;
+
 export const livesTableState={sortBy:'score',sortOrder:'desc'};
 export const liveState={paused:false,autoScroll:true,events:[]};
 export const scopeState={currentLifeOnly:false};

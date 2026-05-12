@@ -1,5 +1,6 @@
 import {updateOperatorLifeOptions} from './actions.js';
 import {normalizeItem} from './render-quests.js';
+import {getSelectedLife,SELECTED_LIFE_CHANGED_EVENT,setSelectedLife} from './state.js';
 
 const conversationState={
   selectedLife:'',
@@ -40,6 +41,29 @@ const escapeHtml=value=>String(value??'').replace(/[&<>'"]/g,char=>({
   "'":'&#39;',
   '"':'&quot;',
 }[char]));
+
+const highlightConversationLife=(life)=>{
+  document.querySelectorAll('#conversation-life-list [data-life]').forEach(node=>{
+    const active=node.dataset.life===life;
+    node.classList.toggle('active',active);
+    node.setAttribute('aria-pressed',active?'true':'false');
+  });
+};
+
+const syncConversationSelection=(life)=>{
+  conversationState.selectedLife=life||'';
+  highlightConversationLife(conversationState.selectedLife);
+  renderMeta(conversationState.selectedLife);
+};
+
+let selectedLifeListenerBound=false;
+const bindSelectedLifeListener=()=>{
+  if(selectedLifeListenerBound||typeof window==='undefined'){return;}
+  selectedLifeListenerBound=true;
+  window.addEventListener(SELECTED_LIFE_CHANGED_EVENT,event=>{
+    syncConversationSelection(event.detail?.name||'');
+  });
+};
 
 const setFlowState=(flow)=>{
   conversationState.flow=flow;
@@ -181,19 +205,22 @@ export const renderConversationsSection=payload=>{
       const flow=inferFlow(meta);
       li.innerHTML=`<button type='button' class='filter-chip' data-life='${escapeHtml(life)}'>${escapeHtml(life)}</button> <span class='summary-pill ${FLOW_STYLES[flow]||'summary-muted'}'>${escapeHtml(flow)}</span>`;
       li.querySelector('button').addEventListener('click',()=>{
-        conversationState.selectedLife=life;
-        renderMeta(life);
+        setSelectedLife(life,{source:'conversation-list',metadata:meta});
       });
       list.appendChild(li);
     }
   }
 
+  const sharedLife=getSelectedLife();
+  if(sharedLife&&lives.has(sharedLife)){conversationState.selectedLife=sharedLife;}
   if(!conversationState.selectedLife&&lives.size){
     const selected=[...lives.entries()].find(([,meta])=>meta.active||meta.selected_life);
     conversationState.selectedLife=selected?.[0]||[...lives.keys()][0];
+    setSelectedLife(conversationState.selectedLife,{source:'conversation-default',metadata:lives.get(conversationState.selectedLife)||{}});
   }
+  bindSelectedLifeListener();
   updateOperatorLifeOptions([...lives.entries()].map(([life,meta])=>({life,...meta})));
-  renderMeta(conversationState.selectedLife);
+  syncConversationSelection(conversationState.selectedLife);
   bindSend();
 
   const raw=document.getElementById('conversations-json-raw');
