@@ -10,6 +10,8 @@ const setText=(id,text)=>{const el=byId(id);if(el){el.textContent=text;}return e
 const setTitle=(id,text)=>{const el=byId(id);if(el){el.title=text;}return el;};
 const clearElement=id=>{const el=byId(id);if(el){el.innerHTML='';}return el;};
 const setTone=(id,tone)=>{const el=byId(id);if(el){setStatusTone(el,tone);}return el;};
+const appendCell=(row,value)=>{const cell=document.createElement('td');cell.textContent=String(value??na());row.appendChild(cell);return cell;};
+const appendEmptyRow=(tbody,colspan,message)=>{const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=colspan;td.textContent=message;tr.appendChild(td);tbody.appendChild(tr);return tr;};
 
 const renderDailySkills=(dailySkills)=>{
   const frequency=dailySkills?.frequency_totals||{};
@@ -26,10 +28,15 @@ const renderDailySkills=(dailySkills)=>{
     const successRate=item.success_rate===null||item.success_rate===undefined?na():`${(Number(item.success_rate)*100).toFixed(1)}%`;
     const frequencyCell=`${item.frequency?.uses_24h||0}/${item.frequency?.uses_7d||0}`;
     const tasks=(item.associated_tasks||[]).join(', ')||na();
-    tr.innerHTML=`<td>${item.skill||na()}</td><td>${frequencyCell}</td><td>${successRate}</td><td>${item.last_used_at||na()}</td><td>${tasks}</td><td>${item.trend||'stable'}</td>`;
+    appendCell(tr,item.skill||na());
+    appendCell(tr,frequencyCell);
+    appendCell(tr,successRate);
+    appendCell(tr,item.last_used_at||na());
+    appendCell(tr,tasks);
+    appendCell(tr,item.trend||'stable');
     body.appendChild(tr);
   }
-  if(!topSkills.length){const tr=document.createElement('tr');tr.innerHTML="<td colspan='6'>Aucune compétence quotidienne détectée.</td>";body.appendChild(tr);} 
+  if(!topSkills.length){appendEmptyRow(body,6,'Aucune compétence quotidienne détectée.');} 
 };
 
 const hostRisk=(name,value)=>{

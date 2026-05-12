@@ -16,6 +16,8 @@ const normalizeItem=(item,fallbackTitle='quête')=>({
   blockage: requiredField(item,'blockage',String(item?.blocked_by||item?.blocker||'aucun')),
 });
 
+const appendCell=(row,value)=>{const cell=document.createElement('td');cell.textContent=String(value??na());row.appendChild(cell);return cell;};
+
 const renderRows=(rows,tbodyId)=>{
   const tbody=document.getElementById(tbodyId);
   if(!tbody){return;}
@@ -23,13 +25,21 @@ const renderRows=(rows,tbodyId)=>{
   if(!rows.length){
     const tr=document.createElement('tr');
     tr.className='table-state-empty';
-    tr.innerHTML="<td colspan='6'>Aucun élément disponible.</td>";
+    const td=document.createElement('td');
+    td.colSpan=6;
+    td.textContent='Aucun élément disponible.';
+    tr.appendChild(td);
     tbody.appendChild(tr);
     return;
   }
   for(const row of rows){
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${row.title} · ${row.next_step}</td><td>${row.status}</td><td>${row.priority}</td><td>${row.owner}</td><td>${row.last_update}</td><td>${row.blockage}</td>`;
+    appendCell(tr,`${row.title} · ${row.next_step}`);
+    appendCell(tr,row.status);
+    appendCell(tr,row.priority);
+    appendCell(tr,row.owner);
+    appendCell(tr,row.last_update);
+    appendCell(tr,row.blockage);
     tbody.appendChild(tr);
   }
 };

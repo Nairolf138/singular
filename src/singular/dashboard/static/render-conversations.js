@@ -33,6 +33,7 @@ const STATUS_LABELS={
 };
 
 const setText=(id,text)=>{const el=document.getElementById(id);if(el){el.textContent=text;}return el;};
+const clearChildren=element=>{if(element){element.replaceChildren();}return element;};
 
 const escapeHtml=value=>String(value??'').replace(/[&<>'"]/g,char=>({
   '&':'&amp;',
@@ -198,13 +199,28 @@ export const renderConversationsSection=payload=>{
 
   const list=document.getElementById('conversation-life-list');
   if(list){
-    list.innerHTML='';
-    if(!lives.size){list.innerHTML="<li class='empty-state'>Aucune vie détectée.</li>";}
+    clearChildren(list);
+    if(!lives.size){
+      const li=document.createElement('li');
+      li.className='empty-state';
+      li.textContent='Aucune vie détectée.';
+      list.appendChild(li);
+    }
     for(const [life,meta] of lives.entries()){
       const li=document.createElement('li');
       const flow=inferFlow(meta);
-      li.innerHTML=`<button type='button' class='filter-chip' data-life='${escapeHtml(life)}'>${escapeHtml(life)}</button> <span class='summary-pill ${FLOW_STYLES[flow]||'summary-muted'}'>${escapeHtml(flow)}</span>`;
-      li.querySelector('button').addEventListener('click',()=>{
+      const button=document.createElement('button');
+      button.type='button';
+      button.className='filter-chip';
+      button.dataset.life=life;
+      button.textContent=life;
+      const pill=document.createElement('span');
+      pill.className=`summary-pill ${FLOW_STYLES[flow]||'summary-muted'}`;
+      pill.textContent=flow;
+      li.appendChild(button);
+      li.appendChild(document.createTextNode(' '));
+      li.appendChild(pill);
+      button.addEventListener('click',()=>{
         setSelectedLife(life,{source:'conversation-list',metadata:meta});
       });
       list.appendChild(li);
