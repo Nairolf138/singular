@@ -79,6 +79,23 @@ const formatCooldownSeconds=value=>{
   return `${hours} h ${remainingMinutes} min`;
 };
 
+const renderGovernanceDiagnostics=diagnostics=>{
+  const policy=(diagnostics&&typeof diagnostics==='object')?diagnostics:{};
+  const fmtSeconds=value=>formatCooldownSeconds(value);
+  const threshold=policy.circuit_breaker_threshold??na();
+  const windowSeconds=policy.circuit_breaker_window_seconds??null;
+  const cooldownSeconds=policy.circuit_breaker_cooldown_seconds??null;
+  const safeMode=policy.safe_mode===true?'activé':(policy.safe_mode===false?'désactivé':na());
+  const quota=policy.mutation_quota_per_window??na();
+  setText('governance-breaker-threshold',`${threshold} violations`);
+  setText('governance-breaker-window',fmtSeconds(windowSeconds));
+  setText('governance-breaker-cooldown',fmtSeconds(cooldownSeconds));
+  setText('governance-safe-mode',safeMode);
+  setText('governance-mutation-quota',`${quota} mutations/fenêtre`);
+  setText('ctx-governance-diagnostics',`breaker=${threshold}/${fmtSeconds(windowSeconds)} · cooldown=${fmtSeconds(cooldownSeconds)} · safe_mode=${safeMode} · quota=${quota}`);
+  setTone('governance-safe-mode',policy.safe_mode===true?'warn':'good');
+};
+
 const renderSandboxGovernance=governance=>{
   const payload=(governance&&typeof governance==='object')?governance:{};
   const violations=Number(payload.recent_violations_count||0);
@@ -209,6 +226,7 @@ export const loadContext=()=>Promise.all([
   setText('ctx-policy-version',String(policy.version??na()));
   setText('ctx-policy-autonomy',`safe_mode=${autonomy.safe_mode?'on':'off'} · quota=${autonomy.mutation_quota_per_window??na()}/${autonomy.mutation_quota_window_seconds??na()}s`);
   setText('ctx-policy-permissions',`auto=${(permissions.modifiable_paths||[]).length} · review=${(permissions.review_required_paths||[]).length} · forbidden=${(permissions.forbidden_paths||[]).length}`);
+  renderGovernanceDiagnostics(ctx.governance_policy||{});
   const impactList=clearElement('ctx-policy-impact');
   if(impactList){for(const item of (ctx.policy_impact||[])){const li=document.createElement('li');li.textContent=String(item);impactList.appendChild(li);} 
   if(!(ctx.policy_impact||[]).length){const li=document.createElement('li');li.textContent='Aucun impact disponible.';impactList.appendChild(li);} } 
@@ -299,6 +317,7 @@ export const loadCockpit=()=>Promise.all([
   }
 
   renderSandboxGovernance(d.sandbox_governance||{});
+  renderGovernanceDiagnostics(d.governance_policy||{});
   const healthValue=d.health_score===null?na():Number(d.health_score).toFixed(1);
   const trend=d.trend||na();
   const accepted=d.accepted_mutation_rate===null?na():`${(d.accepted_mutation_rate*100).toFixed(1)}%`;

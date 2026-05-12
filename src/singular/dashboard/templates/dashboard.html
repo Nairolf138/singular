@@ -120,6 +120,19 @@
     </div>
 
 
+    <div id='governance-diagnostics-card' class='panel level-panel' data-essential-level='1' aria-live='polite'>
+      <h3 class='heading-reset-top'>Diagnostic gouvernance</h3>
+      <p class='section-help'>Paramètres de politique actifs qui encadrent les mutations et l’ouverture du breaker.</p>
+      <div class='cards-grid'>
+        <div class='card'><div class='card-label'>Seuil breaker</div><div id='governance-breaker-threshold' class='card-value'>Chargement…</div></div>
+        <div class='card'><div class='card-label'>Fenêtre breaker</div><div id='governance-breaker-window' class='card-value'>Chargement…</div></div>
+        <div class='card'><div class='card-label'>Cooldown breaker</div><div id='governance-breaker-cooldown' class='card-value'>Chargement…</div></div>
+        <div class='card'><div class='card-label'>Safe mode</div><div id='governance-safe-mode' class='card-value'>Chargement…</div></div>
+        <div class='card'><div class='card-label'>Quota mutations</div><div id='governance-mutation-quota' class='card-value'>Chargement…</div></div>
+      </div>
+    </div>
+
+
     <div id='sandbox-governance-card' class='panel level-panel' data-essential-level='1' aria-live='polite'>
       <h3 class='heading-reset-top'>Gouvernance sandbox</h3>
       <p id='sandbox-governance-empty' class='section-help'>aucune violation sandbox récente</p>
@@ -312,6 +325,7 @@
       <div><strong>Version politique</strong> : <span id='ctx-policy-version'>Non disponible</span></div>
       <div><strong>Autonomie</strong> : <span id='ctx-policy-autonomy'>Non disponible</span></div>
       <div><strong>Permissions</strong> : <span id='ctx-policy-permissions'>Non disponible</span></div>
+      <div><strong>Diagnostic gouvernance</strong> : <span id='ctx-governance-diagnostics'>Non disponible</span></div>
     </div>
     <h3>Impact des politiques actives</h3>
     <ul id='ctx-policy-impact'><li>Chargement…</li></ul>
