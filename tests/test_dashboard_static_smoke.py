@@ -170,3 +170,123 @@ if (!optionsHtml.includes('Vie &lt;script&gt;alert(1)&lt;/script&gt;')) {{
     )
 
     subprocess.run(["node", str(script)], check=True)
+
+
+def test_cockpit_loader_keeps_available_data_when_cockpit_endpoint_fails(tmp_path: Path) -> None:
+    """Exercise the cockpit loader against a failed /api/cockpit response."""
+    script = tmp_path / "cockpit_partial_failure_check.mjs"
+    module_path = (Path.cwd() / DASHBOARD_STATIC / "render-cockpit.js").as_uri()
+    script.write_text(
+        f"""
+class ClassList {{
+  constructor() {{ this.values = new Set(); }}
+  add(...names) {{ for (const name of names) {{ this.values.add(name); }} }}
+  remove(...names) {{ for (const name of names) {{ this.values.delete(name); }} }}
+  toggle(name, force) {{
+    const shouldAdd = force === undefined ? !this.values.has(name) : Boolean(force);
+    if (shouldAdd) {{ this.values.add(name); }} else {{ this.values.delete(name); }}
+    return shouldAdd;
+  }}
+  contains(name) {{ return this.values.has(name); }}
+}}
+
+class Element {{
+  constructor(tagName) {{
+    this.tagName = tagName;
+    this.children = [];
+    this.dataset = {{}};
+    this.attributes = {{}};
+    this.classList = new ClassList();
+    this._textContent = '';
+    this._innerHTML = null;
+    this.value = '';
+    this.disabled = false;
+    this.eventListeners = {{}};
+  }}
+  appendChild(child) {{ this.children.push(child); this._innerHTML = null; return child; }}
+  insertBefore(child, before) {{
+    const index = this.children.indexOf(before);
+    if (index < 0) {{ this.children.unshift(child); }} else {{ this.children.splice(index, 0, child); }}
+    this._innerHTML = null;
+    return child;
+  }}
+  replaceChildren(...children) {{ this.children = []; this._textContent = ''; this._innerHTML = null; for (const child of children) {{ this.appendChild(child); }} }}
+  querySelector() {{ return this.children.find(child => child.className === 'state-layer') ?? null; }}
+  addEventListener(type, handler) {{ this.eventListeners[type] = handler; }}
+  setAttribute(name, value) {{ this.attributes[name] = String(value); }}
+  set textContent(value) {{ this._textContent = String(value ?? ''); this.children = []; this._innerHTML = null; }}
+  get textContent() {{ return this._textContent + this.children.map(child => child.textContent ?? '').join(''); }}
+  set innerHTML(value) {{ this._innerHTML = String(value ?? ''); this.children = []; this._textContent = ''; }}
+  get innerHTML() {{ return this._innerHTML !== null ? this._innerHTML : this.textContent; }}
+  set className(value) {{ this.attributes.class = String(value); if (value === 'state-layer') {{ this._className = value; }} }}
+  get className() {{ return this._className ?? this.attributes.class ?? ''; }}
+  set title(value) {{ this.attributes.title = String(value); }}
+  set colSpan(value) {{ this.attributes.colspan = String(value); }}
+  get firstChild() {{ return this.children[0] ?? null; }}
+  get options() {{ return this.children.filter(child => child.tagName === 'option'); }}
+}}
+
+const elements = new Map();
+const ids = [
+  'stale-data-banner','operator-lives-summary','operator-lives-total','operator-selected-life',
+  'operator-alive-lives','operator-risk-lives','operator-last-activity','operator-mood-energy',
+  'operator-trend','operator-liveness','digital-life-status','digital-life-health',
+  'digital-life-active-objectives','digital-life-last-message','digital-life-select',
+  'digital-life-safe-actions','operator-action-life-select','operator-action-help',
+  'critical-current-life-target','cockpit-status','kpi-health','kpi-trend','kpi-accepted',
+  'kpi-alerts','kpi-liveness-index','kpi-next-action','essential-selected-life',
+  'essential-active-incidents','raw-cockpit-json','kpi-actions','daily-skills-table-body',
+  'kpi-active-objectives-list','kpi-priority-changes-list','kpi-objective-links-list',
+  'kpi-liveness-proofs','sandbox-governance-empty','sandbox-breaker-status',
+  'sandbox-recent-violations','sandbox-last-skill','sandbox-cooldown-remaining',
+  'sandbox-corrective-action','governance-breaker-threshold','governance-breaker-window',
+  'governance-breaker-cooldown','governance-safe-mode','governance-mutation-quota',
+  'ctx-governance-diagnostics'
+];
+for (const id of ids) {{ elements.set(id, new Element(id.endsWith('select') ? 'select' : 'div')); }}
+
+globalThis.document = {{
+  createElement: tagName => new Element(tagName),
+  getElementById: id => elements.get(id) ?? null,
+}};
+globalThis.window = {{ location: {{ origin: 'http://localhost' }}, dispatchEvent() {{}} }};
+globalThis.CustomEvent = class CustomEvent {{ constructor(type, init) {{ this.type = type; this.detail = init?.detail; }} }};
+
+globalThis.fetch = async url => {{
+  const path = String(url);
+  if (path.startsWith('/dashboard/context')) {{
+    return {{ ok: true, json: async () => ({{registry_lives_count: 2, registry_state: {{active: 'alpha'}}}}) }};
+  }}
+  if (path.startsWith('/lives/comparison')) {{
+    return {{ ok: true, json: async () => ({{
+      table: [{{life: 'alpha', selected_life: true, current_health_score: 88.4, last_activity: '2026-05-12T10:00:00Z', life_status: 'active', life_liveness_index: 91.2}}],
+      life_metrics_contract: {{counts: {{total_lives: 2, alive_lives: 1, dead_lives: 1}}}},
+    }}) }};
+  }}
+  if (path.startsWith('/api/cockpit/essential')) {{
+    return {{ ok: true, json: async () => ({{global_status: 'stable', selected_life: 'alpha', next_action: 'observer'}}) }};
+  }}
+  if (path.startsWith('/api/cockpit')) {{
+    return {{ ok: false, status: 503, json: async () => ({{detail: 'boom'}}) }};
+  }}
+  throw new Error(`unexpected fetch ${{path}}`);
+}};
+
+const {{ loadCockpit }} = await import('{module_path}');
+await loadCockpit();
+
+const total = elements.get('operator-lives-total').textContent;
+const selected = elements.get('operator-selected-life').textContent;
+const health = elements.get('digital-life-health').textContent;
+const banner = elements.get('stale-data-banner').textContent;
+const raw = elements.get('raw-cockpit-json').textContent;
+if (total !== '2') {{ throw new Error(`available context was not rendered: ${{total}}`); }}
+if (!selected.includes('alpha')) {{ throw new Error(`available selected life was not rendered: ${{selected}}`); }}
+if (health === 'Chargement…' || health !== '88.4') {{ throw new Error(`available life metrics were not rendered: ${{health}}`); }}
+if (!banner.includes('Données cockpit partielles') || !banner.includes('cockpit: HTTP 503')) {{ throw new Error(`warning banner missing: ${{banner}}`); }}
+if (!raw.includes('"global_status": "warning"')) {{ throw new Error(`fallback cockpit payload missing: ${{raw}}`); }}
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(["node", str(script)], check=True)

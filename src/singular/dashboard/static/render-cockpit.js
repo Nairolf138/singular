@@ -63,6 +63,51 @@ const toneByRisk=(el,risk)=>{if(!el){return;}el.classList.remove('status-good','
 const extractHostMetrics=(record)=>{if(record&&typeof record.host_metrics==='object'&&record.host_metrics){return record.host_metrics;}if(record&&typeof record.signals==='object'&&record.signals&&typeof record.signals.host_metrics==='object'){return record.signals.host_metrics;}if(record&&typeof record.payload==='object'&&record.payload&&typeof record.payload.host_metrics==='object'){return record.payload.host_metrics;}return null;};
 
 const operatorSummaryState={context:null,lives:null,eco:null,cockpit:null,essential:null,workItems:null};
+const cockpitFallbackPayload={
+  global_status:'warning',
+  health_score:null,
+  trend:null,
+  accepted_mutation_rate:null,
+  critical_alerts:[],
+  life_liveness_index:null,
+  life_liveness_proofs:[],
+  autonomy_metrics:{decision_quality:{}},
+  behavioral_regulation_metrics:{alerts:{},decision_correlation:{}},
+  vital_timeline:{},
+  skills_lifecycle:{},
+  vital_metrics:{
+    active_objectives:{count:0,items:[]},
+    energy_resources:{},
+    code_generation:{},
+    risks:[],
+  },
+  trajectory:{objectives:{counts:{}},priority_changes:[],objective_narrative_links:[]},
+  daily_skills:{},
+  suggested_actions:[],
+};
+const endpointFallbacks={
+  context:{registry_lives_count:0,registry_state:{}},
+  comparison:{table:[],life_metrics_contract:{counts:{}}},
+  essential:{},
+  cockpit:cockpitFallbackPayload,
+};
+const settledValue=(result,key)=>result.status==='fulfilled'?result.value:endpointFallbacks[key];
+const endpointFailureMessage=result=>{
+  const reason=result.reason;
+  if(reason?.message){return reason.message;}
+  return String(reason||'erreur inconnue');
+};
+const showCockpitEndpointWarnings=failures=>{
+  const banner=byId('stale-data-banner');
+  if(!banner){return;}
+  if(!failures.length){
+    if(!staleTimeoutTasks.size){banner.classList.add('panel-hidden');banner.textContent='';}
+    return;
+  }
+  const labels=failures.map(([key,result])=>`${key}: ${endpointFailureMessage(result)}`).join(' · ');
+  banner.classList.remove('panel-hidden');
+  banner.textContent=`⚠️ Données cockpit partielles : ${labels}. Les données disponibles restent affichées.`;
+};
 
 const firstDefined=(...values)=>values.find(value=>value!==null&&value!==undefined&&value!=='');
 const formatOneDecimal=value=>value===null||value===undefined||Number.isNaN(Number(value))?na():Number(value).toFixed(1);
@@ -375,12 +420,20 @@ export const loadHostVitals=()=>fetchJson(withScope('/runs/latest')).then(data=>
   if(!hasData){setPanelState('host-vitals-panel','empty','Capteurs hôte non supportés ou données absentes.');}
 }).catch(error=>{renderHostMetrics([]);throw error;});
 
-export const loadCockpit=()=>Promise.all([
+export const loadCockpit=()=>Promise.allSettled([
   fetchSharedDashboardContext(),
   fetchSharedLivesComparison(),
   fetchSharedCockpitEssential(),
   fetchJson(withScope('/api/cockpit')),
-]).then(([ctx,lives,essential,d])=>{
+]).then(results=>{
+  const endpointKeys=['context','comparison','essential','cockpit'];
+  const failures=results.map((result,index)=>[endpointKeys[index],result]).filter(([,result])=>result.status==='rejected');
+  showCockpitEndpointWarnings(failures);
+  const [ctxResult,livesResult,essentialResult,cockpitResult]=results;
+  const ctx=settledValue(ctxResult,'context');
+  const lives=settledValue(livesResult,'comparison');
+  const essential=settledValue(essentialResult,'essential');
+  const d=settledValue(cockpitResult,'cockpit');
   if(!d||typeof d!=='object'){setPanelState('cockpit','empty','Aucune donnée cockpit disponible.');return;}
   const essentialPayload=(essential&&typeof essential==='object')?essential:{};
   operatorSummaryState.context=ctx||operatorSummaryState.context;
@@ -396,10 +449,10 @@ export const loadCockpit=()=>Promise.all([
 
   renderSandboxGovernance(d.sandbox_governance||{});
   renderGovernanceDiagnostics(d.governance_policy||{});
-  const healthValue=d.health_score===null?na():Number(d.health_score).toFixed(1);
+  const healthValue=d.health_score===null||d.health_score===undefined?na():Number(d.health_score).toFixed(1);
   const trend=d.trend||na();
-  const accepted=d.accepted_mutation_rate===null?na():`${(d.accepted_mutation_rate*100).toFixed(1)}%`;
-  const alertsCount=Number(essentialPayload.critical_alerts_count??(d.critical_alerts||[]).length||0);
+  const accepted=d.accepted_mutation_rate===null||d.accepted_mutation_rate===undefined?na():`${(d.accepted_mutation_rate*100).toFixed(1)}%`;
+  const alertsCount=Number(essentialPayload.critical_alerts_count??((d.critical_alerts||[]).length||0));
   const livenessIndex=d.life_liveness_index===null||d.life_liveness_index===undefined?na():Number(d.life_liveness_index).toFixed(1);
   const livenessProofs=Array.isArray(d.life_liveness_proofs)?d.life_liveness_proofs:[];
   const autonomy=d.autonomy_metrics||{};
