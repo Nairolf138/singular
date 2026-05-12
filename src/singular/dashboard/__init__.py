@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import os
 import sys
 from pathlib import Path
+from urllib.parse import quote
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from singular.lives import get_registry_root, load_registry, set_life_status
@@ -1534,7 +1535,7 @@ def create_app(
         base_rows = [
             {
                 "life": name,
-                "code_evolution_endpoint": f"/api/lives/{name}/code-evolution",
+                "code_evolution_endpoint": f"/api/lives/{quote(name, safe='')}/code-evolution",
                 **payload,
             }
             for name, payload in comparison.items()

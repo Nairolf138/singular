@@ -993,6 +993,18 @@ def test_dashboard_code_evolution_endpoint_and_comparison_link(tmp_path: Path) -
                         "trace_id": "trace-ko",
                     }
                 ),
+                json.dumps(
+                    {
+                        "ts": "2026-04-12T12:12:00Z",
+                        "life": "life explicit/with spaces",
+                        "file": "skills/safe.py",
+                        "change_type": "safety_fix",
+                        "score_base": 5.0,
+                        "score_new": 4.0,
+                        "accepted": True,
+                        "trace_id": "trace-special",
+                    }
+                ),
             ]
         )
         + "\n",
@@ -1005,6 +1017,13 @@ def test_dashboard_code_evolution_endpoint_and_comparison_link(tmp_path: Path) -
     comparison_payload = client.get("/lives/comparison").json()
     life_row = next(row for row in comparison_payload["table"] if row["life"] == "life-explicit")
     assert life_row["code_evolution_endpoint"] == "/api/lives/life-explicit/code-evolution"
+    special_life_row = next(
+        row for row in comparison_payload["table"] if row["life"] == "life explicit/with spaces"
+    )
+    assert (
+        special_life_row["code_evolution_endpoint"]
+        == "/api/lives/life%20explicit%2Fwith%20spaces/code-evolution"
+    )
 
     endpoint_payload = app._routes["/api/lives/{life}/code-evolution"](life="life-explicit")
     assert endpoint_payload["life"] == "life-explicit"
