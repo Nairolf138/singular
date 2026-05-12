@@ -5,8 +5,9 @@ from queue import Empty
 import pytest
 from fastapi_stub import TestClient
 
+import singular.dashboard as dashboard_module
 from singular.dashboard import create_app, run
-from singular.lives import create_life
+from singular.lives import LifeMetadata, create_life
 
 
 def _receive_with_timeout(ws: TestClient._WSConnection, timeout: float = 2.0) -> dict[str, object]:
@@ -46,6 +47,61 @@ def test_dashboard_endpoints(tmp_path: Path, monkeypatch) -> None:
     retention = client.get("/api/retention/status").json()
     assert "usage" in retention
     assert "last_purge" in retention
+
+
+def test_dashboard_context_normalizes_object_and_dict_life_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    object_life_dir = tmp_path / "object-life"
+    dict_life_dir = tmp_path / "dict-life"
+    object_life_dir.mkdir()
+    dict_life_dir.mkdir()
+
+    object_meta = LifeMetadata(
+        name="Object Life",
+        slug="object-life",
+        path=object_life_dir,
+        created_at="2026-05-12T08:00:00+00:00",
+        status="active",
+    )
+    dict_meta = {
+        "name": "Dict Life",
+        "slug": "dict-life",
+        "path": str(dict_life_dir),
+        "created_at": "2026-05-12T09:00:00+00:00",
+        "status": "extinct",
+    }
+
+    def fake_load_registry() -> dict[str, object]:
+        return {
+            "active": "object-life",
+            "lives": {"object-life": object_meta, "dict-life": dict_meta},
+        }
+
+    monkeypatch.setattr(dashboard_module, "load_registry", fake_load_registry)
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+
+    app = create_app(psyche_file=tmp_path / "psyche.json")
+    context = app._routes["/dashboard/context"]()
+
+    assert context["registry_lives"] == [
+        {
+            "slug": "dict-life",
+            "name": "Dict Life",
+            "path": str(dict_life_dir),
+            "status": "extinct",
+            "active": False,
+            "created_at": "2026-05-12T09:00:00+00:00",
+        },
+        {
+            "slug": "object-life",
+            "name": "Object Life",
+            "path": str(object_life_dir),
+            "status": "active",
+            "active": True,
+            "created_at": "2026-05-12T08:00:00+00:00",
+        },
+    ]
 
 
 def test_dashboard_starts_with_empty_registry_and_exposes_onboarding(tmp_path: Path, monkeypatch) -> None:

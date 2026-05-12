@@ -54,6 +54,36 @@ from singular.dashboard.services.code_evolution import (
 )
 
 
+def life_meta_get(meta: object | None, key: str, default: object = None) -> object:
+    """Read a life metadata field from either a dict payload or an object."""
+    if isinstance(meta, dict):
+        return meta.get(key, default)
+    return getattr(meta, key, default)
+
+
+def _normalize_life_registry_entry(
+    slug: str, meta: object | None, *, active_slug: object | None = None
+) -> dict[str, object]:
+    """Return a dashboard-friendly payload for dict and object registries."""
+    raw_slug = life_meta_get(meta, "slug", slug)
+    normalized_slug = raw_slug if isinstance(raw_slug, str) and raw_slug else slug
+    name = life_meta_get(meta, "name", normalized_slug)
+    path = life_meta_get(meta, "path", "")
+    status = life_meta_get(meta, "status", "unknown")
+
+    payload: dict[str, object] = {
+        "slug": normalized_slug,
+        "name": str(name or normalized_slug),
+        "path": str(path or ""),
+        "status": str(status or "unknown"),
+        "active": normalized_slug == active_slug or slug == active_slug,
+    }
+    created_at = life_meta_get(meta, "created_at", None)
+    if created_at is not None:
+        payload["created_at"] = str(created_at)
+    return payload
+
+
 @dataclass
 class _LogCursor:
     inode: int | None
@@ -97,9 +127,11 @@ def create_app(
             return []
         lives_paths: list[Path] = []
         for meta in raw_lives.values():
-            path = getattr(meta, "path", None)
+            path = life_meta_get(meta, "path", None)
             if isinstance(path, Path):
                 lives_paths.append(path)
+            elif isinstance(path, str) and path:
+                lives_paths.append(Path(path))
         return lives_paths
 
     def _resolve_life_entry(life: str) -> tuple[str | None, object | None, Path | None]:
@@ -110,11 +142,8 @@ def create_app(
         for slug, meta in raw_lives.items():
             if not isinstance(slug, str):
                 continue
-            path_value = getattr(meta, "path", None)
-            display_name = getattr(meta, "name", None)
-            if isinstance(meta, dict):
-                path_value = meta.get("path", path_value)
-                display_name = meta.get("name", display_name)
+            path_value = life_meta_get(meta, "path", None)
+            display_name = life_meta_get(meta, "name", None)
             if isinstance(path_value, str):
                 path_value = Path(path_value)
             if not isinstance(path_value, Path):
@@ -128,9 +157,7 @@ def create_app(
         return path_value
 
     def _life_status(meta: object | None) -> str:
-        status = getattr(meta, "status", None)
-        if isinstance(meta, dict):
-            status = meta.get("status", status)
+        status = life_meta_get(meta, "status", None)
         return str(status or "unknown").strip().lower()
 
     def _active_run_locks(life_dir: Path) -> list[str]:
@@ -1282,13 +1309,9 @@ def create_app(
                 if not isinstance(slug, str):
                     continue
                 registry_lives.append(
-                    {
-                        "slug": slug,
-                        "name": str(getattr(meta, "name", slug)),
-                        "path": str(getattr(meta, "path", "")),
-                        "status": str(getattr(meta, "status", "unknown")),
-                        "active": slug == registry_state["active"],
-                    }
+                    _normalize_life_registry_entry(
+                        slug, meta, active_slug=registry_state["active"]
+                    )
                 )
         retention = retention_status_snapshot(base_dir=base_dir)
         return {
@@ -1404,18 +1427,11 @@ def create_app(
         for slug, raw_meta in lives_payload.items():
             if not isinstance(slug, str):
                 continue
-            if isinstance(raw_meta, dict):
-                candidate_name = raw_meta.get("name")
-                if life_name == slug or (
-                    isinstance(candidate_name, str) and candidate_name == life_name
-                ):
-                    return slug, raw_meta
-            else:
-                candidate_name = getattr(raw_meta, "name", None)
-                if life_name == slug or (
-                    isinstance(candidate_name, str) and candidate_name == life_name
-                ):
-                    return slug, None
+            candidate_name = life_meta_get(raw_meta, "name", None)
+            if life_name == slug or (
+                isinstance(candidate_name, str) and candidate_name == life_name
+            ):
+                return slug, _normalize_life_registry_entry(slug, raw_meta)
         return None, None
 
     def _aggregate_lives(
@@ -1741,14 +1757,14 @@ def create_app(
         statuses_by_slug: dict[str, str] = {}
         proximity_by_slug: dict[str, float] = {}
         for slug, meta in sorted(lives.items()):
-            name = getattr(meta, "name", slug)
-            status = getattr(meta, "status", "active")
-            parents = getattr(meta, "parents", ()) or ()
-            children = getattr(meta, "children", ()) or ()
-            allies = getattr(meta, "allies", ()) or ()
-            rivals = getattr(meta, "rivals", ()) or ()
-            proximity_score = getattr(meta, "proximity_score", 0.5)
-            lineage_depth = getattr(meta, "lineage_depth", 0)
+            name = life_meta_get(meta, "name", slug)
+            status = life_meta_get(meta, "status", "active")
+            parents = life_meta_get(meta, "parents", ()) or ()
+            children = life_meta_get(meta, "children", ()) or ()
+            allies = life_meta_get(meta, "allies", ()) or ()
+            rivals = life_meta_get(meta, "rivals", ()) or ()
+            proximity_score = life_meta_get(meta, "proximity_score", 0.5)
+            lineage_depth = life_meta_get(meta, "lineage_depth", 0)
             if not isinstance(parents, (tuple, list)):
                 parents = ()
             if not isinstance(children, (tuple, list)):
