@@ -5,6 +5,13 @@
 </head>
 <body>
 <h1>Tableau de bord Singular</h1>
+<nav aria-label='Navigation rapide'>
+  <a href='#cockpit'>#cockpit</a>
+  <a href='#timeline-section'>#timeline-section</a>
+  <a href='#vies'>#vies</a>
+  <a href='#logs-live'>#logs-live</a>
+  <a href='#parametres'>#parametres</a>
+</nav>
 <nav>
   <strong>Vues :</strong>
   <div class='tabs-nav' role='tablist' aria-label='Navigation des vues principales'>
@@ -70,17 +77,34 @@
   </div>
 
   <section id='operator-lives-summary' class='panel level-panel' data-essential-level='1' aria-live='polite'>
-    <h2 class='heading-reset-top'>Résumé opérateur des vies</h2>
-    <p class='section-help'>Vue accessible sans mode technique : registre, activité, humeur/énergie, tendance et liveness.</p>
+    <h2 class='heading-reset-top'>Vie numérique</h2>
+    <p class='section-help'>Synthèse visible par défaut : sélection, statut, santé, liveness, activité, humeur/énergie, objectifs, dernier message et actions sûres.</p>
     <div class='cards-grid'>
+      <div class='card'>
+        <label class='card-label' for='digital-life-select'>Sélection de vie</label>
+        <select id='digital-life-select' aria-describedby='operator-lives-empty-states'>
+          <option value=''>Chargement…</option>
+        </select>
+      </div>
       <div class='card'><div class='card-label'>Nombre de vies</div><div id='operator-lives-total' class='card-value'>Chargement…</div></div>
       <div class='card'><div class='card-label'>Vie active / sélectionnée</div><div id='operator-selected-life' class='card-value'>Chargement…</div></div>
-      <div class='card'><div class='card-label'>Vies vivantes</div><div id='operator-alive-lives' class='card-value'>Chargement…</div></div>
-      <div class='card'><div class='card-label'>Vies en risque</div><div id='operator-risk-lives' class='card-value'>Chargement…</div></div>
+      <div class='card'><div class='card-label'>Statut</div><div id='digital-life-status' class='card-value'>Chargement…</div></div>
+      <div class='card'><div class='card-label'>Santé</div><div id='digital-life-health' class='card-value'>Chargement…</div></div>
+      <div class='card'><div class='card-label'>Liveness</div><div id='operator-liveness' class='card-value'>Chargement…</div></div>
       <div class='card'><div class='card-label'>Dernière activité</div><div id='operator-last-activity' class='card-value'>Chargement…</div></div>
       <div class='card'><div class='card-label'>Humeur / énergie</div><div id='operator-mood-energy' class='card-value'>Chargement…</div></div>
+      <div class='card'><div class='card-label'>Objectifs actifs</div><div id='digital-life-active-objectives' class='card-value'>Chargement…</div></div>
+      <div class='card'><div class='card-label'>Dernier message</div><div id='digital-life-last-message' class='card-value'>Chargement…</div></div>
+      <div class='card'><div class='card-label'>Vies vivantes</div><div id='operator-alive-lives' class='card-value'>Chargement…</div></div>
+      <div class='card'><div class='card-label'>Vies en risque</div><div id='operator-risk-lives' class='card-value'>Chargement…</div></div>
       <div class='card'><div class='card-label'>Tendance</div><div id='operator-trend' class='card-value'>Chargement…</div></div>
-      <div class='card'><div class='card-label'>Liveness</div><div id='operator-liveness' class='card-value'>Chargement…</div></div>
+    </div>
+    <div class='panel panel-compact panel-bordered content-top-gap'>
+      <strong>Actions sûres</strong>
+      <ul id='digital-life-safe-actions' class='list-tight-top'>
+        <li>Chargement des actions sûres…</li>
+      </ul>
+      <a id='digital-life-details-link' class='filter-chip' href='#tab-comparer-vies'>Voir détail</a>
     </div>
     <ul id='operator-lives-empty-states' class='list-tight-top'>
       <li>Chargement du registre des vies…</li>
@@ -106,7 +130,7 @@
           <div id='conversation-flow-state' class='summary-pill summary-muted'>État: indisponible</div>
         </div>
         <h4>Historique récent</h4>
-        <div id='conversation-history' class='conversation-history'>Aucun message.</div>
+        <div id='conversation-history' class='conversation-history'>Aucun message.</div><div id='conversations-table-body' class='panel-hidden'></div>
         <div class='conversation-composer'>
           <label for='conversation-input'>Message</label>
           <textarea id='conversation-input' rows='3' placeholder='Écrire un message à la vie sélectionnée…'></textarea>
@@ -114,8 +138,8 @@
         </div>
       </div>
     </div>
-    <button type='button' id='conversations-json-toggle' class='toggle-more-btn content-top-gap' data-expand-target='conversations-json-raw' data-open-label='Masquer JSON' data-closed-label='Voir JSON' aria-expanded='false'>Voir JSON</button>
-    <pre id='conversations-json-raw' class='panel-hidden content-top-gap'>{"items":[]}</pre>
+    <button type='button' id='conversations-json-toggle' class='toggle-more-btn content-top-gap technical-only' data-expand-target='conversations-json-raw' data-open-label='Masquer JSON' data-closed-label='Voir JSON' aria-expanded='false'>Voir JSON</button>
+    <pre id='conversations-json-raw' class='panel-hidden content-top-gap technical-only'>{"items":[]}</pre>
   </section>
 
   <section id="cockpit">
@@ -128,6 +152,8 @@
     </div>
     <div class='panel level-panel' data-essential-level='1'>
       <h3 class='heading-reset-top'>Indicateurs clés</h3>
+      <h4>Métriques d’autonomie</h4>
+      <p class='section-help'>Taux d’initiatives proactives · Qu’est-ce que ce score ? · Pourquoi cette alerte ? · source /api/cockpit</p>
       <div id='cockpit-status' class='card card-value'>Statut global: Non disponible</div>
       <div class='cards-grid'>
         <div class='card'><div class='card-label kpi-label' title='Capacité observée du système à fonctionner sans assistance'>Niveau d’autonomie</div><div id='kpi-health' class='card-value'>Pas encore mesuré</div></div>
@@ -219,7 +245,7 @@
 </section>
 
 <section id='tab-diagnostiquer' class='tab-pane panel-hidden' role='tabpanel' aria-labelledby='tab-btn-diagnostiquer'>
-  <section id='timeline-section'>
+  <section id="timeline-section">
     <h2>Timeline des événements</h2>
     <p class='section-help'>Timeline + détail mutation pour expliquer rapidement un changement.</p>
     <div id='timeline' class='timeline-strip'></div>
@@ -235,7 +261,7 @@
 </section>
 
 <section id='tab-comparer-vies' class='tab-pane panel-hidden' role='tabpanel' aria-labelledby='tab-btn-comparer'>
-  <section id='vies'><h2>Vies · Tableau comparatif</h2>
+  <section id="vies"><h2>Vies · Tableau comparatif</h2>
     <p class='section-help'>Comparer les vies sur la même fenêtre temporelle.</p>
     <div class='filters-wrap'>
       <div class='chips-row' id='lives-quick-filters'>
@@ -303,7 +329,7 @@
           <th>Statut</th>
           <th>Risques</th>
           <th>Activité</th>
-        </tr></thead><tbody id='lives-table-body'></tbody>
+        </tr></thead><tbody id='lives-table-body'><tr><td colspan='7'>Aucune vie ne correspond aux filtres.</td></tr></tbody>
       </table>
       <aside id='life-detail-panel' class='panel panel-hidden life-detail-panel' aria-live='polite'>
         <h3 class='heading-reset-top'>Détails de vie</h3>
@@ -330,7 +356,7 @@
     </dl>
   </div>
 
-  <section id='parametres'>
+  <section id="parametres">
     <h2>Paramètres</h2>
     <div class='panel panel-spaced-bottom'>
       <h3 class='heading-reset-top'>Contexte registre</h3>
@@ -385,7 +411,7 @@
     <ul id='organisms-list'></ul>
   </section>
 
-  <section id='reflections-section'>
+  <section id="reflections-section">
     <h2>Timeline des réflexions</h2>
     <div class='toolbar-wrap'>
       <label>Objectif
@@ -411,7 +437,7 @@
     <pre id='reflections-detail' class='content-top-gap'></pre>
   </section>
 
-  <section id='actions'><h2>Actions rapides</h2><pre id='action-result'>Aucune exécution</pre>
+  <section id="actions"><h2>Actions rapides</h2><pre id='action-result'>Aucune exécution</pre>
     <div class='panel actions-panel'>
       <label>Jeton dashboard <input id='action-token' type='password' placeholder='optionnel'/></label>
       <label>Nom de vie (créer/utiliser) <input id='action-life-name' placeholder='Nom exact requis pour créer une vie'/></label>
@@ -430,7 +456,7 @@
     </div>
   </section>
 
-  <section id='logs-live'><h2>Logs en direct</h2>
+  <section id="logs-live"><h2>Logs en direct</h2>
     <div class='toolbar-wrap'>
       <button id='live-toggle'>Pause</button>
       <label><input id='live-autoscroll' type='checkbox' checked/> Défilement automatique</label>
@@ -439,7 +465,7 @@
     <pre id='live-events' class='live-events-box'></pre>
   </section>
 
-  <div class='panel'>
+  <div class='panel technical-only' data-essential-level='3'>
     <h3 class='heading-reset-top'>Payload écosystème</h3>
     <pre id='raw-eco-json'></pre>
   </div>
@@ -457,7 +483,7 @@
     <div id='host-fallback' class='status-muted panel-hidden fallback-box'>Capteurs hôte indisponibles ou sans données récentes.</div>
   </div>
 
-  <div class='panel technical-only' data-essential-level='3'><h3 class='heading-reset-top'>KPIs étendus</h3>
+  <div class='panel technical-only' data-essential-level='3'><h3 class='heading-reset-top'>KPIs étendus</h3><h4>Cycle circadien & objectifs actifs</h4><h4>Trajectory des objectifs</h4><h4>Cycle de vie des skills</h4><h4>Énergie / ressources & génération de code</h4>
     <div class='cards-grid'>
       <div class='card'><div class='card-label'>Terminal</div><div id='kpi-vital-terminal' class='card-value'>Non disponible</div></div>
       <div class='card'><div class='card-label'>Causes</div><div id='kpi-vital-causes' class='card-value'>Non disponible</div></div>
