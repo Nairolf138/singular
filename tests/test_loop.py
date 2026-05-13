@@ -1496,3 +1496,57 @@ def test_run_tick_with_coevolution_logs_candidates_and_rejections(tmp_path: Path
     assert coevo["tests_proposed"] == []
     assert coevo["tests_retained"] == []
     assert coevo["regression_detection_rate"] == 1.0
+
+
+def test_loop_logs_psyche_action_decision_before_effector(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    monkeypatch.setattr(life_loop, "propose_mutations", lambda *_a, **_k: [])
+    monkeypatch.setattr(life_loop, "SKILL_GENESIS_TECH_DEBT_THRESHOLD", 10_000)
+    monkeypatch.setattr(life_loop, "SKILL_GENESIS_FAILURE_STREAK_THRESHOLD", 10_000)
+    monkeypatch.setattr(life_loop, "SKILL_GENESIS_COVERAGE_GAP_THRESHOLD", 10_000.0)
+
+    from singular.runs.logger import RunLogger as RL
+
+    monkeypatch.setattr(
+        life_loop, "RunLogger", functools.partial(RL, root=tmp_path / "logs")
+    )
+    performed: list[tuple[str, dict[str, object]]] = []
+    original_perform_action = life_loop.perform_action
+
+    def capture_perform_action(action, context=None):
+        performed.append((action, dict(context or {})))
+        return original_perform_action(action, context)
+
+    monkeypatch.setattr(life_loop, "perform_action", capture_perform_action)
+
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    (skills_dir / "foo.py").write_text("result = 1", encoding="utf-8")
+
+    run(
+        skills_dir,
+        tmp_path / "ckpt.json",
+        budget_seconds=10.0,
+        max_iterations=1,
+        rng=random.Random(0),
+        operators={"dec": _dec_operator},
+    )
+
+    assert performed
+    action, context = performed[0]
+    assert action == "move"
+    assert "psyche_decision_reason" in context
+
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "logs" / "loop" / "events.jsonl").read_text().splitlines()
+    ]
+    decision_events = [
+        record["payload"]
+        for record in records
+        if record.get("event_type") == "interaction"
+        and record.get("payload", {}).get("interaction") == "psyche_action_decision"
+    ]
+    assert decision_events
+    assert decision_events[0]["action"] == action
+    assert "curiosity favors exploration" in decision_events[0]["reason"]

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Any, ClassVar
+from typing import Dict, Any, ClassVar, Mapping, Sequence
 from pathlib import Path
 import random
 from enum import Enum
@@ -67,6 +67,151 @@ def derive_mood(record: dict) -> Mood:
             return Mood.FRUSTRATED
 
     return Mood.ANXIOUS
+
+
+@dataclass(frozen=True, slots=True)
+class PsycheActionDecision:
+    """Action selected from psyche, resource, social, and environment signals."""
+
+    action: str
+    reason: str
+    scores: dict[str, float] = field(default_factory=dict)
+
+
+def _numeric_signal(signals: Mapping[str, Any], key: str, default: float = 0.0) -> float:
+    """Return ``key`` from ``signals`` as a float, falling back on ``default``."""
+    try:
+        return float(signals.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _social_loneliness_signal(social_states: Mapping[str, Mapping[str, float]]) -> float:
+    """Estimate social isolation from low loyalty/gratitude and high resentment."""
+    if not social_states:
+        return 0.5
+    signals: list[float] = []
+    for state in social_states.values():
+        if not isinstance(state, Mapping):
+            continue
+        gratitude = _clamp(float(state.get("gratitude", 0.5)))
+        loyalty = _clamp(float(state.get("loyalty", 0.5)))
+        resentment = _clamp(float(state.get("resentment", 0.5)))
+        signals.append(_clamp(1.0 - ((gratitude + loyalty) / 2.0) + (resentment * 0.25)))
+    if not signals:
+        return 1.0
+    return _clamp(sum(signals) / len(signals))
+
+
+def _objective_pressure(psyche: "Psyche") -> tuple[float, float, float]:
+    """Return exploration, safety, and resource pressure from objectives."""
+    axes = getattr(psyche, "weighted_objective_axes", lambda: {"long_term": 0.33, "sandbox": 0.33, "resource": 0.34})()
+    exploration = _clamp(float(axes.get("long_term", 0.33)))
+    safety = _clamp(float(axes.get("sandbox", 0.33)))
+    resources = _clamp(float(axes.get("resource", 0.34)))
+    return exploration, safety, resources
+
+
+def choose_action_from_psyche(
+    psyche: "Psyche",
+    environment_signals: Mapping[str, Any] | None = None,
+    *,
+    available_actions: Sequence[str] | None = None,
+) -> PsycheActionDecision:
+    """Choose a concrete world action from psyche and environment signals.
+
+    Explicit policy rules make the decision observable and testable:
+
+    * fatigue or low energy favours ``rest``;
+    * curiosity favours exploration via ``move`` or ``forage``;
+    * anger favours controlled competition via ``compete``;
+    * loneliness favours cooperation via ``cooperate`` or ``share_resource``.
+    """
+    signals = dict(environment_signals or {})
+    allowed = set(
+        available_actions
+        or (
+            "rest",
+            "move",
+            "forage",
+            "cooperate",
+            "share_resource",
+            "compete",
+            "avoid_threat",
+            "resource_management",
+            "structured_user_interaction",
+            "simulated_world_task",
+        )
+    )
+    if not allowed:
+        allowed = {"simulated_world_task"}
+
+    mood = getattr(psyche, "last_mood", None) or Mood.NEUTRAL
+    energy = float(getattr(psyche, "energy", 100.0))
+    resource_energy = _numeric_signal(signals, "resource_energy", energy)
+    effective_energy = min(energy, resource_energy)
+    risk = _clamp(_numeric_signal(signals, "risk", 0.0))
+    rarity = _clamp(_numeric_signal(signals, "rarity_pressure", 0.0))
+    competition = _clamp(_numeric_signal(signals, "competition_pressure", 0.0))
+    opportunity = _clamp(_numeric_signal(signals, "opportunity", 0.5))
+    fallback_action = signals.get("fallback_action")
+    exploration_pressure, safety_pressure, resource_pressure = _objective_pressure(psyche)
+    loneliness = max(
+        _social_loneliness_signal(getattr(psyche, "social_states", {})),
+        _clamp(_numeric_signal(signals, "social_isolation", 0.0)),
+    )
+
+    scores = {action: 0.0 for action in allowed}
+
+    def add(action: str, value: float) -> None:
+        if action in scores:
+            scores[action] += value
+
+    if isinstance(fallback_action, str):
+        add(fallback_action, 1.0)
+    add("move", 0.35 * exploration_pressure + 0.20 * opportunity)
+    add("forage", 0.30 * resource_pressure + 0.25 * rarity)
+    add("rest", 0.20 * safety_pressure + max(0.0, 40.0 - effective_energy) / 40.0)
+    add("avoid_threat", 0.35 * risk + 0.20 * safety_pressure)
+    add("cooperate", 0.30 * loneliness + max(0.0, 0.5 - competition) * 0.15)
+    add("share_resource", 0.20 * loneliness + 0.15 * resource_pressure)
+    add("compete", 0.25 * competition + 0.10 * resource_pressure)
+    add("resource_management", 0.20 * resource_pressure + 0.10 * rarity)
+    add("structured_user_interaction", 0.15 * loneliness + 0.10 * safety_pressure)
+    add("simulated_world_task", 0.10 * exploration_pressure + 0.10 * opportunity)
+
+    reason_parts: list[str] = []
+    if mood == Mood.FATIGUE or effective_energy < 25.0:
+        add("rest", 3.0)
+        reason_parts.append(
+            f"fatigue_or_low_energy(mood={mood.value}, energy={effective_energy:.1f}) favors rest"
+        )
+    if mood == Mood.CURIOUS or getattr(psyche, "curiosity", 0.0) >= 0.7:
+        add("move", 2.2)
+        add("forage", 1.0)
+        reason_parts.append("curiosity favors exploration")
+    if mood == Mood.ANGER:
+        add("compete", 2.4)
+        add("avoid_threat", 0.5)
+        reason_parts.append("anger favors controlled competition")
+    if mood == Mood.LONELY or loneliness >= 0.65:
+        add("cooperate", 2.5)
+        add("share_resource", 1.2)
+        reason_parts.append("loneliness favors cooperation")
+    if risk >= 0.75:
+        add("avoid_threat", 2.0)
+        reason_parts.append(f"high environmental risk({risk:.2f}) favors avoiding threat")
+    if rarity >= 0.70 and effective_energy >= 35.0:
+        add("forage", 1.3)
+        reason_parts.append(f"scarcity({rarity:.2f}) favors foraging")
+
+    action = max(sorted(scores), key=lambda candidate: scores[candidate])
+    if not reason_parts:
+        reason_parts.append(
+            "balanced objective/environment scoring selected the highest-scoring action"
+        )
+    reason = "; ".join(reason_parts) + f"; selected={action}; score={scores[action]:.3f}"
+    return PsycheActionDecision(action=action, reason=reason, scores=scores)
 
 
 @dataclass

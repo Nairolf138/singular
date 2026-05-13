@@ -32,7 +32,7 @@ from singular.memory import (
     temporarily_disable_skill,
     update_score,
 )
-from singular.psyche import Psyche, Mood
+from singular.psyche import Psyche, Mood, choose_action_from_psyche
 from singular.runs.logger import RunLogger
 from singular.runs.explain import summarize_mutation
 from singular.runs.generations import record_generation
@@ -1643,15 +1643,43 @@ def run(
                     )
                 )
 
-            action_name = "simulated_world_task" if accepted else "structured_user_interaction"
+            fallback_action_name = "simulated_world_task" if accepted else "structured_user_interaction"
             if action_resolution.granted:
-                action_name = "resource_management"
+                fallback_action_name = "resource_management"
+            psyche_decision = choose_action_from_psyche(
+                psyche,
+                {
+                    "risk": persistent_world_state.risks,
+                    "rarity_pressure": persistent_world_state.rarity,
+                    "competition_pressure": getattr(persistent_world_state, "competition", 0.5),
+                    "opportunity": persistent_world_state.opportunities,
+                    "resource_energy": resource_manager.energy,
+                    "success_bias": 0.2 if accepted else -0.2,
+                    "fallback_action": fallback_action_name,
+                },
+            )
+            action_name = psyche_decision.action
+            logger.log_interaction(
+                "psyche_action_decision",
+                action=action_name,
+                fallback_action=fallback_action_name,
+                reason=psyche_decision.reason,
+                mood=mood_value,
+                energy=float(getattr(psyche, "energy", resource_manager.energy)),
+                resource_energy=float(resource_manager.energy),
+                scores={
+                    name: round(score, 6)
+                    for name, score in sorted(psyche_decision.scores.items())
+                },
+            )
             effect_result = perform_action(
                 action_name,
                 {
                     "risk": persistent_world_state.risks,
                     "rarity_pressure": persistent_world_state.rarity,
+                    "competition_pressure": getattr(persistent_world_state, "competition", 0.5),
                     "success_bias": 0.2 if accepted else -0.2,
+                    "psyche_decision_reason": psyche_decision.reason,
                 },
             )
             selected_org.energy += effect_result.energy_delta
