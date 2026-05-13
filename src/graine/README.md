@@ -40,3 +40,20 @@ analysis.
   use.
 - The environment is intentionally sandboxed: no network, subprocesses, or FFI.
 - Only repository files are accessible; external resources are not supported.
+
+## Consommation par `src/singular/life/loop.py`
+
+`graine.evolver.generate.propose_mutations` est consommé par le loop de vie
+Singular comme générateur d’intentions de mutation, pas comme écrivain direct de
+fichiers. Le loop construit, pour la skill courante, une zone minimale contenant
+le chemin `skills/<skill>.py`, la fonction cible implicite et la liste des
+opérateurs chargés. Graine valide cette zone avec son DSL (`Patch`, opérateurs
+connus, pureté, limites de complexité) et renvoie les opérateurs applicables.
+
+Dans `src/singular/life/loop.py`, ces propositions servent à borner la sélection
+d’opérateur avant l’appel à `apply_mutation`. Singular garde ensuite la
+responsabilité complète de l’exécution sûre : la mutation concrète est évaluée en
+sandbox, scorée, puis soumise à `MutationGovernancePolicy.enforce_write` avant
+toute persistance dans `skills/`. Une proposition Graine ne peut donc pas écrire
+hors sandbox ni contourner les règles de gouvernance ; elle ne fait que réduire
+l’espace de recherche à des mutations DSL-valides.
