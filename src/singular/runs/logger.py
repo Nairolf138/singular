@@ -359,6 +359,35 @@ class RunLogger:
         )
         add_procedural_memory(record)
 
+
+    def log_phase_metrics(
+        self,
+        *,
+        iteration: int | None,
+        phases: Mapping[str, object],
+        total_ms: float,
+        slowest_phase: str | None = None,
+        cache_candidates: list[dict[str, object]] | None = None,
+        async_distribution_note: str | None = None,
+    ) -> None:
+        """Record life-loop phase timings for profiling and dashboard views."""
+
+        record: dict[str, Any] = {
+            "ts": datetime.utcnow().isoformat(timespec="seconds"),
+            "event": "life_loop_phase_metrics",
+            "iteration": iteration,
+            "phase_metrics": {
+                "schema_version": 1,
+                "total_ms": total_ms,
+                "slowest_phase": slowest_phase,
+                "phases": dict(phases),
+                "cache_candidates": cache_candidates or [],
+                "async_distribution_note": async_distribution_note,
+            },
+        }
+        self._write_record(record)
+        self._write_event("life_loop_phase_metrics", record, record["ts"])
+
     def log_death(self, reason: str, **info: Any) -> None:
         """Record a death event with optional additional information."""
 

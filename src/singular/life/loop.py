@@ -78,6 +78,7 @@ from .reproduction_flow import (
 from .coevolution_flow import CoevolutionConfig, CoevolutionFlow, MapElites, LivingTestPool
 from .skill_genesis import create_skill
 from .social_decision import decide_social_actions
+from .profiling import LifeLoopProfiler
 
 # mypy: ignore-errors
 
@@ -212,6 +213,36 @@ ACTION_TYPE_FROM_LOOP_EVENT: dict[str, str] = {
 
 HEALTH_HISTORY_FINE_WINDOW = 500
 HEALTH_HISTORY_AGGREGATE_EVERY = 10
+
+_ECOSYSTEM_RULES_CONFIG_CACHE: dict[tuple[str, int], EcosystemRulesConfig] = {}
+
+
+def _load_ecosystem_rules_config_cached(
+    config_path: Path, profiler: LifeLoopProfiler | None = None
+) -> EcosystemRulesConfig | None:
+    """Load ecosystem rules config with a path+mtime cache for repeated runs."""
+
+    try:
+        stat = config_path.stat()
+    except OSError:
+        return None
+    cache_key = (str(config_path.resolve()), stat.st_mtime_ns)
+    cached = _ECOSYSTEM_RULES_CONFIG_CACHE.get(cache_key)
+    if profiler is not None:
+        profiler.record_cache("config_loading", hit=cached is not None)
+    if cached is not None:
+        return cached
+    if profiler is None:
+        config = EcosystemRulesConfig.from_file(config_path)
+    else:
+        with profiler.phase("config_loading"):
+            config = EcosystemRulesConfig.from_file(config_path)
+    # Drop stale entries for the same path so mtime changes refresh cleanly.
+    for key in list(_ECOSYSTEM_RULES_CONFIG_CACHE):
+        if key[0] == cache_key[0] and key != cache_key:
+            _ECOSYSTEM_RULES_CONFIG_CACHE.pop(key, None)
+    _ECOSYSTEM_RULES_CONFIG_CACHE[cache_key] = config
+    return config
 
 
 def _resolve_current_life_slug() -> str | None:
@@ -575,6 +606,18 @@ def _inactive_skill_keys(skills_state: Mapping[str, object]) -> set[str]:
     return inactive
 
 
+def _map_elites_accept(
+    map_elites: MapElites,
+    mutated: str,
+    mutated_score: float,
+    profiler: LifeLoopProfiler,
+) -> bool:
+    """Profile one MAP-Elites insertion decision."""
+
+    with profiler.phase("map_elites"):
+        return map_elites.add(mutated, mutated_score)
+
+
 def _first_sandbox_error_type(
     base_result: SandboxScore, mutated_result: SandboxScore
 ) -> str | None:
@@ -716,14 +759,15 @@ def run(
     state.health_history = _retain_health_history(state.health_history)
 
     organisms_input = _normalize_organism_inputs(skills_dirs)
+    setup_profiler = LifeLoopProfiler()
 
     world = world or WorldState()
     if ecosystem_rules is None:
         config_path = (
             Path(__file__).resolve().parents[3] / "configs" / "ecosystem" / f"{ecosystem_mode}.json"
         )
-        if config_path.exists():
-            config = EcosystemRulesConfig.from_file(config_path)
+        config = _load_ecosystem_rules_config_cached(config_path, setup_profiler)
+        if config is not None:
             ecosystem_rules = EcosystemRules(
                 resource_competition_unit=config.resource_competition_unit,
                 passive_energy_decay=config.passive_energy_decay,
@@ -789,6 +833,32 @@ def run(
             ),
         )
 
+    score_cache: dict[str, SandboxScore] = {}
+    current_tick_profiler: LifeLoopProfiler | None = None
+
+    def _profiled_score_code(code: str) -> SandboxScore:
+        code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
+        cached = score_cache.get(code_hash)
+        if current_tick_profiler is not None:
+            current_tick_profiler.record_cache("sandbox_scoring", hit=cached is not None)
+        if cached is not None:
+            return cached
+        if current_tick_profiler is None:
+            result = score_code_with_error(code)
+        else:
+            with current_tick_profiler.phase("sandbox_scoring"):
+                result = score_code_with_error(code)
+        score_cache[code_hash] = result
+        return result
+
+    def _profiled_test_runner() -> int:
+        if test_runner is None:
+            return 0
+        if current_tick_profiler is None:
+            return test_runner()
+        with current_tick_profiler.phase("test_runner"):
+            return test_runner()
+
     with RunLogger(run_id, psyche=psyche) as logger:
         health_tracker = HealthTracker.from_state(state.health_counters)
         delayed: list[tuple[float, str, Path]] = []
@@ -825,6 +895,10 @@ def run(
             signals["skill_reputation"] = logger.skill_reputation()
             resource_manager.update_from_environment(temp)
             state.iteration += 1
+            tick_profiler = LifeLoopProfiler()
+            tick_profiler.merge(setup_profiler)
+            setup_profiler = LifeLoopProfiler()
+            current_tick_profiler = tick_profiler
 
             now = time.time()
             if delayed and delayed[0][0] <= now:
@@ -1197,15 +1271,16 @@ def run(
                 )
             # Graine constrains the operator family. Singular still materializes
             # the concrete source mutation, then sends it to sandbox/governance.
-            mutated = apply_mutation(original, eligible_operators[op_name], rng)
+            with tick_profiler.phase("mutation"):
+                mutated = apply_mutation(original, eligible_operators[op_name], rng)
             org = world.organisms[org_name]
 
             t0 = time.perf_counter()
-            base_score_result = score_code_with_error(original)
+            base_score_result = _profiled_score_code(original)
             base_score = base_score_result.score
             ms_base = (time.perf_counter() - t0) * 1000
             t0 = time.perf_counter()
-            mutated_score_result = score_code_with_error(mutated)
+            mutated_score_result = _profiled_score_code(mutated)
             mutated_score = mutated_score_result.score
             ms_new = (time.perf_counter() - t0) * 1000
 
@@ -1269,7 +1344,7 @@ def run(
                 False
                 if mutation_failed
                 else (
-                    map_elites.add(mutated, mutated_score)
+                    _map_elites_accept(map_elites, mutated, mutated_score, tick_profiler)
                     if map_elites
                     else mutated_score <= base_score
                 )
@@ -1304,14 +1379,15 @@ def run(
                         rejected_for_robustness=False,
                     )
                 else:
-                    coevo_decision = coevolution_flow.decide(
-                        base_code=original,
-                        mutated_code=mutated,
-                        base_score=base_score,
-                        mutated_score=mutated_score,
-                        initially_accepted=accepted,
-                        rng=rng,
-                    )
+                    with tick_profiler.phase("coevolution"):
+                        coevo_decision = coevolution_flow.decide(
+                            base_code=original,
+                            mutated_code=mutated,
+                            base_score=base_score,
+                            mutated_score=mutated_score,
+                            initially_accepted=accepted,
+                            rng=rng,
+                        )
                     accepted = coevo_decision.accepted
                     logger.log_test_coevolution(
                         skill=skill_path.stem,
@@ -1449,7 +1525,11 @@ def run(
 
             # Resource accounting
             cpu_ms = ms_base + ms_new
-            moods = manage_resources(resource_manager, cpu_ms / 1000.0, test_runner)
+            moods = manage_resources(
+                resource_manager,
+                cpu_ms / 1000.0,
+                _profiled_test_runner if test_runner is not None else None,
+            )
             can_mutate, state_flag = resource_manager.apply_capability_cost("mutation")
             if not can_mutate:
                 accepted = False
@@ -1960,6 +2040,7 @@ def run(
             except ValueError:
                 skill_relative_path = str(skill_path)
 
+            logging_phase_started = time.perf_counter()
             record_generation(
                 run_id=logger.run_id,
                 iteration=state.iteration,
@@ -1996,7 +2077,9 @@ def run(
                 mutation_error_type=mutated_score_result.error_type,
                 mutation_error_message=mutated_score_result.error_message,
             )
-
+            tick_profiler.record_duration(
+                "logging", (time.perf_counter() - logging_phase_started) * 1000.0
+            )
             if hasattr(psyche, "consume"):
                 psyche.consume()
             if hasattr(psyche, "save_state"):
@@ -2010,7 +2093,21 @@ def run(
                 effects_path=world_effects_path,
             )
             resource_manager.apply_world_state(updated_world_state)
-            save_checkpoint(checkpoint_path, state)
+            with tick_profiler.phase("checkpoint_write"):
+                save_checkpoint(checkpoint_path, state)
+            phase_summary = tick_profiler.summary()
+            logger.log_phase_metrics(
+                iteration=state.iteration,
+                phases=phase_summary["phases"],
+                total_ms=float(phase_summary["total_ms"]),
+                slowest_phase=(
+                    str(phase_summary["slowest_phase"])
+                    if phase_summary.get("slowest_phase") is not None
+                    else None
+                ),
+                cache_candidates=list(phase_summary.get("cache_candidates", [])),
+                async_distribution_note=str(phase_summary.get("async_distribution_note", "")),
+            )
 
             # DeathMonitor convention: ``action_succeeded=True`` means the
             # mutation outcome is accepted (not a failure signal).
@@ -2088,7 +2185,8 @@ def run(
                     },
                     payload_version=1,
                 )
-                save_checkpoint(checkpoint_path, state)
+                with tick_profiler.phase("checkpoint_write"):
+                    save_checkpoint(checkpoint_path, state)
                 tick_count += 1
                 break
 
@@ -2114,12 +2212,17 @@ def run(
                 and state.iteration % ecosystem_rules.crossover_interval == 0
                 and len(world.organisms) >= 2
             ):
+                reproduction_phase_started = time.perf_counter()
                 if any(organism.degraded_mode for organism in world.organisms.values()):
                     logger.log_interaction(
                         "reproduction_suspended_degraded_mode",
                         organism="ecosystem",
                         reason="sandbox_degraded_mode_active",
                         alive=True,
+                    )
+                    tick_profiler.record_duration(
+                        "reproduction",
+                        (time.perf_counter() - reproduction_phase_started) * 1000.0,
                     )
                     tick_count += 1
                     continue
@@ -2228,6 +2331,10 @@ def run(
                             child_skills_dir=str(child_dir),
                             alive=True,
                         )
+                tick_profiler.record_duration(
+                    "reproduction",
+                    (time.perf_counter() - reproduction_phase_started) * 1000.0,
+                )
             for name in list(world.reproduction_cooldowns):
                 remaining = int(world.reproduction_cooldowns[name]) - 1
                 if remaining <= 0:

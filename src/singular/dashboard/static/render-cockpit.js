@@ -526,6 +526,32 @@ export const loadCockpit=()=>Promise.allSettled([
   setText('kpi-behavior-trend',String(behavior.temporal_trend||na()));
   setText('kpi-behavior-correlation',`${behaviorCorr.major_decisions_count??0} décisions majeures`);
   if(behaviorAlerts.homeostasis_unstable||behaviorAlerts.robustness_low){setTone('kpi-behavior-homeostasis','bad');}
+  const perf=d.performance_metrics||{};
+  const phaseMetrics=perf.phase_metrics||{};
+  const phaseLabel=name=>{
+    const item=phaseMetrics[name]||{};
+    const total=Number(item.total_ms||0);
+    const calls=Number(item.calls||0);
+    const hits=Number(item.cache_hits||0);
+    const misses=Number(item.cache_misses||0);
+    const cache=(hits||misses)?` · cache ${hits}/${hits+misses}`:'';
+    return `${fmtNum(total,' ms')} · ${calls} appels${cache}`;
+  };
+  setText('kpi-phase-slowest',perf.slowest_phase?`${perf.slowest_phase} · ${phaseLabel(perf.slowest_phase)}`:na());
+  setText('kpi-phase-sandbox',phaseLabel('sandbox_scoring'));
+  setText('kpi-phase-tests',phaseLabel('test_runner'));
+  setText('kpi-phase-io',`${phaseLabel('checkpoint_write')} · logging ${phaseLabel('logging')}`);
+  const cacheList=clearElement('kpi-phase-cache-candidates');
+  if(cacheList){
+    const candidates=Array.isArray(perf.cache_candidates)?perf.cache_candidates:[];
+    for(const candidate of candidates){
+      const li=document.createElement('li');
+      li.textContent=`${candidate.phase||'phase'} · ${candidate.reason||'cache potentiel'} · hits=${candidate.current_cache_hits??0}, misses=${candidate.current_cache_misses??0}`;
+      cacheList.appendChild(li);
+    }
+    if(!candidates.length){const li=document.createElement('li');li.textContent='Aucune opportunité de cache répétitif détectée sur le dernier tick.';cacheList.appendChild(li);}
+  }
+  setText('kpi-phase-async-note',String(perf.async_distribution_note||'Étudier async/distribué uniquement après métriques fiables.'));
   const vital=d.vital_timeline||{};
   const skillLifecycle=d.skills_lifecycle||{};
   const vitalMetrics=d.vital_metrics||{};

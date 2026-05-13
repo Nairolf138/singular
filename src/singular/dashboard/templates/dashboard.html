@@ -208,6 +208,21 @@
       </ul>
     </div>
 
+    <div class='panel level-panel' data-essential-level='2'>
+      <h3 class='heading-reset-top'>Profilage boucle de vie</h3>
+      <p class='section-help'>Métriques par phase : mutation, sandbox, tests, co-évolution, Map-Elites, reproduction, checkpoint et logging.</p>
+      <div class='cards-grid'>
+        <div class='card'><div class='card-label'>Phase la plus coûteuse</div><div id='kpi-phase-slowest' class='card-value'>Chargement…</div></div>
+        <div class='card'><div class='card-label'>Sandbox scoring</div><div id='kpi-phase-sandbox' class='card-value'>Chargement…</div></div>
+        <div class='card'><div class='card-label'>Test runner</div><div id='kpi-phase-tests' class='card-value'>Chargement…</div></div>
+        <div class='card'><div class='card-label'>Checkpoint/logging</div><div id='kpi-phase-io' class='card-value'>Chargement…</div></div>
+      </div>
+      <ul id='kpi-phase-cache-candidates' class='list-tight-top'>
+        <li>Analyse des caches en attente…</li>
+      </ul>
+      <p id='kpi-phase-async-note' class='section-help'>Asynchrone/distribué à étudier après métriques fiables.</p>
+    </div>
+
     <details id='cockpit-followup' class='panel level-panel' data-essential-level='2' open>
       <summary>Contexte d’observation</summary>
       <div class='panel panel-compact panel-top-gap'>
