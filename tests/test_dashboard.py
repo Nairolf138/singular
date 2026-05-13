@@ -1834,6 +1834,27 @@ def test_dashboard_actions_endpoint_and_ui_panel(tmp_path: Path, monkeypatch: py
         app._routes["/api/actions/{action}"]("lives_list", token="wrong", payload="{}")
 
 
+def test_dashboard_actions_require_token_unless_local_dev_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("SINGULAR_DASHBOARD_ACTION_TOKEN", raising=False)
+    monkeypatch.delenv("SINGULAR_DASHBOARD_ALLOW_UNAUTHENTICATED_ACTIONS", raising=False)
+    app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
+    client = TestClient(app)
+
+    missing_token = client.post("/api/actions/lives_list", json={})
+
+    assert missing_token.status_code == 403
+    assert "SINGULAR_DASHBOARD_ACTION_TOKEN" in missing_token.json()["detail"]
+    assert "SINGULAR_DASHBOARD_ALLOW_UNAUTHENTICATED_ACTIONS=1" in missing_token.json()["detail"]
+
+    monkeypatch.setenv("SINGULAR_DASHBOARD_ALLOW_UNAUTHENTICATED_ACTIONS", "1")
+    allowed = client.post("/api/actions/lives_list", json={}).json()
+
+    assert allowed["ok"] is True
+    assert allowed["action"] == "lives_list"
+
+
 def test_dashboard_emergency_stop_action_writes_active_life_stop_signal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1841,6 +1862,7 @@ def test_dashboard_emergency_stop_action_writes_active_life_stop_signal(
     root.mkdir()
     monkeypatch.setenv("SINGULAR_ROOT", str(root))
     monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    monkeypatch.setenv("SINGULAR_DASHBOARD_ALLOW_UNAUTHENTICATED_ACTIONS", "1")
     meta = create_life("Urgence")
 
     app = create_app(

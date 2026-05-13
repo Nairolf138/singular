@@ -290,8 +290,20 @@ class DashboardActionService:
 
     def validate_token(self, token: str | None) -> None:
         expected = os.environ.get("SINGULAR_DASHBOARD_ACTION_TOKEN")
-        if expected and token != expected:
-            raise PermissionError("invalid action token")
+        allow_unauthenticated = (
+            os.environ.get("SINGULAR_DASHBOARD_ALLOW_UNAUTHENTICATED_ACTIONS") == "1"
+        )
+        if expected:
+            if token != expected:
+                raise PermissionError("invalid action token")
+            return
+        if allow_unauthenticated:
+            return
+        raise PermissionError(
+            "dashboard action token required: set SINGULAR_DASHBOARD_ACTION_TOKEN "
+            "for mutative or destructive dashboard actions, or set "
+            "SINGULAR_DASHBOARD_ALLOW_UNAUTHENTICATED_ACTIONS=1 only for local development"
+        )
 
     def execute(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
         try:

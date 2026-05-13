@@ -221,7 +221,7 @@ const readActionError=async response=>{
     detail=await response.text().catch(()=>'' );
   }
   if(response.status===403){
-    return detail||'Jeton dashboard requis ou invalide: renseignez le champ “Jeton dashboard”.';
+    return detail||'Jeton dashboard requis ou invalide: renseignez le champ “Jeton dashboard” pour les actions sensibles.';
   }
   if(response.status===400){
     return detail||'Payload invalide: vérifiez les paramètres de l’action.';
