@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable
 
 from .store import BeliefStore
@@ -10,19 +10,44 @@ from .store import BeliefStore
 
 @dataclass(frozen=True)
 class RunFeatures:
-    """Compact representation of context extracted from a mutation run."""
+    """Compact representation of context extracted from a mutation run.
+
+    Extracted features are intentionally human-readable so stored beliefs can be
+    audited later:
+    - ``operator``: mutation strategy that was attempted.
+    - ``failure_type``: normalized outcome class (sandbox error, rejected,
+      improved, or neutral).
+    - ``environment_signal``: coarse operational context (cold, stable, hot).
+    - ``mood``: normalized cognitive/affective state.
+    - ``outcome``: learning label used by probabilistic strategy rules.
+    """
 
     operator: str
     failure_type: str
     environment_signal: str
     mood: str
     outcome: str
+    extracted_features: dict[str, str] = field(default_factory=dict)
+    learning_conditions: list[str] = field(default_factory=list)
 
     def context_key(self) -> str:
         return (
             f"failure={self.failure_type}|env={self.environment_signal}|"
             f"mood={self.mood}|outcome={self.outcome}"
         )
+
+    def feature_summary(self) -> dict[str, str]:
+        """Return the documented feature map used by meta-learning."""
+
+        if self.extracted_features:
+            return dict(self.extracted_features)
+        return {
+            "operator": self.operator,
+            "failure_type": self.failure_type,
+            "environment_signal": self.environment_signal,
+            "mood": self.mood,
+            "outcome": self.outcome,
+        }
 
 
 @dataclass(frozen=True)
@@ -32,6 +57,9 @@ class StrategyRecommendation:
     operator: str
     confidence: float
     context_key: str
+    strategy_reason: str = ""
+    supporting_features: dict[str, str] = field(default_factory=dict)
+    learning_conditions: list[str] = field(default_factory=list)
 
 
 def extract_run_features(
@@ -64,12 +92,32 @@ def extract_run_features(
     outcome = "success" if accepted else "failure"
     normalized_mood = (mood or "unknown").strip().lower() or "unknown"
 
+    extracted_features = {
+        "operator": operator,
+        "failure_type": failure_type,
+        "environment_signal": environment_signal,
+        "mood": normalized_mood,
+        "outcome": outcome,
+        "score_delta": f"{mutated_score - base_score:.6f}",
+        "accepted": str(bool(accepted)).lower(),
+    }
+    learning_conditions = [
+        "persist when the run has an explicit acceptance label",
+        "condition strategy confidence on failure, environment, mood, and outcome",
+    ]
+    if mutated_score == float("-inf"):
+        learning_conditions.append("treat sandbox errors as high-risk failures")
+    if abs(mutated_score - base_score) > 0.0:
+        learning_conditions.append("include score delta as reward evidence")
+
     return RunFeatures(
         operator=operator,
         failure_type=failure_type,
         environment_signal=environment_signal,
         mood=normalized_mood,
         outcome=outcome,
+        extracted_features=extracted_features,
+        learning_conditions=learning_conditions,
     )
 
 
@@ -83,10 +131,13 @@ def register_run_result(
 
     context = features.context_key()
     success = features.outcome == "success"
+    documented_features = ",".join(
+        f"{key}={value}" for key, value in sorted(features.feature_summary().items())
+    )
+    conditions = "|".join(features.learning_conditions)
     evidence = (
-        f"operator={features.operator};failure={features.failure_type};"
-        f"env={features.environment_signal};mood={features.mood};"
-        f"outcome={features.outcome};reward={reward_delta:.6f}"
+        f"features={documented_features};conditions={conditions};"
+        f"reward={reward_delta:.6f}"
     )
     store.update_probabilistic_rule(
         context_key=context,
@@ -120,16 +171,34 @@ def recommend_strategy(
     """Return the highest-confidence strategy for the current context."""
 
     normalized_mood = (mood or "unknown").strip().lower() or "unknown"
+    candidate_list = list(candidates)
     context_key = (
         f"failure={failure_type}|env={environment_signal}|"
         f"mood={normalized_mood}|outcome={outcome_hint}"
     )
-    ranked = store.recommend_strategies(context_key=context_key, candidates=candidates)
+    ranked = store.recommend_strategies(
+        context_key=context_key, candidates=candidate_list
+    )
     if not ranked:
         return None
     best_operator, confidence = ranked[0]
+    supporting_features = {
+        "failure_type": failure_type,
+        "environment_signal": environment_signal,
+        "mood": normalized_mood,
+        "outcome_hint": outcome_hint,
+    }
     return StrategyRecommendation(
         operator=best_operator,
         confidence=confidence,
         context_key=context_key,
+        strategy_reason=(
+            f"highest stored confidence for {context_key} among "
+            f"{', '.join(candidate_list)}"
+        ),
+        supporting_features=supporting_features,
+        learning_conditions=[
+            "recommend only strategies with existing probabilistic evidence",
+            "rank candidates by decayed Bayesian confidence",
+        ],
     )
