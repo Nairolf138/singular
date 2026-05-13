@@ -118,3 +118,40 @@ def test_forgetting_progressively_removes_stale_rules(tmp_path: Path) -> None:
 
     removed = store.forget_stale(when=anchor + timedelta(days=4))
     assert removed == 1
+
+
+def test_meta_learning_documents_features_and_strategy_conditions(
+    tmp_path: Path,
+) -> None:
+    store = BeliefStore(path=tmp_path / "beliefs.json")
+    features = extract_run_features(
+        operator="const_tune",
+        accepted=True,
+        base_score=2.0,
+        mutated_score=1.5,
+        temperature=2.0,
+        mood=" Curious ",
+    )
+
+    assert features.feature_summary()["environment_signal"] == "cold"
+    assert features.feature_summary()["score_delta"] == "-0.500000"
+    assert "include score delta as reward evidence" in features.learning_conditions
+
+    register_run_result(store, features, reward_delta=0.5)
+    recommendation = recommend_strategy(
+        store,
+        failure_type="anticipated",
+        environment_signal="cold",
+        mood="curious",
+        outcome_hint="success",
+        candidates=["const_tune"],
+    )
+
+    assert recommendation is not None
+    assert recommendation.operator == "const_tune"
+    assert recommendation.supporting_features["mood"] == "curious"
+    assert "highest stored confidence" in recommendation.strategy_reason
+    assert (
+        "rank candidates by decayed Bayesian confidence"
+        in recommendation.learning_conditions
+    )

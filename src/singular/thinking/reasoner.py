@@ -30,7 +30,9 @@ def evaluate_actions(agent: Any, options: Iterable[Any]) -> Any:
 
     for option in options:
         outcomes: Mapping[str, float] = getattr(option, "outcomes", option)
-        hypothesis = getattr(option, "hypothesis", None) or getattr(option, "action", None)
+        hypothesis = getattr(option, "hypothesis", None) or getattr(
+            option, "action", None
+        )
         if hypothesis is None:
             hypothesis = str(getattr(option, "name", "generic"))
         belief_confidence = beliefs.get_confidence(f"action:{hypothesis}", default=0.5)
