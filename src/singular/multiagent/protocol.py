@@ -56,6 +56,7 @@ class AgentMessage:
         "help.offered",
         "help.accepted",
         "help.completed",
+        "help.refused",
     ]
     task: str
     evidence: list[str]
@@ -106,6 +107,114 @@ class AgentMessage:
             payload=dict(payload.get("payload", {})),
         )
 
+
+
+@dataclass(slots=True)
+class HelpRequest:
+    """Typed request for assistance that can be serialized as AgentMessage."""
+
+    requester_id: str
+    task: str
+    skill: str
+    score: float
+    evidence: list[str] = field(default_factory=list)
+    priority: int = 5
+
+    @classmethod
+    def from_context(cls, context: Any) -> "HelpRequest":
+        return cls(
+            requester_id=str(context.life_id),
+            task=str(context.task),
+            skill=Path(context.skill_path).name,
+            score=float(context.score),
+            evidence=[f"score:{float(context.score):.6f}", "policy:low_score_help"],
+        )
+
+    def to_message(self) -> AgentMessage:
+        payload = build_help_event_payload(
+            requester_life=self.requester_id,
+            helper_life=None,
+            task=self.task,
+            attempts=0,
+            metadata={"skill": self.skill, "score": self.score},
+        )
+        return AgentMessage(
+            intent=HELP_REQUESTED,
+            task=self.task,
+            evidence=list(self.evidence),
+            confidence=1.0,
+            priority=self.priority,
+            agent_id=self.requester_id,
+            payload=payload,
+            version=2,
+        )
+
+
+@dataclass(slots=True)
+class TaskOffer:
+    """Typed skill/task offer exchanged between lives."""
+
+    helper_id: str
+    task: str
+    skill: str
+    confidence: float
+    receiver_id: str | None = None
+    evidence: list[str] = field(default_factory=list)
+    priority: int = 4
+
+    @classmethod
+    def from_context(cls, context: Any, receiver_id: str | None = None) -> "TaskOffer":
+        return cls(
+            helper_id=str(context.life_id),
+            receiver_id=receiver_id,
+            task=str(context.task),
+            skill=Path(context.skill_path).name,
+            confidence=float(context.confidence),
+            evidence=[
+                f"skill:{Path(context.skill_path).name}",
+                f"confidence:{float(context.confidence):.3f}",
+                "policy:high_confidence_offer",
+            ],
+        )
+
+    @classmethod
+    def from_message(cls, message: AgentMessage) -> "TaskOffer":
+        metadata = dict(message.payload.get("metadata", {}))
+        skill = str(metadata.get("skill") or message.payload.get("skill") or message.task)
+        return cls(
+            helper_id=str(message.agent_id or message.payload.get("helper_life") or "unknown"),
+            receiver_id=(
+                str(message.payload["receiver_id"])
+                if message.payload.get("receiver_id") is not None
+                else None
+            ),
+            task=message.task,
+            skill=skill,
+            confidence=message.confidence,
+            evidence=list(message.evidence),
+            priority=message.priority,
+        )
+
+    def to_message(self) -> AgentMessage:
+        payload = build_help_event_payload(
+            requester_life=self.receiver_id or "",
+            helper_life=self.helper_id,
+            task=self.task,
+            attempts=0,
+            metadata={"skill": self.skill, "confidence": self.confidence},
+        )
+        if self.receiver_id is not None:
+            payload["receiver_id"] = self.receiver_id
+        return AgentMessage(
+            intent=HELP_OFFERED,
+            task=self.task,
+            evidence=list(self.evidence),
+            confidence=max(0.0, min(1.0, self.confidence)),
+            priority=self.priority,
+            agent_id=self.helper_id,
+            payload=payload,
+            version=2,
+        )
 
 def _validate_payload_schema(
     payload: dict[str, Any],

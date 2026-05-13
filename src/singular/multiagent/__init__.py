@@ -5,11 +5,19 @@ from .protocol import (
     CollectiveMemory,
     FileQueueTransport,
     HelpExchangeCoordinator,
+    HelpRequest,
     HelpTransferResult,
     InMemoryQueueTransport,
+    TaskOffer,
     OrchestrationScenario,
     resolve_conflicts,
     validate_message_schema,
+)
+from .runtime import (
+    LifeTickContext,
+    MultiAgentDecision,
+    MultiAgentPolicy,
+    MultiAgentRuntime,
 )
 
 __all__ = [
@@ -17,9 +25,15 @@ __all__ = [
     "CollectiveMemory",
     "FileQueueTransport",
     "HelpExchangeCoordinator",
+    "HelpRequest",
     "HelpTransferResult",
     "InMemoryQueueTransport",
+    "TaskOffer",
     "OrchestrationScenario",
     "resolve_conflicts",
     "validate_message_schema",
+    "LifeTickContext",
+    "MultiAgentDecision",
+    "MultiAgentPolicy",
+    "MultiAgentRuntime",
 ]
