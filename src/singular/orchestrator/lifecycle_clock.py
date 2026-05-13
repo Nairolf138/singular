@@ -30,10 +30,21 @@ class PhaseBehavior:
 
 
 @dataclass(frozen=True)
+class CoevolutionParameters:
+    """Configuration for living-test co-evolution during action ticks."""
+
+    enabled: bool = False
+    robustness_weight: float = 1.0
+    max_test_candidates: int = 3
+    ttl: int = 3
+
+
+@dataclass(frozen=True)
 class LifecycleClockConfig:
     """Complete lifecycle clock config with sane defaults."""
 
     cycle: CycleParameters = field(default_factory=CycleParameters)
+    coevolution: CoevolutionParameters = field(default_factory=CoevolutionParameters)
     phases: dict[str, PhaseBehavior] = field(
         default_factory=lambda: {
             "veille": PhaseBehavior(30.0, 1.1, ("perception", "resource_scan")),
@@ -51,6 +62,9 @@ def _parse_scalar(value: str) -> Any:
         if not inner:
             return []
         return [chunk.strip().strip('"').strip("'") for chunk in inner.split(",")]
+    lowered = text.lower()
+    if lowered in {"true", "false"}:
+        return lowered == "true"
     try:
         return int(text)
     except ValueError:
@@ -92,6 +106,7 @@ def load_lifecycle_clock_config(path: Path | None = None) -> LifecycleClockConfi
 
     raw = _load_simple_yaml(selected)
     cycle_raw = raw.get("cycle", {})
+    coevolution_raw = raw.get("coevolution", {})
     phases_raw = raw.get("phases", {})
 
     cycle = CycleParameters(
@@ -106,6 +121,25 @@ def load_lifecycle_clock_config(path: Path | None = None) -> LifecycleClockConfi
         mutation_window_seconds=float(
             cycle_raw.get("mutation_window_seconds", cfg.cycle.mutation_window_seconds)
         ),
+    )
+
+    coevolution = CoevolutionParameters(
+        enabled=bool(coevolution_raw.get("enabled", cfg.coevolution.enabled))
+        if isinstance(coevolution_raw, dict)
+        else cfg.coevolution.enabled,
+        robustness_weight=float(
+            coevolution_raw.get("robustness_weight", cfg.coevolution.robustness_weight)
+        )
+        if isinstance(coevolution_raw, dict)
+        else cfg.coevolution.robustness_weight,
+        max_test_candidates=int(
+            coevolution_raw.get("max_test_candidates", cfg.coevolution.max_test_candidates)
+        )
+        if isinstance(coevolution_raw, dict)
+        else cfg.coevolution.max_test_candidates,
+        ttl=int(coevolution_raw.get("ttl", cfg.coevolution.ttl))
+        if isinstance(coevolution_raw, dict)
+        else cfg.coevolution.ttl,
     )
 
     phases: dict[str, PhaseBehavior] = {}
@@ -124,5 +158,11 @@ def load_lifecycle_clock_config(path: Path | None = None) -> LifecycleClockConfi
         raise ValueError("introspection_frequency_ticks must be > 0")
     if cycle.mutation_window_seconds <= 0:
         raise ValueError("mutation_window_seconds must be > 0")
+    if coevolution.robustness_weight < 0:
+        raise ValueError("robustness_weight must be >= 0")
+    if coevolution.max_test_candidates < 0:
+        raise ValueError("max_test_candidates must be >= 0")
+    if coevolution.ttl <= 0:
+        raise ValueError("coevolution ttl must be > 0")
 
-    return LifecycleClockConfig(cycle=cycle, phases=phases)
+    return LifecycleClockConfig(cycle=cycle, coevolution=coevolution, phases=phases)

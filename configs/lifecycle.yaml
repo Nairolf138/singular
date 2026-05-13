@@ -4,6 +4,12 @@ cycle:
   introspection_frequency_ticks: 1
   mutation_window_seconds: 0.2
 
+coevolution:
+  enabled: false
+  robustness_weight: 1.0
+  max_test_candidates: 3
+  ttl: 3
+
 phases:
   veille:
     cpu_budget_percent: 30

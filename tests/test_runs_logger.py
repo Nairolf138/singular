@@ -88,6 +88,9 @@ def test_log_test_coevolution(tmp_path: Path) -> None:
     record = json.loads(files[0].read_text(encoding="utf-8").splitlines()[0])
     assert record["event"] == "test_coevolution"
     assert record["regression_detection_rate"] == 0.5
+    assert record["tests_proposed"] == []
+    assert record["tests_retained"] == []
+    assert record["mutation_rejected_for_robustness"] is False
 
 
 def test_log_consciousness_file(tmp_path: Path) -> None:

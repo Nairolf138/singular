@@ -73,7 +73,7 @@ from .reproduction_flow import (
     decide_reproduction,
     _pick_crossover_parents,
 )
-from .coevolution_flow import MapElites, LivingTestPool, propose_test_candidates
+from .coevolution_flow import CoevolutionConfig, CoevolutionFlow, MapElites, LivingTestPool
 from .skill_genesis import create_skill
 
 # mypy: ignore-errors
@@ -684,6 +684,7 @@ def run(
     test_pool: LivingTestPool | None = None,
     robustness_weight: float = 1.0,
     max_test_candidates: int = 3,
+    test_ttl: int = 3,
     event_bus: EventBus | None = None,
     governance_policy: MutationGovernancePolicy | None = None,
     max_iterations: int | None = None,
@@ -768,8 +769,19 @@ def run(
     quarantined_skill_keys: set[str] = set()
     sleep_ticks_remaining = 0
     intrinsic_goals = IntrinsicGoals(value_weights=value_weights)
-    if coevolve_tests and test_pool is None:
-        test_pool = LivingTestPool()
+    coevolution_flow: CoevolutionFlow | None = None
+    if coevolve_tests:
+        if test_pool is None:
+            test_pool = LivingTestPool(initial_ttl=max(1, int(test_ttl)))
+        coevolution_flow = CoevolutionFlow(
+            pool=test_pool,
+            config=CoevolutionConfig(
+                enabled=True,
+                robustness_weight=robustness_weight,
+                max_test_candidates=max_test_candidates,
+                ttl=test_ttl,
+            ),
+        )
 
     with RunLogger(run_id, psyche=psyche) as logger:
         health_tracker = HealthTracker.from_state(state.health_counters)
@@ -1191,35 +1203,54 @@ def run(
                 "reason": "score_gate",
                 "corrective_action": None,
             }
-            detection_rate = 0.0
-            combined_base = base_score
-            combined_mutated = mutated_score
-            test_delta = {"added": 0, "removed": 0}
-            if coevolve_tests and test_pool is not None and not selected_org.degraded_mode:
+            if coevolution_flow is not None and not selected_org.degraded_mode:
                 can_run_coevo, coevo_state = resource_manager.apply_capability_cost("test_coevolution")
                 if not can_run_coevo:
-                    detection_rate = 0.0
                     accepted = accepted and coevo_state != CapabilityStatus.UNSTABLE
+                    logger.log_test_coevolution(
+                        skill=skill_path.stem,
+                        accepted=accepted,
+                        pool_size=len(coevolution_flow.pool.tests),
+                        added=0,
+                        removed=0,
+                        detection_rate=0.0,
+                        robustness_score=1.0,
+                        score_base=base_score,
+                        score_new=mutated_score,
+                        score_combined_base=base_score,
+                        score_combined_new=mutated_score,
+                        proposed_tests=[],
+                        retained_tests=[],
+                        rejected_tests=[],
+                        rejected_for_robustness=False,
+                    )
                 else:
-                    detection_rate = test_pool.regression_detection_rate(original, mutated)
-                    combined_mutated = mutated_score + (robustness_weight * detection_rate)
-                    combined_base = base_score
-                    accepted = combined_mutated <= combined_base
-                    if accepted:
-                        candidates = propose_test_candidates(mutated, rng, max_test_candidates)
-                        test_delta = test_pool.evolve(mutated, candidates, rng)
-                logger.log_test_coevolution(
-                    skill=skill_path.stem,
-                    accepted=accepted,
-                    pool_size=len(test_pool.tests),
-                    added=test_delta["added"],
-                    removed=test_delta["removed"],
-                    detection_rate=detection_rate,
-                    score_base=base_score,
-                    score_new=mutated_score,
-                    score_combined_base=combined_base,
-                    score_combined_new=combined_mutated,
-                )
+                    coevo_decision = coevolution_flow.decide(
+                        base_code=original,
+                        mutated_code=mutated,
+                        base_score=base_score,
+                        mutated_score=mutated_score,
+                        initially_accepted=accepted,
+                        rng=rng,
+                    )
+                    accepted = coevo_decision.accepted
+                    logger.log_test_coevolution(
+                        skill=skill_path.stem,
+                        accepted=accepted,
+                        pool_size=coevo_decision.pool_size,
+                        added=coevo_decision.tests_added,
+                        removed=coevo_decision.tests_removed,
+                        detection_rate=coevo_decision.regression_detection_rate,
+                        robustness_score=coevo_decision.robustness_score,
+                        score_base=base_score,
+                        score_new=mutated_score,
+                        score_combined_base=coevo_decision.score_combined_base,
+                        score_combined_new=coevo_decision.score_combined_new,
+                        proposed_tests=list(coevo_decision.proposed_tests),
+                        retained_tests=list(coevo_decision.retained_tests),
+                        rejected_tests=list(coevo_decision.rejected_tests),
+                        rejected_for_robustness=coevo_decision.rejected_for_robustness,
+                    )
             accepted = accepted and not mutation_failed
             org.last_score = mutated_score
             if accepted:
@@ -2036,6 +2067,7 @@ def run_tick(
     test_pool: LivingTestPool | None = None,
     robustness_weight: float = 1.0,
     max_test_candidates: int = 3,
+    test_ttl: int = 3,
     event_bus: EventBus | None = None,
     governance_policy: MutationGovernancePolicy | None = None,
     tick_budget_seconds: float = 0.2,
@@ -2059,6 +2091,7 @@ def run_tick(
         test_pool=test_pool,
         robustness_weight=robustness_weight,
         max_test_candidates=max_test_candidates,
+        test_ttl=test_ttl,
         event_bus=event_bus,
         governance_policy=governance_policy,
         max_iterations=1,
