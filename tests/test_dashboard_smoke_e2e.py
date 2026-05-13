@@ -217,6 +217,9 @@ def active_run_dashboard(
                         "objective": "stabiliser le cockpit",
                         "objective_status": "in_progress",
                         "objective_priority": "high",
+                        "duration_seconds": 1.5,
+                        "latency_ms": 120,
+                        "memory": "mutation acceptée et mémorisée",
                     }
                 ),
                 json.dumps(
@@ -232,6 +235,18 @@ def active_run_dashboard(
                         "score": 91,
                         "alive": True,
                         "accepted": True,
+                        "duration_seconds": 0.5,
+                        "latency_ms": 80,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ts": "2026-05-11T09:02:00+00:00",
+                        "run_id": "active-smoke",
+                        "life": "life-a",
+                        "event": "orchestrator.decision",
+                        "decision": "continue",
+                        "reason": "health stable and resources available",
                     }
                 ),
             ]
@@ -363,6 +378,13 @@ def test_active_tmp_run_feeds_dashboard_endpoints(
     assert cockpit["health_score"] == 84.0
     assert cockpit["accepted_mutation_rate"] == 1.0
     assert cockpit["next_action"]
+    assert cockpit["memory_metrics"]["has_memory_signal"] is True
+    assert cockpit["performance_metrics"]["avg_latency_ms"] == 100.0
+    assert cockpit["social_relations"]["alliance_edges"] >= 1
+    assert cockpit["social_relations"]["resource_exchange_events"] == 1
+    assert any(
+        item["event"] == "orchestrator.decision" for item in cockpit["major_decisions"]
+    )
     assert cockpit["vital_metrics"]["energy_resources"]["total_energy"] > 0
     assert cockpit["life_metrics_contract"]["counts"]["total_lives"] >= 2
 

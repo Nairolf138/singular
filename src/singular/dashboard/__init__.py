@@ -659,6 +659,157 @@ def create_app(
             "events": events[-10:],
         }
 
+    def _summarize_memory(records: list[dict[str, object]]) -> dict[str, object]:
+        """Build a compact memory summary for cockpit and smoke checks."""
+        memory_records = [
+            record
+            for record in records
+            if "memory" in record
+            or "memories" in record
+            or "reflection" in record
+            or str(record.get("event", "")).startswith("memory")
+        ]
+        latest_memory = None
+        for record in reversed(memory_records):
+            latest_memory = {
+                "timestamp": record.get("ts"),
+                "event": record.get("event", "memory"),
+                "summary": record.get(
+                    "summary", record.get("reflection", record.get("memory"))
+                ),
+                "life": _record_life(record),
+            }
+            break
+        causal_items = []
+        try:
+            causal_items = read_causal_timeline()
+        except Exception:
+            causal_items = []
+        causal_count = len(causal_items) if isinstance(causal_items, list) else 0
+        return {
+            "records_count": len(memory_records),
+            "causal_timeline_items": causal_count,
+            "latest_memory": latest_memory,
+            "has_memory_signal": bool(memory_records or causal_count),
+        }
+
+    def _summarize_performance(records: list[dict[str, object]]) -> dict[str, object]:
+        """Summarize runtime and score performance signals from run records."""
+        durations: list[float] = []
+        latencies_ms: list[float] = []
+        score_deltas: list[float] = []
+        accepted = 0
+        rejected = 0
+        for record in records:
+            for key in ("duration_seconds", "elapsed_seconds", "runtime_seconds"):
+                value = _as_float(record.get(key))
+                if value is not None:
+                    durations.append(value)
+                    break
+            latency = _as_float(record.get("latency_ms"))
+            if latency is not None:
+                latencies_ms.append(latency)
+            score_base = _as_float(record.get("score_base"))
+            score_new = _as_float(record.get("score_new"))
+            if score_base is not None and score_new is not None:
+                score_deltas.append(score_base - score_new)
+            accepted_value = record.get("accepted")
+            if not isinstance(accepted_value, bool):
+                accepted_value = record.get("ok")
+            if accepted_value is True:
+                accepted += 1
+            elif accepted_value is False:
+                rejected += 1
+
+        def _avg(values: list[float]) -> float | None:
+            return sum(values) / len(values) if values else None
+
+        return {
+            "records_count": len(records),
+            "mutation_count": sum(1 for record in records if _is_mutation_record(record)),
+            "accepted_count": accepted,
+            "rejected_count": rejected,
+            "avg_duration_seconds": _avg(durations),
+            "avg_latency_ms": _avg(latencies_ms),
+            "avg_score_delta": _avg(score_deltas),
+        }
+
+    def _summarize_social_relations(records: list[dict[str, object]]) -> dict[str, object]:
+        """Expose registry social links and recent social/resource interactions."""
+        registry = load_registry()
+        raw_lives = registry.get("lives")
+        lives = raw_lives if isinstance(raw_lives, dict) else {}
+        ally_edges: set[tuple[str, str]] = set()
+        rival_edges: set[tuple[str, str]] = set()
+        for slug, meta in lives.items():
+            if not isinstance(slug, str):
+                continue
+            allies = life_meta_get(meta, "allies", ())
+            rivals = life_meta_get(meta, "rivals", ())
+            if isinstance(allies, (list, tuple, set)):
+                for ally in allies:
+                    if isinstance(ally, str) and ally:
+                        ally_edges.add(tuple(sorted((slug, ally))))
+            if isinstance(rivals, (list, tuple, set)):
+                for rival in rivals:
+                    if isinstance(rival, str) and rival:
+                        rival_edges.add(tuple(sorted((slug, rival))))
+        social_events = [
+            record
+            for record in records
+            if record.get("event") == "interaction" or record.get("interaction") is not None
+        ]
+        resource_events = [
+            record
+            for record in social_events
+            if str(record.get("interaction", "")).startswith("resource")
+        ]
+        return {
+            "alliance_edges": len(ally_edges),
+            "rivalry_edges": len(rival_edges),
+            "interaction_events": len(social_events),
+            "resource_exchange_events": len(resource_events),
+            "recent_interactions": [
+                {
+                    "timestamp": item.get("ts"),
+                    "life": _record_life(item),
+                    "organism": item.get("organism"),
+                    "interaction": item.get("interaction"),
+                }
+                for item in social_events[-5:]
+            ],
+        }
+
+    def _summarize_major_decisions(records: list[dict[str, object]]) -> list[dict[str, object]]:
+        """Return recent high-level orchestration and mutation decisions."""
+        decisions: list[dict[str, object]] = []
+        for record in records:
+            event = _event_type(record) or str(record.get("event", ""))
+            if not (
+                event.startswith("orchestrator")
+                or event
+                in {"mutation", "refuse", "delay", "death", "sandbox_violation", "mutation_halted"}
+            ):
+                continue
+            accepted = record.get("accepted")
+            if not isinstance(accepted, bool):
+                accepted = record.get("ok")
+            decisions.append(
+                {
+                    "timestamp": record.get("ts"),
+                    "event": event,
+                    "life": _record_life(record),
+                    "decision": (
+                        "accepted"
+                        if accepted is True
+                        else "rejected" if accepted is False else record.get("decision")
+                    ),
+                    "reason": record.get("decision_reason", record.get("reason")),
+                    "operator": record.get("operator", record.get("op")),
+                }
+            )
+        return decisions[-10:]
+
     def _summarize_cockpit(current_life_only: bool = False) -> dict[str, object]:
         latest = _latest_run_file(current_life_only=current_life_only)
         if latest is None:
@@ -678,6 +829,30 @@ def create_app(
                 ],
                 "global_status": "unknown",
                 "autonomy_metrics": {},
+                "behavioral_regulation_metrics": {},
+                "memory_metrics": {
+                    "records_count": 0,
+                    "causal_timeline_items": 0,
+                    "latest_memory": None,
+                    "has_memory_signal": False,
+                },
+                "performance_metrics": {
+                    "records_count": 0,
+                    "mutation_count": 0,
+                    "accepted_count": 0,
+                    "rejected_count": 0,
+                    "avg_duration_seconds": None,
+                    "avg_latency_ms": None,
+                    "avg_score_delta": None,
+                },
+                "social_relations": {
+                    "alliance_edges": 0,
+                    "rivalry_edges": 0,
+                    "interaction_events": 0,
+                    "resource_exchange_events": 0,
+                    "recent_interactions": [],
+                },
+                "major_decisions": [],
                 "vital_metrics": {
                     "circadian_cycle": {"phase": "indéterminée", "hour_utc": None},
                     "active_objectives": {"count": 0, "items": []},
@@ -798,6 +973,10 @@ def create_app(
         autonomy_metrics = compute_autonomy_metrics(records)
         major_decisions = [e for e in records if str(e.get("event", "")).startswith("orchestrator") or str(e.get("event", ""))=="mutation"]
         behavioral_metrics = compute_behavioral_regulation_metrics(records, decision_events=major_decisions)
+        memory_metrics = _summarize_memory(records)
+        performance_metrics = _summarize_performance(records)
+        social_relations = _summarize_social_relations(records)
+        major_decision_items = _summarize_major_decisions(records)
         ecosystem = _compute_ecosystem(current_life_only=current_life_only)
         summary = ecosystem.get("summary", {}) if isinstance(ecosystem, dict) else {}
         metrics_contract = (
@@ -895,6 +1074,10 @@ def create_app(
             "global_status": global_status,
             "autonomy_metrics": autonomy_metrics,
             "behavioral_regulation_metrics": behavioral_metrics,
+            "memory_metrics": memory_metrics,
+            "performance_metrics": performance_metrics,
+            "social_relations": social_relations,
+            "major_decisions": major_decision_items,
             "vital_metrics": {
                 "circadian_cycle": {"phase": circadian_phase, "hour_utc": hour_utc},
                 "active_objectives": {

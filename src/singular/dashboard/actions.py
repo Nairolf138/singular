@@ -1,3 +1,9 @@
+"""Dashboard action orchestration.
+
+This module validates and dispatches mutative dashboard actions, captures their
+stdout, and returns a stable JSON payload for the FastAPI routes.
+"""
+
 from __future__ import annotations
 
 import io
@@ -17,6 +23,8 @@ from singular.dashboard.repositories.run_records import resolve_current_life_hom
 
 @dataclass(slots=True)
 class ActionResult:
+    """Normalized result returned by every dashboard action."""
+
     ok: bool
     action: str
     data: dict[str, Any]
@@ -24,6 +32,7 @@ class ActionResult:
     error: str | None = None
 
     def to_payload(self) -> dict[str, Any]:
+        """Serialize the result using the stable dashboard action schema."""
         return {
             "ok": self.ok,
             "action": self.action,
@@ -34,7 +43,11 @@ class ActionResult:
 
 
 class DashboardActionService:
-    """Execute controlled dashboard actions with strict validation."""
+    """Execute controlled dashboard actions with strict validation.
+
+    Handlers validate parameters, lazy-import domain operations, capture console
+    output, and attach refreshed vital/host context after execution.
+    """
 
     def __init__(self, *, root: Path | None = None, home: Path | None = None) -> None:
         self.root = Path(root) if root is not None else get_registry_root()
@@ -44,6 +57,7 @@ class DashboardActionService:
             self.home = Path(os.environ.get("SINGULAR_HOME", self.root))
 
     def _context_payload(self) -> dict[str, Any]:
+        """Return runtime context displayed next to action results."""
         current_home = resolve_current_life_home(load_registry, self.home)
         runs_dir = current_home / "runs"
         vital_metrics = self._consolidated_vital_metrics(runs_dir=runs_dir)
@@ -58,6 +72,7 @@ class DashboardActionService:
         }
 
     def _read_run_records(self, *, runs_dir: Path) -> list[dict[str, Any]]:
+        """Read valid JSON objects from run logs, skipping corrupt lines."""
         records: list[dict[str, Any]] = []
         if not runs_dir.exists():
             return records
@@ -77,6 +92,7 @@ class DashboardActionService:
         return records
 
     def _consolidated_vital_metrics(self, *, runs_dir: Path) -> dict[str, Any]:
+        """Summarize health, mutation acceptance, circadian phase, and risk."""
         if not runs_dir.exists():
             return {
                 "health_score": None,
@@ -289,6 +305,7 @@ class DashboardActionService:
         }
 
     def validate_token(self, token: str | None) -> None:
+        """Reject writes unless a token or local-dev override is configured."""
         expected = os.environ.get("SINGULAR_DASHBOARD_ACTION_TOKEN")
         allow_unauthenticated = (
             os.environ.get("SINGULAR_DASHBOARD_ALLOW_UNAUTHENTICATED_ACTIONS") == "1"
@@ -306,6 +323,7 @@ class DashboardActionService:
         )
 
     def execute(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Dispatch an action name and always return JSON-safe data."""
         try:
             if action == "birth":
                 result = self._birth(params)
