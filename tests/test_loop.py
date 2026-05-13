@@ -13,7 +13,8 @@ sys.path.append(str(root_dir))
 sys.path.append(str(root_dir / "src"))
 
 import singular.life.loop as life_loop  # noqa: E402
-from singular.life.loop import EcosystemRules, run, load_checkpoint  # noqa: E402
+from singular.life.loop import EcosystemRules, run  # noqa: E402
+from singular.life.checkpointing import load_checkpoint  # noqa: E402
 from singular.life.health import detect_health_state  # noqa: E402
 from singular.life.test_coevolution import LivingTestPool, TestCandidate  # noqa: E402
 from singular.resource_manager import ResourceManager  # noqa: E402
