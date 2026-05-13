@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from singular.psyche import Psyche, Mood
+import pytest
+
+from singular.psyche import Psyche, Mood, choose_action_from_psyche
 from singular.resource_manager import ResourceManager
 from singular.motivation import GoalPolicy, Objective
 
@@ -178,3 +180,63 @@ def test_social_state_bounds_are_stable() -> None:
         assert 0.0 <= psyche.cooperation_score(target) <= 1.0
         assert 0.0 <= psyche.reproduction_arbitration_score(0.9, target) <= 1.0
         assert 0.0 <= psyche.relational_risk_tolerance(target) <= 1.0
+
+
+@pytest.mark.parametrize(
+    ("mood", "energy", "signals", "social_states", "expected_action", "reason_text"),
+    [
+        (Mood.FATIGUE, 12.0, {"resource_energy": 12.0}, {}, "rest", "fatigue_or_low_energy"),
+        (Mood.CURIOUS, 80.0, {"opportunity": 0.9}, {}, "move", "curiosity"),
+        (Mood.ANGER, 70.0, {"competition_pressure": 0.8}, {}, "compete", "anger"),
+        (
+            Mood.LONELY,
+            65.0,
+            {"competition_pressure": 0.1},
+            {"peer": {"gratitude": 0.1, "loyalty": 0.1, "resentment": 0.8}},
+            "cooperate",
+            "loneliness",
+        ),
+    ],
+)
+def test_choose_action_from_psyche_parametrized_rules(
+    mood: Mood,
+    energy: float,
+    signals: dict[str, float],
+    social_states: dict[str, dict[str, float]],
+    expected_action: str,
+    reason_text: str,
+) -> None:
+    psyche = Psyche(energy=energy, social_states=social_states)
+    psyche.feel(mood)
+
+    decision = choose_action_from_psyche(psyche, signals)
+
+    assert decision.action == expected_action
+    assert reason_text in decision.reason
+    assert decision.scores[expected_action] == max(decision.scores.values())
+
+
+def test_choose_action_from_psyche_uses_objectives_and_environment() -> None:
+    psyche = Psyche(
+        energy=90.0,
+        objectives={
+            "resources": Objective(
+                "resources",
+                weight=1.0,
+                policy=GoalPolicy(
+                    besoin=1.0,
+                    priorite=0.2,
+                    urgence=0.1,
+                    alignement_valeurs=0.4,
+                ),
+            )
+        },
+    )
+
+    decision = choose_action_from_psyche(
+        psyche,
+        {"rarity_pressure": 0.95, "resource_energy": 90.0},
+    )
+
+    assert decision.action == "forage"
+    assert "scarcity" in decision.reason
