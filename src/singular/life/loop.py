@@ -38,6 +38,8 @@ from singular.runs.explain import summarize_mutation
 from singular.runs.generations import record_generation
 from singular.organisms.spawn import mutation_absurde
 from singular.perception import capture_signals, get_temperature
+# Graine is the external proposal generator for the life loop: it does not
+# write files directly here, but supplies validated patch/operator intentions.
 from graine.evolver.generate import propose_mutations
 from singular.environment import artifacts as env_artifacts
 from singular.environment import files as env_files
@@ -100,6 +102,50 @@ SKILL_SANDBOX_QUARANTINE_HOURS = int(
 
 # Compatibility name retained for tests and downstream callers.
 ScoreCodeResult = SandboxScore
+
+
+def _graine_zones_for_skill(
+    skill_path: Path, operator_names: Iterable[str]
+) -> list[dict[str, object]]:
+    """Build a minimal Graine zone for the currently selected skill.
+
+    The life loop owns sandboxing, scoring, and persistence. Graine owns the
+    proposal contract: target file + allowed operator names + static limits.
+    """
+
+    return [
+        {
+            "file": str(skill_path),
+            "function": skill_path.stem,
+            "purity": True,
+            "max_cyclomatic": 10,
+            "operators": list(operator_names),
+        }
+    ]
+
+
+def _graine_allowed_operator_names(
+    skill_path: Path, operator_names: Iterable[str]
+) -> set[str]:
+    """Return operator names accepted by Graine for ``skill_path``.
+
+    An empty set means Graine produced no applicable proposal, so callers keep
+    the historical local-operator behaviour for compatibility.
+    """
+
+    try:
+        proposals = propose_mutations(_graine_zones_for_skill(skill_path, operator_names))
+    except Exception as exc:  # pragma: no cover - defensive integration boundary
+        log.warning("graine proposal generation failed for %s: %s", skill_path, exc)
+        return set()
+
+    allowed: set[str] = set()
+    for proposal in proposals:
+        for operation in getattr(proposal, "ops", []):
+            name = getattr(operation, "name", None)
+            if isinstance(name, str):
+                allowed.add(name)
+    return allowed
 
 
 @dataclass
@@ -712,6 +758,8 @@ def run(
         ),
     )
     for _ in range(initial_freq):
+        # Warm up Graine with an empty zone list; real per-skill proposals are
+        # requested later, immediately before operator selection.
         propose_mutations([])
     mortality = mortality or DeathMonitor()
     seen_diffs: set[str] = set()
@@ -929,8 +977,20 @@ def run(
                 float(state.health_counters.get("sandbox_failures", 0))
                 / max(float(state.health_counters.get("total", 0)), 1.0)
             )
-            max_count = max((stats[name]["count"] for name in operators), default=0.0)
-            candidate_names = list(operators.keys())
+            graine_allowed_operators = _graine_allowed_operator_names(
+                skill_path, operators.keys()
+            )
+            eligible_operators = (
+                {
+                    name: operators[name]
+                    for name in operators
+                    if name in graine_allowed_operators
+                }
+                if graine_allowed_operators
+                else operators
+            )
+            max_count = max((stats[name]["count"] for name in eligible_operators), default=0.0)
+            candidate_names = list(eligible_operators.keys())
             rng.shuffle(candidate_names)
             candidate_names = candidate_names[: max(1, min(5, len(candidate_names)))]
             hypotheses: list[ActionHypothesis] = []
@@ -983,13 +1043,13 @@ def run(
                 ),
             )
             score_by_index = {index: score for index, _, score in reflection.alternative_scores}
-            belief_bias = belief_store.operator_preference_bias(operators.keys())
+            belief_bias = belief_store.operator_preference_bias(eligible_operators.keys())
             combined_bias = intrinsic_goals.influence_operator_scores(
                 stats,
                 skill_reputation=logger.skill_reputation(),
                 planner_narrative_signals=planner_narrative_signals,
             )
-            psyche_bias = getattr(psyche, "operator_bias", lambda names: {})(list(operators.keys()))
+            psyche_bias = getattr(psyche, "operator_bias", lambda names: {})(list(eligible_operators.keys()))
             for operator_name, extra_bias in belief_bias.items():
                 combined_bias[operator_name] = combined_bias.get(operator_name, 0.0) + extra_bias
             for operator_name, extra_bias in psyche_bias.items():
@@ -1016,11 +1076,11 @@ def run(
                     environment_signal=predicted_failure,
                     mood=mood_label,
                     outcome_hint="success",
-                    candidates=operators.keys(),
+                    candidates=eligible_operators.keys(),
                 )
             if policy == "analyze":
                 op_name = select_operator(
-                    operators,
+                    eligible_operators,
                     stats,
                     policy,
                     rng,
@@ -1030,17 +1090,23 @@ def run(
                 reflection.action is None
                 and meta_recommendation is not None
                 and meta_recommendation.confidence >= 0.55
+                and meta_recommendation.operator in eligible_operators
             ):
                 op_name = meta_recommendation.operator
             else:
-                op_name = reflection.action or select_operator(
-                    operators,
+                reflected_action = (
+                    reflection.action if reflection.action in eligible_operators else None
+                )
+                op_name = reflected_action or select_operator(
+                    eligible_operators,
                     stats,
                     policy,
                     rng,
                     objective_bias=combined_bias,
                 )
-            mutated = apply_mutation(original, operators[op_name], rng)
+            # Graine constrains the operator family. Singular still materializes
+            # the concrete source mutation, then sends it to sandbox/governance.
+            mutated = apply_mutation(original, eligible_operators[op_name], rng)
             org = world.organisms[org_name]
 
             t0 = time.perf_counter()
