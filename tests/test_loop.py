@@ -1402,7 +1402,7 @@ def test_coevolution_rejects_regression_on_combined_score(tmp_path: Path, monkey
         checkpoint,
         budget_seconds=0.05,
         rng=random.Random(0),
-        operators={"inc": _inc_operator},
+        operators={"dec": _dec_operator},
         coevolve_tests=True,
         test_pool=pool,
         robustness_weight=2.0,
@@ -1436,7 +1436,9 @@ def test_coevolution_logs_decisions(tmp_path: Path, monkeypatch):
 
     log_file = next((tmp_path / "logs").glob("loop-*.jsonl"))
     records = [json.loads(line) for line in log_file.read_text().splitlines()]
-    assert any(rec.get("event") == "test_coevolution" for rec in records)
+    coevo = next(rec for rec in records if rec.get("event") == "test_coevolution")
+    assert coevo["tests_proposed"]
+    assert coevo["tests_retained"]
 
 
 def test_governance_blocks_mutation_write(tmp_path: Path):
@@ -1458,3 +1460,39 @@ def test_governance_blocks_mutation_write(tmp_path: Path):
     )
 
     assert _read_result(skill) == 1
+
+
+def test_run_tick_with_coevolution_logs_candidates_and_rejections(tmp_path: Path, monkeypatch):
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    skill = skills_dir / "foo.py"
+    skill.write_text("result = 1", encoding="utf-8")
+    checkpoint = tmp_path / "ckpt.json"
+
+    from singular.runs.logger import RunLogger as RL
+
+    monkeypatch.setattr(
+        life_loop, "RunLogger", functools.partial(RL, root=tmp_path / "logs")
+    )
+
+    pool = LivingTestPool(tests=[TestCandidate("result == 1")], ttl={"result == 1": 2})
+    life_loop.run_tick(
+        skills_dir,
+        checkpoint,
+        rng=random.Random(0),
+        operators={"dec": _dec_operator},
+        coevolve_tests=True,
+        test_pool=pool,
+        robustness_weight=2.0,
+        max_test_candidates=2,
+        test_ttl=2,
+    )
+
+    assert skill.read_text(encoding="utf-8") == "result = 1"
+    log_file = next((tmp_path / "logs").glob("loop-*.jsonl"))
+    records = [json.loads(line) for line in log_file.read_text().splitlines()]
+    coevo = next(rec for rec in records if rec.get("event") == "test_coevolution")
+    assert coevo["mutation_rejected_for_robustness"] is True
+    assert coevo["tests_proposed"] == []
+    assert coevo["tests_retained"] == []
+    assert coevo["regression_detection_rate"] == 1.0

@@ -21,6 +21,7 @@ from singular.events import (
 )
 from singular.goals import IntrinsicGoals
 from singular.governance.policy import MutationGovernancePolicy
+from singular.life.coevolution_flow import LivingTestPool
 from singular.life.loop import WorldState, run_tick
 from singular.memory import (
     _atomic_write_text,
@@ -93,6 +94,10 @@ class OrchestratorConfig:
     tick_budget_seconds: float = 0.2
     introspection_frequency_ticks: int = 1
     mutation_window_seconds: float = 0.2
+    coevolution_enabled: bool = False
+    coevolution_robustness_weight: float = 1.0
+    coevolution_max_test_candidates: int = 3
+    coevolution_ttl: int = 3
     phase_behaviors: dict[str, dict[str, Any]] = field(default_factory=dict)
     dry_run: bool = False
     safe_mode: bool = False
@@ -132,6 +137,7 @@ class OrchestratorService:
         )
         self.governance_policy = MutationGovernancePolicy(safe_mode=self.config.safe_mode)
         self.world_state = WorldState()
+        self.test_pool = LivingTestPool(initial_ttl=max(1, int(self.config.coevolution_ttl)))
         self.routines = RoutinesOrchestrator(state_path=self.mem_dir / "routines_state.json")
         self.goals = IntrinsicGoals(path=self.mem_dir / "goals.json")
         self._running = False
@@ -488,6 +494,11 @@ class OrchestratorService:
                     tick_budget_seconds=tick_budget,
                     governance_policy=self.governance_policy,
                     world=self.world_state,
+                    coevolve_tests=self.config.coevolution_enabled,
+                    test_pool=self.test_pool,
+                    robustness_weight=self.config.coevolution_robustness_weight,
+                    max_test_candidates=self.config.coevolution_max_test_candidates,
+                    test_ttl=self.config.coevolution_ttl,
                 )
             host_metrics = self._latest_signals.get("host_metrics", {})
             world_health = self._latest_signals.get("world.global_health.score")
@@ -861,6 +872,10 @@ def run_orchestrator_daemon(
             tick_budget_seconds=resolved_tick_budget,
             introspection_frequency_ticks=lifecycle_clock.cycle.introspection_frequency_ticks,
             mutation_window_seconds=lifecycle_clock.cycle.mutation_window_seconds,
+            coevolution_enabled=lifecycle_clock.coevolution.enabled,
+            coevolution_robustness_weight=lifecycle_clock.coevolution.robustness_weight,
+            coevolution_max_test_candidates=lifecycle_clock.coevolution.max_test_candidates,
+            coevolution_ttl=lifecycle_clock.coevolution.ttl,
             phase_behaviors={
                 phase: {
                     "cpu_budget_percent": behavior.cpu_budget_percent,

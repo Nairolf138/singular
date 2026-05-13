@@ -57,3 +57,24 @@ cycle:
         assert "introspection_frequency_ticks" in str(err)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_load_lifecycle_clock_parses_coevolution_values(tmp_path: Path) -> None:
+    file_path = tmp_path / "lifecycle.yaml"
+    file_path.write_text(
+        """
+coevolution:
+  enabled: true
+  robustness_weight: 2.5
+  max_test_candidates: 7
+  ttl: 5
+""".strip(),
+        encoding="utf-8",
+    )
+
+    cfg = load_lifecycle_clock_config(file_path)
+
+    assert cfg.coevolution.enabled is True
+    assert cfg.coevolution.robustness_weight == 2.5
+    assert cfg.coevolution.max_test_candidates == 7
+    assert cfg.coevolution.ttl == 5

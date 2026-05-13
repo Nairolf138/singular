@@ -448,6 +448,11 @@ class RunLogger:
         score_new: float,
         score_combined_base: float,
         score_combined_new: float,
+        robustness_score: float | None = None,
+        proposed_tests: list[str] | None = None,
+        retained_tests: list[str] | None = None,
+        rejected_tests: list[str] | None = None,
+        rejected_for_robustness: bool = False,
     ) -> None:
         """Record co-evolution decisions for the living test pool."""
 
@@ -464,6 +469,11 @@ class RunLogger:
             "score_new": score_new,
             "score_combined_base": score_combined_base,
             "score_combined_new": score_combined_new,
+            "robustness_score": robustness_score,
+            "tests_proposed": proposed_tests or [],
+            "tests_retained": retained_tests or [],
+            "tests_rejected": rejected_tests or [],
+            "mutation_rejected_for_robustness": rejected_for_robustness,
         }
         self._write_record(record)
         self._write_event("test_coevolution", record, record["ts"])
