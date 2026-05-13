@@ -42,6 +42,12 @@ singular report --format plain
 singular dashboard
 ```
 
+## 📚 Tutoriels et gouvernance
+
+- [Tutoriel FR — créer une vie, ajouter une compétence, lancer un tick et lire les logs](docs/tutorial_create_life.fr.md)
+- [Tutorial EN — create a life, add a skill, run a tick and read logs](docs/tutorial_create_life.en.md)
+- [Guide de personnalisation de la gouvernance `policy.yaml`](docs/policy_customization.md)
+
 ## 🧭 Guide d’utilisation clair (pas à pas)
 
 Si vous débutez, suivez **exactement** ces étapes :
