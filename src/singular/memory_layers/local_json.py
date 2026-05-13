@@ -4,7 +4,9 @@ from collections import Counter
 from pathlib import Path
 import json
 import math
+import os
 import re
+import tempfile
 
 from .base import MemoryBackend, MemoryRecord
 
@@ -31,7 +33,12 @@ class LocalJsonMemoryBackend(MemoryBackend):
                 line = line.strip()
                 if not line:
                     continue
-                payload = json.loads(line)
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(payload, dict):
+                    continue
                 records.append(
                     MemoryRecord(
                         id=str(payload.get("id", "")),
@@ -44,14 +51,26 @@ class LocalJsonMemoryBackend(MemoryBackend):
     def _write_layer(self, layer: str, records: list[MemoryRecord]) -> None:
         path = self._layer_path(layer)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as handle:
-            for rec in records:
-                handle.write(
-                    json.dumps(
-                        {"id": rec.id, "text": rec.text, "metadata": rec.metadata}
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
+        )
+        tmp_path = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                for rec in records:
+                    handle.write(
+                        json.dumps(
+                            {"id": rec.id, "text": rec.text, "metadata": rec.metadata},
+                            ensure_ascii=False,
+                        )
+                        + "\n"
                     )
-                    + "\n"
-                )
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_path, path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
 
     def put(self, layer: str, record: MemoryRecord) -> None:
         records = [r for r in self._read_layer(layer) if r.id != record.id]
