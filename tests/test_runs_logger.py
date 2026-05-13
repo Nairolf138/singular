@@ -178,3 +178,27 @@ def test_run_logger_aggregates_skill_reputation_from_usage_metrics(tmp_path: Pat
     assert 0.0 <= stats["success_rate"] <= 1.0
     assert stats["mean_cost"] > 0.0
     assert stats["recent_failures"] >= 1
+
+
+def test_log_phase_metrics(tmp_path: Path) -> None:
+    logger = RunLogger("profile", root=tmp_path)
+    logger.log_phase_metrics(
+        iteration=3,
+        phases={"sandbox_scoring": {"calls": 2, "total_ms": 10.0}},
+        total_ms=10.0,
+        slowest_phase="sandbox_scoring",
+        cache_candidates=[{"phase": "sandbox_scoring", "reason": "unchanged code"}],
+        async_distribution_note="measure first",
+    )
+    logger.close()
+
+    files = list(tmp_path.glob("profile-*.jsonl"))
+    assert len(files) == 1
+    record = json.loads(files[0].read_text(encoding="utf-8").splitlines()[0])
+    assert record["event"] == "life_loop_phase_metrics"
+    assert record["iteration"] == 3
+    assert record["phase_metrics"]["slowest_phase"] == "sandbox_scoring"
+    assert record["phase_metrics"]["cache_candidates"][0]["phase"] == "sandbox_scoring"
+
+    event = json.loads((tmp_path / "profile" / "events.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert event["event_type"] == "life_loop_phase_metrics"

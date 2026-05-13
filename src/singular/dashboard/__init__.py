@@ -698,8 +698,34 @@ def create_app(
         durations: list[float] = []
         latencies_ms: list[float] = []
         score_deltas: list[float] = []
+        phase_totals: dict[str, float] = {}
+        phase_calls: dict[str, int] = {}
+        phase_cache_hits: dict[str, int] = {}
+        phase_cache_misses: dict[str, int] = {}
+        phase_records = 0
+        latest_phase_metrics: dict[str, object] | None = None
         accepted = 0
         rejected = 0
+        for record in records:
+            phase_metrics = record.get("phase_metrics")
+            if isinstance(phase_metrics, dict):
+                latest_phase_metrics = phase_metrics
+                phase_records += 1
+                phases = phase_metrics.get("phases")
+                if isinstance(phases, dict):
+                    for phase_name, raw_stats in phases.items():
+                        if not isinstance(raw_stats, dict):
+                            continue
+                        name = str(phase_name)
+                        total_ms = _as_float(raw_stats.get("total_ms")) or 0.0
+                        calls = int(_as_float(raw_stats.get("calls")) or 0)
+                        phase_totals[name] = phase_totals.get(name, 0.0) + total_ms
+                        phase_calls[name] = phase_calls.get(name, 0) + calls
+                        phase_cache_hits[name] = phase_cache_hits.get(name, 0) + int(_as_float(raw_stats.get("cache_hits")) or 0)
+                        phase_cache_misses[name] = phase_cache_misses.get(name, 0) + int(_as_float(raw_stats.get("cache_misses")) or 0)
+                total_ms = _as_float(phase_metrics.get("total_ms"))
+                if total_ms is not None:
+                    durations.append(total_ms / 1000.0)
         for record in records:
             for key in ("duration_seconds", "elapsed_seconds", "runtime_seconds"):
                 value = _as_float(record.get(key))
@@ -724,6 +750,21 @@ def create_app(
         def _avg(values: list[float]) -> float | None:
             return sum(values) / len(values) if values else None
 
+        phase_summary = {
+            name: {
+                "total_ms": round(total, 3),
+                "avg_ms": round(total / phase_calls[name], 3) if phase_calls.get(name) else 0.0,
+                "calls": phase_calls.get(name, 0),
+                "cache_hits": phase_cache_hits.get(name, 0),
+                "cache_misses": phase_cache_misses.get(name, 0),
+            }
+            for name, total in sorted(phase_totals.items(), key=lambda item: item[1], reverse=True)
+        }
+        slowest_phase = next(iter(phase_summary), None)
+        cache_candidates = []
+        if isinstance(latest_phase_metrics, dict) and isinstance(latest_phase_metrics.get("cache_candidates"), list):
+            cache_candidates = latest_phase_metrics.get("cache_candidates", [])
+
         return {
             "records_count": len(records),
             "mutation_count": sum(1 for record in records if _is_mutation_record(record)),
@@ -732,6 +773,15 @@ def create_app(
             "avg_duration_seconds": _avg(durations),
             "avg_latency_ms": _avg(latencies_ms),
             "avg_score_delta": _avg(score_deltas),
+            "phase_metrics_records": phase_records,
+            "phase_metrics": phase_summary,
+            "slowest_phase": slowest_phase,
+            "cache_candidates": cache_candidates,
+            "async_distribution_note": (
+                latest_phase_metrics.get("async_distribution_note")
+                if isinstance(latest_phase_metrics, dict)
+                else None
+            ),
         }
 
     def _summarize_social_relations(records: list[dict[str, object]]) -> dict[str, object]:
@@ -844,6 +894,11 @@ def create_app(
                     "avg_duration_seconds": None,
                     "avg_latency_ms": None,
                     "avg_score_delta": None,
+                    "phase_metrics_records": 0,
+                    "phase_metrics": {},
+                    "slowest_phase": None,
+                    "cache_candidates": [],
+                    "async_distribution_note": None,
                 },
                 "social_relations": {
                     "alliance_edges": 0,
