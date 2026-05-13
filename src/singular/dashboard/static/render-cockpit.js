@@ -421,7 +421,7 @@ export const loadEco=()=>Promise.all([fetchJson(withScope('/ecosystem')),fetchSh
 });
 
 export const loadQuests=()=>Promise.all([
-  fetchJson('/api/dashboard/work-items'),
+  fetchJson(withScope('/api/dashboard/work-items')),
   fetchSharedDashboardContext(),
   fetchSharedLivesComparison(),
 ]).then(([data,context,comparison])=>{

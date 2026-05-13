@@ -345,6 +345,7 @@ const bindCommonHandlers=()=>{
     scopeToggle.onchange=e=>{
       scopeState.currentLifeOnly=Boolean(e.target.checked);
       loadCockpit();
+      loadQuests();
       loadLivesBoard();
       loadTimeline();
       loadReflections();
