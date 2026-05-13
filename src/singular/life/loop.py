@@ -55,6 +55,7 @@ from singular.life.metabolism.rewards import RewardContribution, apply_rewards
 from singular.lives import load_registry, set_life_status
 from singular.life.effectors import perform_action
 from singular.life.world_state import PersistentWorldState
+from singular.social.graph import SocialGraph
 from singular.multiagent.runtime import LifeTickContext, MultiAgentRuntime
 from singular.life.ecosystem import ARCHETYPES, EcosystemRulesConfig, compute_population_metrics, draw_global_event
 
@@ -76,6 +77,7 @@ from .reproduction_flow import (
 )
 from .coevolution_flow import CoevolutionConfig, CoevolutionFlow, MapElites, LivingTestPool
 from .skill_genesis import create_skill
+from .social_decision import decide_social_actions
 
 # mypy: ignore-errors
 
@@ -692,6 +694,7 @@ def run(
     max_iterations: int | None = None,
     ecosystem_rules: EcosystemRules | None = None,
     ecosystem_mode: str = "production",
+    social_graph: SocialGraph | None = None,
 ) -> Checkpoint:
     """Run the evolutionary loop for at most ``budget_seconds`` seconds.
 
@@ -750,6 +753,7 @@ def run(
     event_bus = event_bus or get_global_event_bus()
     value_weights = load_value_weights()
     governance_policy = governance_policy or MutationGovernancePolicy(value_weights=value_weights)
+    social_graph = social_graph or SocialGraph()
     register_memory_event_handlers(event_bus)
     start = time.time()
     last_post = 0.0
@@ -925,6 +929,26 @@ def run(
                     ),
                     alive=True,
                 )
+                for message in multiagent_decision.emitted:
+                    receiver_id = message.payload.get("receiver_id")
+                    if (
+                        message.intent == "help.refused"
+                        and isinstance(receiver_id, str)
+                        and receiver_id != org_name
+                        and message.payload.get("reason") == "governance_blocked"
+                    ):
+                        relation = social_graph.update_relation(
+                            org_name, receiver_id, "sabotage_refused"
+                        )
+                        logger.log_interaction(
+                            "social_relation_update",
+                            organism=org_name,
+                            peer=receiver_id,
+                            social_event="sabotage_refused",
+                            relation=relation,
+                            source="multiagent.help_refused",
+                            alive=True,
+                        )
                 if not multiagent_decision.mutation_allowed:
                     tick_count += 1
                     continue
@@ -1473,24 +1497,52 @@ def run(
                 16,
             )
             arbitration_rng = random.Random(arbitration_seed)
-            if other_names and arbitration_rng.random() < max(
+            social_decisions = decide_social_actions(
+                org_name, other_names, social_graph
+            )
+            social_decision_by_peer = {
+                decision.peer: decision for decision in social_decisions
+            }
+            help_candidates = [
+                decision.peer for decision in social_decisions if decision.action == "help"
+            ]
+            if help_candidates and arbitration_rng.random() < max(
                 ecosystem_rules.cooperation_probability, 0.0
             ):
-                cooperation_partners.append(arbitration_rng.choice(other_names))
+                cooperation_partners.append(arbitration_rng.choice(help_candidates))
+            elif other_names and arbitration_rng.random() < max(
+                ecosystem_rules.cooperation_probability, 0.0
+            ):
+                neutral_candidates = [
+                    decision.peer
+                    for decision in social_decisions
+                    if decision.action == "neutral"
+                ]
+                if neutral_candidates:
+                    cooperation_partners.append(arbitration_rng.choice(neutral_candidates))
             competitor_intents: list[CompetitorIntent] = []
             for other_name in other_names:
-                if other_name in cooperation_partners:
+                social_decision = social_decision_by_peer.get(other_name)
+                if other_name in cooperation_partners or (
+                    social_decision is not None and social_decision.action == "avoid"
+                ):
                     continue
+                rivalry_boost = (
+                    2
+                    if social_decision is not None
+                    and social_decision.action == "compete"
+                    else 0
+                )
                 other_priority = int(
                     max(world.reputation.get(other_name), 0.0) * 10
-                ) + arbitration_rng.randint(0, 2)
+                ) + arbitration_rng.randint(0, 2) + rivalry_boost
                 competitor_intents.append(
                     CompetitorIntent(
                         life_id=other_name,
                         priority=other_priority,
                         bid=arbitration_rng.uniform(
                             0.0, ecosystem_rules.competition_bid_ceiling
-                        ),
+                        ) + float(rivalry_boost),
                     )
                 )
             action_resolution = world.world_resources.consume_for_action(
@@ -1530,6 +1582,7 @@ def run(
                     org.resources - (competition_unit * 0.2) - action_resolution.rivalry_penalty,
                 )
 
+            social_relation_updates: list[dict[str, object]] = []
             if cooperation_partners:
                 world_effects.append(
                     sim_world.map_action_type_to_effect(
@@ -1537,9 +1590,26 @@ def run(
                     )
                 )
                 for partner in cooperation_partners:
-                    world.reputation.update(partner, "share")
-                world.reputation.update(org_name, "share")
-                org.energy += action_resolution.relation_bonus
+                    social_event = (
+                        "successful_assistance"
+                        if action_resolution.granted
+                        else "cooperation_failure"
+                    )
+                    if action_resolution.granted:
+                        world.reputation.update(partner, "share")
+                    relation = social_graph.update_relation(
+                        org_name, partner, social_event
+                    )
+                    social_relation_updates.append(
+                        {
+                            "peer": partner,
+                            "social_event": social_event,
+                            "relation": relation,
+                        }
+                    )
+                if action_resolution.granted:
+                    world.reputation.update(org_name, "share")
+                    org.energy += action_resolution.relation_bonus
             elif action_resolution.conflicts:
                 world_effects.append(
                     sim_world.map_action_type_to_effect(
@@ -1547,6 +1617,25 @@ def run(
                     )
                 )
                 world.reputation.update(org_name, "steal")
+                conflict_peers = {
+                    rival for rival in action_resolution.conflicts if rival != org_name
+                }
+                if (
+                    action_resolution.arbitration_winner is not None
+                    and action_resolution.arbitration_winner != org_name
+                ):
+                    conflict_peers.add(action_resolution.arbitration_winner)
+                for rival in sorted(conflict_peers):
+                    relation = social_graph.update_relation(
+                        org_name, rival, "resource_conflict"
+                    )
+                    social_relation_updates.append(
+                        {
+                            "peer": rival,
+                            "social_event": "resource_conflict",
+                            "relation": relation,
+                        }
+                    )
             else:
                 world_effects.append(
                     sim_world.map_action_type_to_effect(
@@ -1769,6 +1858,8 @@ def run(
                 conflicts=action_resolution.conflicts,
                 arbitration_winner=action_resolution.arbitration_winner,
                 cooperation_partners=action_resolution.cooperation_partners,
+                social_decisions=[decision.to_dict() for decision in social_decisions],
+                social_relation_updates=social_relation_updates,
                 energy=org.energy,
                 resources=org.resources,
                 reputation=world.reputation.get(org_name),
