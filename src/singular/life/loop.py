@@ -55,6 +55,7 @@ from singular.life.metabolism.rewards import RewardContribution, apply_rewards
 from singular.lives import load_registry, set_life_status
 from singular.life.effectors import perform_action
 from singular.life.world_state import PersistentWorldState
+from singular.multiagent.runtime import LifeTickContext, MultiAgentRuntime
 from singular.life.ecosystem import ARCHETYPES, EcosystemRulesConfig, compute_population_metrics, draw_global_event
 
 from .death import DeathMonitor
@@ -687,6 +688,7 @@ def run(
     test_ttl: int = 3,
     event_bus: EventBus | None = None,
     governance_policy: MutationGovernancePolicy | None = None,
+    multiagent_runtime: MultiAgentRuntime | None = None,
     max_iterations: int | None = None,
     ecosystem_rules: EcosystemRules | None = None,
     ecosystem_mode: str = "production",
@@ -873,6 +875,59 @@ def run(
                 )
                 tick_count += 1
                 continue
+
+            # Multi-agent boundary: consult inbox and emit collaboration messages
+            # after skill selection, before mutation/action/reproduction decisions.
+            # At this moment the tick has concrete context but no filesystem write
+            # has been authorized yet, so help offers/refusals can safely gate it.
+            multiagent_context: LifeTickContext | None = None
+            multiagent_decision = None
+            if multiagent_runtime is not None:
+                peer_names = tuple(name for name in world.organisms if name != org_name)
+                reputation_entry = logger.skill_reputation().get(selected_skill_key, {})
+                confidence = float(reputation_entry.get("success_rate", 0.5))
+                if selected_org.last_score != float("-inf"):
+                    current_score = selected_org.last_score
+                elif state.health_history:
+                    current_score = float(state.health_history[-1].get("score", 0.0))
+                else:
+                    current_score = 0.0
+                rivalry_pressure = 1.0 if selected_org.degraded_mode else 0.0
+                if peer_names and selected_org.resources < 0.5:
+                    rivalry_pressure = max(rivalry_pressure, 0.8)
+                multiagent_context = LifeTickContext(
+                    life_id=org_name,
+                    task=selected_skill_key,
+                    skill_path=skill_path,
+                    skills_dir=selected_org.skills_dir,
+                    score=current_score,
+                    confidence=confidence,
+                    governance_allowed=governance_policy.mutations_enabled(),
+                    rivalry=rivalry_pressure,
+                    peers=peer_names,
+                    iteration=state.iteration,
+                )
+                multiagent_decision = multiagent_runtime.begin_tick(multiagent_context)
+                logger.log_interaction(
+                    "multiagent.tick",
+                    organism=org_name,
+                    skill=selected_skill_key,
+                    reasons=multiagent_decision.reasons,
+                    inbound=[message.to_dict() for message in multiagent_decision.inbound],
+                    emitted=[message.to_dict() for message in multiagent_decision.emitted],
+                    mutation_allowed=multiagent_decision.mutation_allowed,
+                    action_allowed=multiagent_decision.action_allowed,
+                    reproduction_allowed=multiagent_decision.reproduction_allowed,
+                    accepted_offer=(
+                        None
+                        if multiagent_decision.accepted_offer is None
+                        else multiagent_decision.accepted_offer.skill
+                    ),
+                    alive=True,
+                )
+                if not multiagent_decision.mutation_allowed:
+                    tick_count += 1
+                    continue
             for penalty in persistent_world_state.consume_due_penalties(state.iteration):
                 selected_org.energy += penalty.energy_delta
                 persistent_world_state.mortality_pressure = max(
@@ -1299,6 +1354,14 @@ def run(
                     org_name,
                     "steal",
                     {"moral_weights": ecosystem_rules.reputation_action_weights},
+                )
+
+            if multiagent_runtime is not None and multiagent_context is not None:
+                multiagent_runtime.complete_tick(
+                    multiagent_context,
+                    accepted=accepted,
+                    score_before=base_score,
+                    score_after=mutated_score,
                 )
 
             objective_weights = asdict(goal_weights)
@@ -1954,6 +2017,22 @@ def run(
                 target = child_skills_dir / "candidate_hybrid.py"
                 root = target.parent.parent if target.parent.name == "skills" else target.parent
                 simulated_governance = governance_policy.simulate_write(target, root=root)
+                reproduction_gate = None
+                if multiagent_runtime is not None:
+                    reproduction_gate = multiagent_runtime.gate_reproduction(
+                        parents=parent_names,
+                        governance_allowed=simulated_governance.allowed,
+                        rivalry=max(0.0, action_resolution.rivalry_penalty),
+                        task=f"reproduction:{state.iteration}",
+                    )
+                    logger.log_interaction(
+                        "multiagent.reproduction_gate",
+                        parents=parent_names,
+                        reasons=reproduction_gate.reasons,
+                        emitted=[message.to_dict() for message in reproduction_gate.emitted],
+                        reproduction_allowed=reproduction_gate.reproduction_allowed,
+                        alive=True,
+                    )
                 decision = decide_reproduction(
                     parent_a=parent_names[0],
                     parent_b=parent_names[1],
@@ -1964,6 +2043,13 @@ def run(
                     governance_allowed=simulated_governance.allowed,
                     policy=ecosystem_rules.reproduction_policy,
                 )
+                if reproduction_gate is not None and not reproduction_gate.reproduction_allowed:
+                    decision = decision.__class__(
+                        accepted=False,
+                        score=decision.score,
+                        reasons=["multiagent_gate"] + reproduction_gate.reasons + decision.reasons,
+                        components=decision.components,
+                    )
                 if cooldown_remaining > 0:
                     decision = decision.__class__(
                         accepted=False,
@@ -2070,6 +2156,7 @@ def run_tick(
     test_ttl: int = 3,
     event_bus: EventBus | None = None,
     governance_policy: MutationGovernancePolicy | None = None,
+    multiagent_runtime: MultiAgentRuntime | None = None,
     tick_budget_seconds: float = 0.2,
     ecosystem_rules: EcosystemRules | None = None,
 ) -> Checkpoint:
@@ -2094,6 +2181,7 @@ def run_tick(
         test_ttl=test_ttl,
         event_bus=event_bus,
         governance_policy=governance_policy,
+        multiagent_runtime=multiagent_runtime,
         max_iterations=1,
         ecosystem_rules=ecosystem_rules,
     )
