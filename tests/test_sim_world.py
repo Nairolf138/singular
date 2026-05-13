@@ -38,11 +38,15 @@ def test_apply_action_updates_resources_map_and_external(tmp_path: Path) -> None
                 "remove": ["trader-01"],
             },
             "artifacts": {
-                "add": [{"id": "sensor-grid", "kind": "infrastructure", "integrity": 1.0}],
+                "add": [
+                    {"id": "sensor-grid", "kind": "infrastructure", "integrity": 1.0}
+                ],
             },
             "map_updates": {
                 "add_spaces": [{"id": "delta", "kind": "frontier", "stability": 0.6}],
-                "add_niches": [{"id": "mining", "space_id": "delta", "specialization": "ore"}],
+                "add_niches": [
+                    {"id": "mining", "space_id": "delta", "specialization": "ore"}
+                ],
             },
         },
         state_path=path,
@@ -79,7 +83,9 @@ def test_apply_action_effects_writes_atomic_cumulative_effects(tmp_path: Path) -
         map_action_type_to_effect("mutation.applied"),
         map_action_type_to_effect("resource.conflict"),
     ]
-    updated = apply_action_effects(effects, state_path=state_path, effects_path=effects_path)
+    updated = apply_action_effects(
+        effects, state_path=state_path, effects_path=effects_path
+    )
     assert effects_path.exists()
     assert "global_health" in updated
     ledger = effects_path.read_text(encoding="utf-8")
@@ -98,3 +104,94 @@ def test_overexploitation_schedules_and_triggers_delayed_crisis(tmp_path: Path) 
     fired = ticked["global_health"].get("delayed_events_fired", [])
     assert any(entry.get("kind") == "crisis" for entry in fired)
     assert ticked["global_health"]["signals"]["delayed_risk"] >= 0.0
+
+
+def test_default_world_state_contains_structured_environment_and_symbolic_resources(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "mem" / "world_state.json"
+
+    state = load_world_state(path)
+
+    assert state["environment"]["time"]["cycle"] == "day"
+    assert state["environment"]["weather"]["condition"] == "clear"
+    assert state["environment"]["climate"]["type"] == "temperate"
+    assert state["environment"]["biomes"]
+    for resource_name in (
+        "energy",
+        "food_symbolic",
+        "space",
+        "heat",
+        "information",
+        "local_reputation",
+    ):
+        payload = state["resources"]["symbolic"][resource_name]
+        assert 0.0 <= payload["amount"] <= payload["capacity"]
+
+
+def test_tick_world_advances_day_night_cycle_and_dynamic_pressures(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "mem" / "world_state.json"
+    state = load_world_state(path)
+    state["environment"]["time"]["hour"] = 17
+    state["resources"]["symbolic"]["information"]["amount"] = 95.0
+    state["dynamics"]["relational_debt"] = 50.0
+
+    ticked = tick_world(state=state, state_path=path, steps=2)
+
+    assert ticked["environment"]["time"]["hour"] == 19
+    assert ticked["environment"]["time"]["cycle"] == "night"
+    assert ticked["environment"]["time"]["phase"] == "dusk"
+    pressures = ticked["dynamics"]["pressures"]
+    for pressure_name in (
+        "scarcity",
+        "overload",
+        "competition",
+        "temporary_opportunity",
+    ):
+        assert 0.0 <= pressures[pressure_name] <= 1.0
+    assert pressures["competition"] > 0.0
+
+
+def test_world_actions_update_resources_with_bounds_and_environment(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "mem" / "world_state.json"
+    state = load_world_state(path)
+    state["resources"]["symbolic"]["energy"]["amount"] = 1.0
+    state["resources"]["symbolic"]["food_symbolic"]["amount"] = 79.0
+
+    foraged = apply_action(
+        {
+            "action": "forage",
+            "context": {
+                "intensity": 2.0,
+                "target_niche": "forage",
+                "target_biome": "wild-edge",
+            },
+        },
+        state=state,
+        state_path=path,
+    )
+
+    assert foraged["resources"]["symbolic"]["energy"]["amount"] == 0.0
+    assert foraged["resources"]["symbolic"]["food_symbolic"]["amount"] == 80.0
+    assert foraged["environment"]["active_niche"] == "forage"
+    assert foraged["environment"]["current_biome"] == "wild-edge"
+    assert 0.0 <= foraged["dynamics"]["pressures"]["scarcity"] <= 1.0
+
+
+def test_perform_action_connects_world_actions_to_effectors() -> None:
+    from singular.life.effectors.core import perform_action
+
+    result = perform_action(
+        "share_resource",
+        {"risk": 0.1, "rarity_pressure": 0.2, "success_bias": 0.1},
+    )
+
+    assert result.action == "share_resource"
+    assert result.success is True
+    assert result.energy_delta < 0.0
+    assert result.world_delta["reputation"] > 0.0
+    assert "world_action_effect" in result.metadata
