@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import ast
 import difflib
-import importlib
 import json
 import logging
 import math
@@ -56,20 +55,23 @@ from singular.life.effectors import perform_action
 from singular.life.world_state import PersistentWorldState
 from singular.life.ecosystem import ARCHETYPES, EcosystemRulesConfig, compute_population_metrics, draw_global_event
 
-from . import sandbox
 from .death import DeathMonitor
 from .health import HealthTracker
 from singular.governance.policy import MutationGovernancePolicy
 from singular.governance.values import load_value_weights
 
-from .reproduction import (
+from .checkpointing import Checkpoint, CHECKPOINT_VERSION, load_checkpoint, save_checkpoint, _migrate_checkpoint_data
+from .sandbox_scoring import SandboxScore, score_code_with_error, score_code, _sandbox_failure_category
+from .mutation_flow import apply_mutation, select_operator, _load_default_operators
+from .resource_flow import manage_resources
+from .reproduction_flow import (
     ReproductionDecisionPolicy,
     authorize_reproduction_write,
     crossover,
     decide_reproduction,
+    _pick_crossover_parents,
 )
-from .map_elites import MapElites
-from .test_coevolution import LivingTestPool, propose_test_candidates
+from .coevolution_flow import MapElites, LivingTestPool, propose_test_candidates
 from .skill_genesis import create_skill
 
 # mypy: ignore-errors
@@ -96,190 +98,8 @@ SKILL_SANDBOX_QUARANTINE_HOURS = int(
 )
 
 
-@dataclass(init=False, frozen=True)
-class SandboxScore:
-    """Structured sandbox scoring outcome.
-
-    ``score`` keeps the historical algorithmic contract: failed sandbox scoring
-    yields ``-inf``.  ``ok`` and the error fields carry diagnostics so callers
-    can distinguish a failing source from a failing mutation without parsing the
-    score itself.
-    """
-
-    score: float
-    ok: bool
-    error_type: str | None
-    error_message: str | None
-    _legacy_exception_type: str | None
-
-    def __init__(
-        self,
-        score: float,
-        ok: bool = True,
-        error_type: str | None = None,
-        error_message: str | None = None,
-        *,
-        failed: bool | None = None,
-        error_reason: str | None = None,
-        exception_type: str | None = None,
-        exception_message: str | None = None,
-    ) -> None:
-        """Create a score result, accepting legacy keyword names.
-
-        Older tests and extensions used ``ScoreCodeResult(failed=...,
-        error_reason=..., exception_message=...)``.  The compatibility keywords
-        are folded into the structured ``ok/error_type/error_message`` shape.
-        """
-
-        if failed is not None:
-            ok = not failed
-        resolved_error_type = error_type or error_reason
-        resolved_error_message = error_message or exception_message
-        if resolved_error_message is None and exception_type is not None:
-            resolved_error_message = exception_type
-        object.__setattr__(self, "score", score)
-        object.__setattr__(self, "ok", ok)
-        object.__setattr__(self, "error_type", resolved_error_type)
-        object.__setattr__(self, "error_message", resolved_error_message)
-        object.__setattr__(self, "_legacy_exception_type", exception_type)
-
-    @property
-    def failed(self) -> bool:
-        """Backward-compatible inverse of ``ok``."""
-
-        return not self.ok
-
-    @property
-    def error_reason(self) -> str | None:
-        """Backward-compatible alias for ``error_type``."""
-
-        return self.error_type
-
-    @property
-    def exception_type(self) -> str | None:
-        """Best-effort legacy exception type derived from ``error_type``."""
-
-        if self._legacy_exception_type is not None:
-            return self._legacy_exception_type
-        if self.error_type == "runtime_exception" and self.error_message:
-            # Runtime exception messages generated below include the concrete class.
-            return self.error_message.split(":", 1)[0]
-        return self.error_type
-
-    @property
-    def exception_message(self) -> str | None:
-        """Backward-compatible alias for ``error_message``."""
-
-        return self.error_message
-
-
 # Compatibility name retained for tests and downstream callers.
 ScoreCodeResult = SandboxScore
-
-
-DANGEROUS_MUTATION_NAMES = frozenset(
-    {
-        "open",
-        "exec",
-        "eval",
-        "compile",
-        "__import__",
-        "input",
-        "os",
-        "sys",
-        "socket",
-        "subprocess",
-    }
-)
-
-
-def _has_explicit_dangerous_pattern(code: str) -> bool:
-    """Return True when code explicitly references dangerous capabilities."""
-
-    try:
-        tree = ast.parse(code, mode="exec")
-    except SyntaxError:
-        return False
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name) and node.id in DANGEROUS_MUTATION_NAMES:
-            return True
-        if isinstance(node, ast.Attribute) and node.attr in DANGEROUS_MUTATION_NAMES:
-            return True
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            names = [alias.name.split(".", 1)[0] for alias in node.names]
-            module = []
-            if isinstance(node, ast.ImportFrom) and node.module:
-                module.append(node.module.split(".", 1)[0])
-            if any(name in DANGEROUS_MUTATION_NAMES for name in [*names, *module]):
-                return True
-    return False
-
-
-def _sandbox_failure_category(
-    base_failed: bool, mutation_failed: bool, mutated: str
-) -> tuple[str | None, str | None, bool]:
-    """Classify sandbox failures for governance escalation.
-
-    Returns ``(category, severity, record_global_violation)``. Original-code
-    failures mean the active skill is broken and remain critical. A failed
-    mutation over a healthy base is usually just a rejected candidate and should
-    not feed the global circuit breaker unless it explicitly contains dangerous
-    capabilities.
-    """
-
-    if base_failed:
-        return "source_sandbox_violation", "critical", True
-    if mutation_failed:
-        if _has_explicit_dangerous_pattern(mutated):
-            return "dangerous_mutation_violation", "critical", True
-        return "invalid_mutation_rejected", "medium", False
-    return None, None, False
-
-
-def _score_failure(
-    error_type: str,
-    exception: BaseException | None = None,
-    *,
-    message: str | None = None,
-) -> SandboxScore:
-    """Build a failed scoring result with a human-readable message."""
-
-    exception_type = type(exception).__name__ if exception is not None else None
-    if message is None and exception is not None:
-        message = f"{exception_type}: {exception}"
-    return SandboxScore(
-        score=float("-inf"),
-        ok=False,
-        error_type=error_type,
-        error_message=message,
-        exception_type=exception_type,
-    )
-
-
-def _classify_score_exception(exception: BaseException) -> str:
-    """Map sandbox exceptions to stable diagnostic categories."""
-
-    if isinstance(exception, TimeoutError):
-        return "timeout"
-    if isinstance(exception, SyntaxError):
-        return "syntax_error"
-    if isinstance(exception, sandbox.SandboxError):
-        message = str(exception).lower()
-        if "result" in message and ("missing" in message or "did not set" in message):
-            return "missing_result"
-        return "sandbox_error"
-    return "runtime_exception"
-
-
-@dataclass
-class Checkpoint:
-    """Simple persistent state for the evolutionary loop."""
-
-    version: int = 1
-    iteration: int = 0
-    stats: Dict[str, Dict[str, float]] = field(default_factory=dict)
-    health_history: list[dict[str, float | int]] = field(default_factory=list)
-    health_counters: dict[str, float | int] = field(default_factory=dict)
 
 
 @dataclass
@@ -341,7 +161,6 @@ ACTION_TYPE_FROM_LOOP_EVENT: dict[str, str] = {
 }
 
 
-CHECKPOINT_VERSION = 1
 HEALTH_HISTORY_FINE_WINDOW = 500
 HEALTH_HISTORY_AGGREGATE_EVERY = 10
 
@@ -531,174 +350,6 @@ def _should_trigger_skill_genesis(
     if coverage_gap >= SKILL_GENESIS_COVERAGE_GAP_THRESHOLD:
         return True, "coverage_gap", snapshot
     return False, "", snapshot
-
-
-def _migrate_checkpoint_data(data: Mapping[str, object]) -> dict[str, object]:
-    """Migrate checkpoint payload to the current schema version."""
-
-    migrated = dict(data)
-    version = migrated.get("version")
-    if not isinstance(version, int):
-        version = 0
-
-    if version < 1:
-        migrated["version"] = 1
-        version = 1
-
-    # Keep final payload aligned with current application schema.
-    migrated["version"] = CHECKPOINT_VERSION
-    return migrated
-
-
-def _checkpoint_from_data(data: Mapping[str, object]) -> Checkpoint:
-    """Build a :class:`Checkpoint` from raw persisted data safely."""
-
-    migrated = _migrate_checkpoint_data(data)
-    defaults = asdict(Checkpoint())
-    payload = {**defaults, **migrated}
-    allowed_keys = set(Checkpoint.__dataclass_fields__)
-    filtered_payload = {key: value for key, value in payload.items() if key in allowed_keys}
-    return Checkpoint(**filtered_payload)
-
-
-def load_checkpoint(path: Path) -> Checkpoint:
-    """Load checkpoint state from *path* if it exists."""
-
-    if path.exists():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, TypeError, json.JSONDecodeError) as exc:
-            log.warning("failed to load checkpoint from %s: %s", path, exc)
-        else:
-            if isinstance(data, Mapping):
-                return _checkpoint_from_data(data)
-            log.warning("failed to load checkpoint from %s: root must be an object", path)
-    return Checkpoint()
-
-
-def save_checkpoint(path: Path, state: Checkpoint) -> None:
-    """Persist *state* to *path*."""
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(asdict(state)), encoding="utf-8")
-
-
-def apply_mutation(
-    code: str,
-    operator: Callable[[ast.AST], ast.AST],
-    rng: random.Random | None = None,
-) -> str:
-    """Return ``code`` transformed by ``operator``.
-
-    The ``operator`` is expected to accept an :class:`ast.AST` instance and
-    return a modified tree. If the operator supports a ``rng`` keyword
-    argument it will be passed the provided random number generator.
-    """
-
-    tree = ast.parse(code)
-    try:
-        new_tree = operator(tree, rng=rng)
-    except TypeError:
-        new_tree = operator(tree)
-    return ast.unparse(new_tree)
-
-
-def _load_default_operators() -> Dict[str, Callable[[ast.AST], ast.AST]]:
-    """Load operators defined in :mod:`life.operators`."""
-
-    from . import operators as ops
-
-    loaded: Dict[str, Callable[[ast.AST], ast.AST]] = {}
-    for name in getattr(ops, "__all__", []):
-        mod = importlib.import_module(f"{__package__}.operators.{name}")
-        loaded[name] = getattr(mod, "apply")
-    return loaded
-
-
-def select_operator(
-    operators: Dict[str, Callable[[ast.AST], ast.AST]],
-    stats: Dict[str, Dict[str, float]],
-    policy: str,
-    rng: random.Random,
-    objective_bias: Mapping[str, float] | None = None,
-) -> str:
-    """Choose an operator name using an epsilon-greedy bandit policy."""
-
-    names = list(operators.keys())
-
-    if policy == "analyze":
-        # deterministically explore least-used operator
-        return min(names, key=lambda n: stats[n]["count"])
-
-    epsilon = {"exploit": 0.0, "explore": 1.0}.get(policy, 0.1)
-
-    if rng.random() < epsilon or all(stats[n]["count"] == 0 for n in names):
-        return rng.choice(names)
-
-    def expected(name: str) -> float:
-        s = stats[name]
-        exploitation = s["reward"] / s["count"] if s["count"] else 0.0
-        return exploitation + float((objective_bias or {}).get(name, 0.0))
-
-    return max(names, key=expected)
-
-
-def score_code_with_error(code: str) -> SandboxScore:
-    """Execute ``code`` in the sandbox and return score plus failure details.
-
-    Failure reasons are intentionally stable for diagnostics: forbidden syntax,
-    forbidden names, timeout, runtime exception, non-numeric result, or non-finite
-    result.
-    """
-
-    try:
-        result = sandbox.run(code)
-    except Exception as exc:
-        return _score_failure(_classify_score_exception(exc), exc)
-    if result is None:
-        return _score_failure(
-            "missing_result",
-            message="sandbox code did not set a numeric result",
-        )
-    if not isinstance(result, (int, float)):
-        return _score_failure(
-            "non_numeric_result",
-            message=f"sandbox result is not numeric (type: {type(result).__name__})",
-        )
-    score = float(result)
-    if not math.isfinite(score):
-        return _score_failure("non_finite_result", message=f"sandbox result is {score}")
-    return SandboxScore(score=score)
-
-
-def score_code(code: str) -> float:
-    """Execute ``code`` in the sandbox and return a numeric score.
-
-    Non-numeric or failing executions yield ``-inf``.
-    """
-
-    return score_code_with_error(code).score
-
-
-def manage_resources(
-    resource_manager: ResourceManager,
-    cpu_seconds: float,
-    test_runner: Callable[[], int] | None = None,
-) -> list[str]:
-    """Update resources according to CPU usage and test results.
-
-    Returns the list of moods reported by ``resource_manager`` after
-    consumption and replenishment steps.
-    """
-
-    resource_manager.consume_energy(cpu_seconds)
-    if test_runner:
-        try:
-            passed = test_runner()
-        except Exception:
-            passed = 0
-        resource_manager.add_food(passed)
-    return resource_manager.mood()
 
 
 def _clamp01(value: float) -> float:
@@ -936,20 +587,6 @@ def _choose_skill(
     return fallback_org, fallback_skill
 
 
-def _pick_crossover_parents(rng: random.Random, world: WorldState) -> tuple[str, str]:
-    """Prefer high-reputation organisms when selecting crossover parents."""
-
-    names = list(world.organisms.keys())
-    weighted = sorted(
-        names,
-        key=lambda name: world.reputation.get(name),
-        reverse=True,
-    )
-    primary = weighted[0]
-    remaining = [name for name in names if name != primary]
-    return primary, rng.choice(remaining)
-
-
 def _normalize_organism_inputs(skills_dirs: OrganismInputs) -> Dict[str, Path]:
     """Normalize organism inputs into a ``name -> skills_dir`` mapping."""
 
@@ -1079,6 +716,7 @@ def run(
     mortality = mortality or DeathMonitor()
     seen_diffs: set[str] = set()
     skill_sandbox_failures: dict[str, int] = {}
+    failed_skill_paths: dict[str, tuple[str, Path]] = {}
     quarantined_skill_keys: set[str] = set()
     sleep_ticks_remaining = 0
     intrinsic_goals = IntrinsicGoals(value_weights=value_weights)
@@ -1128,13 +766,28 @@ def run(
                 decision = Psyche.Decision.ACCEPT
             else:
                 quarantined_skill_keys.update(_inactive_skill_keys(read_skills()))
+                pending_retry = next(
+                    (
+                        item
+                        for key, attempts in skill_sandbox_failures.items()
+                        if attempts > 0
+                        and attempts < max(SKILL_SANDBOX_QUARANTINE_THRESHOLD, 1)
+                        and key not in quarantined_skill_keys
+                        for item in [failed_skill_paths.get(key)]
+                        if item is not None
+                    ),
+                    None,
+                )
                 try:
-                    org_name, skill_path = _choose_skill(
-                        rng,
-                        world.organisms,
-                        skill_reputation=logger.skill_reputation(),
-                        excluded_skill_keys=quarantined_skill_keys,
-                    )
+                    if pending_retry is not None:
+                        org_name, skill_path = pending_retry
+                    else:
+                        org_name, skill_path = _choose_skill(
+                            rng,
+                            world.organisms,
+                            skill_reputation=logger.skill_reputation(),
+                            excluded_skill_keys=quarantined_skill_keys,
+                        )
                 except RuntimeError as exc:
                     logger.log_interaction(
                         "skill.quarantine_exhausted",
@@ -1836,6 +1489,7 @@ def run(
                     org.sandbox_violation_streak += 1
                     attempts += 1
                     skill_sandbox_failures[selected_skill_key] = attempts
+                    failed_skill_paths[selected_skill_key] = (org_name, skill_path)
                 sandbox_diagnostic["sandbox_violation_streak"] = (
                     org.sandbox_violation_streak
                 )
@@ -1854,6 +1508,7 @@ def run(
                     lifecycle = skills_after_disable[selected_skill_key]["lifecycle"]
                     disabled_until = lifecycle.get("disabled_until")
                     quarantined_skill_keys.add(selected_skill_key)
+                    failed_skill_paths.pop(selected_skill_key, None)
                     quarantine_payload = {
                         "skill": selected_skill_key,
                         "reason": reason,
@@ -1926,6 +1581,7 @@ def run(
                 org.sandbox_violation_streak = 0
                 org.degraded_mode = False
                 skill_sandbox_failures[selected_skill_key] = 0
+                failed_skill_paths.pop(selected_skill_key, None)
             failed = sandbox_failure or (not accepted)
             health_snapshot = health_tracker.update(
                 iteration=state.iteration,
@@ -2091,7 +1747,8 @@ def run(
                 reason = reason or "world_mortality_pressure"
             if dead and reason == "too many failures":
                 can_extinguish = (
-                    org.sandbox_violation_streak >= SANDBOX_EXTINCTION_THRESHOLD
+                    getattr(org.monitor, "failures", 0) > org.sandbox_violation_streak
+                    or org.sandbox_violation_streak >= SANDBOX_EXTINCTION_THRESHOLD
                     or _critical_extinction_indicators(
                         health_snapshot=health_snapshot.to_dict(),
                         organism=org,

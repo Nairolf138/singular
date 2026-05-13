@@ -7,7 +7,7 @@ root_dir = Path(__file__).resolve().parents[1]
 sys.path.append(str(root_dir))
 sys.path.append(str(root_dir / "src"))
 
-from singular.life.map_elites import MapElites  # noqa: E402
+from singular.life.coevolution_flow import MapElites  # noqa: E402
 from singular.life.loop import run  # noqa: E402
 
 
