@@ -22,22 +22,25 @@ const blockFreshness=new Map();
 const ESSENTIAL_MODE_KEY='singular.dashboard.essentialMode';
 
 const taskDefinitions={
-  context:{loader:loadContext,intervalMs:schedulerConfig.frequencies.context,viewKey:'technique',blockId:'parametres',stream:'cold'},
+  context:{loader:loadContext,intervalMs:schedulerConfig.frequencies.context,viewKey:'technique',blockId:'parametres',stream:'cold',global:true},
   retention:{loader:loadRetentionStatus,intervalMs:schedulerConfig.frequencies.retention,viewKey:'decider-maintenant',blockId:'cockpit',stream:'cold'},
-  ecosystem:{loader:loadEco,intervalMs:schedulerConfig.frequencies.ecosystem,viewKey:'technique',blockId:'parametres',stream:'cold'},
-  cockpit:{loader:loadCockpit,intervalMs:schedulerConfig.frequencies.cockpit,viewKey:'decider-maintenant',blockId:'cockpit',stream:'hot'},
-  timeline:{loader:loadTimeline,intervalMs:schedulerConfig.frequencies.timeline,viewKey:'diagnostiquer',blockId:'timeline-section',stream:'hot'},
-  lives:{loader:loadLivesBoard,intervalMs:schedulerConfig.frequencies.lives,viewKey:'comparer-vies',blockId:'vies',stream:'cold'},
-  genealogy:{loader:loadGenealogy,intervalMs:schedulerConfig.frequencies.genealogy,viewKey:'technique',blockId:'parametres',stream:'cold'},
-  quests:{loader:loadQuests,intervalMs:schedulerConfig.frequencies.quests,viewKey:'decider-maintenant',blockId:'conversations-section',stream:'cold'},
-  hostVitals:{loader:loadHostVitals,intervalMs:schedulerConfig.frequencies.hostVitals,viewKey:'technique',blockId:'host-vitals-panel',stream:'cold'},
-  reflections:{loader:loadReflections,intervalMs:schedulerConfig.frequencies.reflections,viewKey:'technique',blockId:'reflections-section',stream:'cold'},
+  ecosystem:{loader:loadEco,intervalMs:schedulerConfig.frequencies.ecosystem,viewKey:'technique',blockId:'parametres',stream:'cold',global:true},
+  cockpit:{loader:loadCockpit,intervalMs:schedulerConfig.frequencies.cockpit,viewKey:'decider-maintenant',blockId:'cockpit',stream:'hot',global:true},
+  timeline:{loader:loadTimeline,intervalMs:schedulerConfig.frequencies.timeline,viewKey:'diagnostiquer',blockId:'timeline-section',stream:'hot',visual:true},
+  lives:{loader:loadLivesBoard,intervalMs:schedulerConfig.frequencies.lives,viewKey:'comparer-vies',blockId:'vies',stream:'cold',visual:true},
+  genealogy:{loader:loadGenealogy,intervalMs:schedulerConfig.frequencies.genealogy,viewKey:'technique',blockId:'parametres',stream:'cold',visual:true},
+  quests:{loader:loadQuests,intervalMs:schedulerConfig.frequencies.quests,viewKey:'decider-maintenant',blockId:'conversations-section',stream:'cold',global:true},
+  hostVitals:{loader:loadHostVitals,intervalMs:schedulerConfig.frequencies.hostVitals,viewKey:'technique',blockId:'host-vitals-panel',stream:'cold',visual:true},
+  reflections:{loader:loadReflections,intervalMs:schedulerConfig.frequencies.reflections,viewKey:'technique',blockId:'reflections-section',stream:'cold',visual:true},
 };
 
 const sectionIsVisible=blockId=>{
   const block=document.getElementById(blockId);
   if(!block){return false;}
+  if(block.classList.contains('panel-hidden')||block.getAttribute('aria-hidden')==='true'){return false;}
   if(block.matches('details')&&!block.open){return false;}
+  const hiddenAncestor=block.closest('.panel-hidden');
+  if(hiddenAncestor&&!hiddenAncestor.classList.contains('tab-pane')){return false;}
   const pane=block.closest('.tab-pane');
   if(!pane){return true;}
   return !pane.classList.contains('panel-hidden');
@@ -46,8 +49,15 @@ const sectionIsVisible=blockId=>{
 const taskCanRun=task=>{
   if(document.visibilityState!=='visible'){return false;}
   if(schedulerState.pausedViews.has(task.viewKey)){return false;}
-  if(task.viewKey!==schedulerState.activeTab){return false;}
-  return sectionIsVisible(task.blockId);
+  if(task.global!==true&&task.viewKey!==schedulerState.activeTab){return false;}
+  if(task.visual===true){return sectionIsVisible(task.blockId);}
+  return true;
+};
+
+const taskPanelIsVisible=(task,binding)=>{
+  if(!binding){return false;}
+  if(task.global!==true){return true;}
+  return sectionIsVisible(binding.panelId);
 };
 
 const ensureUpdateLabel=(taskName)=>{
@@ -121,6 +131,8 @@ const registerTask=(name,loader,intervalMs)=>{
     stream:definition?.stream||'cold',
     viewKey:definition?.viewKey||'decider-maintenant',
     blockId:definition?.blockId||schedulerLabelIds[name]||'',
+    global:definition?.global===true,
+    visual:definition?.visual===true,
   });
 };
 
@@ -129,14 +141,15 @@ const runTask=async task=>{
   task.inFlight=true;
   task.lastRunAt=Date.now();
   const binding=panelBindings[task.name];
-  if(binding){setPanelState(binding.panelId,'loading','Chargement en cours…');}
+  const canSetPanelState=taskPanelIsVisible(task,binding);
+  if(canSetPanelState){setPanelState(binding.panelId,'loading','Chargement en cours…');}
   try{
     await task.loader();
     task.errorCount=0;
     task.nextRunAt=Date.now()+task.intervalMs;
     markUpdated(task.name,new Date());
     markBlockUpdated(task.blockId,Date.now());
-    if(binding){
+    if(canSetPanelState){
       const layer=document.getElementById(binding.panelId)?.querySelector(':scope > .state-layer');
       if(!layer||layer.dataset.state==='loading'){setPanelState(binding.panelId,'ready');}
       panelFirstLoadDone.add(binding.panelId);
@@ -149,7 +162,7 @@ const runTask=async task=>{
       const retryIn=Math.min(schedulerConfig.backoff.maxMs,schedulerConfig.backoff.baseMs*factor);
       task.nextRunAt=Date.now()+retryIn;
       markUpdateError(task.name,error);
-      if(binding){setPanelState(binding.panelId,'error',`API indisponible, nouvelle tentative dans ${Math.ceil(retryIn/1000)}s.`);} 
+      if(canSetPanelState){setPanelState(binding.panelId,'error',`API indisponible, nouvelle tentative dans ${Math.ceil(retryIn/1000)}s.`);}
       markStaleTimeout(task.name,error?.code==='timeout'&&task.errorCount>=PROLONGED_TIMEOUT_THRESHOLD);
     }else{task.nextRunAt=Date.now()+task.intervalMs;}
   }finally{task.inFlight=false;}
