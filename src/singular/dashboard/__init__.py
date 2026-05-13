@@ -2192,7 +2192,13 @@ def create_app(
         except PermissionError as exc:
             raise HTTPException(
                 status_code=403,
-                detail="Jeton dashboard requis ou invalide pour exécuter cette action.",
+                detail=(
+                    "Jeton dashboard requis ou invalide pour exécuter cette action: "
+                    "définissez SINGULAR_DASHBOARD_ACTION_TOKEN et fournissez-le avec la requête. "
+                    "Pour du développement local uniquement, "
+                    "SINGULAR_DASHBOARD_ALLOW_UNAUTHENTICATED_ACTIONS=1 "
+                    "autorise les actions sans jeton."
+                ),
             ) from exc
 
     def _parse_action_payload(payload: str | None) -> dict[str, object]:
