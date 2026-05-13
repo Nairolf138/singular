@@ -2122,3 +2122,70 @@ def test_lives_status_reconciliation_action_marks_suggested_extinctions(
         }
     ]
     assert json.loads(registry_file.read_text(encoding="utf-8"))["lives"]["alpha"]["status"] == "extinct"
+
+
+def test_chat_get_reports_status_without_running_chat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    life_dir = tmp_path / "alpha"
+    life_dir.mkdir()
+
+    def fake_load_registry() -> dict[str, object]:
+        return {
+            "active": "alpha",
+            "lives": {
+                "alpha": {
+                    "name": "Alpha",
+                    "slug": "alpha",
+                    "path": str(life_dir),
+                    "created_at": "2026-05-12T00:00:00+00:00",
+                    "status": "active",
+                }
+            },
+        }
+
+    monkeypatch.setattr(dashboard_module, "load_registry", fake_load_registry)
+    monkeypatch.setenv("SINGULAR_DASHBOARD_ACTION_TOKEN", "secret")
+
+    app = create_app(psyche_file=tmp_path / "psyche.json")
+    response = app._routes["/api/lives/{life}/chat"](
+        life="alpha",
+        payload=json.dumps({"message": "ne doit pas etre envoye"}),
+    )
+
+    assert response["life"] == "alpha"
+    assert response["available"] is True
+    assert response["life_status"] == "active"
+    assert response["status"] == "ready"
+    assert response["message"] == "Utilisez POST avec un corps JSON pour envoyer un message."
+
+
+def test_chat_post_remains_the_message_execution_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    life_dir = tmp_path / "alpha"
+    life_dir.mkdir()
+
+    def fake_load_registry() -> dict[str, object]:
+        return {
+            "active": "alpha",
+            "lives": {
+                "alpha": {
+                    "name": "Alpha",
+                    "slug": "alpha",
+                    "path": str(life_dir),
+                    "created_at": "2026-05-12T00:00:00+00:00",
+                    "status": "active",
+                }
+            },
+        }
+
+    monkeypatch.setattr(dashboard_module, "load_registry", fake_load_registry)
+
+    app = create_app(psyche_file=tmp_path / "psyche.json")
+    client = TestClient(app)
+    response = client.post("/api/lives/alpha/chat", json={"message": ""})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "message_missing"
+    assert response.json()["response"] == "Message vide: saisissez un contenu à envoyer."

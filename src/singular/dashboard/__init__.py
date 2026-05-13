@@ -2142,15 +2142,35 @@ def create_app(
     def chat_with_life_get(
         life: str, token: str | None = None, payload: str | None = None
     ) -> dict[str, object]:
-        body: object = {}
-        if payload:
-            try:
-                candidate = json.loads(payload)
-                if isinstance(candidate, dict):
-                    body = candidate
-            except json.JSONDecodeError:
-                body = {}
-        return _run_life_chat(life, body, token=token)
+        _ = (token, payload)
+        slug, meta, life_dir = _resolve_life_entry(life)
+        target = slug or life
+        life_status = _life_status(meta)
+        available = life_dir is not None and life_dir.exists()
+        status = "ready" if available else "life_unavailable"
+        details: dict[str, object] = {}
+
+        if available and life_status in {"archived", "extinct", "dead", "stopped"}:
+            available = False
+            status = "life_archived"
+        elif available and life_dir is not None:
+            locks = _active_run_locks(life_dir)
+            if locks:
+                available = False
+                status = "run_in_progress"
+                details["active_run_locks"] = locks
+
+        payload_status: dict[str, object] = {
+            "life": target,
+            "available": available,
+            "life_status": life_status,
+            "status": status,
+            "message": "Utilisez POST avec un corps JSON pour envoyer un message.",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        if details:
+            payload_status["details"] = details
+        return payload_status
 
     if hasattr(app, "post"):
         async def chat_with_life_post(
