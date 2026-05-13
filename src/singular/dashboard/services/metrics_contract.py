@@ -1,9 +1,15 @@
+"""Stable metrics contract shared by dashboard endpoints.
+
+Centralizes the life counter keys and labels rendered by ecosystem, cockpit, and
+comparison views.
+"""
+
 from __future__ import annotations
 
 from typing import Any
 
 
-METRICS_CONTRACT_LABELS = {
+METRICS_CONTRACT_LABELS: dict[str, str] = {
     "total_lives": "Vies totales",
     "alive_lives": "Vies vivantes",
     "dead_lives": "Vies mortes",
@@ -13,6 +19,7 @@ METRICS_CONTRACT_LABELS = {
 
 
 def build_life_counts(lives: dict[str, dict[str, Any]]) -> dict[str, int]:
+    """Compute life counters from aggregated comparison payloads."""
     total_lives = len(lives)
     selected_lives = 0
     recent_activity_lives = 0
@@ -41,6 +48,7 @@ def build_life_counts(lives: dict[str, dict[str, Any]]) -> dict[str, int]:
 
 
 def build_metrics_contract(lives: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Return counts plus human labels under the dashboard contract schema."""
     return {
         "counts": build_life_counts(lives),
         "labels": METRICS_CONTRACT_LABELS,

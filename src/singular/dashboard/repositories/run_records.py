@@ -1,3 +1,9 @@
+"""Repository helpers for dashboard run logs.
+
+Centralizes path discovery, tolerant JSONL parsing, `.jsonl.tmp` handling, and
+active-life resolution for dashboard routes and services.
+"""
+
 from __future__ import annotations
 
 import json
@@ -78,6 +84,7 @@ class RunRecordsRepository:
     registry_loader: Callable[[], dict[str, object]]
 
     def _registry_lives_paths(self) -> list[Path]:
+        """Return life home directories declared in the registry."""
         registry = self.registry_loader()
         raw_lives = registry.get("lives")
         if not isinstance(raw_lives, dict):
@@ -94,6 +101,7 @@ class RunRecordsRepository:
         return lives_paths
 
     def runs_dirs(self, current_life_only: bool = False) -> list[Path]:
+        """Return run directories for explicit, active-life, or registry-wide scope."""
         if self.runs_path is not None:
             return [self.runs_path]
         if current_life_only:
@@ -116,6 +124,7 @@ class RunRecordsRepository:
         return dirs
 
     def load_run_records(self, current_life_only: bool = False) -> list[dict[str, object]]:
+        """Load valid records and annotate each one with its logical run id."""
         records: list[dict[str, object]] = []
         for directory in self.runs_dirs(current_life_only=current_life_only):
             if not directory.exists():
@@ -139,6 +148,7 @@ class RunRecordsRepository:
         return records
 
     def iter_run_files(self, current_life_only: bool = False) -> list[Path]:
+        """List run JSONL files sorted by modification time then filename."""
         files: list[Path] = []
         for directory in self.runs_dirs(current_life_only=current_life_only):
             if not directory.exists():
@@ -152,6 +162,7 @@ class RunRecordsRepository:
         )
 
     def read_jsonl_records(self, file: Path) -> list[dict[str, object]]:
+        """Read JSON objects from one JSONL file while ignoring malformed lines."""
         records: list[dict[str, object]] = []
         for line in file.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -166,6 +177,7 @@ class RunRecordsRepository:
         return records
 
     def latest_run_file(self, current_life_only: bool = False) -> Path | None:
+        """Return the most recent run file by mtime, record timestamp, and name."""
         files = self.iter_run_files(current_life_only=current_life_only)
         if not files:
             return None
@@ -184,6 +196,7 @@ class RunRecordsRepository:
         )
 
     def resolve_run_file(self, run_id: str, current_life_only: bool = False) -> Path | None:
+        """Resolve a logical run id to persisted or in-progress JSONL storage."""
         for directory in self.runs_dirs(current_life_only=current_life_only):
             for filename in (f"{run_id}.jsonl", f"{run_id}.jsonl.tmp"):
                 candidate = directory / filename
@@ -199,6 +212,7 @@ class RunRecordsRepository:
     def resolve_consciousness_path(
         self, run_id: str, current_life_only: bool = False
     ) -> Path | None:
+        """Resolve the companion consciousness log for a run id, if present."""
         raw_run_id = run_id
         if "-" in raw_run_id:
             candidate_id, suffix = raw_run_id.rsplit("-", 1)
