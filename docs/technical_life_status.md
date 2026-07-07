@@ -58,12 +58,68 @@ Les signaux terminaux dominent toujours le score: un score élevé ne peut pas p
 
 ## Distinction des notions
 
-Le dashboard distingue désormais:
+Trois champs décrivent des niveaux différents et ne doivent pas être confondus:
+
+- **`registry.status`**: état administratif de la vie dans `lives/registry.json`. Les seules valeurs normatives du registre sont `active` et `extinct`. Ce champ indique si la vie reste administrativement active ou si son extinction a été confirmée et persistée.
+- **`vital_timeline.state`**: état vital déterministe calculé à partir des signaux techniques observables. Les valeurs exposées sont `mature`, `declining`, `terminal` et `extinct`. Ce champ décrit la dynamique vitale courante, sans remplacer la décision contractuelle.
+- **`life_status.status`**: verdict contractuel portable exposé aux interfaces CLI, dashboard et rapports. Les valeurs autorisées sont `not_alive_yet`, `fragile`, `alive`, `dying` et `extinct`. Ce verdict agrège le registre, la timeline vitale et la checklist contractuelle.
+
+Le dashboard distingue également:
 
 - **Vie sélectionnée**: correspond à la clé racine `active` du registre (`registry["active"]`).
 - **Vie active dans le registre**: correspond à `life.status == "active"`.
 - **Run terminé**: information de run-level (ex: dernier événement `death`).
 - **Extinction détectée**: information observée dans les événements de run (présence d'au moins un `event == "death"`).
+
+## Ordre de priorité du verdict contractuel
+
+Le calcul de `life_status.status` applique l'ordre de priorité suivant:
+
+1. **Extinction confirmée domine tout**: si une extinction est confirmée (`autopsy.json` présent, `registry.status == "extinct"` ou événement `death` confirmé), le verdict est `extinct`, quel que soit le score ou l'état vital intermédiaire.
+2. **Terminalité vitale produit `dying`**: si `vital_timeline.state == "terminal"` ou si un signal terminal fort est observé sans extinction confirmée, le verdict est `dying`.
+3. **Checklist contractuelle produit `not_alive_yet`, `fragile` ou `alive`**: en l'absence d'extinction confirmée et de terminalité vitale, les signaux contractuels configurés dans `configs/life_definition.yaml` déterminent le verdict selon les seuils et critères fondamentaux.
+
+Exemple complet de payload `life_status`:
+
+```json
+{
+  "status": "alive",
+  "score": 0.91,
+  "explanation": "Identité persistante, cycle stable, objectifs intrinsèques et continuité narrative observés. Vital: état mature, risque low.",
+  "signals": {
+    "persistent_identity": true,
+    "generation_registry": true,
+    "stable_cycle": true,
+    "intrinsic_goals": true,
+    "narrative_continuity": true,
+    "reproduction_possible": false,
+    "terminal_signal": false,
+    "extinction": false,
+    "vital_state": "mature",
+    "vital_risk_level": "low"
+  },
+  "missing_signals": [],
+  "evidence": {
+    "registry_status": "active",
+    "vital_timeline": {
+      "age": 42,
+      "state": "mature",
+      "risk_level": "low",
+      "causes": [],
+      "reproduction_eligible": false
+    },
+    "score_breakdown": {
+      "persistent_identity": 20,
+      "generation_registry": 15,
+      "stable_cycle": 20,
+      "intrinsic_goals": 20,
+      "reproduction_possible": 0,
+      "narrative_continuity": 15
+    }
+  },
+  "computed_at": "2026-07-07T12:30:00+00:00"
+}
+```
 
 ## Règle d'agrégation dashboard
 
