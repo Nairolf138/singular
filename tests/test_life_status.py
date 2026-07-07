@@ -112,3 +112,69 @@ def test_compute_life_status_terminal_signal_dominates(tmp_path) -> None:
 
     assert result.status == LifeStatus.EXTINCT
     assert result.signals["terminal"] is True
+
+
+def test_compute_life_status_uses_vital_terminal_without_extinction(tmp_path) -> None:
+    from singular.life.life_status import compute_life_status
+
+    life_home = tmp_path / "lives" / "alpha"
+    mem = life_home / "mem"
+    mem.mkdir(parents=True)
+    (mem / "world_state.json").write_text(
+        '{"global_health":{"score":90}}', encoding="utf-8"
+    )
+    (mem / "autopsy.json").write_text("{}", encoding="utf-8")
+    (mem / "self_narrative.json").write_text(
+        '{"identity":{"name":"Alpha","born_at":"2026-06-01T00:00:00+00:00"},"current_heading":"continuer"}',
+        encoding="utf-8",
+    )
+    (mem / "quests_state.json").write_text("{}", encoding="utf-8")
+    runs = [
+        {"event": "mutation", "score_new": index, "accepted": False}
+        for index in range(5)
+    ]
+
+    result = compute_life_status(
+        life_home,
+        registry_entry={"name": "Alpha", "slug": "alpha", "status": "active"},
+        runs=runs,
+    )
+
+    assert result.status == LifeStatus.DYING
+    assert result.signals["terminal"] is True
+    assert result.signals["extinction"] is False
+    assert result.evidence["vital_timeline"]["state"] == "terminal"
+    assert result.evidence["vital_timeline"]["risk_level"] == "high"
+    assert "failure_streak" in result.evidence["vital_timeline"]["causes"]
+    assert "failure_streak" in result.explanation
+
+
+def test_compute_life_status_uses_vital_reproduction_eligibility(tmp_path) -> None:
+    from singular.life.life_status import compute_life_status
+
+    life_home = tmp_path / "lives" / "alpha"
+    mem = life_home / "mem"
+    mem.mkdir(parents=True)
+    (mem / "world_state.json").write_text(
+        '{"global_health":{"score":90}}', encoding="utf-8"
+    )
+    (mem / "autopsy.json").write_text("{}", encoding="utf-8")
+    (mem / "self_narrative.json").write_text(
+        '{"identity":{"name":"Alpha","born_at":"2026-06-01T00:00:00+00:00"},"current_heading":"continuer"}',
+        encoding="utf-8",
+    )
+    (mem / "quests_state.json").write_text("{}", encoding="utf-8")
+    runs = [
+        {"event": "mutation", "score_new": index, "accepted": True}
+        for index in range(3)
+    ]
+
+    result = compute_life_status(
+        life_home,
+        registry_entry={"name": "Alpha", "slug": "alpha", "status": "active"},
+        runs=runs,
+    )
+
+    assert result.signals["reproduction_eligible"] is True
+    assert result.signals["reproduction_capability"] is True
+    assert result.evidence["vital_timeline"]["reproduction_eligible"] is True
