@@ -633,6 +633,132 @@ def test_dashboard_cockpit_sandbox_governance_empty_state(tmp_path: Path) -> Non
     assert governance["empty_state"] == "aucune violation sandbox récente"
 
 
+def test_dashboard_cockpit_life_status_defaults_without_memory_or_registry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "orphan.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": "2026-05-12T10:00:00+00:00",
+                "life": "orphan",
+                "accepted": True,
+                "health": {"score": 95.0},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(dashboard_module, "load_registry", lambda: {"active": None, "lives": {}})
+    client = TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json"))
+
+    payload = client.get("/api/cockpit").json()
+    assert payload["life_status"] == "not_alive_yet"
+    assert payload["life_status_score"] == 0.0
+    assert "active_life" in payload["life_status_missing_signals"]
+    assert "memory" in payload["life_status_missing_signals"]
+
+    essential_payload = client.get("/api/cockpit/essential").json()
+    assert essential_payload["life_status"] == "not_alive_yet"
+    assert essential_payload["life_status_score"] == 0.0
+    assert isinstance(essential_payload["life_status_summary"], str)
+
+
+def test_dashboard_cockpit_life_status_defaults_when_active_life_has_no_memory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    life_dir = tmp_path / "life-no-memory"
+    life_dir.mkdir()
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "no-memory.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": "2026-05-12T10:00:00+00:00",
+                "life": "life-no-memory",
+                "accepted": True,
+                "health": {"score": 95.0},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        dashboard_module,
+        "load_registry",
+        lambda: {
+            "active": "life-no-memory",
+            "lives": {
+                "life-no-memory": LifeMetadata(
+                    name="Life No Memory",
+                    slug="life-no-memory",
+                    path=life_dir,
+                    created_at="2026-05-12T08:00:00+00:00",
+                    status="active",
+                )
+            },
+        },
+    )
+    client = TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json"))
+
+    payload = client.get("/api/cockpit").json()
+    assert payload["life_status"] == "not_alive_yet"
+    assert payload["life_status_score"] == 0.0
+    assert "n'a pas encore de mémoire" in payload["life_status_explanation"]
+
+
+def test_dashboard_cockpit_life_status_uses_extinct_registry_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    life_dir = tmp_path / "extinct-life"
+    (life_dir / "mem").mkdir(parents=True)
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "extinct.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": "2026-05-12T10:00:00+00:00",
+                "life": "extinct-life",
+                "event": "mutation",
+                "accepted": False,
+                "health": {"score": 0.0},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        dashboard_module,
+        "load_registry",
+        lambda: {
+            "active": "extinct-life",
+            "lives": {
+                "extinct-life": LifeMetadata(
+                    name="Extinct Life",
+                    slug="extinct-life",
+                    path=life_dir,
+                    created_at="2026-05-12T08:00:00+00:00",
+                    status="extinct",
+                )
+            },
+        },
+    )
+    client = TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json"))
+
+    payload = client.get("/api/cockpit").json()
+    assert payload["life_status"] == "extinct"
+    assert isinstance(payload["life_status_score"], float)
+    assert payload["life_status_signals"].get("extinction") is True
+
+    essential_payload = client.get("/api/cockpit/essential").json()
+    assert essential_payload["life_status"] == "extinct"
+    assert essential_payload["life_status_score"] == payload["life_status_score"]
+
+
 def test_dashboard_cockpit_essential_projection_schema(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
