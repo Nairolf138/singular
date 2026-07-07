@@ -10,6 +10,7 @@ from typing import Any
 from .logger import RUNS_DIR
 from ..governance.policy import load_runtime_policy
 from ..life.health import detect_health_state
+from ..life.life_status import compute_life_status
 from ..memory import read_skills, get_skills_file
 from ..sensors import compute_host_metrics_aggregates, summarize_environmental_impact
 
@@ -61,9 +62,7 @@ def _build_report_payload(
 ) -> dict[str, Any]:
     """Build a stable export payload for a run."""
 
-    mutations = [
-        r for r in records if r.get("_event_type") == "mutation" or "op" in r
-    ]
+    mutations = [r for r in records if r.get("_event_type") == "mutation" or "op" in r]
     if not mutations:
         raise ValueError("no_mutations")
 
@@ -116,7 +115,9 @@ def _build_report_payload(
 
     health_payload: dict[str, Any] | None = None
     if health_scores:
-        health_state = detect_health_state(health_scores, short_window=10, long_window=50)
+        health_state = detect_health_state(
+            health_scores, short_window=10, long_window=50
+        )
         health_payload = {
             "score": round(health_scores[-1], 2),
             "trend": health_state,
@@ -134,6 +135,16 @@ def _build_report_payload(
     policy = load_runtime_policy()
     host_aggregates = compute_host_metrics_aggregates()
     host_impact = summarize_environmental_impact(host_aggregates)
+    life_verdict = {
+        key: value
+        for key, value in compute_life_status(
+            Path.cwd(),
+            runs=records,
+        )
+        .to_payload()
+        .items()
+        if key in {"status", "score", "explanation", "signals", "missing_signals"}
+    }
 
     return {
         "schema_version": 1,
@@ -156,6 +167,7 @@ def _build_report_payload(
         "health": health_payload,
         "alerts": alerts,
         "verdict": final_verdict,
+        "life_verdict": life_verdict,
         "skills": read_skills(path=skills_path),
         "policy": {
             "active": policy.to_payload(),
@@ -166,6 +178,34 @@ def _build_report_payload(
             "impact": host_impact,
         },
     }
+
+
+def _format_signal_value(value: Any) -> str:
+    """Format a life signal value for human report renderers."""
+
+    if isinstance(value, bool):
+        return "oui" if value else "non"
+    if isinstance(value, (int, float, str)) or value is None:
+        return str(value)
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _signal_lines(signals: dict[str, Any]) -> list[str]:
+    """Return compact human-readable lines for the most useful life signals."""
+
+    if not signals:
+        return ["- aucun"]
+    scalar_signals = {
+        key: value
+        for key, value in signals.items()
+        if key != "structured" and not isinstance(value, (dict, list, tuple, set))
+    }
+    if not scalar_signals:
+        return ["- aucun"]
+    return [
+        f"- {key}: {_format_signal_value(value)}"
+        for key, value in sorted(scalar_signals.items())
+    ]
 
 
 def _render_markdown(payload: dict[str, Any]) -> str:
@@ -188,12 +228,38 @@ def _render_markdown(payload: dict[str, Any]) -> str:
         f"- Meilleur score: {summary['best_score']}",
         f"- Améliorations: {summary['improvements']}",
         f"- Dégradations: {summary['degradations']}",
-        f"- Verdict final: **{payload['verdict']}**",
+        f"- Verdict mutation/performance: **{payload['verdict']}**",
         "",
-        "## Timeline des mutations",
-        "| # | ts | op | base | new | Δ | verdict |",
-        "|---|----|----|------|-----|---|---------|",
+        "## Verdict de vie",
     ]
+    life_verdict = (
+        payload.get("life_verdict")
+        if isinstance(payload.get("life_verdict"), dict)
+        else {}
+    )
+    lines.extend(
+        [
+            f"- Statut: {life_verdict.get('status', '-')}",
+            f"- Score: {life_verdict.get('score', '-')}",
+            f"- Explication: {life_verdict.get('explanation', '-')}",
+            "- Signaux clés:",
+        ]
+    )
+    lines.extend(f"  {line}" for line in _signal_lines(life_verdict.get("signals", {})))
+    missing_signals = life_verdict.get("missing_signals") or []
+    lines.append("- Signaux manquants:")
+    if missing_signals:
+        lines.extend(f"  - {signal}" for signal in missing_signals)
+    else:
+        lines.append("  - aucun")
+    lines.extend(
+        [
+            "",
+            "## Timeline des mutations",
+            "| # | ts | op | base | new | Δ | verdict |",
+            "|---|----|----|------|-----|---|---------|",
+        ]
+    )
     for item in payload["timeline"]:
         lines.append(
             "| {index} | {timestamp} | {operator} | {score_base} | {score_new} | {delta} | {verdict} |".format(
@@ -263,7 +329,8 @@ def report(
         export_path.parent.mkdir(parents=True, exist_ok=True)
         if export_path.suffix.lower() == ".json":
             export_path.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+                + "\n",
                 encoding="utf-8",
             )
         else:
@@ -280,6 +347,8 @@ def report(
     print(f"Generations: {summary['generations']}")
     print(f"Final score: {summary['final_score']}")
     print(f"Best score: {summary['best_score']}")
+    print(f"Verdict mutation/performance: {payload['verdict']}")
+    _print_life_verdict(payload.get("life_verdict", {}))
 
     if payload["health"]:
         print(
@@ -304,9 +373,7 @@ def report(
         for op, count in counter.items():
             print(f"  {op}: {count}")
 
-    mutations = [
-        r for r in records if r.get("_event_type") == "mutation" or "op" in r
-    ]
+    mutations = [r for r in records if r.get("_event_type") == "mutation" or "op" in r]
     _print_loop_modifications(mutations)
 
     skills = payload.get("skills", {})
@@ -325,6 +392,24 @@ def report(
             print(line)
     else:
         print("No skills recorded.")
+
+
+def _print_life_verdict(life_verdict: dict[str, Any]) -> None:
+    """Print the Singular life verdict separately from mutation performance."""
+
+    print(f"Verdict de vie: {life_verdict.get('status') or '-'}")
+    print(f"Score de vie: {life_verdict.get('score', '-')}")
+    print(f"Explication de vie: {life_verdict.get('explanation') or '-'}")
+    print("Signaux clés de vie:")
+    for line in _signal_lines(life_verdict.get("signals", {})):
+        print(f"  {line[2:] if line.startswith('- ') else line}")
+    missing_signals = life_verdict.get("missing_signals") or []
+    print("Signaux manquants de vie:")
+    if missing_signals:
+        for signal in missing_signals:
+            print(f"  {signal}")
+    else:
+        print("  aucun")
 
 
 def _print_loop_modifications(mutations: list[dict[str, Any]]) -> None:
@@ -377,7 +462,9 @@ def _print_loop_modifications(mutations: list[dict[str, Any]]) -> None:
 
     frequency = Counter(entry["op"] for entry in entries)
     print("  Plus fréquent:")
-    for op, count in sorted(frequency.items(), key=lambda item: (-item[1], item[0]))[:3]:
+    for op, count in sorted(frequency.items(), key=lambda item: (-item[1], item[0]))[
+        :3
+    ]:
         print(f"    {op}: {count}")
 
     profitable = sorted(entries, key=lambda e: e["profit"], reverse=True)

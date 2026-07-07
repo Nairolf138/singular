@@ -65,6 +65,10 @@ def test_report_cli(monkeypatch, tmp_path, capsys):
     assert "Run run1" in out
     assert "Generations: 2" in out
     assert "Best score: 1.0" in out
+    assert "Verdict mutation/performance:" in out
+    assert "Verdict de vie:" in out
+    assert "Signaux clés de vie:" in out
+    assert "Signaux manquants de vie:" in out
     assert "skillA" in out
     assert "Modifications de boucle:" in out
 
@@ -243,6 +247,15 @@ def test_report_export_json_schema(monkeypatch, tmp_path):
     assert payload["timeline"][0]["operator"] == "mutate"
     assert payload["timeline"][0]["verdict"] == "improvement"
     assert payload["verdict"] == "improvement"
+    assert set(payload["life_verdict"]) == {
+        "status",
+        "score",
+        "explanation",
+        "signals",
+        "missing_signals",
+    }
+    assert isinstance(payload["life_verdict"]["signals"], dict)
+    assert isinstance(payload["life_verdict"]["missing_signals"], list)
     assert isinstance(payload["alerts"], list)
     assert payload["policy"]["active"]["version"] == 1
     assert isinstance(payload["policy"]["impact"], list)
@@ -334,6 +347,12 @@ def test_report_export_markdown_stdout(monkeypatch, tmp_path, capsys):
     main(["report", "--id", "run6", "--export", "markdown"])
     out = capsys.readouterr().out
     assert "# Run report `run6`" in out
+    assert "## Verdict de vie" in out
+    assert "- Statut:" in out
+    assert "- Score:" in out
+    assert "- Explication:" in out
+    assert "- Signaux clés:" in out
+    assert "- Signaux manquants:" in out
     assert "## Timeline des mutations" in out
 
 
