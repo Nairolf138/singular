@@ -110,10 +110,51 @@ def test_status_filters_non_mutation_records_for_success_rate(
     assert payload["success_rate"] == 50.0
     assert payload["vital_timeline"]["age"] == 3
     assert payload["vital_timeline"]["state"] in {"mature", "declining", "terminal", "extinct"}
+    assert set(payload["life_status"]) == {
+        "status",
+        "score",
+        "explanation",
+        "signals",
+        "missing_signals",
+    }
+    assert isinstance(payload["life_status"]["signals"], dict)
+    assert isinstance(payload["life_status"]["missing_signals"], list)
     assert "autonomy_metrics" in payload
     assert "proactive_initiative_rate" in payload["autonomy_metrics"]
     assert "host_environment" in payload
     assert "impact" in payload["host_environment"]
+
+
+def test_status_renders_life_status_in_plain_and_table(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    class DummyPsyche:
+        last_mood = None
+        curiosity = 0.5
+        patience = 0.5
+        playfulness = 0.5
+        optimism = 0.5
+        resilience = 0.5
+
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    monkeypatch.setattr(status_mod, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(
+        status_mod.Psyche, "load_state", staticmethod(lambda: DummyPsyche())
+    )
+
+    status_mod.status(verbose=True)
+    plain_out = capsys.readouterr().out
+    assert "Verdict de vie:" in plain_out
+    assert "Score de vie:" in plain_out
+    assert "Explication:" in plain_out
+    assert "Signaux de vie manquants:" in plain_out
+
+    status_mod.status(verbose=True, output_format="table")
+    table_out = capsys.readouterr().out
+    assert "Verdict de vie" in table_out
+    assert "Score de vie" in table_out
+    assert "Explication" in table_out
+    assert "Signaux de vie manquants:" in table_out
 
 
 def test_status_exposes_quest_counts(tmp_path, monkeypatch, capsys) -> None:
