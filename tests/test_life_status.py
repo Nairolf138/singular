@@ -60,7 +60,7 @@ def test_compute_life_status_aggregates_configured_signals(tmp_path) -> None:
         encoding="utf-8",
     )
     (mem / "goals.json").write_text(
-        '{"weights":{"coherence":0.5},"history":[]}', encoding="utf-8"
+        '{"source":"intrinsic","origin":"self_generated","kind":"intrinsic_goal","status":"active","weights":{"coherence":0.5},"history":[]}', encoding="utf-8"
     )
     (mem / "quests_state.json").write_text(
         '{"active":[{"origin":"intrinsic"}],"paused":[]}', encoding="utf-8"
@@ -91,6 +91,45 @@ def test_compute_life_status_aggregates_configured_signals(tmp_path) -> None:
     assert result.signals["stable_cycle"] is True
     assert result.signals["intrinsic_goals"] is True
     assert result.signals["narrative_continuity"] is True
+
+
+def test_compute_life_status_rejects_human_quest_as_intrinsic_goal(tmp_path) -> None:
+    from singular.life.life_status import compute_life_status
+
+    life_home = tmp_path
+    mem = life_home / "mem"
+    mem.mkdir()
+    (life_home / "runs").mkdir()
+    (mem / "world_state.json").write_text(
+        '{"global_health":{"score":90}}', encoding="utf-8"
+    )
+    (mem / "autopsy.json").write_text("{}", encoding="utf-8")
+    (mem / "self_narrative.json").write_text(
+        '{"identity":{"name":"Alpha","born_at":"2026-06-01T00:00:00+00:00"},"current_heading":"continuer","life_periods":[]}',
+        encoding="utf-8",
+    )
+    (mem / "goals.json").write_text(
+        '{"weights":{"coherence":0.5},"history":[{"origin":"external","status":"active"}]}',
+        encoding="utf-8",
+    )
+    (mem / "quests_state.json").write_text(
+        '{"active":[{"origin":"external","status":"active"}],"paused":[]}',
+        encoding="utf-8",
+    )
+
+    result = compute_life_status(
+        life_home,
+        registry_entry={
+            "name": "Alpha",
+            "slug": "alpha",
+            "created_at": "2026-06-01T00:00:00+00:00",
+            "status": "active",
+        },
+        runs=[],
+    )
+
+    assert result.signals["intrinsic_goals"] is False
+    assert result.signals["structured"]["goals"]["evidence"]["intrinsic_goal_weight_count"] == 0
 
 
 def test_compute_life_status_terminal_signal_dominates(tmp_path) -> None:
@@ -311,7 +350,17 @@ def test_compute_life_status_full_durable_signals_are_alive(life_home_factory) -
             "life_periods": [{"start_at": "2026-06-01T00:00:00+00:00"}],
         },
     )
-    _write_json(mem / "goals.json", {"weights": {"coherence": 0.7}, "history": []})
+    _write_json(
+        mem / "goals.json",
+        {
+            "source": "intrinsic",
+            "origin": "self_generated",
+            "kind": "intrinsic_goal",
+            "status": "active",
+            "weights": {"coherence": 0.7},
+            "history": [],
+        },
+    )
     _write_json(mem / "quests_state.json", {"active": [{"origin": "intrinsic"}]})
     (mem / "generations.jsonl").write_text(
         '{"event":"generation.accepted"}\n', encoding="utf-8"
@@ -419,7 +468,7 @@ def test_compute_life_status_corrupt_json_and_missing_files_are_explanatory(
     assert result.status == LifeStatus.NOT_ALIVE_YET
     assert (
         result.signals["structured"]["goals"]["reason"]
-        == "no intrinsic goal evidence found"
+        == "no active self-generated intrinsic goal evidence found"
     )
     assert "world_state" in result.missing_signals
     assert "autopsy" in result.missing_signals

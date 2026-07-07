@@ -327,12 +327,34 @@ def _extract_narrative_continuity_signal(
     )
 
 
+def _is_self_generated_intrinsic_goal(item: Mapping[str, object]) -> bool:
+    return (
+        item.get("source") == "intrinsic"
+        or item.get("origin") in {"intrinsic", "self_generated"}
+        or item.get("kind") == "intrinsic_goal"
+    )
+
+
+def _is_active_intrinsic_goal(item: Mapping[str, object]) -> bool:
+    if not _is_self_generated_intrinsic_goal(item):
+        return False
+    status = str(item.get("status") or item.get("state") or "active").lower()
+    return status in {"active", "maintained", "renewed", "resumed"}
+
+
 def _extract_goal_signal(goals: dict, quests: dict, runs: list[dict]) -> dict:
     weights = goals.get("weights") if isinstance(goals.get("weights"), Mapping) else {}
     active_goal_count = sum(
         1
         for value in weights.values()
         if isinstance(value, (int, float)) and float(value) > 0
+    )
+    intrinsic_goal_weight_count = active_goal_count if _is_active_intrinsic_goal(goals) else 0
+    history = goals.get("history") if isinstance(goals.get("history"), list) else []
+    renewed_intrinsic_goal_count = sum(
+        1
+        for item in history
+        if isinstance(item, Mapping) and _is_active_intrinsic_goal(item)
     )
     active_quests = (
         quests.get("active") if isinstance(quests.get("active"), list) else []
@@ -343,23 +365,25 @@ def _extract_goal_signal(goals: dict, quests: dict, runs: list[dict]) -> dict:
     intrinsic_quest_count = sum(
         1
         for item in active_quests + paused_quests
-        if isinstance(item, Mapping) and item.get("origin") == "intrinsic"
+        if isinstance(item, Mapping) and _is_active_intrinsic_goal(item)
     )
     run_goal_events = [
         row
         for row in runs
         if any(token in _event_text(row) for token in ("goal", "quest", "objective"))
     ]
-    ok = (
-        active_goal_count > 0 or intrinsic_quest_count > 0 or bool(goals.get("history"))
-    )
+    ok = intrinsic_goal_weight_count > 0 or intrinsic_quest_count > 0 or renewed_intrinsic_goal_count > 0
     return _signal(
         ok,
         1.0 if ok else 0.0,
-        "intrinsic goals are present" if ok else "no intrinsic goal evidence found",
+        "active self-generated intrinsic goals are present"
+        if ok
+        else "no active self-generated intrinsic goal evidence found",
         {
             "active_goal_count": active_goal_count,
+            "intrinsic_goal_weight_count": intrinsic_goal_weight_count,
             "intrinsic_quest_count": intrinsic_quest_count,
+            "renewed_intrinsic_goal_count": renewed_intrinsic_goal_count,
             "history_count": _list_count(goals.get("history")),
             "run_goal_events_count": len(run_goal_events),
         },
