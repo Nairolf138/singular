@@ -37,6 +37,32 @@ class LifeThresholds:
     minimum_observed_cycles: int = 3
     alive_minimum_score: float = 0.8
     fragile_minimum_score: float = 0.5
+    dying_degradation_minimum_score: float = 0.4
+
+
+@dataclass(frozen=True)
+class WeightedCriterion:
+    """Weighted contribution to the life qualification score."""
+
+    points: float
+    required_for_alive: bool = True
+
+
+@dataclass(frozen=True)
+class LifeWeightedScore:
+    """Weighted scoring model for life status evaluation."""
+
+    total_points: float = 100.0
+    criteria: dict[str, WeightedCriterion] = field(
+        default_factory=lambda: {
+            "persistent_identity": WeightedCriterion(20.0, True),
+            "generation_registry": WeightedCriterion(15.0, True),
+            "stable_cycle": WeightedCriterion(20.0, True),
+            "intrinsic_goals": WeightedCriterion(20.0, True),
+            "reproduction_capability": WeightedCriterion(10.0, False),
+            "narrative_continuity": WeightedCriterion(15.0, True),
+        }
+    )
 
 
 @dataclass(frozen=True)
@@ -46,6 +72,7 @@ class LifeDefinitionConfig:
     schema_version: str = "1.0"
     criteria: LifeCriteria = field(default_factory=LifeCriteria)
     thresholds: LifeThresholds = field(default_factory=LifeThresholds)
+    weighted_score: LifeWeightedScore = field(default_factory=LifeWeightedScore)
     statuses: dict[str, str] = field(
         default_factory=lambda: {status: status for status in AUTHORIZED_LIFE_STATUSES}
     )
@@ -137,6 +164,44 @@ def load_life_definition_config(path: Path | None = None) -> LifeDefinitionConfi
                 "fragile_minimum_score", cfg.thresholds.fragile_minimum_score
             )
         ),
+        dying_degradation_minimum_score=float(
+            thresholds_raw.get(
+                "dying_degradation_minimum_score",
+                cfg.thresholds.dying_degradation_minimum_score,
+            )
+        ),
+    )
+    weighted_raw = (
+        raw.get("weighted_score", {})
+        if isinstance(raw.get("weighted_score", {}), dict)
+        else {}
+    )
+    weighted_criteria_raw = (
+        weighted_raw.get("criteria", {})
+        if isinstance(weighted_raw.get("criteria", {}), dict)
+        else {}
+    )
+    weighted_defaults = cfg.weighted_score.criteria
+    aliases = {"continuous_intrinsic_goals": "intrinsic_goals"}
+    weighted_criteria = dict(weighted_defaults)
+    for raw_name, value in weighted_criteria_raw.items():
+        name = aliases.get(str(raw_name), str(raw_name))
+        if name not in weighted_defaults or not isinstance(value, dict):
+            continue
+        weighted_criteria[name] = WeightedCriterion(
+            points=float(value.get("points", weighted_defaults[name].points)),
+            required_for_alive=bool(
+                value.get(
+                    "required_for_alive",
+                    weighted_defaults[name].required_for_alive,
+                )
+            ),
+        )
+    weighted_score = LifeWeightedScore(
+        total_points=float(
+            weighted_raw.get("total_points", cfg.weighted_score.total_points)
+        ),
+        criteria=weighted_criteria,
     )
     unknown = sorted(set(statuses_raw) - set(AUTHORIZED_LIFE_STATUSES))
     if unknown:
@@ -158,10 +223,13 @@ def load_life_definition_config(path: Path | None = None) -> LifeDefinitionConfi
         raise ValueError("minimum_observed_cycles must be >= 0")
     if thresholds.alive_minimum_score < thresholds.fragile_minimum_score:
         raise ValueError("alive_minimum_score must be >= fragile_minimum_score")
+    if weighted_score.total_points <= 0:
+        raise ValueError("weighted_score.total_points must be > 0")
 
     return LifeDefinitionConfig(
         schema_version=str(raw.get("schema_version", cfg.schema_version)),
         criteria=criteria,
         thresholds=thresholds,
+        weighted_score=weighted_score,
         statuses=statuses,
     )

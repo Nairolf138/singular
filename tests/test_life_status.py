@@ -82,7 +82,7 @@ def test_compute_life_status_aggregates_configured_signals(tmp_path) -> None:
     )
 
     assert result.status == LifeStatus.ALIVE
-    assert result.score == 1.0
+    assert result.score == 100.0
     assert result.signals["persistent_identity"] is True
     assert result.signals["stable_cycle"] is True
     assert result.signals["intrinsic_goals"] is True
