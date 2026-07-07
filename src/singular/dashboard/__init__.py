@@ -14,6 +14,7 @@ from urllib.parse import quote
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from singular.lives import get_registry_root, load_registry, set_life_status
+from singular.life.life_status import compute_life_status
 from singular.life.vital import compute_vital_timeline
 from singular.metrics.autonomy import compute_autonomy_metrics
 from singular.metrics.behavioral_regulation import compute_behavioral_regulation_metrics
@@ -860,6 +861,64 @@ def create_app(
             )
         return decisions[-10:]
 
+    def _default_cockpit_life_status(
+        explanation: str = "Aucune vie active ou mémoire disponible.",
+    ) -> dict[str, object]:
+        return {
+            "status": "not_alive_yet",
+            "score": 0.0,
+            "explanation": explanation,
+            "signals": {},
+            "missing_signals": ["active_life", "memory"],
+        }
+
+    def _active_life_entry() -> tuple[str | None, object | None, Path | None]:
+        registry = load_registry()
+        active = registry.get("active")
+        lives = registry.get("lives")
+        if not isinstance(active, str) or not isinstance(lives, dict):
+            return None, None, None
+        meta = lives.get(active)
+        path_value = life_meta_get(meta, "path", None)
+        if isinstance(path_value, str):
+            path_value = Path(path_value)
+        return active, meta, path_value if isinstance(path_value, Path) else None
+
+    def _resolve_cockpit_life_entry(
+        selected_life: object | None,
+    ) -> tuple[str | None, object | None, Path | None]:
+        if isinstance(selected_life, str) and selected_life:
+            slug, meta, life_dir = _resolve_life_entry(selected_life)
+            if life_dir is not None:
+                return slug, meta, life_dir
+        return _active_life_entry()
+
+    def _cockpit_life_status_payload(
+        *, records: list[dict[str, object]], selected_life: object | None = None
+    ) -> dict[str, object]:
+        slug, meta, life_dir = _resolve_cockpit_life_entry(selected_life)
+        if life_dir is None:
+            return _default_cockpit_life_status()
+        if not (life_dir / "mem").exists():
+            life_name = slug or selected_life or "active"
+            return _default_cockpit_life_status(
+                f"Statut not_alive_yet: la vie {life_name} n'a pas encore de mémoire."
+            )
+        filtered_records = [
+            record for record in records if slug and _record_life(record) == slug
+        ]
+        try:
+            return compute_life_status(
+                life_dir,
+                registry_entry=meta,
+                runs=filtered_records if filtered_records else records,
+            ).to_payload()
+        except Exception:
+            life_name = slug or selected_life or "la vie active"
+            return _default_cockpit_life_status(
+                f"Statut not_alive_yet: impossible de calculer le statut de vie pour {life_name}."
+            )
+
     def _summarize_cockpit(current_life_only: bool = False) -> dict[str, object]:
         latest = _latest_run_file(current_life_only=current_life_only)
         if latest is None:
@@ -942,6 +1001,16 @@ def create_app(
                 "life_liveness_proofs": [],
                 "life_liveness_life": None,
             }
+            life_status_payload = _cockpit_life_status_payload(records=[])
+            empty.update(
+                {
+                    "life_status": life_status_payload.get("status", "not_alive_yet"),
+                    "life_status_score": life_status_payload.get("score", 0.0),
+                    "life_status_explanation": life_status_payload.get("explanation", ""),
+                    "life_status_signals": life_status_payload.get("signals", {}),
+                    "life_status_missing_signals": life_status_payload.get("missing_signals", []),
+                }
+            )
             return empty
 
         records = _read_jsonl_records(latest)
@@ -1114,6 +1183,10 @@ def create_app(
             if records
             else {"index": 0.0, "components": {}, "proofs": []}
         )
+        life_status_payload = _cockpit_life_status_payload(
+            records=records,
+            selected_life=selected_life,
+        )
 
         return {
             "run": _run_file_id(latest),
@@ -1169,6 +1242,11 @@ def create_app(
             "life_liveness_components": liveness_payload.get("components", {}),
             "life_liveness_proofs": liveness_payload.get("proofs", []),
             "life_liveness_life": selected_life,
+            "life_status": life_status_payload.get("status", "not_alive_yet"),
+            "life_status_score": life_status_payload.get("score", 0.0),
+            "life_status_explanation": life_status_payload.get("explanation", ""),
+            "life_status_signals": life_status_payload.get("signals", {}),
+            "life_status_missing_signals": life_status_payload.get("missing_signals", []),
         }
 
     def _summarize_cockpit_essential(current_life_only: bool = False) -> dict[str, object]:
@@ -1193,6 +1271,9 @@ def create_app(
             "next_action": cockpit.get("next_action") or "Aucune action immédiate",
             "selected_life": selected_life,
             "active_incidents_count": incidents_count,
+            "life_status": cockpit.get("life_status", "not_alive_yet"),
+            "life_status_score": cockpit.get("life_status_score", 0.0),
+            "life_status_summary": cockpit.get("life_status_explanation", ""),
         }
 
 

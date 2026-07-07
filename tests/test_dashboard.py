@@ -532,6 +532,11 @@ def test_dashboard_cockpit_endpoint_schema(tmp_path: Path) -> None:
     assert "objectives" in payload["trajectory"]
     assert "priority_changes" in payload["trajectory"]
     assert "objective_narrative_links" in payload["trajectory"]
+    assert payload["life_status"] == "not_alive_yet"
+    assert payload["life_status_score"] == 0.0
+    assert isinstance(payload["life_status_explanation"], str)
+    assert isinstance(payload["life_status_signals"], dict)
+    assert isinstance(payload["life_status_missing_signals"], list)
 
 
 def test_dashboard_cockpit_sandbox_governance_summary(tmp_path: Path) -> None:
@@ -670,12 +675,18 @@ def test_dashboard_cockpit_essential_projection_schema(tmp_path: Path) -> None:
         "next_action": payload["next_action"],
         "selected_life": payload["selected_life"],
         "active_incidents_count": payload["active_incidents_count"],
+        "life_status": payload["life_status"],
+        "life_status_score": payload["life_status_score"],
+        "life_status_summary": payload["life_status_summary"],
     }
     assert payload["global_status"] in {"critical", "warning", "stable", "unknown"}
     assert isinstance(payload["critical_alerts_count"], int)
     assert isinstance(payload["next_action"], str)
     assert isinstance(payload["selected_life"], str)
     assert isinstance(payload["active_incidents_count"], int)
+    assert payload["life_status"] == "not_alive_yet"
+    assert payload["life_status_score"] == 0.0
+    assert isinstance(payload["life_status_summary"], str)
 
 
 def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
