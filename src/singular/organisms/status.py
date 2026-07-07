@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ..lives import list_relations
 from ..life.health import detect_health_state
+from ..life.life_status import compute_life_status
 from ..life.vital import compute_vital_timeline
 from ..metrics.autonomy import compute_autonomy_metrics
 from ..psyche import Psyche
@@ -205,6 +206,13 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         "mutation_count": 0,
         "invalid_lines": 0,
         "health": None,
+        "life_status": {
+            "status": None,
+            "score": 0.0,
+            "explanation": "",
+            "signals": {},
+            "missing_signals": [],
+        },
         "alerts": [],
         "mood": None,
         "traits": {},
@@ -346,6 +354,16 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         quests=payload["quests"] if isinstance(payload["quests"], dict) else {},
     )
     payload["skills_lifecycle"] = _read_skill_lifecycle_status()
+    payload["life_status"] = {
+        key: value
+        for key, value in compute_life_status(
+            get_mem_dir().parent,
+            runs=all_records,
+        )
+        .to_payload()
+        .items()
+        if key in {"status", "score", "explanation", "signals", "missing_signals"}
+    }
     payload["traits"] = {
         "curiosity": round(psyche.curiosity, 2),
         "patience": round(psyche.patience, 2),
@@ -386,6 +404,9 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
                     else "-"
                 ),
             ],
+            ["Verdict de vie", str((payload.get("life_status") or {}).get("status") or "-")],
+            ["Score de vie", _fmt_number((payload.get("life_status") or {}).get("score"))],
+            ["Explication", str((payload.get("life_status") or {}).get("explanation") or "-")],
             ["Taux d’initiatives proactives", _fmt_ratio(autonomy.get("proactive_initiative_rate"))],
             ["Stabilité long terme", _fmt_ratio(autonomy.get("long_term_stability"))],
             [
@@ -459,6 +480,9 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
                 _print_table(["Level", "Message", "Action"], alert_rows)
             else:
                 print("Alerts: none")
+            missing = (payload.get("life_status") or {}).get("missing_signals")
+            if isinstance(missing, list) and missing:
+                print("Signaux de vie manquants: " + ", ".join(str(item) for item in missing))
         trait_rows = [[k, f"{v:.2f}"] for k, v in payload["traits"].items()]
         print("Traits")
         _print_table(["Trait", "Value"], trait_rows)
@@ -513,6 +537,15 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
                     )
             else:
                 print("Alerts: none")
+
+    life_status = payload.get("life_status") if isinstance(payload.get("life_status"), dict) else {}
+    print(f"Verdict de vie: {life_status.get('status') or '-'}")
+    print(f"Score de vie: {_fmt_number(life_status.get('score'))}")
+    print(f"Explication: {life_status.get('explanation') or '-'}")
+    if verbose:
+        missing = life_status.get("missing_signals")
+        if isinstance(missing, list) and missing:
+            print("Signaux de vie manquants: " + ", ".join(str(item) for item in missing))
 
     print(f"Mood: {payload['mood']}")
     relationships = payload.get("relationships") if isinstance(payload.get("relationships"), dict) else {}
