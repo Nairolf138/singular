@@ -44,6 +44,18 @@ Mémoire narrative persistante de l'identité et des inflexions de trajectoire d
   - `costly_incidents` (`array<string>`)
 - `current_heading` (`string`)
 
+### Contribution au verdict de vie
+`compute_life_status()` utilise cet artefact comme preuve d’identité persistante, de continuité narrative et de trajectoire sur plus de N jours. Les champs lus sont:
+
+- `identity.name`: requis pour établir `signals.persistent_identity`. Absent, vide ou non lisible, le signal d’identité est incomplet.
+- `identity.born_at`: sert de date de première apparition et contribue à l’âge narratif; il peut être remplacé par `registry.created_at` si l’entrée registre existe. Absent sans substitut registre, l’identité doit au moins fournir `identity.slug` via narration ou registre pour rester persistante.
+- `identity.slug`: substitut accepté pour compléter l’identité persistante quand `born_at` manque; il peut aussi venir du registre.
+- `life_periods[*].start_at` / `life_periods[*].end_at`: dates prises en compte pour calculer la première apparition et donc `signals.narrative_age_days`; les entrées non objets ou dates invalides sont ignorées.
+- `life_periods`: son nombre alimente `periods_count` et sa présence constitue du contenu narratif. Absent ou non liste, il est traité comme une liste vide.
+- `current_heading`: constitue du contenu narratif même sans période. Absent ou vide, la continuité narrative exige au moins des `life_periods`.
+
+Comportement en cas d’absence: si `mem/self_narrative.json` manque, `self_narrative` apparaît dans `missing_signals`, la narration est lue comme `{}` et les valeurs de registre peuvent encore rétablir partiellement l’identité (`name`, `born_at`, `slug`). En revanche, sans `current_heading` ni `life_periods`, `narrative_continuity` reste faux; sans date valide assez ancienne pour atteindre `minimum_narrative_trajectory_days`, la trajectoire > N jours reste insuffisante.
+
 ### Exemple JSON (minimal valide)
 ```json
 {
@@ -115,6 +127,16 @@ Mémoire narrative persistante de l'identité et des inflexions de trajectoire d
   - `relational_debt` (`float`)
   - `delayed_events` (`array<object>`)
 
+### Contribution au verdict de vie
+`compute_life_status()` utilise cet artefact comme indicateur de santé du monde, ressources et dette écologique/relationnelle via la métrique de santé injectée dans la timeline vitale. Les champs directement lus sont:
+
+- `health.score`: score de santé accepté si présent à la racine; absent dans le schéma courant, donc généralement non utilisé pour ce fichier.
+- `global_health.score`: score de santé global ajouté à la série `health_scores` après les scores trouvés dans les runs; s’il existe, il peut devenir `current_health` de `compute_vital_timeline()` et influencer les états `terminal`/`extinct`, le risque vital et l’éligibilité reproductive.
+
+Les champs suivants ne sont pas lus directement par `compute_life_status()` aujourd’hui, mais documentent la causalité interprétable derrière `global_health.score` et les décisions opérateur: `resources.renewable`, `resources.non_renewable`, `global_health.trend`, `global_health.signals.resource_pressure`, `global_health.signals.cohesion`, `global_health.signals.ecological_debt`, `global_health.signals.relational_debt`, `global_health.signals.delayed_risk`, `dynamics.ecological_debt`, `dynamics.relational_debt` et `dynamics.delayed_events`.
+
+Comportement en cas d’absence: si `mem/world_state.json` manque, `world_state` apparaît dans `missing_signals`, l’état monde est lu comme `{}` et aucun score monde n’est ajouté à `health_scores`. Le verdict continue alors avec les scores de santé éventuellement présents dans les runs; si aucun score n’existe, la timeline vitale reçoit `current_health=None`. Les dettes écologiques/relationnelles absentes n’ajoutent pas de cause directe au verdict, mais privent l’explication d’un contexte causal.
+
 ### Exemple JSON (minimal valide)
 ```json
 {
@@ -177,6 +199,16 @@ Rapport de post-mortem technique/comportemental lors d'une extinction.
 - `technical_causes` (`array<string>`)
 - `behavioral_causes` (`array<string>`)
 
+### Contribution au verdict de vie
+`compute_life_status()` utilise cet artefact comme preuve terminale: la simple présence d’un objet JSON lisible dans `mem/autopsy.json` suffit à établir `signals.structured.extinction.evidence.autopsy_present=true`. Les champs documentaires lus indirectement ou conservés pour diagnostic sont:
+
+- présence du fichier avec racine JSON objet: confirme une extinction, indépendamment du détail des causes.
+- `technical_causes`: causes techniques terminales exploitées par les opérateurs et rapports, mais non parsées par `compute_life_status()` pour pondérer le score.
+- `behavioral_causes`: causes comportementales terminales exploitées par les opérateurs et rapports, mais non parsées par `compute_life_status()` pour pondérer le score.
+- `iteration` et `generated_at`: contexte temporel/post-mortem, non utilisé directement par le calcul du statut.
+
+Comportement en cas d’absence: si `mem/autopsy.json` manque, `autopsy` apparaît dans `missing_signals`, `autopsy_present=false` et l’extinction peut encore être confirmée par `registry.status == "extinct"` ou par des événements de run contenant `extinct` ou `death`. Si le fichier existe mais est corrompu, non JSON ou non objet, il est lu comme `{}` et ne confirme pas l’extinction.
+
 ### Exemple JSON (minimal valide)
 ```json
 {
@@ -222,6 +254,31 @@ Vue consolidée des objectifs actifs/abandonnés/complétés et des variations d
   - alimentent les liens narratifs (`event`, `objective`, `self_narrative_event`).
 - `mem/goals.json`
   - historique des poids intrinsèques (`history[*].weights`) utile pour diagnostiquer les réallocations d'axes.
+
+### Contribution au verdict de vie
+`compute_life_status()` utilise `mem/goals.json` et `mem/quests_state.json` pour établir la présence d’objectifs intrinsèques ou d’une trajectoire d’objectifs. Les champs lus sont:
+
+- `goals.weights`: objet de pondérations; chaque valeur numérique strictement positive compte dans `active_goal_count`. Absent ou non objet, il équivaut à zéro objectif actif.
+- `goals.history`: sa simple présence non vide établit une trajectoire d’objectifs même si aucun poids actif n’est lisible. Absent, vide ou non liste, `history_count` vaut 0.
+- `quests_state.active`: liste de quêtes actives; seules les entrées objets avec `origin == "intrinsic"` comptent comme quêtes intrinsèques. Absent ou non liste, elle est traitée comme vide.
+- `quests_state.paused`: liste de quêtes suspendues; mêmes règles que `active` pour `origin == "intrinsic"`. Absent ou non liste, elle est traitée comme vide.
+- runs JSONL associés: les événements dont le texte contient `goal`, `quest` ou `objective` alimentent `run_goal_events_count`, mais ne suffisent pas seuls à établir `intrinsic_goals` dans l’implémentation actuelle.
+
+Comportement en cas d’absence: `goals.json` est optionnel pour `missing_signals`; s’il manque, les objectifs peuvent encore être établis par des quêtes intrinsèques dans `quests_state.json`. `quests_state.json` est requis: s’il manque, `quests_state` apparaît dans `missing_signals`, mais `goals.weights` ou `goals.history` peuvent encore établir `intrinsic_goals`. Si les deux sources ne fournissent ni poids positif, ni historique, ni quête intrinsèque, le signal `intrinsic_goals` reste faux.
+
+### Contribution des runs JSONL au verdict de vie
+Les runs `*.jsonl`, `*.jsonl.tmp` et `*/events.jsonl` ne sont pas un artefact mémoire unique, mais ils contribuent directement au verdict comme observation dynamique des cycles, mutations, générations, extinctions et reproductions. `compute_life_status()` lit notamment:
+
+- `event`, `phase`, `stage`, `type`, `state`, `status`: concaténés en texte d’événement. Les séquences contenant successivement `veille`, `action`, `introspection`, `sommeil` incrémentent `observed_cycles`; atteindre `minimum_observed_cycles` établit `stable_cycle`.
+- texte contenant `mutation` ou `generation`: contribue au signal de registre générationnel avec `run_generation_events_count`.
+- présence de `score_new`: marque une mutation mesurable, incrémente l’âge technique passé à la timeline vitale et fait entrer l’enregistrement dans le calcul de réussite/échec.
+- `accepted` ou, à défaut, `ok`: booléens utilisés pour calculer taux d’échec et plus longue série d’échecs; absents ou non booléens, ils sont ignorés.
+- `health.score` ou `global_health.score`: ajoutés à la série de santé; le dernier score disponible devient la santé courante de la timeline vitale.
+- texte contenant `extinct`, `death` ou `terminal`: alimente les événements d’extinction; `extinct` ou `death` confirment l’extinction.
+- texte contenant `birth`, `reproduction`, `child` ou `offspring`: établit `reproduction_done` et contribue à `reproduction_capability`.
+- `ts`, `time` ou `timestamp`: dates ajoutées au calcul de première apparition et donc à la trajectoire > N jours; dates absentes ou invalides ignorées.
+
+Comportement en cas d’absence: si le répertoire `runs/` manque et que les runs ne sont pas injectés par l’appelant, `runs` apparaît dans `missing_signals` et la liste est vide. Le statut peut devenir `not_alive_yet` si aucune identité persistante n’est établie. Sans runs, `observed_cycles=0`, aucun événement de mutation/génération/death/reproduction n’est détecté, et le calcul dépend alors des artefacts mémoire, du registre et de `mem/generations.jsonl`.
 
 ### Structure retournée par le dashboard
 - `trajectory.objectives.counts`
