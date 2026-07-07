@@ -158,6 +158,15 @@ def test_smoke_dashboard_e2e_capacites_critiques(
     cockpit_payload = cockpit.json()
     assert str(cockpit_payload["run"]).startswith(run_id)
     assert "accepted_mutation_rate" in cockpit_payload
+    assert cockpit_payload["life_status"] in {
+        "not_alive_yet",
+        "fragile",
+        "alive",
+        "dying",
+        "extinct",
+    }
+    assert isinstance(cockpit_payload["life_status_score"], float)
+    assert isinstance(cockpit_payload["life_status_explanation"], str)
 
     genealogy = client.get("/lives/genealogy")
     assert genealogy.status_code == 200
@@ -185,6 +194,9 @@ def test_smoke_dashboard_e2e_capacites_critiques(
     essential_payload = essential.json()
     assert essential_payload["schema_version"] == "2026-04-15"
     assert "global_status" in essential_payload
+    assert essential_payload["life_status"] == cockpit_payload["life_status"]
+    assert essential_payload["life_status_score"] == cockpit_payload["life_status_score"]
+    assert "life_status_summary" in essential_payload
 
 
 @pytest.fixture
@@ -387,6 +399,15 @@ def test_active_tmp_run_feeds_dashboard_endpoints(
     )
     assert cockpit["vital_metrics"]["energy_resources"]["total_energy"] > 0
     assert cockpit["life_metrics_contract"]["counts"]["total_lives"] >= 2
+    assert cockpit["life_status"] in {
+        "not_alive_yet",
+        "fragile",
+        "alive",
+        "dying",
+        "extinct",
+    }
+    assert isinstance(cockpit["life_status_score"], float)
+    assert isinstance(cockpit["life_status_explanation"], str)
 
     context_response = client.get("/dashboard/context")
     assert context_response.status_code == 200
