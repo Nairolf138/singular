@@ -15,6 +15,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
+from singular.life.vital import compute_vital_timeline
+
 if TYPE_CHECKING:  # pragma: no cover - imported only for static typing.
     from singular.life.life_definition import LifeDefinitionConfig
 
@@ -201,6 +203,38 @@ def _cycle_count(rows: Sequence[Mapping[str, Any]]) -> int:
     return count
 
 
+def _health_score_from_payload(payload: Mapping[str, Any]) -> float | None:
+    health = payload.get("health")
+    if isinstance(health, Mapping) and isinstance(health.get("score"), (int, float)):
+        return float(health["score"])
+    global_health = payload.get("global_health")
+    if isinstance(global_health, Mapping) and isinstance(
+        global_health.get("score"), (int, float)
+    ):
+        return float(global_health["score"])
+    return None
+
+
+def _accepted_value(row: Mapping[str, Any]) -> bool | None:
+    accepted = row.get("accepted")
+    if not isinstance(accepted, bool):
+        accepted = row.get("ok")
+    return accepted if isinstance(accepted, bool) else None
+
+
+def _failure_streak(rows: Sequence[Mapping[str, Any]]) -> int:
+    current = 0
+    longest = 0
+    for row in rows:
+        accepted = _accepted_value(row)
+        if accepted is False:
+            current += 1
+            longest = max(longest, current)
+        elif accepted is True:
+            current = 0
+    return longest
+
+
 def _list_count(value: Any) -> int:
     return len(value) if isinstance(value, list) else 0
 
@@ -316,6 +350,22 @@ def compute_life_status(
     )
     reproduction_done = bool(children or reproduction_events)
 
+    world_state = _read_json(paths["world_state"])
+    mutation_rows = [row for row in run_rows if "score_new" in row]
+    success_records = [
+        row
+        for row in run_rows
+        if "score_new" in row or isinstance(_accepted_value(row), bool)
+    ]
+    ok_count = sum(1 for row in success_records if _accepted_value(row) is True)
+    health_scores = [
+        score
+        for score in (
+            _health_score_from_payload(row) for row in [*run_rows, world_state]
+        )
+        if score is not None
+    ]
+
     period_dates: list[Any] = [born_at]
     for period in (
         narrative.get("life_periods", [])
@@ -343,11 +393,23 @@ def compute_life_status(
         for row in run_rows
         if any(token in _event_text(row) for token in ("extinct", "death", "terminal"))
     ]
-    terminal = (
-        bool(autopsy)
-        or registry_status in {"extinct", "dead", "stopped", "terminal"}
-        or bool(extinction_events)
+    confirmed_extinction_events = [
+        row
+        for row in run_rows
+        if any(token in _event_text(row) for token in ("extinct", "death"))
+    ]
+    vital_timeline = compute_vital_timeline(
+        age=len(mutation_rows),
+        current_health=health_scores[-1] if health_scores else None,
+        failure_rate=(
+            (1 - (ok_count / len(success_records))) if success_records else None
+        ),
+        failure_streak=_failure_streak(success_records),
+        extinction_seen=bool(autopsy) or bool(confirmed_extinction_events),
+        registry_status=registry_status or None,
     )
+    vital_state = str(vital_timeline.get("state", ""))
+    terminal = vital_state in {"terminal", "extinct"}
 
     criteria = {
         "persistent_identity": (cfg.criteria.persistent_identity, persistent_identity),
@@ -356,7 +418,9 @@ def compute_life_status(
         "intrinsic_goals": (cfg.criteria.intrinsic_goals, intrinsic_goals),
         "reproduction_capability": (
             cfg.criteria.reproduction_capability,
-            reproduction_possible or reproduction_done,
+            reproduction_possible
+            or reproduction_done
+            or vital_timeline.get("reproduction_eligible") is True,
         ),
         "narrative_continuity": (
             cfg.criteria.narrative_continuity,
@@ -382,16 +446,17 @@ def compute_life_status(
     required_for_alive = [
         name
         for name, (configured, _) in criteria.items()
-        if configured and weighted_criteria.get(name) is not None and weighted_criteria[name].required_for_alive
+        if configured
+        and weighted_criteria.get(name) is not None
+        and weighted_criteria[name].required_for_alive
     ]
     required_for_alive_present = all(criteria[name][1] for name in required_for_alive)
-    if terminal:
-        score = min(score, 20.0 if registry_status == "extinct" or autopsy else 40.0)
-        status = (
-            LifeStatus.EXTINCT
-            if registry_status == "extinct" or autopsy
-            else LifeStatus.DYING
-        )
+    if vital_state == "extinct":
+        score = min(score, 20.0)
+        status = LifeStatus.EXTINCT
+    elif vital_state == "terminal":
+        score = min(score, 40.0)
+        status = LifeStatus.DYING
     elif not persistent_identity and not run_rows:
         status = LifeStatus.NOT_ALIVE_YET
     elif score >= alive_minimum_score and required_for_alive_present:
@@ -407,7 +472,12 @@ def compute_life_status(
     if negatives:
         explanation += " Manquants ou insuffisants: " + ", ".join(negatives) + "."
     if terminal:
-        explanation += " Un signal d'extinction ou d'état terminal domine l'évaluation."
+        explanation += (
+            f" Vital: état {vital_state}, risque {vital_timeline.get('risk_level')}."
+        )
+        causes = vital_timeline.get("causes")
+        if isinstance(causes, list) and causes:
+            explanation += " Causes: " + ", ".join(str(cause) for cause in causes) + "."
 
     signals = {
         "persistent_identity": persistent_identity,
@@ -419,10 +489,14 @@ def compute_life_status(
         "intrinsic_quest_count": intrinsic_quest_count,
         "reproduction_possible": reproduction_possible,
         "reproduction_done": reproduction_done,
+        "reproduction_capability": criteria["reproduction_capability"][1],
+        "reproduction_eligible": vital_timeline.get("reproduction_eligible") is True,
         "narrative_continuity": narrative_continuity,
         "narrative_age_days": age_days,
         "terminal": terminal,
         "extinction": status is LifeStatus.EXTINCT,
+        "vital_state": vital_state,
+        "vital_risk_level": vital_timeline.get("risk_level"),
     }
     evidence = {
         "files": {key: str(path) for key, path in paths.items() if path.exists()},
@@ -441,7 +515,9 @@ def compute_life_status(
         "runs_count": len(run_rows),
         "generations_count": len(generation_rows),
         "extinction_events_count": len(extinction_events),
+        "confirmed_extinction_events_count": len(confirmed_extinction_events),
         "reproduction_events_count": len(reproduction_events),
+        "vital_timeline": vital_timeline,
         "thresholds": {
             "minimum_narrative_trajectory_days": cfg.thresholds.minimum_narrative_trajectory_days,
             "minimum_observed_cycles": cfg.thresholds.minimum_observed_cycles,
