@@ -6,13 +6,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from singular.life.life_status import AUTHORIZED_LIFE_STATUSES
 from singular.orchestrator.lifecycle_clock import _load_simple_yaml
 
-DEFAULT_LIFECYCLE_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "lifecycle.yaml"
+DEFAULT_LIFECYCLE_CONFIG_PATH = (
+    Path(__file__).resolve().parents[3] / "configs" / "lifecycle.yaml"
+)
 DEFAULT_LIFE_DEFINITION_CONFIG_PATH = (
     Path(__file__).resolve().parents[3] / "configs" / "life_definition.yaml"
 )
-AUTHORIZED_LIFE_STATUSES = ("not_alive_yet", "fragile", "alive", "dying", "extinct")
 
 
 @dataclass(frozen=True)
@@ -83,17 +85,31 @@ def load_life_definition_config(path: Path | None = None) -> LifeDefinitionConfi
     if not raw:
         return cfg
 
-    criteria_raw = raw.get("criteria", {}) if isinstance(raw.get("criteria", {}), dict) else {}
-    thresholds_raw = raw.get("thresholds", {}) if isinstance(raw.get("thresholds", {}), dict) else {}
-    statuses_raw = raw.get("statuses", {}) if isinstance(raw.get("statuses", {}), dict) else {}
+    criteria_raw = (
+        raw.get("criteria", {}) if isinstance(raw.get("criteria", {}), dict) else {}
+    )
+    thresholds_raw = (
+        raw.get("thresholds", {}) if isinstance(raw.get("thresholds", {}), dict) else {}
+    )
+    statuses_raw = (
+        raw.get("statuses", {}) if isinstance(raw.get("statuses", {}), dict) else {}
+    )
 
     criteria = LifeCriteria(
-        persistent_identity=bool(criteria_raw.get("persistent_identity", cfg.criteria.persistent_identity)),
-        generation_registry=bool(criteria_raw.get("generation_registry", cfg.criteria.generation_registry)),
+        persistent_identity=bool(
+            criteria_raw.get("persistent_identity", cfg.criteria.persistent_identity)
+        ),
+        generation_registry=bool(
+            criteria_raw.get("generation_registry", cfg.criteria.generation_registry)
+        ),
         stable_cycle=bool(criteria_raw.get("stable_cycle", cfg.criteria.stable_cycle)),
-        intrinsic_goals=bool(criteria_raw.get("intrinsic_goals", cfg.criteria.intrinsic_goals)),
+        intrinsic_goals=bool(
+            criteria_raw.get("intrinsic_goals", cfg.criteria.intrinsic_goals)
+        ),
         reproduction_capability=bool(
-            criteria_raw.get("reproduction_capability", cfg.criteria.reproduction_capability)
+            criteria_raw.get(
+                "reproduction_capability", cfg.criteria.reproduction_capability
+            )
         ),
         narrative_continuity=bool(
             criteria_raw.get("narrative_continuity", cfg.criteria.narrative_continuity)
@@ -107,18 +123,26 @@ def load_life_definition_config(path: Path | None = None) -> LifeDefinitionConfi
             )
         ),
         minimum_observed_cycles=int(
-            thresholds_raw.get("minimum_observed_cycles", cfg.thresholds.minimum_observed_cycles)
+            thresholds_raw.get(
+                "minimum_observed_cycles", cfg.thresholds.minimum_observed_cycles
+            )
         ),
         alive_minimum_score=float(
-            thresholds_raw.get("alive_minimum_score", cfg.thresholds.alive_minimum_score)
+            thresholds_raw.get(
+                "alive_minimum_score", cfg.thresholds.alive_minimum_score
+            )
         ),
         fragile_minimum_score=float(
-            thresholds_raw.get("fragile_minimum_score", cfg.thresholds.fragile_minimum_score)
+            thresholds_raw.get(
+                "fragile_minimum_score", cfg.thresholds.fragile_minimum_score
+            )
         ),
     )
     unknown = sorted(set(statuses_raw) - set(AUTHORIZED_LIFE_STATUSES))
     if unknown:
-        raise ValueError(f"life statuses contain unauthorized keys: {', '.join(unknown)}")
+        raise ValueError(
+            f"life statuses contain unauthorized keys: {', '.join(unknown)}"
+        )
 
     statuses = dict(cfg.statuses)
     for name in AUTHORIZED_LIFE_STATUSES:
