@@ -12,6 +12,10 @@ from singular.goals.perception_rules import apply_perception_rules
 
 OBJECTIVE_CATALOGUE = ("coherence", "robustesse", "efficacite", "exploration")
 INTRINSIC_MODULATION_VERSION = "intrinsic-mod-v2"
+INTRINSIC_GOAL_SOURCE = "intrinsic"
+INTRINSIC_GOAL_ORIGIN = "self_generated"
+INTRINSIC_GOAL_KIND = "intrinsic_goal"
+ACTIVE_INTRINSIC_GOAL_STATUS = "active"
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -82,6 +86,10 @@ class GoalState:
         return {
             "tick": self.tick,
             "catalogue": list(OBJECTIVE_CATALOGUE),
+            "source": INTRINSIC_GOAL_SOURCE,
+            "origin": INTRINSIC_GOAL_ORIGIN,
+            "kind": INTRINSIC_GOAL_KIND,
+            "status": ACTIVE_INTRINSIC_GOAL_STATUS,
             "weights": asdict(self.weights),
             "history": self.history,
         }
@@ -315,6 +323,10 @@ class IntrinsicGoals:
             {
                 "tick": int(tick),
                 "weights": asdict(weights),
+                "source": INTRINSIC_GOAL_SOURCE,
+                "origin": INTRINSIC_GOAL_ORIGIN,
+                "kind": INTRINSIC_GOAL_KIND,
+                "status": "renewed",
                 "signals": {
                     "health": health_norm,
                     "resource_stability": resource_stability,
