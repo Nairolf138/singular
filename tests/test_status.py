@@ -3,6 +3,23 @@ from __future__ import annotations
 import json
 
 import singular.organisms.status as status_mod
+from singular.life.life_status import LifeStatusResult
+
+
+def _patch_life_status(monkeypatch, **overrides) -> None:
+    payload = {
+        "status": "alive",
+        "score": 0.84,
+        "explanation": "résultat déterministe de test",
+        "signals": {"identity": True, "stable_cycle": True},
+        "missing_signals": ["narrative_continuity"],
+    }
+    payload.update(overrides)
+
+    def fake_compute_life_status(*_args, **_kwargs):
+        return LifeStatusResult(**payload)
+
+    monkeypatch.setattr(status_mod, "compute_life_status", fake_compute_life_status)
 
 
 def test_status_displays_health_trend(tmp_path, monkeypatch, capsys) -> None:
@@ -29,6 +46,7 @@ def test_status_displays_health_trend(tmp_path, monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         status_mod.Psyche, "load_state", staticmethod(lambda: DummyPsyche())
     )
+    _patch_life_status(monkeypatch)
 
     status_mod.status()
     out = capsys.readouterr().out
@@ -64,6 +82,7 @@ def test_status_verbose_displays_alerts(tmp_path, monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         status_mod.Psyche, "load_state", staticmethod(lambda: DummyPsyche())
     )
+    _patch_life_status(monkeypatch)
 
     status_mod.status(verbose=True)
     out = capsys.readouterr().out
@@ -100,6 +119,7 @@ def test_status_filters_non_mutation_records_for_success_rate(
     monkeypatch.setattr(
         status_mod.Psyche, "load_state", staticmethod(lambda: DummyPsyche())
     )
+    _patch_life_status(monkeypatch, status="fragile", score=0.42)
 
     status_mod.status(output_format="json")
     out = capsys.readouterr().out
@@ -110,6 +130,8 @@ def test_status_filters_non_mutation_records_for_success_rate(
     assert payload["success_rate"] == 50.0
     assert payload["vital_timeline"]["age"] == 3
     assert payload["vital_timeline"]["state"] in {"mature", "declining", "terminal", "extinct"}
+    assert payload["life_status"]["status"] == "fragile"
+    assert payload["life_status"]["score"] == 0.42
     assert set(payload["life_status"]) == {
         "status",
         "score",
@@ -141,6 +163,14 @@ def test_status_renders_life_status_in_plain_and_table(
     monkeypatch.setattr(
         status_mod.Psyche, "load_state", staticmethod(lambda: DummyPsyche())
     )
+    _patch_life_status(
+        monkeypatch,
+        status="dying",
+        score=0.21,
+        explanation="preuves détaillées figées",
+        signals={"identity": False, "cycle": False},
+        missing_signals=["identity", "stable_cycle"],
+    )
 
     status_mod.status(verbose=True)
     plain_out = capsys.readouterr().out
@@ -148,6 +178,7 @@ def test_status_renders_life_status_in_plain_and_table(
     assert "Score de vie:" in plain_out
     assert "Explication:" in plain_out
     assert "Signaux de vie manquants:" in plain_out
+    assert "identity, stable_cycle" in plain_out
 
     status_mod.status(verbose=True, output_format="table")
     table_out = capsys.readouterr().out
@@ -155,6 +186,7 @@ def test_status_renders_life_status_in_plain_and_table(
     assert "Score de vie" in table_out
     assert "Explication" in table_out
     assert "Signaux de vie manquants:" in table_out
+    assert "identity, stable_cycle" in table_out
 
 
 def test_status_exposes_quest_counts(tmp_path, monkeypatch, capsys) -> None:
@@ -184,6 +216,7 @@ def test_status_exposes_quest_counts(tmp_path, monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         status_mod.Psyche, "load_state", staticmethod(lambda: DummyPsyche())
     )
+    _patch_life_status(monkeypatch)
 
     status_mod.status(output_format="json")
     payload = json.loads(capsys.readouterr().out)
@@ -233,6 +266,7 @@ def test_status_exposes_trajectory_priority_and_narrative_links(
     monkeypatch.setattr(
         status_mod.Psyche, "load_state", staticmethod(lambda: DummyPsyche())
     )
+    _patch_life_status(monkeypatch)
 
     status_mod.status(output_format="json")
     payload = json.loads(capsys.readouterr().out)
@@ -269,6 +303,7 @@ def test_status_exposes_skill_lifecycle_counts(tmp_path, monkeypatch, capsys) ->
     monkeypatch.setattr(
         status_mod.Psyche, "load_state", staticmethod(lambda: DummyPsyche())
     )
+    _patch_life_status(monkeypatch)
 
     status_mod.status(output_format="json")
     payload = json.loads(capsys.readouterr().out)
