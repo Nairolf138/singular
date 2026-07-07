@@ -1,5 +1,9 @@
+import json
 from datetime import UTC, datetime
 
+import pytest
+
+from singular.life.life_definition import LifeDefinitionConfig, LifeThresholds
 from singular.life.life_status import (
     AUTHORIZED_LIFE_STATUSES,
     LifeStatus,
@@ -221,3 +225,203 @@ def test_private_life_status_helpers_return_structured_signals(tmp_path) -> None
         assert signal["score"] == 1.0
         assert isinstance(signal["reason"], str)
         assert isinstance(signal["evidence"], dict)
+
+
+@pytest.fixture
+def life_home_factory(tmp_path):
+    """Build an isolated life_home with a mem/ directory for status tests."""
+
+    def _build(name: str = "alpha"):
+        life_home = tmp_path / "lives" / name
+        mem = life_home / "mem"
+        mem.mkdir(parents=True)
+        return life_home, mem
+
+    return _build
+
+
+def _write_json(path, payload) -> None:
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _cycle_runs(count: int) -> list[dict[str, str]]:
+    return [
+        {"event": phase, "ts": f"2026-06-{day:02d}T00:00:00+00:00"}
+        for day in range(1, count + 1)
+        for phase in ("veille", "action", "introspection", "sommeil")
+    ]
+
+
+def _assert_status_contract(result) -> None:
+    assert 0 <= result.score <= 100
+    assert result.explanation.strip()
+
+
+def test_compute_life_status_no_artifacts_is_not_alive_yet(life_home_factory) -> None:
+    from singular.life.life_status import LifeStatus, compute_life_status
+
+    life_home, _mem = life_home_factory()
+
+    result = compute_life_status(life_home, registry_entry={}, runs=[])
+
+    assert result.status == LifeStatus.NOT_ALIVE_YET
+    assert "world_state" in result.missing_signals
+    assert "self_narrative" in result.missing_signals
+    assert "registry_entry" in result.missing_signals
+    _assert_status_contract(result)
+
+
+def test_compute_life_status_identity_and_partial_cycle_is_fragile(
+    life_home_factory,
+) -> None:
+    from singular.life.life_status import LifeStatus, compute_life_status
+
+    life_home, mem = life_home_factory()
+    _write_json(
+        mem / "self_narrative.json", {"identity": {"name": "Alpha", "slug": "alpha"}}
+    )
+    _write_json(mem / "world_state.json", {"global_health": {"score": 85}})
+    _write_json(mem / "quests_state.json", {})
+    config = LifeDefinitionConfig(thresholds=LifeThresholds(fragile_minimum_score=0.2))
+
+    result = compute_life_status(
+        life_home,
+        registry_entry={"name": "Alpha", "slug": "alpha", "status": "active"},
+        runs=_cycle_runs(1),
+        config=config,
+    )
+
+    assert result.status == LifeStatus.FRAGILE
+    assert result.signals["persistent_identity"] is True
+    assert result.signals["observed_cycles"] == 1
+    assert result.signals["stable_cycle"] is False
+    _assert_status_contract(result)
+
+
+def test_compute_life_status_full_durable_signals_are_alive(life_home_factory) -> None:
+    from singular.life.life_status import LifeStatus, compute_life_status
+
+    life_home, mem = life_home_factory()
+    _write_json(mem / "world_state.json", {"global_health": {"score": 95}})
+    _write_json(
+        mem / "self_narrative.json",
+        {
+            "identity": {"name": "Alpha", "born_at": "2026-06-01T00:00:00+00:00"},
+            "current_heading": "continuer",
+            "life_periods": [{"start_at": "2026-06-01T00:00:00+00:00"}],
+        },
+    )
+    _write_json(mem / "goals.json", {"weights": {"coherence": 0.7}, "history": []})
+    _write_json(mem / "quests_state.json", {"active": [{"origin": "intrinsic"}]})
+    (mem / "generations.jsonl").write_text(
+        '{"event":"generation.accepted"}\n', encoding="utf-8"
+    )
+
+    result = compute_life_status(
+        life_home,
+        registry_entry={"name": "Alpha", "slug": "alpha", "status": "active"},
+        runs=_cycle_runs(3),
+    )
+
+    assert result.status == LifeStatus.ALIVE
+    assert result.signals["persistent_identity"] is True
+    assert result.signals["generation_registry"] is True
+    assert result.signals["stable_cycle"] is True
+    assert result.signals["intrinsic_goals"] is True
+    assert result.signals["narrative_continuity"] is True
+    _assert_status_contract(result)
+
+
+@pytest.mark.parametrize(
+    ("world_state", "runs"),
+    [
+        ({"global_health": {"score": 0}}, []),
+        (
+            {"global_health": {"score": 90}},
+            [
+                {"event": "mutation", "score_new": index, "accepted": False}
+                for index in range(5)
+            ],
+        ),
+    ],
+)
+def test_compute_life_status_terminal_health_or_long_failures_are_dying(
+    life_home_factory, world_state, runs
+) -> None:
+    from singular.life.life_status import LifeStatus, compute_life_status
+
+    life_home, mem = life_home_factory()
+    _write_json(mem / "world_state.json", world_state)
+    _write_json(
+        mem / "self_narrative.json", {"identity": {"name": "Alpha", "slug": "alpha"}}
+    )
+    _write_json(mem / "quests_state.json", {})
+
+    result = compute_life_status(
+        life_home,
+        registry_entry={"name": "Alpha", "slug": "alpha", "status": "active"},
+        runs=runs,
+    )
+
+    assert result.status == LifeStatus.DYING
+    assert result.signals["terminal"] is True
+    assert result.signals["extinction"] is False
+    _assert_status_contract(result)
+
+
+@pytest.mark.parametrize(
+    ("autopsy", "registry_status", "runs"),
+    [
+        ({"technical_causes": ["mortality"]}, "active", []),
+        ({}, "extinct", []),
+        ({}, "active", [{"event": "death", "ts": "2026-06-05T00:00:00+00:00"}]),
+    ],
+)
+def test_compute_life_status_extinction_evidence_is_extinct(
+    life_home_factory, autopsy, registry_status, runs
+) -> None:
+    from singular.life.life_status import LifeStatus, compute_life_status
+
+    life_home, mem = life_home_factory()
+    _write_json(mem / "world_state.json", {"global_health": {"score": 90}})
+    _write_json(mem / "autopsy.json", autopsy)
+    _write_json(
+        mem / "self_narrative.json", {"identity": {"name": "Alpha", "slug": "alpha"}}
+    )
+    _write_json(mem / "quests_state.json", {})
+
+    result = compute_life_status(
+        life_home,
+        registry_entry={"name": "Alpha", "slug": "alpha", "status": registry_status},
+        runs=runs,
+    )
+
+    assert result.status == LifeStatus.EXTINCT
+    assert result.signals["extinction"] is True
+    _assert_status_contract(result)
+
+
+def test_compute_life_status_corrupt_json_and_missing_files_are_explanatory(
+    life_home_factory,
+) -> None:
+    from singular.life.life_status import LifeStatus, compute_life_status
+
+    life_home, mem = life_home_factory()
+    (mem / "self_narrative.json").write_text("{not-json", encoding="utf-8")
+    (mem / "quests_state.json").write_text("{not-json", encoding="utf-8")
+
+    result = compute_life_status(
+        life_home,
+        registry_entry={"name": "Alpha", "slug": "alpha", "status": "active"},
+        runs=[],
+    )
+
+    assert result.status == LifeStatus.NOT_ALIVE_YET
+    assert (
+        result.signals["structured"]["goals"]["reason"]
+        == "no intrinsic goal evidence found"
+    )
+    assert "world_state" in result.missing_signals
+    assert "autopsy" in result.missing_signals
+    assert "Manquants ou insuffisants" in result.explanation
+    _assert_status_contract(result)
