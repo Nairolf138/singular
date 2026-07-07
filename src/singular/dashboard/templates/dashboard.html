@@ -159,6 +159,29 @@
       <p class='section-help'>Taux d’initiatives proactives · Qu’est-ce que ce score ? · Pourquoi cette alerte ? · source /api/cockpit</p>
       <div id='cockpit-status' class='card card-value'>Statut global: Non disponible</div>
       <div class='cards-grid'>
+        <div id='life-verdict-card' class='card life-verdict-card life-verdict-neutral'>
+          <div class='card-label kpi-label' title='Verdict calculé à partir des signaux de vie validés et manquants'>Verdict de vie</div>
+          <div id='life-verdict-status' class='card-value'>Non disponible</div>
+          <div class='life-verdict-score-row'>
+            <span class='card-label'>Score</span>
+            <strong id='life-verdict-score' class='life-verdict-score'>0.0</strong>
+          </div>
+          <meter id='life-verdict-score-meter' class='life-verdict-meter' min='0' max='100' value='0'>0</meter>
+          <p id='life-verdict-explanation' class='life-verdict-explanation'>Explication indisponible.</p>
+          <details class='life-verdict-details'>
+            <summary>Détail des signaux</summary>
+            <div class='life-verdict-signals-grid'>
+              <div>
+                <strong>Validés</strong>
+                <ul id='life-verdict-valid-signals' class='list-tight-top'><li>Aucun signal validé.</li></ul>
+              </div>
+              <div>
+                <strong>Manquants</strong>
+                <ul id='life-verdict-missing-signals' class='list-tight-top'><li>Aucun signal manquant.</li></ul>
+              </div>
+            </div>
+          </details>
+        </div>
         <div class='card'><div class='card-label kpi-label' title='Capacité observée du système à fonctionner sans assistance'>Niveau d’autonomie</div><div id='kpi-health' class='card-value'>Pas encore mesuré</div></div>
         <div class='card'><div class='card-label kpi-label' title='Cohérence observée entre les vies actives'>Stabilité collective</div><div id='kpi-active-lives' class='card-value'>0</div></div>
         <div class='card'><div class='card-label kpi-label' title='Nombre d’incidents critiques en cours'>Incidents critiques</div><div id='kpi-alerts' class='card-value'>0</div></div>
