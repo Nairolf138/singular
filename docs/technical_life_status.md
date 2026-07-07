@@ -13,6 +13,49 @@ Valeurs supportées:
 
 Ce statut est porté par `LifeMetadata.status` dans `src/singular/lives.py`, persisté via `save_registry()`, et modifié via `set_life_status()`.
 
+## Barème pondéré de qualification vitale
+
+Le fichier versionné `configs/life_definition.yaml` définit un score vital sur **100 points**. Ce score ne remplace pas la source de vérité du registre pour l'extinction, mais il qualifie l'état fonctionnel observé d'une vie.
+
+Barème:
+
+- **Identité persistante**: 20 points.
+- **Registre de générations**: 15 points.
+- **Cycle stable**: 20 points.
+- **Objectifs intrinsèques continus**: 20 points.
+- **Reproduction possible**: 10 points.
+- **Narration cohérente sur N jours**: 15 points, avec `N = thresholds.minimum_narrative_trajectory_days`.
+
+Les critères fondamentaux pour atteindre `alive` sont:
+
+- identité persistante,
+- registre de générations,
+- cycle stable,
+- objectifs intrinsèques continus,
+- narration cohérente sur la durée minimale configurée.
+
+La reproduction possible contribue au score, mais n'est pas un critère bloquant pour `alive`.
+
+## Statuts qualifiés par score
+
+Les statuts métier exposés par `configs/life_definition.yaml` sont:
+
+- `not_alive_yet`: score insuffisant ou au moins un signal fondamental absent.
+- `fragile`: score intermédiaire mais continuité incomplète.
+- `alive`: score supérieur ou égal au seuil `alive_minimum_score`, critères fondamentaux présents et aucun signal terminal.
+- `dying`: signal terminal présumé ou dégradation forte, mais extinction non confirmée.
+- `extinct`: autopsy présente, registre `extinct` ou événement `death` confirmé.
+
+Ordre de priorité recommandé:
+
+1. `extinct` si une extinction est confirmée (`autopsy.json` présent, registre `extinct`, ou événement `death` confirmé).
+2. `dying` si une dégradation forte est détectée sans confirmation d'extinction.
+3. `alive` si le score atteint le seuil `alive_minimum_score`, les critères fondamentaux sont présents et aucun signal terminal n'est observé.
+4. `fragile` si le score atteint le seuil `fragile_minimum_score`, mais que la continuité reste incomplète.
+5. `not_alive_yet` sinon.
+
+Les signaux terminaux dominent toujours le score: un score élevé ne peut pas produire `alive` si un signal terminal confirmé existe.
+
 ## Distinction des notions
 
 Le dashboard distingue désormais:

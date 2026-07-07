@@ -1,4 +1,4 @@
-schema_version: "1.0"
+schema_version: "1.1"
 
 criteria:
   persistent_identity: true
@@ -8,11 +8,50 @@ criteria:
   reproduction_capability: true
   narrative_continuity: true
 
+weighted_score:
+  total_points: 100
+  criteria:
+    persistent_identity:
+      points: 20
+      required_for_alive: true
+      description: "Identité persistante et vérifiable sur les artefacts de vie."
+    generation_registry:
+      points: 15
+      required_for_alive: true
+      description: "Présence dans le registre de générations ou filiation traçable."
+    stable_cycle:
+      points: 20
+      required_for_alive: true
+      description: "Cycle vital stable et observé sur un minimum de cycles."
+    continuous_intrinsic_goals:
+      points: 20
+      required_for_alive: true
+      description: "Objectifs intrinsèques continus, non réduits à une tâche ponctuelle."
+    reproduction_capability:
+      points: 10
+      required_for_alive: false
+      description: "Reproduction possible ou capacité déclarée compatible avec les règles vitales."
+    narrative_continuity:
+      points: 15
+      required_for_alive: true
+      minimum_days: 7
+      description: "Narration cohérente sur N jours."
+  terminal_signals:
+    autopsy_present: true
+    registry_extinct: true
+    death_event_confirmed: true
+  severe_degradation_signals:
+    terminal_lifecycle_state: true
+    critical_health_score: true
+    terminal_failure_streak: true
+    high_failure_rate: true
+
 thresholds:
   minimum_narrative_trajectory_days: 7
   minimum_observed_cycles: 3
-  alive_minimum_score: 0.8
-  fragile_minimum_score: 0.5
+  alive_minimum_score: 80
+  fragile_minimum_score: 50
+  dying_degradation_minimum_score: 40
 
 statuses:
   not_alive_yet: not_alive_yet
@@ -20,3 +59,10 @@ statuses:
   alive: alive
   dying: dying
   extinct: extinct
+
+status_rules:
+  not_alive_yet: "Score insuffisant ou signaux fondamentaux absents."
+  fragile: "Score intermédiaire mais continuité incomplète."
+  alive: "Score supérieur ou égal au seuil alive et aucun signal terminal."
+  dying: "Signal terminal ou dégradation forte détectés, sans extinction confirmée."
+  extinct: "Autopsy présente, registre extinct ou événement death confirmé."

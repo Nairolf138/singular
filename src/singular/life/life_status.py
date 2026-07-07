@@ -233,7 +233,6 @@ def compute_life_status(
         "quests_state": mem / "quests_state.json",
         "generations": mem / "generations.jsonl",
     }
-    world_state = _read_json(paths["world_state"])
     autopsy = _read_json(paths["autopsy"])
     narrative = _read_json(paths["self_narrative"])
     goals = _read_json(paths["goals"])
@@ -367,11 +366,27 @@ def compute_life_status(
     enabled = [
         (name, value) for name, (required, value) in criteria.items() if required
     ]
-    score = (
-        0.0 if not enabled else sum(1.0 for _, value in enabled if value) / len(enabled)
+    weighted_criteria = cfg.weighted_score.criteria
+    score = sum(
+        weighted_criteria[name].points
+        for name, (_, value) in criteria.items()
+        if value and name in weighted_criteria
     )
+    total_points = cfg.weighted_score.total_points
+
+    def _score_threshold(value: float) -> float:
+        return value * total_points if 0.0 <= value <= 1.0 else value
+
+    alive_minimum_score = _score_threshold(cfg.thresholds.alive_minimum_score)
+    fragile_minimum_score = _score_threshold(cfg.thresholds.fragile_minimum_score)
+    required_for_alive = [
+        name
+        for name, (configured, _) in criteria.items()
+        if configured and weighted_criteria.get(name) is not None and weighted_criteria[name].required_for_alive
+    ]
+    required_for_alive_present = all(criteria[name][1] for name in required_for_alive)
     if terminal:
-        score = min(score, 0.2 if registry_status == "extinct" or autopsy else 0.4)
+        score = min(score, 20.0 if registry_status == "extinct" or autopsy else 40.0)
         status = (
             LifeStatus.EXTINCT
             if registry_status == "extinct" or autopsy
@@ -379,16 +394,16 @@ def compute_life_status(
         )
     elif not persistent_identity and not run_rows:
         status = LifeStatus.NOT_ALIVE_YET
-    elif score >= cfg.thresholds.alive_minimum_score:
+    elif score >= alive_minimum_score and required_for_alive_present:
         status = LifeStatus.ALIVE
-    elif score >= cfg.thresholds.fragile_minimum_score:
+    elif score >= fragile_minimum_score:
         status = LifeStatus.FRAGILE
     else:
         status = LifeStatus.NOT_ALIVE_YET
 
     positives = [name for name, value in enabled if value]
     negatives = [name for name, value in enabled if not value]
-    explanation = f"Statut {status.value}: {len(positives)}/{len(enabled)} sous-signaux configurés sont établis."
+    explanation = f"Statut {status.value}: {len(positives)}/{len(enabled)} sous-signaux configurés sont établis, score {score:g}/{total_points:g}."
     if negatives:
         explanation += " Manquants ou insuffisants: " + ", ".join(negatives) + "."
     if terminal:
@@ -432,6 +447,17 @@ def compute_life_status(
             "minimum_observed_cycles": cfg.thresholds.minimum_observed_cycles,
             "alive_minimum_score": cfg.thresholds.alive_minimum_score,
             "fragile_minimum_score": cfg.thresholds.fragile_minimum_score,
+            "dying_degradation_minimum_score": cfg.thresholds.dying_degradation_minimum_score,
+        },
+        "weighted_score": {
+            "total_points": total_points,
+            "criteria": {
+                name: {
+                    "points": criterion.points,
+                    "required_for_alive": criterion.required_for_alive,
+                }
+                for name, criterion in weighted_criteria.items()
+            },
         },
     }
     return LifeStatusResult(
