@@ -178,3 +178,46 @@ def test_compute_life_status_uses_vital_reproduction_eligibility(tmp_path) -> No
     assert result.signals["reproduction_eligible"] is True
     assert result.signals["reproduction_capability"] is True
     assert result.evidence["vital_timeline"]["reproduction_eligible"] is True
+
+
+def test_private_life_status_helpers_return_structured_signals(tmp_path) -> None:
+    from singular.life.life_status import (
+        _extract_extinction_signal,
+        _extract_generation_signal,
+        _extract_goal_signal,
+        _extract_identity_signal,
+        _extract_narrative_continuity_signal,
+        _read_json_object,
+    )
+
+    assert _read_json_object(tmp_path / "missing.json") == {}
+    payload_path = tmp_path / "payload.json"
+    payload_path.write_text('{"ok":true}', encoding="utf-8")
+    assert _read_json_object(payload_path) == {"ok": True}
+
+    narrative = {
+        "identity": {"name": "Alpha", "born_at": "2026-06-01T00:00:00+00:00"},
+        "current_heading": "continuer",
+    }
+    goals = {"weights": {"coherence": 0.8}}
+    quests = {"active": [{"origin": "intrinsic"}], "paused": []}
+    life_home = tmp_path / "life"
+    mem = life_home / "mem"
+    mem.mkdir(parents=True)
+    (mem / "generations.jsonl").write_text(
+        '{"event":"generation.accepted"}\n', encoding="utf-8"
+    )
+    runs = [{"event": "death confirmed"}]
+
+    for signal in (
+        _extract_identity_signal(narrative),
+        _extract_narrative_continuity_signal(narrative, threshold_days=1),
+        _extract_goal_signal(goals, quests, runs),
+        _extract_generation_signal(life_home, runs),
+        _extract_extinction_signal({}, "active", runs),
+    ):
+        assert set(signal) == {"ok", "score", "reason", "evidence"}
+        assert signal["ok"] is True
+        assert signal["score"] == 1.0
+        assert isinstance(signal["reason"], str)
+        assert isinstance(signal["evidence"], dict)
