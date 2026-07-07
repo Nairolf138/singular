@@ -507,3 +507,28 @@ body.essential-mode #toggle-essential { border-color: var(--ok); color: var(--ok
 .conversation-composer { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
 .conversation-composer textarea { width:100%; }
 .conversation-meta { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+
+.life-verdict-card {
+  grid-column: span 2;
+  border-color: rgba(152, 170, 215, 0.35);
+}
+.life-verdict-neutral { background: linear-gradient(160deg, rgba(19, 33, 81, 0.78), rgba(13, 22, 55, 0.88)); }
+.life-verdict-warning { border-color: rgba(255, 191, 83, 0.72); box-shadow: 0 0 0 1px rgba(255, 191, 83, 0.18), var(--shadow); }
+.life-verdict-success { border-color: rgba(55, 245, 162, 0.72); box-shadow: 0 0 0 1px rgba(55, 245, 162, 0.18), var(--shadow); }
+.life-verdict-danger { border-color: rgba(255, 107, 141, 0.78); box-shadow: 0 0 0 1px rgba(255, 107, 141, 0.2), var(--shadow); }
+.life-verdict-terminal { border-color: rgba(255, 107, 141, 0.9); background: linear-gradient(160deg, rgba(60, 19, 38, 0.82), rgba(30, 25, 42, 0.92)); }
+.life-verdict-score-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 10px; }
+.life-verdict-score { font-size: 1.8rem; color: #f2f6ff; }
+.life-verdict-meter { width: 100%; height: 12px; margin-top: 6px; accent-color: var(--accent); }
+.life-verdict-success .life-verdict-meter { accent-color: var(--ok); }
+.life-verdict-warning .life-verdict-meter { accent-color: var(--warn); }
+.life-verdict-danger .life-verdict-meter,
+.life-verdict-terminal .life-verdict-meter { accent-color: var(--bad); }
+.life-verdict-explanation { color: var(--text-secondary); margin: 10px 0; }
+.life-verdict-details { border-top: 1px solid var(--table-border); padding-top: 8px; }
+.life-verdict-details summary { cursor: pointer; color: #dbe6ff; font-weight: 700; }
+.life-verdict-signals-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 8px; }
+
+@media (max-width: 720px) {
+  .life-verdict-card { grid-column: span 1; }
+}

@@ -62,6 +62,62 @@ const sparkline=(values)=>{
 const toneByRisk=(el,risk)=>{if(!el){return;}el.classList.remove('status-good','status-warn','status-bad','status-muted');if(risk==='ok'){el.classList.add('status-good');return;}if(risk==='warn'){el.classList.add('status-warn');return;}if(risk==='critical'){el.classList.add('status-bad');return;}el.classList.add('status-muted');};
 const extractHostMetrics=(record)=>{if(record&&typeof record.host_metrics==='object'&&record.host_metrics){return record.host_metrics;}if(record&&typeof record.signals==='object'&&record.signals&&typeof record.signals.host_metrics==='object'){return record.signals.host_metrics;}if(record&&typeof record.payload==='object'&&record.payload&&typeof record.payload.host_metrics==='object'){return record.payload.host_metrics;}return null;};
 
+
+const LIFE_VERDICT_STYLE={
+  not_alive_yet:{tone:'neutral',label:'Pas encore vivante'},
+  fragile:{tone:'warning',label:'Fragile'},
+  alive:{tone:'success',label:'Vivante'},
+  dying:{tone:'danger',label:'En train de mourir'},
+  extinct:{tone:'terminal',label:'Éteinte'},
+};
+const lifeVerdictStyle=status=>LIFE_VERDICT_STYLE[String(status||'not_alive_yet')]||LIFE_VERDICT_STYLE.not_alive_yet;
+const signalLabel=signal=>String(signal||'signal').replaceAll('_',' ');
+const signalIsValidated=value=>{
+  if(value===true){return true;}
+  if(value===false||value===null||value===undefined){return false;}
+  if(typeof value==='number'){return Number.isFinite(value)&&value>0;}
+  if(typeof value==='string'){return value.trim().length>0&&!['false','missing','absent','0'].includes(value.trim().toLowerCase());}
+  if(Array.isArray(value)){return value.length>0;}
+  if(typeof value==='object'){
+    if(Object.prototype.hasOwnProperty.call(value,'valid')){return value.valid===true;}
+    if(Object.prototype.hasOwnProperty.call(value,'present')){return value.present===true;}
+    if(Object.prototype.hasOwnProperty.call(value,'ok')){return value.ok===true;}
+    if(Object.prototype.hasOwnProperty.call(value,'score')){return Number(value.score)>0;}
+    return Object.keys(value).length>0;
+  }
+  return Boolean(value);
+};
+const renderSignalList=(id,items,emptyText)=>{
+  const list=clearElement(id);
+  if(!list){return;}
+  if(!items.length){const li=document.createElement('li');li.textContent=emptyText;list.appendChild(li);return;}
+  for(const item of items){const li=document.createElement('li');li.textContent=item;list.appendChild(li);}
+};
+const renderLifeVerdict=payload=>{
+  const status=String(payload.life_status||'not_alive_yet');
+  const style=lifeVerdictStyle(status);
+  const card=byId('life-verdict-card');
+  if(card){
+    card.classList.remove('life-verdict-neutral','life-verdict-warning','life-verdict-success','life-verdict-danger','life-verdict-terminal');
+    card.classList.add(`life-verdict-${style.tone}`);
+  }
+  setText('life-verdict-status',`${style.label} (${status})`);
+  const score=Number(payload.life_status_score||0);
+  const normalizedScore=Number.isFinite(score)?Math.max(0,Math.min(100,score)):0;
+  setText('life-verdict-score',normalizedScore.toFixed(1));
+  const meter=byId('life-verdict-score-meter');
+  if(meter){meter.value=normalizedScore;meter.textContent=normalizedScore.toFixed(1);}
+  setText('life-verdict-explanation',payload.life_status_explanation||'Aucune explication fournie.');
+  const missingSignals=Array.isArray(payload.life_status_missing_signals)?payload.life_status_missing_signals.map(signalLabel):[];
+  const missingSet=new Set(missingSignals.map(item=>item.toLowerCase()));
+  const signalEntries=Object.entries(payload.life_status_signals||{});
+  const validSignals=signalEntries
+    .filter(([key,value])=>signalIsValidated(value)&&!missingSet.has(signalLabel(key).toLowerCase()))
+    .map(([key])=>signalLabel(key));
+  renderSignalList('life-verdict-valid-signals',validSignals,'Aucun signal validé.');
+  renderSignalList('life-verdict-missing-signals',missingSignals,'Aucun signal manquant.');
+};
+
 const operatorSummaryState={context:null,lives:null,eco:null,cockpit:null,essential:null,workItems:null};
 let lastCockpitPayload=null;
 const cockpitFallbackPayload={
@@ -482,6 +538,7 @@ export const loadCockpit=()=>Promise.allSettled([
     else if(globalStatus==='critical'){setStatusTone(statusBox,'bad');applyStatusIndicator(statusBox,'bad');}
   }
 
+  renderLifeVerdict(d);
   renderSandboxGovernance(d.sandbox_governance||{});
   renderGovernanceDiagnostics(d.governance_policy||{});
   const healthValue=d.health_score===null||d.health_score===undefined?na():Number(d.health_score).toFixed(1);
