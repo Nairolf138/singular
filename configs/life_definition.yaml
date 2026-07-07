@@ -1,0 +1,22 @@
+schema_version: "1.0"
+
+criteria:
+  persistent_identity: true
+  generation_registry: true
+  stable_cycle: true
+  intrinsic_goals: true
+  reproduction_capability: true
+  narrative_continuity: true
+
+thresholds:
+  minimum_narrative_trajectory_days: 7
+  minimum_observed_cycles: 3
+  alive_minimum_score: 0.8
+  fragile_minimum_score: 0.5
+
+statuses:
+  not_alive_yet: not_alive_yet
+  fragile: fragile
+  alive: alive
+  dying: dying
+  extinct: extinct
