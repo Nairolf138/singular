@@ -70,12 +70,18 @@ class LifeStatusResult:
         }
 
 
-def _read_json(path: Path) -> dict[str, Any]:
+def _read_json_object(path: Path) -> dict[str, object]:
+    """Read a JSON file only when its root payload is an object."""
+
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, TypeError):
         return {}
-    return payload if isinstance(payload, dict) else {}
+    return dict(payload) if isinstance(payload, Mapping) else {}
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    return _read_json_object(path)
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -239,6 +245,176 @@ def _list_count(value: Any) -> int:
     return len(value) if isinstance(value, list) else 0
 
 
+def _signal(
+    ok: bool, score: float, reason: str, evidence: Mapping[str, object] | None = None
+) -> dict[str, object]:
+    return {
+        "ok": bool(ok),
+        "score": float(score),
+        "reason": reason,
+        "evidence": dict(evidence or {}),
+    }
+
+
+def _extract_identity_signal(self_narrative: dict) -> dict:
+    identity = (
+        self_narrative.get("identity")
+        if isinstance(self_narrative.get("identity"), Mapping)
+        else {}
+    )
+    name = (
+        str(identity.get("name") or "").strip() if isinstance(identity, Mapping) else ""
+    )
+    born_at = identity.get("born_at") if isinstance(identity, Mapping) else None
+    slug = identity.get("slug") if isinstance(identity, Mapping) else None
+    ok = bool(name and (born_at or slug))
+    missing = [
+        label
+        for label, present in (
+            ("name", bool(name)),
+            ("born_at_or_slug", bool(born_at or slug)),
+        )
+        if not present
+    ]
+    return _signal(
+        ok,
+        1.0 if ok else 0.0,
+        "persistent identity found"
+        if ok
+        else "identity is incomplete: " + ", ".join(missing),
+        {"name": name, "born_at": born_at, "slug": slug, "missing": missing},
+    )
+
+
+def _extract_narrative_continuity_signal(
+    self_narrative: dict, threshold_days: int
+) -> dict:
+    period_dates: list[Any] = []
+    identity = (
+        self_narrative.get("identity")
+        if isinstance(self_narrative.get("identity"), Mapping)
+        else {}
+    )
+    if isinstance(identity, Mapping):
+        period_dates.append(identity.get("born_at"))
+    periods = (
+        self_narrative.get("life_periods")
+        if isinstance(self_narrative.get("life_periods"), list)
+        else []
+    )
+    for period in periods:
+        if isinstance(period, Mapping):
+            period_dates.extend([period.get("start_at"), period.get("end_at")])
+    first_seen = _first_timestamp(period_dates)
+    age_days = (datetime.now(UTC) - first_seen).days if first_seen else 0
+    has_content = bool(
+        self_narrative.get("current_heading")
+        or _list_count(self_narrative.get("life_periods"))
+    )
+    ok = bool(has_content and age_days >= threshold_days)
+    return _signal(
+        ok,
+        1.0 if ok else 0.0,
+        "narrative continuity threshold reached"
+        if ok
+        else "narrative content or age is insufficient",
+        {
+            "age_days": age_days,
+            "threshold_days": threshold_days,
+            "has_content": has_content,
+            "periods_count": len(periods),
+        },
+    )
+
+
+def _extract_goal_signal(goals: dict, quests: dict, runs: list[dict]) -> dict:
+    weights = goals.get("weights") if isinstance(goals.get("weights"), Mapping) else {}
+    active_goal_count = sum(
+        1
+        for value in weights.values()
+        if isinstance(value, (int, float)) and float(value) > 0
+    )
+    active_quests = (
+        quests.get("active") if isinstance(quests.get("active"), list) else []
+    )
+    paused_quests = (
+        quests.get("paused") if isinstance(quests.get("paused"), list) else []
+    )
+    intrinsic_quest_count = sum(
+        1
+        for item in active_quests + paused_quests
+        if isinstance(item, Mapping) and item.get("origin") == "intrinsic"
+    )
+    run_goal_events = [
+        row
+        for row in runs
+        if any(token in _event_text(row) for token in ("goal", "quest", "objective"))
+    ]
+    ok = (
+        active_goal_count > 0 or intrinsic_quest_count > 0 or bool(goals.get("history"))
+    )
+    return _signal(
+        ok,
+        1.0 if ok else 0.0,
+        "intrinsic goals are present" if ok else "no intrinsic goal evidence found",
+        {
+            "active_goal_count": active_goal_count,
+            "intrinsic_quest_count": intrinsic_quest_count,
+            "history_count": _list_count(goals.get("history")),
+            "run_goal_events_count": len(run_goal_events),
+        },
+    )
+
+
+def _extract_generation_signal(life_home: Path, runs: list[dict]) -> dict:
+    generation_rows = _read_jsonl(Path(life_home) / "mem" / "generations.jsonl")
+    run_generation_events = [
+        row
+        for row in runs
+        if "mutation" in _event_text(row) or "generation" in _event_text(row)
+    ]
+    ok = bool(generation_rows or run_generation_events)
+    return _signal(
+        ok,
+        1.0 if ok else 0.0,
+        "generation registry evidence found"
+        if ok
+        else "no generation registry evidence found",
+        {
+            "generations_count": len(generation_rows),
+            "run_generation_events_count": len(run_generation_events),
+        },
+    )
+
+
+def _extract_extinction_signal(
+    autopsy: dict, registry_status: str | None, runs: list[dict]
+) -> dict:
+    status = str(registry_status or "").lower()
+    extinction_events = [
+        row
+        for row in runs
+        if any(token in _event_text(row) for token in ("extinct", "death", "terminal"))
+    ]
+    confirmed_events = [
+        row
+        for row in runs
+        if any(token in _event_text(row) for token in ("extinct", "death"))
+    ]
+    ok = bool(autopsy) or status == "extinct" or bool(confirmed_events)
+    return _signal(
+        ok,
+        1.0 if ok else 0.0,
+        "extinction evidence found" if ok else "no confirmed extinction evidence found",
+        {
+            "autopsy_present": bool(autopsy),
+            "registry_status": registry_status,
+            "extinction_events_count": len(extinction_events),
+            "confirmed_extinction_events_count": len(confirmed_events),
+        },
+    )
+
+
 def compute_life_status(
     life_home: Path,
     *,
@@ -295,38 +471,36 @@ def compute_life_status(
         if isinstance(narrative.get("identity"), Mapping)
         else {}
     )
-    identity_name = str(identity.get("name") or registry.get("name") or "").strip()
-    born_at = identity.get("born_at") or registry.get("created_at")
-    persistent_identity = bool(identity_name and (born_at or registry.get("slug")))
+    narrative_with_registry_identity = dict(narrative)
+    narrative_with_registry_identity["identity"] = {
+        **dict(identity),
+        "name": identity.get("name") or registry.get("name"),
+        "born_at": identity.get("born_at") or registry.get("created_at"),
+        "slug": identity.get("slug") or registry.get("slug"),
+    }
+    identity_signal = _extract_identity_signal(narrative_with_registry_identity)
+    born_at = narrative_with_registry_identity["identity"].get("born_at")
+    persistent_identity = bool(identity_signal["ok"])
 
-    generation_registry = bool(generation_rows) or any(
-        "mutation" in _event_text(row) or "generation" in _event_text(row)
-        for row in run_rows
-    )
+    generation_signal = _extract_generation_signal(life_home, run_rows)
+    generation_registry = bool(generation_signal["ok"])
 
     observed_cycles = _cycle_count(run_rows)
     stable_cycle = observed_cycles >= cfg.thresholds.minimum_observed_cycles
 
-    weights = goals.get("weights") if isinstance(goals.get("weights"), Mapping) else {}
-    active_goal_count = sum(
-        1
-        for value in weights.values()
-        if isinstance(value, (int, float)) and float(value) > 0
+    goal_signal = _extract_goal_signal(goals, quests, run_rows)
+    goal_evidence = goal_signal.get("evidence", {})
+    active_goal_count = (
+        int(goal_evidence.get("active_goal_count", 0))
+        if isinstance(goal_evidence, Mapping)
+        else 0
     )
-    active_quests = (
-        quests.get("active") if isinstance(quests.get("active"), list) else []
+    intrinsic_quest_count = (
+        int(goal_evidence.get("intrinsic_quest_count", 0))
+        if isinstance(goal_evidence, Mapping)
+        else 0
     )
-    paused_quests = (
-        quests.get("paused") if isinstance(quests.get("paused"), list) else []
-    )
-    intrinsic_quest_count = sum(
-        1
-        for item in active_quests + paused_quests
-        if isinstance(item, Mapping) and item.get("origin") == "intrinsic"
-    )
-    intrinsic_goals = (
-        active_goal_count > 0 or intrinsic_quest_count > 0 or bool(goals.get("history"))
-    )
+    intrinsic_goals = bool(goal_signal["ok"])
 
     children = (
         registry.get("children")
@@ -382,22 +556,30 @@ def compute_life_status(
     narrative_has_content = bool(
         narrative.get("current_heading") or _list_count(narrative.get("life_periods"))
     )
-    narrative_continuity = (
+    narrative_continuity_signal = _extract_narrative_continuity_signal(
+        narrative_with_registry_identity,
+        cfg.thresholds.minimum_narrative_trajectory_days,
+    )
+    narrative_continuity = bool(
         narrative_has_content
         and age_days >= cfg.thresholds.minimum_narrative_trajectory_days
-    )
+    ) or bool(narrative_continuity_signal["ok"])
 
     registry_status = str(registry.get("status", "")).lower()
-    extinction_events = [
-        row
-        for row in run_rows
-        if any(token in _event_text(row) for token in ("extinct", "death", "terminal"))
-    ]
-    confirmed_extinction_events = [
-        row
-        for row in run_rows
-        if any(token in _event_text(row) for token in ("extinct", "death"))
-    ]
+    extinction_signal = _extract_extinction_signal(
+        autopsy, registry_status or None, run_rows
+    )
+    extinction_evidence = extinction_signal.get("evidence", {})
+    extinction_events_count = (
+        int(extinction_evidence.get("extinction_events_count", 0))
+        if isinstance(extinction_evidence, Mapping)
+        else 0
+    )
+    confirmed_extinction_events_count = (
+        int(extinction_evidence.get("confirmed_extinction_events_count", 0))
+        if isinstance(extinction_evidence, Mapping)
+        else 0
+    )
     vital_timeline = compute_vital_timeline(
         age=len(mutation_rows),
         current_health=health_scores[-1] if health_scores else None,
@@ -405,7 +587,7 @@ def compute_life_status(
             (1 - (ok_count / len(success_records))) if success_records else None
         ),
         failure_streak=_failure_streak(success_records),
-        extinction_seen=bool(autopsy) or bool(confirmed_extinction_events),
+        extinction_seen=bool(extinction_signal["ok"]),
         registry_status=registry_status or None,
     )
     vital_state = str(vital_timeline.get("state", ""))
@@ -497,6 +679,13 @@ def compute_life_status(
         "extinction": status is LifeStatus.EXTINCT,
         "vital_state": vital_state,
         "vital_risk_level": vital_timeline.get("risk_level"),
+        "structured": {
+            "identity": identity_signal,
+            "narrative_continuity": narrative_continuity_signal,
+            "goals": goal_signal,
+            "generation": generation_signal,
+            "extinction": extinction_signal,
+        },
     }
     evidence = {
         "files": {key: str(path) for key, path in paths.items() if path.exists()},
@@ -514,8 +703,8 @@ def compute_life_status(
         },
         "runs_count": len(run_rows),
         "generations_count": len(generation_rows),
-        "extinction_events_count": len(extinction_events),
-        "confirmed_extinction_events_count": len(confirmed_extinction_events),
+        "extinction_events_count": extinction_events_count,
+        "confirmed_extinction_events_count": confirmed_extinction_events_count,
         "reproduction_events_count": len(reproduction_events),
         "vital_timeline": vital_timeline,
         "thresholds": {
