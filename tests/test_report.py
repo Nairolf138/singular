@@ -1,7 +1,51 @@
 import json
 import os
 
+import pytest
+
 from singular.cli import main
+from singular.life.life_status import LifeStatusResult
+from singular.runs import report as report_mod
+
+
+def _stable_life_status(**overrides):
+    payload = {
+        "status": "alive",
+        "score": 87.5,
+        "explanation": "statut de vie stabilisé pour le test",
+        "signals": {"identity": True, "stable_cycle": True},
+        "missing_signals": ["memory_depth"],
+        "computed_at": "2026-01-01T00:00:00+00:00",
+    }
+    payload.update(overrides)
+    return LifeStatusResult(**payload)
+
+
+def _patch_life_status(monkeypatch, **overrides):
+    result = _stable_life_status(**overrides)
+
+    def fake_compute_life_status(*_args, **_kwargs):
+        return result
+
+    monkeypatch.setattr(report_mod, "compute_life_status", fake_compute_life_status)
+    return result
+
+
+def _write_mutation_run(tmp_path, run_id, records):
+    runs = tmp_path / "runs"
+    runs.mkdir(exist_ok=True)
+    run_dir = runs / run_id
+    run_dir.mkdir()
+    log = run_dir / "events.jsonl"
+    with log.open("w", encoding="utf-8") as fh:
+        for rec in records:
+            fh.write(json.dumps(rec) + "\n")
+    return log
+
+
+@pytest.fixture(autouse=True)
+def stable_report_life_status(monkeypatch):
+    _patch_life_status(monkeypatch)
 
 
 def test_report_cli(monkeypatch, tmp_path, capsys):
@@ -430,3 +474,128 @@ def test_report_supports_subcommand_format_option(monkeypatch, tmp_path, capsys)
     out = capsys.readouterr().out.strip()
     payload = json.loads(out)
     assert payload["context"]["run_id"] == "run-json"
+
+
+def test_report_json_payload_contains_stabilized_life_verdict(monkeypatch, tmp_path, capsys):
+    monkeypatch.chdir(tmp_path)
+    _patch_life_status(
+        monkeypatch,
+        status="fragile",
+        score=42.0,
+        explanation="verdict déterministe",
+        signals={"identity": True, "stable_cycle": False},
+        missing_signals=["stable_cycle"],
+    )
+    _write_mutation_run(
+        tmp_path,
+        "run-life-json",
+        [
+            {
+                "version": 1,
+                "event_type": "mutation",
+                "ts": "2026-01-01T00:00:00",
+                "payload": {"op": "mutate", "score_base": 1.0, "score_new": 0.8},
+            }
+        ],
+    )
+
+    main(["report", "--id", "run-life-json", "--format", "json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["verdict"] == "improvement"
+    assert payload["life_verdict"] == {
+        "status": "fragile",
+        "score": 42.0,
+        "explanation": "verdict déterministe",
+        "signals": {"identity": True, "stable_cycle": False},
+        "missing_signals": ["stable_cycle"],
+    }
+
+
+def test_report_markdown_contains_stabilized_life_verdict(monkeypatch, tmp_path, capsys):
+    monkeypatch.chdir(tmp_path)
+    _patch_life_status(
+        monkeypatch,
+        status="alive",
+        score=99.0,
+        explanation="markdown déterministe",
+        signals={"identity": True},
+        missing_signals=[],
+    )
+    _write_mutation_run(
+        tmp_path,
+        "run-life-markdown",
+        [
+            {
+                "version": 1,
+                "event_type": "mutation",
+                "ts": "2026-01-01T00:00:00",
+                "payload": {"op": "mutate", "score_base": 1.0, "score_new": 1.0},
+            }
+        ],
+    )
+
+    main(["report", "--id", "run-life-markdown", "--export", "markdown"])
+
+    out = capsys.readouterr().out
+    assert "## Verdict de vie" in out
+    assert "- Statut: alive" in out
+    assert "- Score: 99.0" in out
+    assert "- Explication: markdown déterministe" in out
+
+
+@pytest.mark.parametrize("output_format", ["plain", "table"])
+def test_report_plain_and_table_keep_mutation_verdict_separate_from_life_verdict(
+    monkeypatch, tmp_path, capsys, output_format
+):
+    monkeypatch.chdir(tmp_path)
+    _patch_life_status(monkeypatch, status="alive", score=88.0)
+    _write_mutation_run(
+        tmp_path,
+        f"run-life-{output_format}",
+        [
+            {
+                "version": 1,
+                "event_type": "mutation",
+                "ts": "2026-01-01T00:00:00",
+                "payload": {"op": "mutate", "score_base": 1.0, "score_new": 0.5},
+            }
+        ],
+    )
+
+    main(["report", "--id", f"run-life-{output_format}", "--format", output_format])
+
+    out = capsys.readouterr().out
+    assert "Verdict mutation/performance: improvement" in out
+    assert "Verdict de vie: alive" in out
+    assert "Score de vie: 88.0" in out
+
+
+def test_report_works_when_memory_artifacts_are_absent(monkeypatch, tmp_path, capsys):
+    monkeypatch.chdir(tmp_path)
+    _patch_life_status(
+        monkeypatch,
+        status="not_alive_yet",
+        score=12.0,
+        signals={},
+        missing_signals=["identity", "skills"],
+    )
+    _write_mutation_run(
+        tmp_path,
+        "run-no-memory-artifacts",
+        [
+            {
+                "version": 1,
+                "event_type": "mutation",
+                "ts": "2026-01-01T00:00:00",
+                "payload": {"op": "mutate", "score_base": 1.0, "score_new": 0.9},
+            }
+        ],
+    )
+
+    main(["report", "--id", "run-no-memory-artifacts"])
+
+    out = capsys.readouterr().out
+    assert "Run run-no-memory-artifacts" in out
+    assert "Verdict de vie: not_alive_yet" in out
+    assert "No skills recorded." in out
