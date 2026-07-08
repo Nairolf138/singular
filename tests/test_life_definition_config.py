@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+import singular.life.life_definition as life_definition
 from singular.life.life_definition import load_life_definition_config
 
 
@@ -97,4 +98,66 @@ thresholds:
     )
 
     with pytest.raises(ValueError, match="alive_minimum_score"):
+        load_life_definition_config(file_path)
+
+
+def test_load_default_life_definition_falls_back_when_dedicated_file_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lifecycle_path = tmp_path / "lifecycle.yaml"
+    missing_life_definition_path = tmp_path / "life_definition.yaml"
+    lifecycle_path.write_text(
+        """
+cycle:
+  veille_seconds: 2
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        life_definition,
+        "DEFAULT_LIFE_DEFINITION_CONFIG_PATH",
+        missing_life_definition_path,
+    )
+    monkeypatch.setattr(
+        life_definition, "DEFAULT_LIFECYCLE_CONFIG_PATH", lifecycle_path
+    )
+
+    cfg = load_life_definition_config()
+
+    assert cfg == life_definition.LifeDefinitionConfig()
+
+
+def test_load_life_definition_rejects_invalid_boolean_with_clear_error(
+    tmp_path: Path,
+) -> None:
+    file_path = tmp_path / "life_definition.yaml"
+    file_path.write_text(
+        """
+criteria:
+  persistent_identity: sometimes
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError, match="criteria.persistent_identity must be a boolean"
+    ):
+        load_life_definition_config(file_path)
+
+
+def test_load_life_definition_rejects_invalid_numeric_value_with_clear_error(
+    tmp_path: Path,
+) -> None:
+    file_path = tmp_path / "life_definition.yaml"
+    file_path.write_text(
+        """
+thresholds:
+  minimum_observed_cycles: many
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError, match="thresholds.minimum_observed_cycles must be an integer"
+    ):
         load_life_definition_config(file_path)

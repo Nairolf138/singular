@@ -79,6 +79,32 @@ class LifeDefinitionConfig:
     )
 
 
+def _require_bool(value: Any, field_name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.lower() in {"true", "false"}:
+        return value.lower() == "true"
+    raise ValueError(f"{field_name} must be a boolean")
+
+
+def _require_int(value: Any, field_name: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be an integer")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be an integer") from exc
+
+
+def _require_float(value: Any, field_name: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be a number")
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be a number") from exc
+
+
 def _load_raw_life_definition(path: Path | None) -> dict[str, Any]:
     if path is not None:
         if not path.exists():
@@ -124,57 +150,71 @@ def load_life_definition_config(path: Path | None = None) -> LifeDefinitionConfi
     )
 
     criteria = LifeCriteria(
-        persistent_identity=bool(
-            criteria_raw.get("persistent_identity", cfg.criteria.persistent_identity)
+        persistent_identity=_require_bool(
+            criteria_raw.get("persistent_identity", cfg.criteria.persistent_identity),
+            "criteria.persistent_identity",
         ),
-        generation_registry=bool(
-            criteria_raw.get("generation_registry", cfg.criteria.generation_registry)
+        generation_registry=_require_bool(
+            criteria_raw.get("generation_registry", cfg.criteria.generation_registry),
+            "criteria.generation_registry",
         ),
-        stable_cycle=bool(criteria_raw.get("stable_cycle", cfg.criteria.stable_cycle)),
-        intrinsic_goals=bool(
-            criteria_raw.get("intrinsic_goals", cfg.criteria.intrinsic_goals)
+        stable_cycle=_require_bool(
+            criteria_raw.get("stable_cycle", cfg.criteria.stable_cycle),
+            "criteria.stable_cycle",
         ),
-        reproduction_capability=bool(
+        intrinsic_goals=_require_bool(
+            criteria_raw.get("intrinsic_goals", cfg.criteria.intrinsic_goals),
+            "criteria.intrinsic_goals",
+        ),
+        reproduction_capability=_require_bool(
             criteria_raw.get(
                 "reproduction_capability", cfg.criteria.reproduction_capability
-            )
+            ),
+            "criteria.reproduction_capability",
         ),
-        narrative_continuity=bool(
-            criteria_raw.get("narrative_continuity", cfg.criteria.narrative_continuity)
+        narrative_continuity=_require_bool(
+            criteria_raw.get("narrative_continuity", cfg.criteria.narrative_continuity),
+            "criteria.narrative_continuity",
         ),
     )
     thresholds = LifeThresholds(
-        minimum_narrative_trajectory_days=int(
+        minimum_narrative_trajectory_days=_require_int(
             thresholds_raw.get(
                 "minimum_narrative_trajectory_days",
                 cfg.thresholds.minimum_narrative_trajectory_days,
-            )
+            ),
+            "thresholds.minimum_narrative_trajectory_days",
         ),
-        minimum_observed_cycles=int(
+        minimum_observed_cycles=_require_int(
             thresholds_raw.get(
                 "minimum_observed_cycles", cfg.thresholds.minimum_observed_cycles
-            )
+            ),
+            "thresholds.minimum_observed_cycles",
         ),
-        maximum_cycle_anomalies=int(
+        maximum_cycle_anomalies=_require_int(
             thresholds_raw.get(
                 "maximum_cycle_anomalies", cfg.thresholds.maximum_cycle_anomalies
-            )
+            ),
+            "thresholds.maximum_cycle_anomalies",
         ),
-        alive_minimum_score=float(
+        alive_minimum_score=_require_float(
             thresholds_raw.get(
                 "alive_minimum_score", cfg.thresholds.alive_minimum_score
-            )
+            ),
+            "thresholds.alive_minimum_score",
         ),
-        fragile_minimum_score=float(
+        fragile_minimum_score=_require_float(
             thresholds_raw.get(
                 "fragile_minimum_score", cfg.thresholds.fragile_minimum_score
-            )
+            ),
+            "thresholds.fragile_minimum_score",
         ),
-        dying_degradation_minimum_score=float(
+        dying_degradation_minimum_score=_require_float(
             thresholds_raw.get(
                 "dying_degradation_minimum_score",
                 cfg.thresholds.dying_degradation_minimum_score,
-            )
+            ),
+            "thresholds.dying_degradation_minimum_score",
         ),
     )
     weighted_raw = (
@@ -195,17 +235,22 @@ def load_life_definition_config(path: Path | None = None) -> LifeDefinitionConfi
         if name not in weighted_defaults or not isinstance(value, dict):
             continue
         weighted_criteria[name] = WeightedCriterion(
-            points=float(value.get("points", weighted_defaults[name].points)),
-            required_for_alive=bool(
+            points=_require_float(
+                value.get("points", weighted_defaults[name].points),
+                f"weighted_score.criteria.{name}.points",
+            ),
+            required_for_alive=_require_bool(
                 value.get(
                     "required_for_alive",
                     weighted_defaults[name].required_for_alive,
-                )
+                ),
+                f"weighted_score.criteria.{name}.required_for_alive",
             ),
         )
     weighted_score = LifeWeightedScore(
-        total_points=float(
-            weighted_raw.get("total_points", cfg.weighted_score.total_points)
+        total_points=_require_float(
+            weighted_raw.get("total_points", cfg.weighted_score.total_points),
+            "weighted_score.total_points",
         ),
         criteria=weighted_criteria,
     )
