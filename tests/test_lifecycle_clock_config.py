@@ -78,3 +78,59 @@ coevolution:
     assert cfg.coevolution.robustness_weight == 2.5
     assert cfg.coevolution.max_test_candidates == 7
     assert cfg.coevolution.ttl == 5
+
+
+def test_load_lifecycle_clock_accepts_old_file_without_life_definition(
+    tmp_path: Path,
+) -> None:
+    file_path = tmp_path / "lifecycle.yaml"
+    file_path.write_text(
+        """
+cycle:
+  veille_seconds: 6
+phases:
+  action:
+    cpu_budget_percent: 66
+    slowdown_on_fatigue: 1.6
+""".strip(),
+        encoding="utf-8",
+    )
+
+    cfg = load_lifecycle_clock_config(file_path)
+
+    assert cfg.cycle.veille_seconds == 6.0
+    assert cfg.cycle.sommeil_seconds == 3.0
+    assert cfg.phases["action"].cpu_budget_percent == 66.0
+    assert cfg.phases["action"].allowed_actions == (
+        "mutation",
+        "evaluation",
+        "checkpoint",
+    )
+
+
+def test_load_lifecycle_clock_ignores_embedded_life_definition(tmp_path: Path) -> None:
+    file_path = tmp_path / "lifecycle.yaml"
+    file_path.write_text(
+        """
+cycle:
+  veille_seconds: 5
+  introspection_frequency_ticks: 2
+life_definition:
+  schema_version: "1.2"
+  thresholds:
+    minimum_observed_cycles: 99
+    alive_minimum_score: not-a-clock-field
+phases:
+  veille:
+    cpu_budget_percent: 31
+    slowdown_on_fatigue: 1.05
+""".strip(),
+        encoding="utf-8",
+    )
+
+    cfg = load_lifecycle_clock_config(file_path)
+
+    assert cfg.cycle.veille_seconds == 5.0
+    assert cfg.cycle.introspection_frequency_ticks == 2
+    assert cfg.phases["veille"].cpu_budget_percent == 31.0
+    assert cfg.phases["action"].cpu_budget_percent == 75.0
