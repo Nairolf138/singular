@@ -35,6 +35,7 @@ class LifeThresholds:
 
     minimum_narrative_trajectory_days: int = 7
     minimum_observed_cycles: int = 3
+    maximum_cycle_anomalies: int = 1
     alive_minimum_score: float = 0.8
     fragile_minimum_score: float = 0.5
     dying_degradation_minimum_score: float = 0.4
@@ -154,6 +155,11 @@ def load_life_definition_config(path: Path | None = None) -> LifeDefinitionConfi
                 "minimum_observed_cycles", cfg.thresholds.minimum_observed_cycles
             )
         ),
+        maximum_cycle_anomalies=int(
+            thresholds_raw.get(
+                "maximum_cycle_anomalies", cfg.thresholds.maximum_cycle_anomalies
+            )
+        ),
         alive_minimum_score=float(
             thresholds_raw.get(
                 "alive_minimum_score", cfg.thresholds.alive_minimum_score
@@ -221,6 +227,8 @@ def load_life_definition_config(path: Path | None = None) -> LifeDefinitionConfi
         raise ValueError("minimum_narrative_trajectory_days must be >= 0")
     if thresholds.minimum_observed_cycles < 0:
         raise ValueError("minimum_observed_cycles must be >= 0")
+    if thresholds.maximum_cycle_anomalies < 0:
+        raise ValueError("maximum_cycle_anomalies must be >= 0")
     if thresholds.alive_minimum_score < thresholds.fragile_minimum_score:
         raise ValueError("alive_minimum_score must be >= fragile_minimum_score")
     if weighted_score.total_points <= 0:
