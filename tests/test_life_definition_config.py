@@ -19,7 +19,13 @@ def test_load_life_definition_defaults_when_file_missing(tmp_path: Path) -> None
     assert cfg.thresholds.minimum_observed_cycles == 3
     assert cfg.thresholds.alive_minimum_score == 0.8
     assert cfg.thresholds.fragile_minimum_score == 0.5
-    assert set(cfg.statuses) == {"not_alive_yet", "fragile", "alive", "dying", "extinct"}
+    assert set(cfg.statuses) == {
+        "not_alive_yet",
+        "fragile",
+        "alive",
+        "dying",
+        "extinct",
+    }
 
 
 def test_load_life_definition_from_dedicated_file(tmp_path: Path) -> None:
@@ -33,6 +39,7 @@ criteria:
 thresholds:
   minimum_narrative_trajectory_days: 14
   minimum_observed_cycles: 9
+  maximum_cycle_anomalies: 2
   alive_minimum_score: 0.9
   fragile_minimum_score: 0.4
 statuses:
@@ -52,6 +59,7 @@ statuses:
     assert cfg.criteria.stable_cycle is True
     assert cfg.thresholds.minimum_narrative_trajectory_days == 14
     assert cfg.thresholds.minimum_observed_cycles == 9
+    assert cfg.thresholds.maximum_cycle_anomalies == 2
     assert cfg.thresholds.alive_minimum_score == 0.9
     assert cfg.thresholds.fragile_minimum_score == 0.4
 

@@ -131,7 +131,7 @@ Le dashboard n'infère plus un statut de vie uniquement à partir des runs:
 
 ## Horloge vitale (cycles, transitions, priorités)
 
-L'orchestrateur suit les transitions cycliques `veille → action → introspection → sommeil`.
+L'orchestrateur suit les transitions cycliques `veille → action → introspection → sommeil`. `compute_life_status()` analyse les runs et événements orchestrateur pour reconstruire ces phases, compter les cycles complets et exposer dans `evidence.stable_cycle.last_cycles` les derniers cycles observés.
 
 ### Paramètres de cycle
 
@@ -141,6 +141,8 @@ Le fichier versionné `configs/lifecycle.yaml` définit:
 - `cycle.sommeil_seconds`
 - `cycle.introspection_frequency_ticks`
 - `cycle.mutation_window_seconds`
+- `life_definition.thresholds.minimum_observed_cycles`: nombre minimal de cycles complets requis pour `stable_cycle`.
+- `life_definition.thresholds.maximum_cycle_anomalies`: nombre maximal de phases manquantes ou écarts d'ordre tolérés avant de rendre `stable_cycle` négatif.
 
 Les valeurs peuvent être surchargées via `singular orchestrate run --lifecycle-config`.
 

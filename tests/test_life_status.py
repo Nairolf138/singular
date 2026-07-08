@@ -60,7 +60,8 @@ def test_compute_life_status_aggregates_configured_signals(tmp_path) -> None:
         encoding="utf-8",
     )
     (mem / "goals.json").write_text(
-        '{"source":"intrinsic","origin":"self_generated","kind":"intrinsic_goal","status":"active","weights":{"coherence":0.5},"history":[]}', encoding="utf-8"
+        '{"source":"intrinsic","origin":"self_generated","kind":"intrinsic_goal","status":"active","weights":{"coherence":0.5},"history":[]}',
+        encoding="utf-8",
     )
     (mem / "quests_state.json").write_text(
         '{"active":[{"origin":"intrinsic"}],"paused":[]}', encoding="utf-8"
@@ -129,7 +130,10 @@ def test_compute_life_status_rejects_human_quest_as_intrinsic_goal(tmp_path) -> 
     )
 
     assert result.signals["intrinsic_goals"] is False
-    assert result.signals["structured"]["goals"]["evidence"]["intrinsic_goal_weight_count"] == 0
+    assert (
+        result.signals["structured"]["goals"]["evidence"]["intrinsic_goal_weight_count"]
+        == 0
+    )
 
 
 def test_compute_life_status_terminal_signal_dominates(tmp_path) -> None:
@@ -474,3 +478,102 @@ def test_compute_life_status_corrupt_json_and_missing_files_are_explanatory(
     assert "autopsy" in result.missing_signals
     assert "Manquants ou insuffisants" in result.explanation
     _assert_status_contract(result)
+
+
+def test_compute_life_status_stable_cycle_records_last_cycles_and_tolerates_small_gap(
+    life_home_factory,
+) -> None:
+    from singular.life.life_status import compute_life_status
+
+    life_home, _mem = life_home_factory()
+    runs = [
+        {
+            "event": "orchestrator.phase",
+            "phase": "veille",
+            "ts": "2026-06-02T00:00:00+00:00",
+        },
+        {
+            "event": "orchestrator.phase",
+            "phase": "action",
+            "ts": "2026-06-02T00:01:00+00:00",
+        },
+        {
+            "event": "orchestrator.phase",
+            "phase": "introspection",
+            "ts": "2026-06-02T00:02:00+00:00",
+        },
+        {
+            "event": "orchestrator.phase",
+            "phase": "sommeil",
+            "ts": "2026-06-02T00:03:00+00:00",
+        },
+        {
+            "event": "orchestrator.phase",
+            "phase": "action",
+            "ts": "2026-06-02T00:04:00+00:00",
+        },
+        {
+            "event": "orchestrator.phase",
+            "phase": "veille",
+            "ts": "2026-06-02T00:05:00+00:00",
+        },
+        {
+            "event": "orchestrator.phase",
+            "phase": "action",
+            "ts": "2026-06-02T00:06:00+00:00",
+        },
+        {
+            "event": "orchestrator.phase",
+            "phase": "introspection",
+            "ts": "2026-06-02T00:07:00+00:00",
+        },
+        {
+            "event": "orchestrator.phase",
+            "phase": "sommeil",
+            "ts": "2026-06-02T00:08:00+00:00",
+        },
+    ]
+    config = LifeDefinitionConfig(
+        thresholds=LifeThresholds(minimum_observed_cycles=2, maximum_cycle_anomalies=1)
+    )
+
+    result = compute_life_status(
+        life_home, registry_entry={"status": "active"}, runs=runs, config=config
+    )
+
+    cycle = result.evidence["stable_cycle"]
+    assert result.signals["stable_cycle"] is True
+    assert result.signals["observed_cycles"] == 2
+    assert cycle["anomalies"] == 1
+    assert len(cycle["last_cycles"]) == 2
+    assert [event["phase"] for event in cycle["last_cycles"][-1]] == [
+        "veille",
+        "action",
+        "introspection",
+        "sommeil",
+    ]
+
+
+def test_compute_life_status_stable_cycle_rejects_terminal_dominance(
+    life_home_factory,
+) -> None:
+    from singular.life.life_status import compute_life_status
+
+    life_home, _mem = life_home_factory()
+    runs = _cycle_runs(3) + [
+        {
+            "event": "death.confirmed",
+            "status": "terminal",
+            "ts": "2026-06-03T00:00:00+00:00",
+        }
+        for _ in range(12)
+    ]
+
+    result = compute_life_status(
+        life_home, registry_entry={"status": "active"}, runs=runs
+    )
+
+    cycle = result.evidence["stable_cycle"]
+    assert result.signals["observed_cycles"] == 3
+    assert result.signals["stable_cycle"] is False
+    assert cycle["terminal_dominates"] is True

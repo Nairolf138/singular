@@ -192,21 +192,127 @@ def _event_text(row: Mapping[str, Any]) -> str:
     ).lower()
 
 
-def _cycle_count(rows: Sequence[Mapping[str, Any]]) -> int:
-    phases = ("veille", "action", "introspection", "sommeil")
-    expected = 0
-    count = 0
-    for row in rows:
-        text = _event_text(row)
-        phase = phases[expected]
+REQUIRED_CYCLE_PHASES = ("veille", "action", "introspection", "sommeil")
+TERMINAL_PHASE_TOKENS = ("extinct", "extinction", "death", "terminal", "dying", "stop")
+
+
+def _row_phase(row: Mapping[str, Any]) -> str | None:
+    text = _event_text(row)
+    for phase in REQUIRED_CYCLE_PHASES:
         if phase in text:
+            return phase
+    return None
+
+
+def _row_timestamp(row: Mapping[str, Any]) -> str | None:
+    for key in ("ts", "time", "timestamp", "created_at"):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
+def _cycle_analysis(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    required_cycles: int,
+    tolerated_anomalies: int,
+) -> dict[str, Any]:
+    expected = 0
+    observed_cycles = 0
+    anomalies = 0
+    current_cycle: list[dict[str, Any]] = []
+    completed_cycles: list[list[dict[str, Any]]] = []
+    phase_events = 0
+    terminal_events: list[dict[str, Any]] = []
+
+    for index, row in enumerate(rows):
+        text = _event_text(row)
+        terminal = any(token in text for token in TERMINAL_PHASE_TOKENS)
+        if terminal:
+            terminal_events.append(
+                {
+                    "index": index,
+                    "event": row.get("event"),
+                    "phase": row.get("phase"),
+                    "ts": _row_timestamp(row),
+                }
+            )
+        phase = _row_phase(row)
+        if phase is None:
+            continue
+        phase_events += 1
+        expected_phase = REQUIRED_CYCLE_PHASES[expected]
+        event_evidence = {
+            "phase": phase,
+            "index": index,
+            "event": row.get("event"),
+            "ts": _row_timestamp(row),
+        }
+        if phase == expected_phase:
+            current_cycle.append(event_evidence)
             expected += 1
-            if expected == len(phases):
-                count += 1
+            if expected == len(REQUIRED_CYCLE_PHASES):
+                observed_cycles += 1
+                completed_cycles.append(current_cycle)
+                current_cycle = []
                 expected = 0
-        elif phases[0] in text:
+        elif phase == REQUIRED_CYCLE_PHASES[0]:
+            if current_cycle:
+                anomalies += 1
+            current_cycle = [event_evidence]
             expected = 1
-    return count
+        else:
+            anomalies += 1
+
+    missing_phases = list(REQUIRED_CYCLE_PHASES[expected:]) if expected else []
+    if missing_phases:
+        anomalies += len(missing_phases)
+
+    recent_window = max(
+        len(REQUIRED_CYCLE_PHASES), required_cycles * len(REQUIRED_CYCLE_PHASES)
+    )
+    recent_rows = list(rows)[-recent_window:] if recent_window > 0 else list(rows)
+    recent_phase_count = sum(1 for row in recent_rows if _row_phase(row) is not None)
+    recent_terminal_count = sum(
+        1
+        for row in recent_rows
+        if any(token in _event_text(row) for token in TERMINAL_PHASE_TOKENS)
+    )
+    terminal_dominates = bool(
+        recent_terminal_count and recent_terminal_count >= max(1, recent_phase_count)
+    )
+    ok = (
+        observed_cycles >= required_cycles
+        and anomalies <= tolerated_anomalies
+        and not terminal_dominates
+    )
+    return {
+        "ok": ok,
+        "observed_cycles": observed_cycles,
+        "required_cycles": required_cycles,
+        "tolerated_anomalies": tolerated_anomalies,
+        "anomalies": anomalies,
+        "missing_phases": missing_phases,
+        "terminal_dominates": terminal_dominates,
+        "recent_terminal_events_count": recent_terminal_count,
+        "recent_phase_events_count": recent_phase_count,
+        "terminal_events_count": len(terminal_events),
+        "last_cycles": (
+            completed_cycles[-required_cycles:]
+            if required_cycles > 0
+            else completed_cycles[-3:]
+        ),
+        "current_incomplete_cycle": current_cycle,
+    }
+
+
+def _cycle_count(rows: Sequence[Mapping[str, Any]]) -> int:
+    return int(
+        _cycle_analysis(rows, required_cycles=0, tolerated_anomalies=10**9)[
+            "observed_cycles"
+        ]
+    )
 
 
 def _health_score_from_payload(payload: Mapping[str, Any]) -> float | None:
@@ -279,9 +385,11 @@ def _extract_identity_signal(self_narrative: dict) -> dict:
     return _signal(
         ok,
         1.0 if ok else 0.0,
-        "persistent identity found"
-        if ok
-        else "identity is incomplete: " + ", ".join(missing),
+        (
+            "persistent identity found"
+            if ok
+            else "identity is incomplete: " + ", ".join(missing)
+        ),
         {"name": name, "born_at": born_at, "slug": slug, "missing": missing},
     )
 
@@ -315,9 +423,11 @@ def _extract_narrative_continuity_signal(
     return _signal(
         ok,
         1.0 if ok else 0.0,
-        "narrative continuity threshold reached"
-        if ok
-        else "narrative content or age is insufficient",
+        (
+            "narrative continuity threshold reached"
+            if ok
+            else "narrative content or age is insufficient"
+        ),
         {
             "age_days": age_days,
             "threshold_days": threshold_days,
@@ -349,7 +459,9 @@ def _extract_goal_signal(goals: dict, quests: dict, runs: list[dict]) -> dict:
         for value in weights.values()
         if isinstance(value, (int, float)) and float(value) > 0
     )
-    intrinsic_goal_weight_count = active_goal_count if _is_active_intrinsic_goal(goals) else 0
+    intrinsic_goal_weight_count = (
+        active_goal_count if _is_active_intrinsic_goal(goals) else 0
+    )
     history = goals.get("history") if isinstance(goals.get("history"), list) else []
     renewed_intrinsic_goal_count = sum(
         1
@@ -372,13 +484,19 @@ def _extract_goal_signal(goals: dict, quests: dict, runs: list[dict]) -> dict:
         for row in runs
         if any(token in _event_text(row) for token in ("goal", "quest", "objective"))
     ]
-    ok = intrinsic_goal_weight_count > 0 or intrinsic_quest_count > 0 or renewed_intrinsic_goal_count > 0
+    ok = (
+        intrinsic_goal_weight_count > 0
+        or intrinsic_quest_count > 0
+        or renewed_intrinsic_goal_count > 0
+    )
     return _signal(
         ok,
         1.0 if ok else 0.0,
-        "active self-generated intrinsic goals are present"
-        if ok
-        else "no active self-generated intrinsic goal evidence found",
+        (
+            "active self-generated intrinsic goals are present"
+            if ok
+            else "no active self-generated intrinsic goal evidence found"
+        ),
         {
             "active_goal_count": active_goal_count,
             "intrinsic_goal_weight_count": intrinsic_goal_weight_count,
@@ -401,9 +519,11 @@ def _extract_generation_signal(life_home: Path, runs: list[dict]) -> dict:
     return _signal(
         ok,
         1.0 if ok else 0.0,
-        "generation registry evidence found"
-        if ok
-        else "no generation registry evidence found",
+        (
+            "generation registry evidence found"
+            if ok
+            else "no generation registry evidence found"
+        ),
         {
             "generations_count": len(generation_rows),
             "run_generation_events_count": len(run_generation_events),
@@ -509,8 +629,13 @@ def compute_life_status(
     generation_signal = _extract_generation_signal(life_home, run_rows)
     generation_registry = bool(generation_signal["ok"])
 
-    observed_cycles = _cycle_count(run_rows)
-    stable_cycle = observed_cycles >= cfg.thresholds.minimum_observed_cycles
+    cycle_evidence = _cycle_analysis(
+        run_rows,
+        required_cycles=cfg.thresholds.minimum_observed_cycles,
+        tolerated_anomalies=cfg.thresholds.maximum_cycle_anomalies,
+    )
+    observed_cycles = int(cycle_evidence["observed_cycles"])
+    stable_cycle = bool(cycle_evidence["ok"])
 
     goal_signal = _extract_goal_signal(goals, quests, run_rows)
     goal_evidence = goal_signal.get("evidence", {})
@@ -709,6 +834,16 @@ def compute_life_status(
             "goals": goal_signal,
             "generation": generation_signal,
             "extinction": extinction_signal,
+            "stable_cycle": _signal(
+                stable_cycle,
+                1.0 if stable_cycle else 0.0,
+                (
+                    "required orchestrator cycles observed in order"
+                    if stable_cycle
+                    else "required orchestrator cycles are incomplete, anomalous or dominated by terminal events"
+                ),
+                cycle_evidence,
+            ),
         },
     }
     evidence = {
@@ -730,10 +865,12 @@ def compute_life_status(
         "extinction_events_count": extinction_events_count,
         "confirmed_extinction_events_count": confirmed_extinction_events_count,
         "reproduction_events_count": len(reproduction_events),
+        "stable_cycle": cycle_evidence,
         "vital_timeline": vital_timeline,
         "thresholds": {
             "minimum_narrative_trajectory_days": cfg.thresholds.minimum_narrative_trajectory_days,
             "minimum_observed_cycles": cfg.thresholds.minimum_observed_cycles,
+            "maximum_cycle_anomalies": cfg.thresholds.maximum_cycle_anomalies,
             "alive_minimum_score": cfg.thresholds.alive_minimum_score,
             "fragile_minimum_score": cfg.thresholds.fragile_minimum_score,
             "dying_degradation_minimum_score": cfg.thresholds.dying_degradation_minimum_score,

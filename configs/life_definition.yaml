@@ -49,6 +49,7 @@ weighted_score:
 thresholds:
   minimum_narrative_trajectory_days: 7
   minimum_observed_cycles: 3
+  maximum_cycle_anomalies: 1
   alive_minimum_score: 80
   fragile_minimum_score: 50
   dying_degradation_minimum_score: 40
