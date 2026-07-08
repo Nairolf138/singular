@@ -559,6 +559,57 @@ def _extract_extinction_signal(
     )
 
 
+def _valid_string_items(value: Any) -> list[str]:
+    if not isinstance(value, list | tuple | set):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _lineage_descendants_from_registry(
+    *, life_home: Path, registry: Mapping[str, Any]
+) -> list[str]:
+    descendants = _valid_string_items(registry.get("children"))
+    slug = str(registry.get("slug") or life_home.name).strip()
+    lineage_paths = [
+        life_home / "mem" / "lineage.json",
+        life_home.parent / "lineage.json",
+    ]
+    for path in lineage_paths:
+        lineage = _read_json(path)
+        if not lineage:
+            continue
+        candidate_ids = [slug, str(registry.get("name") or "").strip()]
+        for candidate_id in candidate_ids:
+            record = lineage.get(candidate_id)
+            if isinstance(record, Mapping):
+                descendants.extend(_valid_string_items(record.get("children")))
+        for record_id, record in lineage.items():
+            if not isinstance(record, Mapping):
+                continue
+            parents = _valid_string_items(record.get("parents"))
+            if slug and slug in parents:
+                descendants.append(str(record.get("organism_id") or record_id).strip())
+    return sorted({item for item in descendants if item})
+
+
+def _generation_descendants(generation_rows: Sequence[Mapping[str, Any]]) -> list[str]:
+    descendants: list[str] = []
+    for row in generation_rows:
+        parent_generation_id = row.get("parent_generation_id")
+        if parent_generation_id in (None, "", 0):
+            continue
+        child = (
+            row.get("child")
+            or row.get("child_id")
+            or row.get("clone")
+            or row.get("clone_id")
+            or row.get("generation_id")
+        )
+        if child not in (None, ""):
+            descendants.append(str(child).strip())
+    return sorted({item for item in descendants if item})
+
+
 def compute_life_status(
     life_home: Path,
     *,
@@ -651,27 +702,23 @@ def compute_life_status(
     )
     intrinsic_goals = bool(goal_signal["ok"])
 
-    children = (
-        registry.get("children")
-        if isinstance(registry.get("children"), list | tuple)
-        else []
+    children = _valid_string_items(registry.get("children"))
+    lineage_descendants = _lineage_descendants_from_registry(
+        life_home=life_home,
+        registry=registry,
+    )
+    generation_descendants = _generation_descendants(generation_rows)
+    detected_descendants = sorted(
+        {*children, *lineage_descendants, *generation_descendants}
     )
     reproduction_events = [
         row
         for row in run_rows
         if any(
             token in _event_text(row)
-            for token in ("birth", "reproduction", "child", "offspring")
+            for token in ("birth", "reproduction", "child", "offspring", "clone")
         )
     ]
-    reproduction_possible = bool(
-        children
-        or reproduction_events
-        or registry.get("lineage_depth", 0) is not None
-        and persistent_identity
-        and not autopsy
-    )
-    reproduction_done = bool(children or reproduction_events)
 
     world_state = _read_json(paths["world_state"])
     mutation_rows = [row for row in run_rows if "score_new" in row]
@@ -741,6 +788,12 @@ def compute_life_status(
     )
     vital_state = str(vital_timeline.get("state", ""))
     terminal = vital_state in {"terminal", "extinct"}
+    reproduction_eligible = vital_timeline.get("reproduction_eligible") is True
+    reproduction_capability = bool(
+        reproduction_eligible or reproduction_events or detected_descendants
+    )
+    reproduction_done = bool(reproduction_events or detected_descendants)
+    reproduction_possible = reproduction_capability
 
     criteria = {
         "persistent_identity": (cfg.criteria.persistent_identity, persistent_identity),
@@ -749,9 +802,7 @@ def compute_life_status(
         "intrinsic_goals": (cfg.criteria.intrinsic_goals, intrinsic_goals),
         "reproduction_capability": (
             cfg.criteria.reproduction_capability,
-            reproduction_possible
-            or reproduction_done
-            or vital_timeline.get("reproduction_eligible") is True,
+            reproduction_capability,
         ),
         "narrative_continuity": (
             cfg.criteria.narrative_continuity,
@@ -821,7 +872,7 @@ def compute_life_status(
         "reproduction_possible": reproduction_possible,
         "reproduction_done": reproduction_done,
         "reproduction_capability": criteria["reproduction_capability"][1],
-        "reproduction_eligible": vital_timeline.get("reproduction_eligible") is True,
+        "reproduction_eligible": reproduction_eligible,
         "narrative_continuity": narrative_continuity,
         "narrative_age_days": age_days,
         "terminal": terminal,
@@ -865,6 +916,15 @@ def compute_life_status(
         "extinction_events_count": extinction_events_count,
         "confirmed_extinction_events_count": confirmed_extinction_events_count,
         "reproduction_events_count": len(reproduction_events),
+        "reproduction_capability": {
+            "ok": reproduction_capability,
+            "vital_age": vital_timeline.get("age"),
+            "vital_state": vital_state,
+            "vital_thresholds": vital_timeline.get("thresholds"),
+            "reproduction_eligible": reproduction_eligible,
+            "reproduction_events_count": len(reproduction_events),
+            "descendants": detected_descendants,
+        },
         "stable_cycle": cycle_evidence,
         "vital_timeline": vital_timeline,
         "thresholds": {
