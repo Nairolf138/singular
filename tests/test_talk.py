@@ -353,3 +353,39 @@ def test_unknown_argument_that_looks_like_life_suggests_life_flag(
     stderr = capsys.readouterr().err
     assert "singular --life <slug> talk" in stderr
     assert "singular --root <root> --life <slug> talk" in stderr
+
+
+def test_talk_marks_fallback_as_not_real_llm_in_memory_and_traces(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    inputs = iter(["hello", "quit"])
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", lambda _name: None)
+    monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
+    monkeypatch.setattr("builtins.print", lambda _msg: None)
+
+    talk(provider="missing", seed=1)
+
+    assistant = [e for e in read_episodes() if e.get("role") == "assistant"][-1]
+    assert assistant["llm_real"] is False
+    assert assistant["fallback_used"] is True
+    assert assistant["error_category"] == "provider_missing"
+    trace = read_causal_timeline()[-1]
+    assert trace["decision"]["llm_real"] is False
+    assert trace["decision"]["fallback_used"] is True
+    assert trace["result"]["cognitive_success"] is False
+    assert trace["result"]["gain_loss"] == 0.0
+
+
+def test_talk_status_includes_active_fallback_and_error_category(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    inputs = iter(["hello", "quit"])
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", lambda _name: None)
+    monkeypatch.setattr("builtins.input", lambda _="": next(inputs))
+    outputs: list[str] = []
+    monkeypatch.setattr("builtins.print", lambda msg: outputs.append(msg))
+
+    talk(provider="missing", seed=2)
+
+    assert any("Provider active: missing" in out for out in outputs)
+    assert any("fallback=true" in out and "error_category=provider_missing" in out for out in outputs)

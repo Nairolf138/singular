@@ -606,6 +606,31 @@ def _configure_openai(api_key: str, *, shell_profile: str | None, test: bool) ->
     return 0
 
 
+def _doctor_providers() -> int:
+    """Display LLM provider diagnostics for OpenAI, Ollama and local backends."""
+
+    from .providers import doctor_providers
+
+    print("Diagnostic providers LLM")
+    exit_code = 0
+    for result in doctor_providers():
+        ok = bool(result.get("ok"))
+        if not ok:
+            exit_code = 1
+        status = "✅ ok" if ok else "⚠️ indisponible"
+        provider = result.get("provider", "inconnu")
+        llm_real = str(bool(result.get("llm_real"))).lower()
+        error_category = result.get("error_category") or "none"
+        details = []
+        for key in ("model", "host", "error"):
+            value = result.get(key)
+            if value:
+                details.append(f"{key}={value}")
+        suffix = f" ({', '.join(details)})" if details else ""
+        print(f"- {provider}: {status} | llm_real={llm_real} | error_category={error_category}{suffix}")
+    return exit_code
+
+
 _POLICY_SETTERS: dict[str, tuple[str, str]] = {
     "memory.preserve_threshold": ("float", "memory_preserve_threshold"),
     "forgetting.enabled": ("bool", "forgetting_enabled"),
@@ -1271,6 +1296,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Run a short provider ping after configuration",
     )
+    config_providers_parser = config_subparsers.add_parser(
+        "providers", help="Diagnose LLM providers"
+    )
+    config_providers_subparsers = config_providers_parser.add_subparsers(
+        dest="config_providers_command", required=True
+    )
+    config_providers_subparsers.add_parser(
+        "doctor", help="Vérifie OpenAI, Ollama et local"
+    )
     config_root_parser = config_subparsers.add_parser(
         "root", help="Configurer le root de registre persistant"
     )
@@ -1503,10 +1537,9 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["SINGULAR_SAFE_MODE"] = "1"
 
     if args.command == "birth":
-        print(
+        sys.stderr.write(
             "⚠️ `singular birth` est déprécié et sera supprimé après la période "
-            "de transition. Migrez vers `singular lives create --name ...`.",
-            file=sys.stderr,
+            "de transition. Migrez vers `singular lives create --name ...`.\n"
         )
         _create_life_with_bootstrap(
             args,
@@ -1736,6 +1769,7 @@ def main(argv: list[str] | None = None) -> int:
 
     elif args.command == "doctor":
         _doctor(fix=args.fix)
+        _doctor_providers()
 
     elif args.command == "config":
         if args.config_command == "openai":
@@ -1749,6 +1783,9 @@ def main(argv: list[str] | None = None) -> int:
                 shell_profile=args.shell_profile,
                 test=args.test,
             )
+        if args.config_command == "providers":
+            if args.config_providers_command == "doctor":
+                return _doctor_providers()
         if args.config_command == "root":
             if args.config_root_command == "set":
                 config_path, resolved_root = set_configured_registry_root(

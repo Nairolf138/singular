@@ -64,15 +64,19 @@ def log_provider_event(
     latency_ms: float,
     fallback: bool,
     error_category: str | None,
+    llm_real: bool,
+    active_provider: str | None = None,
 ) -> None:
     """Emit a structured provider log entry."""
 
     payload = {
         "event": "provider_call",
         "provider": provider,
+        "active_provider": active_provider or provider,
         "latency_ms": round(latency_ms, 2),
         "fallback": fallback,
         "error_category": error_category,
+        "llm_real": llm_real,
     }
     _provider_logger.info("provider_call", extra={"payload": payload})
 

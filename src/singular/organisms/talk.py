@@ -20,6 +20,7 @@ from ..providers import (
     ProviderRetryExhaustedError,
     ProviderTimeoutError,
     ProviderUnavailableError,
+    describe_client,
     load_llm_client,
 )
 from ..runs.logger import log_provider_event
@@ -174,6 +175,11 @@ def talk(
     print(f"Provider: {provider_name}")
 
     client = load_llm_client(provider_name)
+    provider_status = describe_client(client, provider_name)
+    print(
+        f"Provider active: {provider_status['active_provider']} | "
+        f"llm_real={str(provider_status['llm_real']).lower()} | fallback=not-yet"
+    )
     if client is None:
         print(
             f"Provider '{provider_name}' not found. "
@@ -261,17 +267,34 @@ def talk(
         start = time.perf_counter()
         fallback_used = client is None
         error_category: str | None = "provider_missing" if client is None else None
+        active_provider = str(provider_status["active_provider"])
+        llm_real = bool(provider_status["llm_real"]) and not fallback_used
 
         if client is None:
+            print(
+                f"LLM status: active={active_provider} fallback=true "
+                f"error_category={error_category} llm_real=false"
+            )
             reply = _default_reply(user_input, rng)
         else:
             try:
                 reply = client.generate_reply(provider_prompt)
             except LLMProviderError as err:
                 fallback_used = True
+                llm_real = False
                 error_category = getattr(err, "category", "provider_error")
                 print(_user_message_for_error(provider_name, err))
+                print(
+                    f"LLM status: active={active_provider} fallback=true "
+                    f"error_category={error_category} llm_real=false"
+                )
                 reply = _default_reply(user_input, rng)
+            else:
+                print(
+                    f"LLM status: active={active_provider} fallback=false "
+                    "error_category=none "
+                    f"llm_real={str(llm_real).lower()}"
+                )
 
         latency_ms = (time.perf_counter() - start) * 1000
         log_provider_event(
@@ -279,6 +302,8 @@ def talk(
             latency_ms=latency_ms,
             fallback=fallback_used,
             error_category=error_category,
+            llm_real=llm_real,
+            active_provider=active_provider,
         )
 
         parts = [reply]
@@ -303,6 +328,9 @@ def talk(
                 "text": response,
                 "raw_reply": reply,
                 "mood": mood.value,
+                "llm_real": llm_real,
+                "fallback_used": fallback_used,
+                "error_category": error_category,
                 "structured_signals": user_signals,
                 "context": {
                     "self_narrative_version": self_narrative_version,
@@ -317,6 +345,8 @@ def talk(
             - float(user_signals.get("frustration", 0.0)),
             3,
         )
+        cognitive_success = llm_real and not fallback_used
+        cognitive_gain = gain_estimate if cognitive_success else 0.0
         add_causal_trace(
             {
                 "ts": datetime.now(timezone.utc).isoformat(),
@@ -329,8 +359,10 @@ def talk(
                 },
                 "decision": {
                     "provider": provider_name,
+                    "active_provider": active_provider,
                     "fallback_used": fallback_used,
                     "error_category": error_category,
+                    "llm_real": llm_real,
                     "mood": mood_report,
                 },
                 "action": {
@@ -339,10 +371,11 @@ def talk(
                     "response": response,
                 },
                 "result": {
-                    "gain_loss": gain_estimate,
+                    "cognitive_success": cognitive_success,
+                    "gain_loss": cognitive_gain,
                     "objective_impact": {
                         "objective": f"user_dialogue:{user_signals.get('theme', 'general')}",
-                        "impact": gain_estimate,
+                        "impact": cognitive_gain,
                     },
                 },
             }
