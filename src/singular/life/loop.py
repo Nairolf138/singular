@@ -618,6 +618,28 @@ def _map_elites_accept(
         return map_elites.add(mutated, mutated_score)
 
 
+def _sandbox_scores_are_comparable(
+    base_result: SandboxScore, mutated_result: SandboxScore
+) -> bool:
+    """Return True only when both sandbox outcomes have finite business scores."""
+
+    return (
+        base_result.comparable_score is not None
+        and mutated_result.comparable_score is not None
+    )
+
+
+def _should_retry_sandbox_scoring(
+    base_result: SandboxScore, mutated_result: SandboxScore
+) -> bool:
+    """Infrastructure failures should be retried instead of penalized."""
+
+    return (
+        base_result.is_infrastructure_failure
+        or mutated_result.is_infrastructure_failure
+    )
+
+
 def _first_sandbox_error_type(
     base_result: SandboxScore, mutated_result: SandboxScore
 ) -> str | None:
@@ -848,7 +870,8 @@ def run(
         else:
             with current_tick_profiler.phase("sandbox_scoring"):
                 result = score_code_with_error(code)
-        score_cache[code_hash] = result
+        if result.ok:
+            score_cache[code_hash] = result
         return result
 
     def _profiled_test_runner() -> int:
@@ -1284,9 +1307,19 @@ def run(
             mutated_score = mutated_score_result.score
             ms_new = (time.perf_counter() - t0) * 1000
 
-            base_failed = (not base_score_result.ok) or base_score == float("-inf")
-            mutation_failed = (
-                (not mutated_score_result.ok) or mutated_score == float("-inf")
+            base_comparable_score = base_score_result.comparable_score
+            mutated_comparable_score = mutated_score_result.comparable_score
+            base_infrastructure_failure = base_score_result.is_infrastructure_failure
+            mutation_infrastructure_failure = (
+                mutated_score_result.is_infrastructure_failure
+            )
+            infrastructure_failure = _should_retry_sandbox_scoring(
+                base_score_result, mutated_score_result
+            )
+            base_failed = base_score_result.is_candidate_failure
+            mutation_failed = mutated_score_result.is_candidate_failure
+            scores_comparable = _sandbox_scores_are_comparable(
+                base_score_result, mutated_score_result
             )
             (
                 sandbox_violation_category,
@@ -1295,10 +1328,39 @@ def run(
             ) = _sandbox_failure_category(base_failed, mutation_failed, mutated)
             critical_sandbox_failure = sandbox_violation_severity == "critical"
 
-            if mutated_score == float("-inf"):
+            if infrastructure_failure:
+                infrastructure_diagnostic = {
+                    "organism": org_name,
+                    "skill_path": str(skill_path),
+                    "operator": op_name,
+                    "base_score": base_score,
+                    "mutated_score": mutated_score,
+                    "base_error_type": base_score_result.error_type,
+                    "base_error_message": base_score_result.error_message,
+                    "mutation_error_type": mutated_score_result.error_type,
+                    "mutation_error_message": mutated_score_result.error_message,
+                    "base_infrastructure_failure": base_infrastructure_failure,
+                    "mutation_infrastructure_failure": mutation_infrastructure_failure,
+                    "action": "retry_scoring_later",
+                }
+                logger.log_interaction(
+                    "sandbox_infrastructure_failure", **infrastructure_diagnostic
+                )
+                event_bus.publish(
+                    "sandbox.infrastructure_failure",
+                    {
+                        "life": org_name,
+                        "iteration": state.iteration,
+                        **infrastructure_diagnostic,
+                    },
+                    payload_version=1,
+                )
+                continue
+
+            if mutation_failed:
                 if hasattr(psyche, "feel"):
                     psyche.feel(Mood.PAIN)
-            elif mutated_score <= base_score:
+            elif scores_comparable and mutated_comparable_score <= base_comparable_score:
                 if hasattr(psyche, "feel"):
                     psyche.feel(Mood.PLEASURE)
 
@@ -1342,11 +1404,13 @@ def run(
 
             accepted = (
                 False
-                if mutation_failed
+                if mutation_failed or not scores_comparable
                 else (
-                    _map_elites_accept(map_elites, mutated, mutated_score, tick_profiler)
+                    _map_elites_accept(
+                        map_elites, mutated, mutated_comparable_score, tick_profiler
+                    )
                     if map_elites
-                    else mutated_score <= base_score
+                    else mutated_comparable_score <= base_comparable_score
                 )
             )
             world_effects: list[dict[str, object]] = []
@@ -1406,8 +1470,9 @@ def run(
                         rejected_tests=list(coevo_decision.rejected_tests),
                         rejected_for_robustness=coevo_decision.rejected_for_robustness,
                     )
-            accepted = accepted and not mutation_failed
-            org.last_score = mutated_score
+            accepted = accepted and not mutation_failed and scores_comparable
+            if mutated_comparable_score is not None:
+                org.last_score = mutated_comparable_score
             if accepted:
                 governance_root = skill_path.parent.parent if skill_path.parent.name == "skills" else skill_path.parent
                 decision = governance_policy.enforce_write(skill_path, mutated, root=governance_root)

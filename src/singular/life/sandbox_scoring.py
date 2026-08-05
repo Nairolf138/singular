@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import math
 from dataclasses import dataclass
+from typing import ClassVar
 
 from . import sandbox
 
@@ -22,6 +23,23 @@ class SandboxScore:
     error_type: str | None
     error_message: str | None
     _legacy_exception_type: str | None
+
+    INFRASTRUCTURE_ERROR_TYPES: ClassVar[frozenset[str]] = frozenset({
+        "sandbox_startup_timeout",
+        "sandbox_worker_no_payload",
+        "multiprocessing_error",
+    })
+    CANDIDATE_ERROR_TYPES: ClassVar[frozenset[str]] = frozenset({
+        "syntax_error",
+        "missing_result",
+        "non_numeric_result",
+        "non_finite_result",
+        "forbidden_syntax",
+        "forbidden_name",
+        "sandbox_error",
+        "runtime_exception",
+        "timeout",
+    })
 
     def __init__(
         self,
@@ -76,6 +94,26 @@ class SandboxScore:
         """Backward-compatible alias for ``error_message``."""
 
         return self.error_message
+
+    @property
+    def is_infrastructure_failure(self) -> bool:
+        """Whether the failure came from sandbox machinery rather than code."""
+
+        return (not self.ok) and self.error_type in self.INFRASTRUCTURE_ERROR_TYPES
+
+    @property
+    def is_candidate_failure(self) -> bool:
+        """Whether the candidate code executed invalidly in a healthy sandbox."""
+
+        return (not self.ok) and not self.is_infrastructure_failure
+
+    @property
+    def comparable_score(self) -> float | None:
+        """Score to use for business comparisons, or ``None`` if unavailable."""
+
+        if not self.ok or not math.isfinite(float(self.score)):
+            return None
+        return float(self.score)
 
 
 DANGEROUS_MUTATION_NAMES = frozenset(
@@ -154,11 +192,20 @@ def _classify_score_exception(exception: BaseException) -> str:
     """Map sandbox exceptions to stable diagnostic categories."""
 
     if isinstance(exception, TimeoutError):
+        message = str(exception).lower()
+        if "startup" in message or "did not start" in message:
+            return "sandbox_startup_timeout"
         return "timeout"
     if isinstance(exception, SyntaxError):
         return "syntax_error"
     if isinstance(exception, sandbox.SandboxError):
         message = str(exception).lower()
+        if "worker" in message and (
+            "without payload" in message or "without returning" in message
+        ):
+            return "sandbox_worker_no_payload"
+        if "multiprocessing method" in message or "multiprocessing" in message:
+            return "multiprocessing_error"
         if "result" in message and ("missing" in message or "did not set" in message):
             return "missing_result"
         return "sandbox_error"
