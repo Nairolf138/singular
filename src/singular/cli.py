@@ -313,6 +313,7 @@ def _sandbox_diagnosis_recommendation(
         "non_finite_result": "Retournez un nombre fini; évitez `inf`, `-inf` et `nan`.",
         "timeout": "Réduisez les boucles ou ajoutez une borne de calcul déterministe.",
         "syntax_error": "Corrigez la syntaxe Python du fichier.",
+        "forbidden_syntax": "Supprimez les imports/with; n'utilisez que le sous-ensemble sandbox autorisé.",
         "runtime_exception": "Corrigez l'exception levée pendant l'exécution sandboxée.",
     }
     if error_type == "sandbox_error":
@@ -402,6 +403,32 @@ def _diagnose_sandbox(*, output_format: str = "plain") -> int:
             )
 
     return 0 if all(row["status"] == "OK" for row in rows) else 1
+
+
+def _diagnose_evolution(*, output_format: str = "plain") -> int:
+    """Print static diagnostics for recent evolution runs."""
+
+    from .diagnostics.evolution import analyze_evolution
+
+    singular_home = Path(os.environ.get("SINGULAR_HOME", ".")).expanduser()
+    report = analyze_evolution(singular_home)
+    patterns = report["patterns"]
+
+    if output_format == "json":
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        print(f"Diagnostic évolution: {report['life_home']}")
+        print(f"Events analysés: {report['events_analyzed']}")
+        print("pattern | statut | occurrences | preuve | recommandation")
+        print("--- | --- | --- | --- | ---")
+        for row in patterns:
+            status = "KO" if row["detected"] else "OK"
+            print(
+                f"{row['pattern']} | {status} | {row['count']} | "
+                f"{row['evidence']} | {row['recommendation']}"
+            )
+
+    return 1 if any(row["detected"] for row in patterns) else 0
 
 
 def _doctor_fix_windows_user_path(scripts_path: Path) -> bool:
@@ -1271,6 +1298,15 @@ def main(argv: list[str] | None = None) -> int:
         "sandbox",
         help="Diagnostiquer les skills de SINGULAR_HOME/skills via la sandbox",
     )
+    diagnose_evolution_parser = diagnose_subparsers.add_parser(
+        "evolution",
+        help="Analyser statiquement les runs et mémoires récents",
+    )
+    diagnose_evolution_parser.add_argument(
+        "--life",
+        default=None,
+        help="Nom ou slug de la vie à diagnostiquer",
+    )
 
     retention_parser = subparsers.add_parser(
         "retention",
@@ -1809,6 +1845,10 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "diagnose":
         if args.diagnose_command == "sandbox":
             return _diagnose_sandbox(output_format=args.output_format)
+        if args.diagnose_command == "evolution":
+            if args.life or not os.environ.get("SINGULAR_HOME"):
+                _ensure_active_life(resolve_life, args.life)
+            return _diagnose_evolution(output_format=args.output_format)
 
     elif args.command == "retention":
         _ensure_active_life(resolve_life, args.life)

@@ -45,7 +45,7 @@ def test_diagnose_sandbox_reports_forbidden_import(
 
     out = capsys.readouterr().out
     assert exit_code == 1
-    assert "import_os.py | KO | - | sandbox_error" in out
+    assert "import_os.py | KO | - | forbidden_syntax" in out
     assert "forbidden syntax detected" in out
     assert "Supprimez les imports/with" in out
 
@@ -74,3 +74,68 @@ def test_diagnose_sandbox_reports_timeout(monkeypatch, tmp_path, capsys) -> None
     assert exit_code == 1
     assert "timeout.py | KO | - | timeout" in out
     assert "Réduisez les boucles" in out
+
+
+def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json_line(row) for row in rows), encoding="utf-8")
+
+
+def json_line(row: dict[str, object]) -> str:
+    import json
+
+    return json.dumps(row) + "\n"
+
+
+def test_diagnose_evolution_reports_table_patterns(tmp_path, capsys) -> None:
+    home = tmp_path / "life"
+    _write_jsonl(
+        home / "runs" / "run-1" / "events.jsonl",
+        [
+            {"event": "skill.timeout", "error_type": "timeout"},
+            {"event": "skill.timeout", "message": "timeout"},
+            {"event": "skill.scored", "score": "-inf"},
+            {
+                "event_type": "governance.circuit_breaker_opened",
+                "payload": {"category": "sandbox_violation"},
+            },
+            {"event_type": "skill.quarantined", "payload": {"skill": "a"}},
+        ],
+    )
+    _write_jsonl(
+        home / "mem" / "episodic.jsonl",
+        [
+            {"event": "skill.quarantined", "skill": "b"},
+            {"event": "autogen.validation_failed", "reason": "invalid syntax"},
+        ],
+    )
+
+    exit_code = cli.main(["--home", str(home), "diagnose", "evolution"])
+
+    out = capsys.readouterr().out
+    assert exit_code == 1
+    assert "Diagnostic évolution:" in out
+    assert "timeout_rate | KO | 2 | 2/7" in out
+    assert "negative_infinite_scores | KO | 1" in out
+    assert "breaker_open | KO | 1" in out
+    assert "repeated_quarantine | KO | 2" in out
+    assert "invalid_autogen | KO | 1" in out
+    assert "recommandation" in out
+
+
+def test_diagnose_evolution_json_ok_when_no_patterns(tmp_path, capsys) -> None:
+    home = tmp_path / "life"
+    _write_jsonl(
+        home / "runs" / "run-1" / "events.jsonl", [{"event": "tick.ok", "score": 1.0}]
+    )
+
+    exit_code = cli.main(
+        ["--home", str(home), "--format", "json", "diagnose", "evolution"]
+    )
+
+    import json
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["events_analyzed"] == 1
+    assert all(not row["detected"] for row in payload["patterns"])
