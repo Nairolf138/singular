@@ -63,7 +63,9 @@ class LifeMetadata:
         missing_fields = [field for field in required_fields if field not in data]
         if missing_fields:
             fields = ", ".join(missing_fields)
-            raise ValueError(f"invalid life metadata payload: missing required field(s): {fields}")
+            raise ValueError(
+                f"invalid life metadata payload: missing required field(s): {fields}"
+            )
 
         invalid_fields = [
             field
@@ -72,7 +74,9 @@ class LifeMetadata:
         ]
         if invalid_fields:
             fields = ", ".join(invalid_fields)
-            raise ValueError(f"invalid life metadata payload: required field(s) must be non-empty strings: {fields}")
+            raise ValueError(
+                f"invalid life metadata payload: required field(s) must be non-empty strings: {fields}"
+            )
 
         proximity_score = data.get("proximity_score", 0.5)
         if not isinstance(proximity_score, (int, float)):
@@ -88,10 +92,18 @@ class LifeMetadata:
             path=Path(data["path"]),
             created_at=data["created_at"].strip(),
             status=str(data.get("status", "active")),
-            parents=tuple(str(item) for item in data.get("parents", []) if isinstance(item, str)),
-            children=tuple(str(item) for item in data.get("children", []) if isinstance(item, str)),
-            allies=tuple(str(item) for item in data.get("allies", []) if isinstance(item, str)),
-            rivals=tuple(str(item) for item in data.get("rivals", []) if isinstance(item, str)),
+            parents=tuple(
+                str(item) for item in data.get("parents", []) if isinstance(item, str)
+            ),
+            children=tuple(
+                str(item) for item in data.get("children", []) if isinstance(item, str)
+            ),
+            allies=tuple(
+                str(item) for item in data.get("allies", []) if isinstance(item, str)
+            ),
+            rivals=tuple(
+                str(item) for item in data.get("rivals", []) if isinstance(item, str)
+            ),
             proximity_score=max(0.0, min(1.0, float(proximity_score))),
             lineage_depth=lineage_depth,
         )
@@ -151,7 +163,13 @@ def _legacy_transfers_journal_path() -> Path:
     return get_registry_root() / "mem" / _LEGACY_TRANSFERS_JOURNAL
 
 
-def _log_relations_event(event: str, *, actor: str, target: str | None = None, details: dict[str, Any] | None = None) -> None:
+def _log_relations_event(
+    event: str,
+    *,
+    actor: str,
+    target: str | None = None,
+    details: dict[str, Any] | None = None,
+) -> None:
     journal = _relations_journal_path()
     journal.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -218,8 +236,16 @@ def _is_sensitive_record(record: dict[str, Any], policy: InheritancePolicy) -> b
 
 def _safe_memory_summary(record: dict[str, Any]) -> dict[str, Any]:
     return {
-        "event": record.get("event") or record.get("op") or record.get("kind") or "unknown",
-        "status": record.get("status") or ("success" if record.get("success") else "failure" if record.get("success") is False else "unknown"),
+        "event": record.get("event")
+        or record.get("op")
+        or record.get("kind")
+        or "unknown",
+        "status": record.get("status")
+        or (
+            "success"
+            if record.get("success")
+            else "failure" if record.get("success") is False else "unknown"
+        ),
         "mood": record.get("mood"),
         "ts": record.get("ts"),
     }
@@ -243,14 +269,21 @@ def _aggregate_lessons(records: list[dict[str, Any]], limit: int) -> dict[str, A
     }
 
 
-def _apply_inheritance_policy(*, source: LifeMetadata, target: LifeMetadata, policy: InheritancePolicy) -> None:
+def _apply_inheritance_policy(
+    *, source: LifeMetadata, target: LifeMetadata, policy: InheritancePolicy
+) -> None:
     source_mem = source.path / "mem"
     target_mem = target.path / "mem"
     target_mem.mkdir(parents=True, exist_ok=True)
 
     source_episodes = _read_jsonl(source_mem / "episodic.jsonl")
-    non_sensitive = [rec for rec in source_episodes if not _is_sensitive_record(rec, policy)]
-    memory_summary = [_safe_memory_summary(rec) for rec in non_sensitive[-policy.memory_summary_max_entries :]]
+    non_sensitive = [
+        rec for rec in source_episodes if not _is_sensitive_record(rec, policy)
+    ]
+    memory_summary = [
+        _safe_memory_summary(rec)
+        for rec in non_sensitive[-policy.memory_summary_max_entries :]
+    ]
     (target_mem / "legacy_memory_summary.json").write_text(
         json.dumps(memory_summary, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -314,10 +347,16 @@ def _apply_inheritance_policy(*, source: LifeMetadata, target: LifeMetadata, pol
 
 def _govern_relation_operation(op_name: str) -> None:
     policy = MutationGovernancePolicy()
-    decision = policy.evaluate_skill_execution(skill_name=f"lives.{op_name}", capability="filesystem.write")
-    policy.record_skill_execution(skill_name=f"lives.{op_name}", success=decision.allowed)
+    decision = policy.evaluate_skill_execution(
+        skill_name=f"lives.{op_name}", capability="filesystem.write"
+    )
+    policy.record_skill_execution(
+        skill_name=f"lives.{op_name}", success=decision.allowed
+    )
     if not decision.allowed:
-        raise PermissionError(f"opération bloquée par la gouvernance: {decision.reason}")
+        raise PermissionError(
+            f"opération bloquée par la gouvernance: {decision.reason}"
+        )
 
 
 def get_registry_root() -> Path:
@@ -356,7 +395,9 @@ def load_registry() -> dict[str, Any]:
         try:
             lives[slug] = LifeMetadata.from_payload(data)
         except (TypeError, ValueError) as exc:
-            _LOGGER.warning("Skipping invalid life entry '%s' in %s: %s", slug, path, exc)
+            _LOGGER.warning(
+                "Skipping invalid life entry '%s' in %s: %s", slug, path, exc
+            )
             continue
 
     active = payload.get("active")
@@ -484,7 +525,11 @@ def set_proximity(name: str, score: float) -> LifeMetadata:
     registry, slug, metadata = _resolve_life_metadata(name)
     metadata.proximity_score = max(0.0, min(1.0, float(score)))
     save_registry(registry)
-    _log_relations_event("proximity.set", actor=slug, details={"proximity_score": metadata.proximity_score})
+    _log_relations_event(
+        "proximity.set",
+        actor=slug,
+        details={"proximity_score": metadata.proximity_score},
+    )
     return metadata
 
 
@@ -509,7 +554,9 @@ def list_relations(name: str | None = None) -> dict[str, Any]:
     social_nodes = []
     social_edges = []
     for slug, meta in sorted(lives.items()):
-        social_nodes.append({"slug": slug, "name": meta.name, "proximity_score": meta.proximity_score})
+        social_nodes.append(
+            {"slug": slug, "name": meta.name, "proximity_score": meta.proximity_score}
+        )
         for ally in meta.allies:
             if ally in lives:
                 social_edges.append({"source": slug, "target": ally, "kind": "ally"})
@@ -517,7 +564,14 @@ def list_relations(name: str | None = None) -> dict[str, Any]:
             if rival in lives:
                 social_edges.append({"source": slug, "target": rival, "kind": "rival"})
 
-    active_conflicts = sorted({tuple(sorted((slug, rival))) for slug, meta in lives.items() for rival in meta.rivals if rival in lives})
+    active_conflicts = sorted(
+        {
+            tuple(sorted((slug, rival)))
+            for slug, meta in lives.items()
+            for rival in meta.rivals
+            if rival in lives
+        }
+    )
     return {
         "active": active,
         "focus": {
@@ -550,7 +604,6 @@ def _unlink_relation(actor: LifeMetadata, target_slug: str, *, relation: str) ->
 def ally_lives(name: str, ally_name: str) -> tuple[LifeMetadata, LifeMetadata]:
     _govern_relation_operation("ally")
     registry, slug, meta = _resolve_life_metadata(name)
-    lives: dict[str, LifeMetadata] = registry.setdefault("lives", {})
     _, ally_slug, ally_meta = _resolve_life_metadata(ally_name)
     if slug == ally_slug:
         raise ValueError("une vie ne peut pas devenir son propre allié")
@@ -566,7 +619,6 @@ def ally_lives(name: str, ally_name: str) -> tuple[LifeMetadata, LifeMetadata]:
 def rival_lives(name: str, rival_name: str) -> tuple[LifeMetadata, LifeMetadata]:
     _govern_relation_operation("rival")
     registry, slug, meta = _resolve_life_metadata(name)
-    lives: dict[str, LifeMetadata] = registry.setdefault("lives", {})
     _, rival_slug, rival_meta = _resolve_life_metadata(rival_name)
     if slug == rival_slug:
         raise ValueError("une vie ne peut pas devenir sa propre rivale")
@@ -623,13 +675,111 @@ def resolve_life(name: str | None) -> Path | None:
     return target.path
 
 
-def bootstrap_life(name: str, seed: int | None = None, *, psyche_overrides: dict[str, float] | None = None, starter_profile: str = "minimal", starter_skills: list[str] | None = None) -> LifeMetadata:
+def bootstrap_life(
+    name: str,
+    seed: int | None = None,
+    *,
+    psyche_overrides: dict[str, float] | None = None,
+    starter_profile: str = "minimal",
+    starter_skills: list[str] | None = None,
+) -> LifeMetadata:
     metadata = create_life(name)
     from .organisms.birth import birth
-    birth(seed=seed, home=metadata.path, psyche_overrides=psyche_overrides, starter_profile=starter_profile, starter_skills=starter_skills)
+
+    birth(
+        seed=seed,
+        home=metadata.path,
+        psyche_overrides=psyche_overrides,
+        starter_profile=starter_profile,
+        starter_skills=starter_skills,
+    )
     registry = load_registry()
     lives: dict[str, LifeMetadata] = registry.get("lives", {})
     return lives.get(metadata.slug, metadata)
+
+
+def _parent_reproduction_gate(
+    metadata: LifeMetadata, *, stable_ticks_required: int = 3, min_maturity: float = 0.7
+) -> tuple[bool, str]:
+    if metadata.status != "active":
+        return False, f"parent_status_not_active:{metadata.status}"
+    state = _read_json(metadata.path / "mem" / "reproduction_state.json")
+    if state.get("mode") == "degraded" or state.get("degraded") is True:
+        return False, "reproduction_suspended:degraded_mode"
+    psyche = _read_json(metadata.path / "mem" / "psyche.json")
+    maturity = psyche.get("maturity_score", state.get("maturity_score", 0.0))
+    try:
+        maturity_score = float(maturity)
+    except (TypeError, ValueError):
+        maturity_score = 0.0
+    if maturity_score < min_maturity:
+        return (
+            False,
+            f"maturity_below_threshold:{maturity_score:.2f}<{min_maturity:.2f}",
+        )
+    ticks = _read_jsonl(metadata.path / "mem" / "life_events.jsonl")
+    stable_ticks = [
+        event
+        for event in ticks
+        if event.get("event") == "tick"
+        and event.get("status") == "stable"
+        and not event.get("breaker")
+        and event.get("mode") != "degraded"
+    ]
+    if len(stable_ticks) < stable_ticks_required:
+        return (
+            False,
+            f"stable_ticks_below_threshold:{len(stable_ticks)}<{stable_ticks_required}",
+        )
+    return True, "eligible"
+
+
+def reproduce_lives(
+    parent_a_name: str,
+    parent_b_name: str,
+    *,
+    new_name: str | None = None,
+    seed: int | None = None,
+) -> dict[str, Any]:
+    """Create a child life from two eligible registered parents."""
+
+    registry, parent_a_slug, parent_a = _resolve_life_metadata(parent_a_name)
+    _, parent_b_slug, parent_b = _resolve_life_metadata(parent_b_name)
+    if parent_a_slug == parent_b_slug:
+        raise ValueError("une vie ne peut pas se reproduire avec elle-même")
+
+    reasons: list[str] = []
+    for metadata in (parent_a, parent_b):
+        eligible, reason = _parent_reproduction_gate(metadata)
+        if not eligible:
+            reasons.append(f"{metadata.slug}:{reason}")
+    if reasons:
+        return {"status": "suspended", "reason": ";".join(reasons), "child": None}
+
+    child_name = new_name or f"{parent_a.name} × {parent_b.name}"
+    child_meta = create_life(child_name, parents=(parent_a_slug, parent_b_slug))
+    from .organisms.spawn import spawn
+
+    spawn(parent_a.path, parent_b.path, out_dir=child_meta.path, seed=seed)
+    child_mem = child_meta.path / "mem"
+    child_mem.mkdir(parents=True, exist_ok=True)
+    (child_mem / "lineage.json").write_text(
+        json.dumps(
+            {
+                "child": child_meta.slug,
+                "parents": [parent_a_slug, parent_b_slug],
+                "lineage_depth": child_meta.lineage_depth,
+                "created_at": child_meta.created_at,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    registry = load_registry()
+    registry["active"] = child_meta.slug
+    save_registry(registry)
+    return {"status": "created", "reason": "eligible", "child": child_meta.slug}
 
 
 def delete_life(name: str) -> LifeMetadata:
@@ -655,7 +805,9 @@ def archive_life(name: str) -> LifeMetadata:
     registry, slug, metadata = _resolve_life_metadata(name)
     metadata.status = "extinct"
     if registry.get("active") == slug:
-        registry["active"] = next((key for key in registry["lives"] if key != slug), None)
+        registry["active"] = next(
+            (key for key in registry["lives"] if key != slug), None
+        )
     save_registry(registry)
     return metadata
 
@@ -665,8 +817,14 @@ def memorialize_life(name: str, *, message: str) -> Path:
     memorial_dir = metadata.path / "mem"
     memorial_dir.mkdir(parents=True, exist_ok=True)
     memorial_file = memorial_dir / "memorial.json"
-    payload = {"life": metadata.slug, "written_at": _now_iso(), "message": message.strip()}
-    memorial_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    payload = {
+        "life": metadata.slug,
+        "written_at": _now_iso(),
+        "message": message.strip(),
+    }
+    memorial_file.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return memorial_file
 
 
@@ -675,7 +833,9 @@ def clone_life(name: str, *, new_name: str | None = None) -> LifeMetadata:
     clone_name = new_name or f"{source.name} clone"
     clone_meta = create_life(clone_name, parents=(source_slug,))
     shutil.copytree(source.path, clone_meta.path, dirs_exist_ok=True)
-    _apply_inheritance_policy(source=source, target=clone_meta, policy=DEFAULT_INHERITANCE_POLICY)
+    _apply_inheritance_policy(
+        source=source, target=clone_meta, policy=DEFAULT_INHERITANCE_POLICY
+    )
     registry = load_registry()
     lives: dict[str, LifeMetadata] = registry.get("lives", {})
     current = lives.get(clone_meta.slug)

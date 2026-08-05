@@ -1009,6 +1009,7 @@ def main(argv: list[str] | None = None) -> int:
         load_registry,
         memorialize_life,
         reconcile_lives,
+        reproduce_lives,
         resolve_life,
         rival_lives,
         set_proximity,
@@ -1427,6 +1428,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     lives_clone.add_argument("name", help="Slug or name of the source life")
     lives_clone.add_argument("--new-name", default=None, help="Nom de la nouvelle vie")
+    lives_reproduce = lives_subparsers.add_parser(
+        "reproduce", help="Créer une vie enfant depuis deux vies éligibles"
+    )
+    lives_reproduce.add_argument("parent_a", help="Première vie parente")
+    lives_reproduce.add_argument("parent_b", help="Seconde vie parente")
+    lives_reproduce.add_argument(
+        "--new-name", default=None, help="Nom de la vie enfant"
+    )
     lives_relations = lives_subparsers.add_parser(
         "relations", help="Afficher relations d'une vie"
     )
@@ -1704,8 +1713,6 @@ def main(argv: list[str] | None = None) -> int:
 
     elif args.command == "quest":
         if args.example or args.schema:
-            import json
-
             from .life.quest import FULL_SPEC_EXAMPLE, QUEST_SCHEMA
 
             print(
@@ -1990,6 +1997,19 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 "Conseil: exécutez `singular status --verbose` puis `singular loop --budget-seconds 10`."
             )
+        elif args.lives_command == "reproduce":
+            try:
+                payload = reproduce_lives(
+                    args.parent_a, args.parent_b, new_name=args.new_name, seed=args.seed
+                )
+            except (KeyError, ValueError, PermissionError) as exc:
+                raise SystemExit(str(exc)) from exc
+            if args.output_format == "json":
+                print(json.dumps(payload, ensure_ascii=False))
+            elif payload["status"] == "suspended":
+                print(f"Reproduction suspendue: {payload['reason']}")
+            else:
+                print(f"Vie enfant créée: {payload['child']}")
         elif args.lives_command == "relations":
             try:
                 payload = list_relations(args.name)
