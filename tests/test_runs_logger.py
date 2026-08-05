@@ -133,7 +133,9 @@ def test_human_summary_quality_minimum() -> None:
     assert "perf" in summary
 
 
-def test_run_logger_aggregates_skill_reputation_from_usage_metrics(tmp_path: Path) -> None:
+def test_run_logger_aggregates_skill_reputation_from_usage_metrics(
+    tmp_path: Path,
+) -> None:
     logger = RunLogger("telemetry", root=tmp_path, reputation_update_every=1)
     logger.log(
         "skill_x",
@@ -200,5 +202,36 @@ def test_log_phase_metrics(tmp_path: Path) -> None:
     assert record["phase_metrics"]["slowest_phase"] == "sandbox_scoring"
     assert record["phase_metrics"]["cache_candidates"][0]["phase"] == "sandbox_scoring"
 
-    event = json.loads((tmp_path / "profile" / "events.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    event = json.loads(
+        (tmp_path / "profile" / "events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()[0]
+    )
     assert event["event_type"] == "life_loop_phase_metrics"
+
+
+def test_run_logger_persists_run_and_skill_reputation_to_sqlite(tmp_path: Path) -> None:
+    logger = RunLogger("sqlite", root=tmp_path / "runs", reputation_update_every=1)
+    logger.log(
+        "skill_sql",
+        "op",
+        "diff",
+        True,
+        1.0,
+        1.0,
+        0.2,
+        0.1,
+        usage_metrics={"success": True, "resource_cost": 0.2},
+    )
+    logger.close()
+
+    from singular.storage import (
+        RunsRepository,
+        SQLiteStorage,
+        StorageConfig,
+        SkillScoresRepository,
+    )
+
+    storage = SQLiteStorage(StorageConfig(root=tmp_path))
+    assert RunsRepository(storage).list_events("sqlite")[0]["skill"] == "skill_sql"
+    assert SkillScoresRepository(storage).get("skill_sql")["use_count"] == 1
