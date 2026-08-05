@@ -120,7 +120,9 @@ def test_orchestrator_triggers_and_settles_quest(monkeypatch, tmp_path: Path) ->
     assert '"origin": "intrinsic"' in payload
 
 
-def test_orchestrator_action_executes_skill_runtime(monkeypatch, tmp_path: Path) -> None:
+def test_orchestrator_action_executes_skill_runtime(
+    monkeypatch, tmp_path: Path
+) -> None:
     life = tmp_path / "life"
     (life / "skills").mkdir(parents=True)
     (life / "mem").mkdir(parents=True)
@@ -151,7 +153,9 @@ def test_orchestrator_action_executes_skill_runtime(monkeypatch, tmp_path: Path)
     assert context["phase"] == "action"
 
 
-def test_orchestrator_action_passes_world_state_to_tick(monkeypatch, tmp_path: Path) -> None:
+def test_orchestrator_action_passes_world_state_to_tick(
+    monkeypatch, tmp_path: Path
+) -> None:
     life = tmp_path / "life"
     (life / "skills").mkdir(parents=True)
     (life / "mem").mkdir(parents=True)
@@ -164,12 +168,16 @@ def test_orchestrator_action_passes_world_state_to_tick(monkeypatch, tmp_path: P
         captured.update(kwargs)
 
     monkeypatch.setattr("singular.orchestrator.service.run_tick", _fake_run_tick)
-    service = OrchestratorService(config=OrchestratorConfig(dry_run=False), bus=EventBus())
+    service = OrchestratorService(
+        config=OrchestratorConfig(dry_run=False), bus=EventBus()
+    )
     service.state.current_phase = LifecyclePhase.ACTION.value
     monkeypatch.setattr(
         service.skill_runtime,
         "execute_best_skill",
-        lambda task, context: SkillExecutionResult(skill="a", status="succeeded", score=1.0),
+        lambda task, context: SkillExecutionResult(
+            skill="a", status="succeeded", score=1.0
+        ),
     )
 
     service.tick()
@@ -177,7 +185,9 @@ def test_orchestrator_action_passes_world_state_to_tick(monkeypatch, tmp_path: P
     assert captured["world"] is service.world_state
 
 
-def test_orchestrator_requests_help_after_failure_streak(monkeypatch, tmp_path: Path) -> None:
+def test_orchestrator_requests_help_after_failure_streak(
+    monkeypatch, tmp_path: Path
+) -> None:
     life = tmp_path / "life"
     (life / "skills").mkdir(parents=True)
     (life / "mem").mkdir(parents=True)
@@ -212,7 +222,9 @@ def test_orchestrator_requests_help_after_failure_streak(monkeypatch, tmp_path: 
     assert events[0]["attempts"] == 2
 
 
-def test_orchestrator_repeated_negative_feedback_reprioritizes_action_routines(monkeypatch, tmp_path: Path) -> None:
+def test_orchestrator_repeated_negative_feedback_reprioritizes_action_routines(
+    monkeypatch, tmp_path: Path
+) -> None:
     life = tmp_path / "life"
     (life / "skills").mkdir(parents=True)
     (life / "mem").mkdir(parents=True)
@@ -255,7 +267,9 @@ routines:
         calls.append({"task": task, "context": context})
         return SkillExecutionResult(skill="a", status="succeeded", score=0.9)
 
-    service = OrchestratorService(config=OrchestratorConfig(dry_run=False), bus=EventBus())
+    service = OrchestratorService(
+        config=OrchestratorConfig(dry_run=False), bus=EventBus()
+    )
     service.routines = RoutinesOrchestrator(
         config_path=routines_config,
         state_path=life / "mem" / "routines_state.json",
@@ -265,7 +279,11 @@ routines:
     service.tick()  # VEILLE
     service.tick()  # ACTION
 
-    routine_tasks = [entry["task"] for entry in calls if str(entry["task"].get("name", "")).startswith("routine.")]
+    routine_tasks = [
+        entry["task"]
+        for entry in calls
+        if str(entry["task"].get("name", "")).startswith("routine.")
+    ]
     assert routine_tasks
     assert routine_tasks[0]["name"] == "routine.user_support"
     assert routine_tasks[0]["priority"] > 90
@@ -277,7 +295,9 @@ def test_orchestrator_run_forever_consumes_stale_startup_stop_signal(
     fixed_timestamp: datetime,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    service = OrchestratorService(config=OrchestratorConfig(dry_run=True), bus=EventBus())
+    service = OrchestratorService(
+        config=OrchestratorConfig(dry_run=True), bus=EventBus()
+    )
     service._started_at = fixed_timestamp
     stale_requested_at = (fixed_timestamp - timedelta(minutes=5)).isoformat()
     service.stop_signal_path.write_text(
@@ -292,6 +312,7 @@ def test_orchestrator_run_forever_consumes_stale_startup_stop_signal(
     )
 
     called = {"tick": 0}
+
     def _fake_tick() -> LifecyclePhase:
         called["tick"] += 1
         service._running = False
@@ -311,8 +332,12 @@ def test_orchestrator_run_forever_consumes_stale_startup_stop_signal(
     assert "startup_stop_signal_consumed" in caplog.text
 
 
-def test_orchestrator_run_forever_honors_runtime_stop_signal(monkeypatch, mem_dir: Path) -> None:
-    service = OrchestratorService(config=OrchestratorConfig(dry_run=True), bus=EventBus())
+def test_orchestrator_run_forever_honors_runtime_stop_signal(
+    monkeypatch, mem_dir: Path
+) -> None:
+    service = OrchestratorService(
+        config=OrchestratorConfig(dry_run=True), bus=EventBus()
+    )
     called = {"tick": 0}
 
     def _fake_tick() -> LifecyclePhase:
@@ -363,7 +388,9 @@ def test_life_extinction_stop_is_consumed_on_next_orchestrator_boot(
     stop_payload = json.loads(stop_path.read_text(encoding="utf-8"))
     assert stop_payload["reason"] == "life_extinction_detected"
 
-    service = OrchestratorService(config=OrchestratorConfig(dry_run=True), bus=EventBus())
+    service = OrchestratorService(
+        config=OrchestratorConfig(dry_run=True), bus=EventBus()
+    )
     called = {"tick": 0}
 
     def _fake_tick() -> LifecyclePhase:
@@ -394,7 +421,9 @@ def test_orchestrator_run_forever_recovers_from_transient_tick_failure(
     (life / "mem").mkdir(parents=True)
     monkeypatch.setenv("SINGULAR_HOME", str(life))
 
-    service = OrchestratorService(config=OrchestratorConfig(dry_run=True), bus=EventBus())
+    service = OrchestratorService(
+        config=OrchestratorConfig(dry_run=True), bus=EventBus()
+    )
     calls = {"tick": 0}
     sleep_calls: list[float] = []
 
@@ -407,7 +436,10 @@ def test_orchestrator_run_forever_recovers_from_transient_tick_failure(
 
     monkeypatch.setattr(service, "tick", _fake_tick)
     monkeypatch.setattr(service, "_external_stimulus_detected", lambda: True)
-    monkeypatch.setattr("singular.orchestrator.service.time.sleep", lambda seconds: sleep_calls.append(seconds))
+    monkeypatch.setattr(
+        "singular.orchestrator.service.time.sleep",
+        lambda seconds: sleep_calls.append(seconds),
+    )
     caplog.set_level(logging.WARNING)
 
     service.run_forever()
@@ -435,14 +467,20 @@ def test_orchestrator_run_forever_raises_after_transient_tick_failure_threshold(
         ),
         bus=EventBus(),
     )
-    monkeypatch.setattr(service, "tick", lambda: (_ for _ in ()).throw(PermissionError("still locked")))
-    monkeypatch.setattr("singular.orchestrator.service.time.sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        service, "tick", lambda: (_ for _ in ()).throw(PermissionError("still locked"))
+    )
+    monkeypatch.setattr(
+        "singular.orchestrator.service.time.sleep", lambda seconds: None
+    )
 
     with pytest.raises(PermissionError):
         service.run_forever()
 
 
-def test_orchestrator_introspection_refreshes_self_narrative(monkeypatch, tmp_path: Path) -> None:
+def test_orchestrator_introspection_refreshes_self_narrative(
+    monkeypatch, tmp_path: Path
+) -> None:
     life = tmp_path / "life"
     (life / "skills").mkdir(parents=True)
     (life / "mem").mkdir(parents=True)
@@ -451,7 +489,9 @@ def test_orchestrator_introspection_refreshes_self_narrative(monkeypatch, tmp_pa
         '{"event":"quest","status":"success"}\n{"event":"repair","status":"failure"}\n',
         encoding="utf-8",
     )
-    (life / "runs" / "run-1.jsonl").write_text('{"event":"mutation.applied"}\n', encoding="utf-8")
+    (life / "runs" / "run-1.jsonl").write_text(
+        '{"event":"mutation.applied"}\n', encoding="utf-8"
+    )
     monkeypatch.setenv("SINGULAR_HOME", str(life))
 
     events: list[dict[str, object]] = []
@@ -476,7 +516,9 @@ def test_orchestrator_introspection_refreshes_self_narrative(monkeypatch, tmp_pa
     )
 
 
-def test_orchestrator_introspection_frequency_uses_introspection_ticks(monkeypatch, tmp_path: Path) -> None:
+def test_orchestrator_introspection_frequency_uses_introspection_ticks(
+    monkeypatch, tmp_path: Path
+) -> None:
     life = tmp_path / "life"
     (life / "skills").mkdir(parents=True)
     (life / "mem").mkdir(parents=True)
@@ -495,3 +537,55 @@ def test_orchestrator_introspection_frequency_uses_introspection_ticks(monkeypat
     service.state.current_phase = LifecyclePhase.INTROSPECTION.value
     service.tick()
     assert len(events) == 1
+
+
+def test_run_life_daemon_resolves_life_and_writes_checkpoint_logs(
+    monkeypatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "root"
+    life = root / "lives" / "alpha"
+    (life / "skills").mkdir(parents=True)
+    (life / "mem").mkdir(parents=True)
+    registry = {
+        "active": None,
+        "lives": {
+            "alpha": {
+                "name": "Alpha",
+                "slug": "alpha",
+                "path": str(life),
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "status": "active",
+            }
+        },
+    }
+    (root / "lives").mkdir(parents=True, exist_ok=True)
+    (root / "lives" / "registry.json").write_text(
+        json.dumps(registry), encoding="utf-8"
+    )
+    monkeypatch.setenv("SINGULAR_ROOT", str(root))
+    monkeypatch.setattr(
+        "singular.orchestrator.service.capture_signals", lambda bus=None: {}
+    )
+    monkeypatch.setattr("singular.orchestrator.service.run_tick", lambda **kwargs: None)
+
+    from singular.orchestrator.service import run_life_daemon
+
+    code = run_life_daemon(
+        life_name="alpha",
+        interval_seconds=0.001,
+        budget_seconds=0.05,
+        max_errors=1,
+        dashboard=True,
+        dry_run=True,
+        safe_mode=True,
+    )
+
+    assert code == 0
+    assert (life / "mem" / "orchestrator_state.json").exists()
+    run_logs = list((life / "runs").glob("daemon-alpha-*.jsonl"))
+    assert run_logs
+    payload = run_logs[0].read_text(encoding="utf-8")
+    assert "daemon.start" in payload
+    assert "daemon.tick" in payload
+    assert "daemon.checkpoint" in payload
+    assert "daemon.dashboard" in payload

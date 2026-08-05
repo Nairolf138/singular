@@ -50,7 +50,9 @@ def test_cli_orchestrate_run_dispatches(monkeypatch, tmp_path) -> None:
     assert captured["safe_mode"] is False
 
 
-def test_cli_orchestrate_run_passes_lifecycle_config_path(monkeypatch, tmp_path) -> None:
+def test_cli_orchestrate_run_passes_lifecycle_config_path(
+    monkeypatch, tmp_path
+) -> None:
     root = tmp_path / "root"
     config = tmp_path / "lifecycle.yaml"
     config.write_text("cycle:\n  veille_seconds: 1.5\n", encoding="utf-8")
@@ -110,3 +112,45 @@ def test_cli_orchestrate_run_passes_safe_mode(monkeypatch, tmp_path) -> None:
 
     assert code == 0
     assert captured["safe_mode"] is True
+
+
+def test_cli_daemon_dispatches_registered_life(monkeypatch, tmp_path) -> None:
+    root = tmp_path / "root"
+    main(["--root", str(root), "lives", "create", "--name", "Alpha"])
+
+    captured: dict[str, object] = {}
+
+    def fake_run_life_daemon(**kwargs):
+        captured.update(kwargs)
+        return 0
+
+    monkeypatch.setattr("singular.orchestrator.run_life_daemon", fake_run_life_daemon)
+
+    code = main(
+        [
+            "--root",
+            str(root),
+            "daemon",
+            "--life",
+            "alpha",
+            "--interval",
+            "0.25",
+            "--budget-seconds",
+            "1.5",
+            "--max-errors",
+            "2",
+            "--dashboard",
+            "--dry-run",
+        ]
+    )
+
+    assert code == 0
+    assert captured == {
+        "life_name": "alpha",
+        "interval_seconds": 0.25,
+        "budget_seconds": 1.5,
+        "max_errors": 2,
+        "dashboard": True,
+        "dry_run": True,
+        "safe_mode": False,
+    }

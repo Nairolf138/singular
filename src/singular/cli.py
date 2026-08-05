@@ -627,7 +627,9 @@ def _doctor_providers() -> int:
             if value:
                 details.append(f"{key}={value}")
         suffix = f" ({', '.join(details)})" if details else ""
-        print(f"- {provider}: {status} | llm_real={llm_real} | error_category={error_category}{suffix}")
+        print(
+            f"- {provider}: {status} | llm_real={llm_real} | error_category={error_category}{suffix}"
+        )
     return exit_code
 
 
@@ -1222,6 +1224,43 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Active les phases sans exécuter la mutation",
     )
+    daemon_parser = subparsers.add_parser(
+        "daemon",
+        help="Lance un daemon simple pour une vie enregistrée",
+    )
+    daemon_parser.add_argument(
+        "--life",
+        required=True,
+        help="Nom ou slug de la vie à exécuter",
+    )
+    daemon_parser.add_argument(
+        "--interval",
+        type=float,
+        default=5.0,
+        help="Intervalle en secondes entre deux ticks",
+    )
+    daemon_parser.add_argument(
+        "--budget-seconds",
+        type=float,
+        default=None,
+        help="Budget total optionnel en secondes avant arrêt propre",
+    )
+    daemon_parser.add_argument(
+        "--max-errors",
+        type=int,
+        default=3,
+        help="Nombre maximal d'erreurs consécutives avant arrêt",
+    )
+    daemon_parser.add_argument(
+        "--dashboard",
+        action="store_true",
+        help="Ajoute les métadonnées dashboard aux logs du daemon",
+    )
+    daemon_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Exécute perception/objectifs/checkpoints sans mutation",
+    )
     diagnose_parser = subparsers.add_parser(
         "diagnose", help="Exécuter des diagnostics techniques"
     )
@@ -1730,6 +1769,25 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             watch_dir=args.watch_dir,
         )
+    elif args.command == "daemon":
+        from .orchestrator import run_life_daemon
+
+        _run_retention_at_safe_point()
+        try:
+            return run_life_daemon(
+                life_name=args.life,
+                interval_seconds=args.interval,
+                budget_seconds=args.budget_seconds,
+                max_errors=args.max_errors,
+                dashboard=args.dashboard,
+                dry_run=args.dry_run,
+                safe_mode=args.safe_mode,
+            )
+        except KeyError as exc:
+            raise SystemExit(f"Vie inconnue: {exc.args[0]}") from exc
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+
     elif args.command == "orchestrate":
         _ensure_active_life(resolve_life, args.life)
         if args.orchestrate_command == "run":

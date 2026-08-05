@@ -6,6 +6,7 @@ from .service import (
     OrchestratorService,
     SchedulerConfig,
     run_orchestrator_daemon,
+    run_life_daemon,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "OrchestratorService",
     "SchedulerConfig",
     "run_orchestrator_daemon",
+    "run_life_daemon",
 ]
