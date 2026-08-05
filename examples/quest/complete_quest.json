@@ -1,0 +1,48 @@
+{
+  "name": "repair_loop",
+  "signature": "repair_loop(x)",
+  "examples": [
+    {
+      "input": [
+        1
+      ],
+      "output": 1
+    },
+    {
+      "input": [
+        2
+      ],
+      "output": 2
+    }
+  ],
+  "constraints": {
+    "pure": true,
+    "no_import": true,
+    "time_ms_max": 50
+  },
+  "triggers": [
+    {
+      "signal": "noise",
+      "gte": 0.5
+    }
+  ],
+  "reward": {
+    "mood": "pleasure",
+    "resource_delta": {
+      "food": 2
+    }
+  },
+  "penalty": {
+    "mood": "pain",
+    "resource_delta": {
+      "energy": -1
+    }
+  },
+  "cooldown": 60,
+  "success": {
+    "resource_min": {
+      "energy": 80
+    }
+  },
+  "origin": "intrinsic"
+}

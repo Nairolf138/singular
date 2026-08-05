@@ -139,13 +139,16 @@ def _suggest_life_flag_for_unknown_args(argv: list[str] | None) -> str | None:
             return message
     return None
 
+
 def _looks_like_dev_repo_root(path: Path) -> bool:
     """Heuristic to detect a development repository root."""
 
     return (path / "pyproject.toml").exists() and (path / "src" / "singular").is_dir()
 
 
-def _run_retention_at_safe_point(*, dry_run: bool = False, enforce_minimum_interval: bool = True) -> int:
+def _run_retention_at_safe_point(
+    *, dry_run: bool = False, enforce_minimum_interval: bool = True
+) -> int:
     """Run storage retention service and print a concise summary."""
 
     from .storage_retention import run_retention_service
@@ -202,7 +205,9 @@ def _retention_status() -> int:
     thresholds = status.get("thresholds", {})
     threshold_flags = status.get("active_thresholds", {})
     last_purge = status.get("last_purge", {})
-    purge_summary = last_purge.get("summary", {}) if isinstance(last_purge, dict) else {}
+    purge_summary = (
+        last_purge.get("summary", {}) if isinstance(last_purge, dict) else {}
+    )
 
     print("Retention status")
     print(
@@ -225,10 +230,7 @@ def _retention_status() -> int:
         f"max_total_runs_size_mb={thresholds.get('max_total_runs_size_mb')}"
     )
     exceeded = [name for name, value in threshold_flags.items() if value]
-    print(
-        "Exceeded: "
-        + (", ".join(sorted(exceeded)) if exceeded else "none")
-    )
+    print("Exceeded: " + (", ".join(sorted(exceeded)) if exceeded else "none"))
 
     def _print_entries(label: str, entries: Any) -> None:
         print(f"{label}:")
@@ -579,11 +581,15 @@ def _configure_openai(api_key: str, *, shell_profile: str | None, test: bool) ->
             )
             if answer.strip() == "OUI":
                 _append_export_to_shell_profile(profile_path, api_key)
-                print("➡️ Ouvrez un nouveau shell (ou `source` le profil) pour appliquer.")
+                print(
+                    "➡️ Ouvrez un nouveau shell (ou `source` le profil) pour appliquer."
+                )
             else:
                 print("Écriture annulée. Aucune persistance shell effectuée.")
         else:
-            print("Pour persister la clé sur Linux/macOS, ajoutez à votre profil shell:")
+            print(
+                "Pour persister la clé sur Linux/macOS, ajoutez à votre profil shell:"
+            )
             print("export OPENAI_API_KEY='sk-...'")
 
     if test:
@@ -606,21 +612,45 @@ _POLICY_SETTERS: dict[str, tuple[str, str]] = {
     "forgetting.max_episodic_entries": ("int", "forgetting_max_episodic_entries"),
     "autonomy.safe_mode": ("bool", "safe_mode"),
     "autonomy.mutation_quota_per_window": ("int", "mutation_quota_per_window"),
-    "autonomy.mutation_quota_window_seconds": ("float", "mutation_quota_window_seconds"),
+    "autonomy.mutation_quota_window_seconds": (
+        "float",
+        "mutation_quota_window_seconds",
+    ),
     "autonomy.runtime_call_quota_per_hour": ("int", "runtime_call_quota_per_hour"),
-    "autonomy.runtime_blacklisted_capabilities": ("strings", "runtime_blacklisted_capabilities"),
-    "autonomy.auto_rollback_failure_threshold": ("int", "auto_rollback_failure_threshold"),
+    "autonomy.runtime_blacklisted_capabilities": (
+        "strings",
+        "runtime_blacklisted_capabilities",
+    ),
+    "autonomy.auto_rollback_failure_threshold": (
+        "int",
+        "auto_rollback_failure_threshold",
+    ),
     "autonomy.auto_rollback_cost_threshold": ("float", "auto_rollback_cost_threshold"),
     "autonomy.safe_mode_review_required_skill_families": (
         "strings",
         "safe_mode_review_required_skill_families",
     ),
     "autonomy.circuit_breaker_threshold": ("int", "circuit_breaker_threshold"),
-    "autonomy.circuit_breaker_window_seconds": ("float", "circuit_breaker_window_seconds"),
-    "autonomy.circuit_breaker_cooldown_seconds": ("float", "circuit_breaker_cooldown_seconds"),
-    "autonomy.skill_circuit_breaker_failure_threshold": ("int", "skill_circuit_breaker_failure_threshold"),
-    "autonomy.skill_circuit_breaker_cost_threshold": ("float", "skill_circuit_breaker_cost_threshold"),
-    "autonomy.skill_circuit_breaker_cooldown_seconds": ("float", "skill_circuit_breaker_cooldown_seconds"),
+    "autonomy.circuit_breaker_window_seconds": (
+        "float",
+        "circuit_breaker_window_seconds",
+    ),
+    "autonomy.circuit_breaker_cooldown_seconds": (
+        "float",
+        "circuit_breaker_cooldown_seconds",
+    ),
+    "autonomy.skill_circuit_breaker_failure_threshold": (
+        "int",
+        "skill_circuit_breaker_failure_threshold",
+    ),
+    "autonomy.skill_circuit_breaker_cost_threshold": (
+        "float",
+        "skill_circuit_breaker_cost_threshold",
+    ),
+    "autonomy.skill_circuit_breaker_cooldown_seconds": (
+        "float",
+        "skill_circuit_breaker_cooldown_seconds",
+    ),
     "permissions.modifiable_paths": ("paths", "modifiable_paths"),
     "permissions.review_required_paths": ("paths", "review_required_paths"),
     "permissions.forbidden_paths": ("paths", "forbidden_paths"),
@@ -680,7 +710,11 @@ def _preparse_environment(argv: list[str] | None) -> argparse.Namespace:
     if command is not None:
         command_index = remaining.index(command)
         subcommand = next(
-            (token for token in remaining[command_index + 1 :] if not token.startswith("-")),
+            (
+                token
+                for token in remaining[command_index + 1 :]
+                if not token.startswith("-")
+            ),
             None,
         )
     is_creation_bootstrap_command = command == "birth" or (
@@ -775,8 +809,10 @@ def _print_table(headers: list[str], rows: list[list[str]]) -> None:
     for row in rows:
         for idx, cell in enumerate(row):
             widths[idx] = max(widths[idx], len(cell))
+
     def _fmt(row: list[str]) -> str:
         return " | ".join(cell.ljust(widths[idx]) for idx, cell in enumerate(row))
+
     print(_fmt(headers))
     print("-+-".join("-" * width for width in widths))
     for row in rows:
@@ -902,7 +938,9 @@ def _create_life_with_bootstrap(
 def main(argv: list[str] | None = None) -> int:
     """Run the singular command line interface."""
 
-    implicit_root_before_override = _implicit_registry_root_from_env_or_default().resolve()
+    implicit_root_before_override = (
+        _implicit_registry_root_from_env_or_default().resolve()
+    )
     argv_list = list(argv) if argv is not None else None
     _preparse_environment(argv_list)
 
@@ -1034,7 +1072,17 @@ def main(argv: list[str] | None = None) -> int:
     quest_parser = subparsers.add_parser(
         "quest", help="Generate a skill from a specification"
     )
-    quest_parser.add_argument("spec", type=Path, help="Path to specification JSON")
+    quest_parser.add_argument(
+        "spec", nargs="?", type=Path, help="Path to specification JSON"
+    )
+    quest_parser.add_argument(
+        "--example",
+        action="store_true",
+        help="Print a complete quest JSON example and exit",
+    )
+    quest_parser.add_argument(
+        "--schema", action="store_true", help="Print the quest JSON schema and exit"
+    )
 
     synth_parser = subparsers.add_parser("synthesize", help="Synthesize results")
     synth_parser.add_argument("code", help="Code snippet to store in memory")
@@ -1042,7 +1090,9 @@ def main(argv: list[str] | None = None) -> int:
     report_parser = subparsers.add_parser(
         "report", help="Summarize performance from a run"
     )
-    report_parser.add_argument("--id", required=False, default=None, help="Run identifier")
+    report_parser.add_argument(
+        "--id", required=False, default=None, help="Run identifier"
+    )
     report_parser.add_argument(
         "--format",
         dest="report_output_format",
@@ -1237,9 +1287,7 @@ def main(argv: list[str] | None = None) -> int:
         default="global",
         help="Global (~/.singular/config.json) ou projet (.singular/config.json)",
     )
-    config_root_subparsers.add_parser(
-        "show", help="Afficher le root implicite résolu"
-    )
+    config_root_subparsers.add_parser("show", help="Afficher le root implicite résolu")
 
     lives_parser = subparsers.add_parser("lives", help="Manage lives")
     lives_subparsers = lives_parser.add_subparsers(dest="lives_command", required=True)
@@ -1270,35 +1318,57 @@ def main(argv: list[str] | None = None) -> int:
     )
     lives_clone.add_argument("name", help="Slug or name of the source life")
     lives_clone.add_argument("--new-name", default=None, help="Nom de la nouvelle vie")
-    lives_relations = lives_subparsers.add_parser("relations", help="Afficher relations d'une vie")
-    lives_relations.add_argument("--name", default=None, help="Vie ciblée (sinon vie active)")
+    lives_relations = lives_subparsers.add_parser(
+        "relations", help="Afficher relations d'une vie"
+    )
+    lives_relations.add_argument(
+        "--name", default=None, help="Vie ciblée (sinon vie active)"
+    )
     lives_ally = lives_subparsers.add_parser("ally", help="Déclarer deux vies alliées")
     lives_ally.add_argument("name", help="Vie source")
     lives_ally.add_argument("other", help="Vie alliée")
-    lives_rival = lives_subparsers.add_parser("rival", help="Déclarer deux vies rivales")
+    lives_rival = lives_subparsers.add_parser(
+        "rival", help="Déclarer deux vies rivales"
+    )
     lives_rival.add_argument("name", help="Vie source")
     lives_rival.add_argument("other", help="Vie rivale")
-    lives_reconcile = lives_subparsers.add_parser("reconcile", help="Réconcilier deux vies")
+    lives_reconcile = lives_subparsers.add_parser(
+        "reconcile", help="Réconcilier deux vies"
+    )
     lives_reconcile.add_argument("name", help="Vie source")
     lives_reconcile.add_argument("other", help="Vie à réconcilier")
-    lives_proximity = lives_subparsers.add_parser("proximity", help="Ajuster score proximité")
+    lives_proximity = lives_subparsers.add_parser(
+        "proximity", help="Ajuster score proximité"
+    )
     lives_proximity.add_argument("name", help="Vie ciblée")
-    lives_proximity.add_argument("--score", type=float, required=True, help="Score [0..1]")
+    lives_proximity.add_argument(
+        "--score", type=float, required=True, help="Score [0..1]"
+    )
 
-    values_parser = subparsers.add_parser("values", help="Inspecter les poids de valeurs")
-    values_subparsers = values_parser.add_subparsers(dest="values_command", required=True)
-    values_subparsers.add_parser("show", help="Afficher la configuration des valeurs chargée")
+    values_parser = subparsers.add_parser(
+        "values", help="Inspecter les poids de valeurs"
+    )
+    values_subparsers = values_parser.add_subparsers(
+        dest="values_command", required=True
+    )
+    values_subparsers.add_parser(
+        "show", help="Afficher la configuration des valeurs chargée"
+    )
 
     policy_parser = subparsers.add_parser(
         "policy", help="Inspecter et modifier la politique globale"
     )
-    policy_subparsers = policy_parser.add_subparsers(dest="policy_command", required=True)
+    policy_subparsers = policy_parser.add_subparsers(
+        dest="policy_command", required=True
+    )
     policy_subparsers.add_parser("show", help="Afficher la politique active")
     policy_set_parser = policy_subparsers.add_parser(
         "set",
         help="Modifier une clé de politique (validation stricte)",
     )
-    policy_set_parser.add_argument("--key", required=True, choices=tuple(sorted(_POLICY_SETTERS.keys())))
+    policy_set_parser.add_argument(
+        "--key", required=True, choices=tuple(sorted(_POLICY_SETTERS.keys()))
+    )
     policy_set_parser.add_argument("--value", required=True, help="Nouvelle valeur")
 
     ecosystem_parser = subparsers.add_parser(
@@ -1480,7 +1550,9 @@ def main(argv: list[str] | None = None) -> int:
         from .runs.loop import loop as loop_run
 
         if args.ecosystem_command != "run":
-            raise SystemExit(f"Sous-commande ecosystem inconnue: {args.ecosystem_command}")
+            raise SystemExit(
+                f"Sous-commande ecosystem inconnue: {args.ecosystem_command}"
+            )
 
         names = list(args.ecosystem_lives)
         for group in args.ecosystem_groups:
@@ -1523,6 +1595,23 @@ def main(argv: list[str] | None = None) -> int:
         talk(provider=args.provider, seed=args.seed, prompt=args.prompt)
 
     elif args.command == "quest":
+        if args.example or args.schema:
+            import json
+
+            from .life.quest import FULL_SPEC_EXAMPLE, QUEST_SCHEMA
+
+            print(
+                json.dumps(
+                    QUEST_SCHEMA if args.schema else FULL_SPEC_EXAMPLE,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return
+        if args.spec is None:
+            parser.error(
+                "quest requires a spec path unless --example or --schema is used"
+            )
         from .organisms.quest import quest
 
         _ensure_active_life(resolve_life, args.life)
@@ -1581,7 +1670,9 @@ def main(argv: list[str] | None = None) -> int:
         metadata = bootstrap_life(name, seed=args.seed)
         os.environ["SINGULAR_HOME"] = str(metadata.path)
         print(f"Vie créée: {metadata.name} ({metadata.slug}) → {metadata.path}")
-        if _can_prompt() and _prompt_yes_no("Lancer un diagnostic `doctor` maintenant ?"):
+        if _can_prompt() and _prompt_yes_no(
+            "Lancer un diagnostic `doctor` maintenant ?"
+        ):
             _doctor(fix=False)
 
     elif args.command == "monitor":
@@ -1637,7 +1728,10 @@ def main(argv: list[str] | None = None) -> int:
             )
         if args.retention_command == "status":
             return _retention_status()
-        if args.retention_command == "config" and args.retention_config_command == "show":
+        if (
+            args.retention_command == "config"
+            and args.retention_config_command == "show"
+        ):
             return _retention_config_show()
 
     elif args.command == "doctor":
@@ -1688,7 +1782,11 @@ def main(argv: list[str] | None = None) -> int:
                     for slug, meta in sorted(lives.items())
                 ]
                 if args.output_format == "json":
-                    print(json.dumps({"active": active, "lives": items}, ensure_ascii=False))
+                    print(
+                        json.dumps(
+                            {"active": active, "lives": items}, ensure_ascii=False
+                        )
+                    )
                 elif args.output_format == "table":
                     rows = [
                         [
@@ -1736,15 +1834,17 @@ def main(argv: list[str] | None = None) -> int:
                 metadata = archive_life(args.name)
             except KeyError as exc:
                 raise SystemExit(f"Vie introuvable: {args.name}") from exc
-            print(f"Vie archivée: {metadata.name} ({metadata.slug}) → statut={metadata.status}")
-            print("Conseil: exécutez `singular lives memorial <vie> --message \"...\"`.")
+            print(
+                f"Vie archivée: {metadata.name} ({metadata.slug}) → statut={metadata.status}"
+            )
+            print('Conseil: exécutez `singular lives memorial <vie> --message "..."`.')
         elif args.lives_command == "memorial":
             try:
                 memorial_path = memorialize_life(args.name, message=args.message)
             except KeyError as exc:
                 raise SystemExit(f"Vie introuvable: {args.name}") from exc
             print(f"Mémorial enregistré: {memorial_path}")
-            print("Conseil: exécutez `singular lives clone <vie> --new-name \"...\"`.")
+            print('Conseil: exécutez `singular lives clone <vie> --new-name "..."`.')
         elif args.lives_command == "clone":
             try:
                 metadata = clone_life(args.name, new_name=args.new_name)
@@ -1752,7 +1852,9 @@ def main(argv: list[str] | None = None) -> int:
                 raise SystemExit(f"Vie introuvable: {args.name}") from exc
             os.environ["SINGULAR_HOME"] = str(metadata.path)
             print(f"Vie clonée: {metadata.name} ({metadata.slug}) → {metadata.path}")
-            print("Conseil: exécutez `singular status --verbose` puis `singular loop --budget-seconds 10`.")
+            print(
+                "Conseil: exécutez `singular status --verbose` puis `singular loop --budget-seconds 10`."
+            )
         elif args.lives_command == "relations":
             try:
                 payload = list_relations(args.name)
@@ -1792,7 +1894,9 @@ def main(argv: list[str] | None = None) -> int:
                 meta = set_proximity(args.name, args.score)
             except (KeyError, ValueError, PermissionError) as exc:
                 raise SystemExit(str(exc)) from exc
-            print(f"Score proximité mis à jour: {meta.slug} = {meta.proximity_score:.2f}")
+            print(
+                f"Score proximité mis à jour: {meta.slug} = {meta.proximity_score:.2f}"
+            )
 
     elif args.command == "values":
         _ensure_active_life(resolve_life, args.life)
@@ -1832,7 +1936,11 @@ def main(argv: list[str] | None = None) -> int:
             if args.output_format == "json":
                 print(json.dumps({"policy": payload}, ensure_ascii=False))
             elif args.output_format == "table":
-                rows = [[key, str(value)] for key, value in payload.items() if key != "impact"]
+                rows = [
+                    [key, str(value)]
+                    for key, value in payload.items()
+                    if key != "impact"
+                ]
                 _print_table(["Section", "Valeur"], rows)
                 print("Impact:")
                 for item in payload["impact"]:

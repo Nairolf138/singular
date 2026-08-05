@@ -86,3 +86,59 @@ def test_quest_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
     psyche = json.loads((life_path / "mem" / "psyche.json").read_text())
     assert psyche["last_mood"] == "frustrated"
+
+
+def test_quest_example_prints_complete_json(capsys: pytest.CaptureFixture[str]) -> None:
+    main(["quest", "--example"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["name"] == "repair_loop"
+    assert payload["constraints"] == {
+        "pure": True,
+        "no_import": True,
+        "time_ms_max": 50,
+    }
+    assert payload["triggers"] == [{"signal": "noise", "gte": 0.5}]
+
+
+def test_quest_schema_prints_without_active_life(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    main(["quest", "--schema"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["required"] == ["name", "signature", "examples", "constraints"]
+    assert payload["properties"]["constraints"]["properties"]["pure"] == {"const": True}
+
+
+def test_quest_invalid_spec_does_not_create_files(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "world"
+    spec_path = tmp_path / "invalid.json"
+    spec_path.write_text(
+        json.dumps(
+            {
+                "name": "broken",
+                "signature": "broken(x)",
+                "examples": [],
+                "constraints": {"pure": True, "no_import": True, "time_ms_max": 50},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    monkeypatch.delenv("SINGULAR_ROOT", raising=False)
+
+    main(["--root", str(root), "birth", "--name", "Vie Quest Invalid"])
+    life_path = resolve_life(None)
+    assert life_path is not None
+    before = {path.relative_to(life_path) for path in life_path.rglob("*")}
+
+    with pytest.raises(ValueError, match="examples"):
+        main(["--root", str(root), "quest", str(spec_path)])
+
+    after = {path.relative_to(life_path) for path in life_path.rglob("*")}
+    assert after == before
+    assert not (life_path / "skills" / "broken.py").exists()
