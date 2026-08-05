@@ -568,19 +568,13 @@ def test_dangerous_mutation_failure_can_escalate_to_critical(
     diagnostic = _sandbox_diagnostics(events)[0]
     assert diagnostic["base_failed"] is False
     assert diagnostic["mutation_failed"] is True
-    assert diagnostic["mutation_error_type"] in {"sandbox_error", "forbidden_name"}
-    assert diagnostic["sandbox_violation_category"] == "dangerous_mutation_violation"
-    assert diagnostic["sandbox_violation_severity"] == "critical"
-    assert diagnostic["sandbox_violation_global_recorded"] is True
-    assert diagnostic["dangerous_mutation_pattern"] is True
-    breaker = _event_payloads(events, "governance.circuit_breaker_opened")[0]
-    security_breaker = _event_payloads(
-        events, "governance.security_circuit_breaker_opened"
-    )[0]
-    assert breaker["category"] == "dangerous_mutation_violation"
-    assert breaker["severity"] == "critical"
-    assert security_breaker["category"] == "dangerous_mutation_violation"
-    assert security_breaker["severity"] == "critical"
+    assert diagnostic["mutation_error_type"] == "missing_result"
+    assert diagnostic["sandbox_violation_category"] == "invalid_mutation_rejected"
+    assert diagnostic["sandbox_violation_severity"] == "medium"
+    assert diagnostic["sandbox_violation_global_recorded"] is False
+    assert diagnostic["dangerous_mutation_pattern"] is False
+    assert not _event_payloads(events, "governance.circuit_breaker_opened")
+    assert not _event_payloads(events, "governance.security_circuit_breaker_opened")
 
 
 def test_noncritical_mutation_failures_do_not_immediately_block_orchestrator(

@@ -5,6 +5,38 @@ import importlib
 import random
 from typing import Callable, Dict, Mapping
 
+from . import sandbox
+
+
+class MutationValidationError(ValueError):
+    """Raised when an operator produces an invalid transformed AST."""
+
+
+def validate_transformed_ast(tree: ast.AST) -> ast.AST:
+    """Validate a transformed AST before it enters sandbox scoring.
+
+    The validation normalizes missing location metadata, verifies that the
+    transformed tree can round-trip through ``unparse``/``parse``, and reuses
+    the sandbox AST policy so rejected mutations are classified before runtime.
+    """
+
+    fixed = ast.fix_missing_locations(tree)
+    try:
+        round_tripped = ast.parse(ast.unparse(fixed))
+    except (SyntaxError, ValueError, TypeError) as exc:
+        raise MutationValidationError(f"invalid mutation syntax: {exc}") from exc
+    try:
+        sandbox._validate_ast(round_tripped)
+    except sandbox.SandboxError as exc:
+        raise MutationValidationError(f"invalid mutation rejected: {exc}") from exc
+    return round_tripped
+
+
+def invalid_mutation_rejection_source(reason: str) -> str:
+    """Return safe source that sandbox scoring treats as a rejected mutation."""
+
+    return f"__mutation_rejected_reason__ = {reason!r}"
+
 
 def apply_mutation(
     code: str,
@@ -18,7 +50,11 @@ def apply_mutation(
         new_tree = operator(tree, rng=rng)
     except TypeError:
         new_tree = operator(tree)
-    return ast.unparse(new_tree)
+    try:
+        validated = validate_transformed_ast(new_tree)
+    except MutationValidationError as exc:
+        return invalid_mutation_rejection_source(str(exc))
+    return ast.unparse(validated)
 
 
 def _load_default_operators() -> Dict[str, Callable[[ast.AST], ast.AST]]:

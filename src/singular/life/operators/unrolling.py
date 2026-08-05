@@ -12,6 +12,8 @@ import ast
 import copy
 import random
 
+from singular.life.mutation_flow import validate_transformed_ast
+
 # mypy: ignore-errors
 
 
@@ -207,5 +209,5 @@ class _Unroll(ast.NodeTransformer):
 def apply(tree: ast.AST, rng: random.Random | None = None) -> ast.AST:
     """Return *tree* with small loops unrolled."""
 
-    _Unroll().visit(tree)
-    return ast.fix_missing_locations(tree)
+    transformed = _Unroll().visit(tree)
+    return validate_transformed_ast(transformed)
