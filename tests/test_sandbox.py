@@ -163,3 +163,26 @@ def test_run_consecutive_calls_do_not_return_none_with_unreliable_empty_check(mo
 
     for _ in range(20):
         assert sandbox_module.run("result = 42") == 42
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("result = 1", 1),
+        ("result = 5 - 2", 3),
+        (
+            "total = 0\n"
+            "for value in range(1000):\n"
+            "    total = total + value\n"
+            "result = total",
+            499500,
+        ),
+    ],
+)
+def test_simple_snippets_do_not_timeout_on_standard_budget(code, expected):
+    assert run(code) == expected
+
+
+def test_timeout_can_be_configured_from_environment(monkeypatch):
+    monkeypatch.setenv("SINGULAR_SANDBOX_TIMEOUT", "4.0")
+    assert run("result = 5 - 2") == 3
