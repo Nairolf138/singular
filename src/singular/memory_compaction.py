@@ -140,6 +140,18 @@ def compact_episodic_jsonl(
                 }
             )
 
+        consolidated_rows = [
+            {
+                "event": "memory.consolidated",
+                "ts": generated_at,
+                "summary": (
+                    f"Consolidated {len(historical)} historical episodic events "
+                    f"into {len(snapshot_refs)} snapshots; kept {len(recent_events)} recent events."
+                ),
+                "snapshots": snapshot_refs,
+                "source": "mem/episodic.jsonl",
+            }
+        ]
         compacted_rows = [
             {
                 "event": "episodic.compaction.reference",
@@ -150,6 +162,7 @@ def compact_episodic_jsonl(
             }
             for ref in snapshot_refs
         ]
+        compacted_rows = consolidated_rows + compacted_rows
         compacted_rows.extend(recent_events)
 
         _write_jsonl_atomic(episodic_path, compacted_rows)

@@ -7,7 +7,7 @@ when the optional :mod:`PyYAML <yaml>` package is available.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 import json
 import os
 from datetime import datetime, timedelta, timezone
@@ -229,6 +229,88 @@ def read_episodes(path: Path | str | None = None) -> list[dict[str, Any]]:
                 continue
             episodes.append(json.loads(line))
     return episodes
+
+
+def _episode_search_text(episode: Mapping[str, Any]) -> str:
+    parts: list[str] = []
+    for key in ("text", "summary", "message", "event", "event_type", "objective", "skill", "op"):
+        value = episode.get(key)
+        if isinstance(value, str):
+            parts.append(value)
+    structured = episode.get("structured_signals")
+    if isinstance(structured, Mapping):
+        parts.extend(str(value) for value in structured.values() if value is not None)
+    return " ".join(parts).lower()
+
+
+def summarize_episode_for_recall(episode: Mapping[str, Any], *, max_chars: int = 160) -> str:
+    """Return a short human-readable summary for a recalled episode."""
+
+    text = None
+    for key in ("text", "summary", "message", "human_summary", "event"):
+        value = episode.get(key)
+        if isinstance(value, str) and value.strip():
+            text = value.strip()
+            break
+    if text is None:
+        text = json.dumps(dict(episode), ensure_ascii=False, sort_keys=True)
+    cleaned = " ".join(text.split())
+    if len(cleaned) <= max_chars:
+        return cleaned
+    return f"{cleaned[: max(0, max_chars - 3)]}..."
+
+
+def recall_relevant_episodes(
+    *,
+    themes: Iterable[str] | None = None,
+    objectives: Iterable[str] | None = None,
+    limit: int = 3,
+    path: Path | str | None = None,
+) -> list[dict[str, Any]]:
+    """Retrieve recent episodic memories matching themes or objectives."""
+
+    terms = {str(term).strip().lower() for term in (themes or []) if str(term).strip()}
+    terms.update(str(term).strip().lower() for term in (objectives or []) if str(term).strip())
+    if not terms:
+        return []
+    episodes = read_episodes(path)
+    if not episodes:
+        return []
+
+    recalled: list[dict[str, Any]] = []
+    for episode in reversed(episodes):
+        if str(episode.get("event", "")).startswith("memory."):
+            continue
+        haystack = _episode_search_text(episode)
+        if terms and not any(term in haystack for term in terms):
+            continue
+        recalled.append(
+            {
+                "ts": episode.get("ts"),
+                "event": episode.get("event"),
+                "role": episode.get("role"),
+                "theme": (episode.get("structured_signals") or {}).get("theme")
+                if isinstance(episode.get("structured_signals"), Mapping)
+                else None,
+                "summary": summarize_episode_for_recall(episode),
+            }
+        )
+        if len(recalled) >= max(0, limit):
+            break
+    return recalled
+
+
+def format_recalled_memories(memories: Iterable[Mapping[str, Any]], *, max_chars: int = 360) -> str:
+    """Format recalled memories as a compact prompt fragment."""
+
+    fragments = []
+    for memory in memories:
+        label = memory.get("theme") or memory.get("event") or memory.get("role") or "episode"
+        fragments.append(f"- {label}: {memory.get('summary', '')}")
+    text = " ".join(fragments) if fragments else "aucun souvenir pertinent"
+    if len(text) <= max_chars:
+        return text
+    return f"{text[: max(0, max_chars - 3)]}..."
 
 
 def add_episode(

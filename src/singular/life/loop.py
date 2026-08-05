@@ -30,6 +30,9 @@ from singular.memory import (
     register_memory_event_handlers,
     temporarily_disable_skill,
     update_score,
+    add_episode,
+    format_recalled_memories,
+    recall_relevant_episodes,
 )
 from singular.psyche import Psyche, Mood, choose_action_from_psyche
 from singular.runs.logger import RunLogger
@@ -1187,6 +1190,28 @@ def run(
 
             policy = psyche.mutation_policy()
             planner_narrative_signals = self_narrative.extract_planner_signals()
+            recall_objectives = [
+                str(item) for item in planner_narrative_signals if isinstance(item, str)
+            ]
+            recall_objectives.extend([selected_skill_key, policy])
+            recalled_memories = recall_relevant_episodes(
+                themes=[selected_skill_key, policy],
+                objectives=recall_objectives,
+                limit=3,
+            )
+            recalled_memory_summary = format_recalled_memories(recalled_memories)
+            if recalled_memories:
+                memory_event = {
+                    "source": "life.loop",
+                    "iteration": state.iteration,
+                    "organism": org_name,
+                    "skill": selected_skill_key,
+                    "policy": policy,
+                    "memories": recalled_memories,
+                    "summary": recalled_memory_summary,
+                }
+                add_episode({"event": "memory.recalled", **memory_event})
+                logger.log_interaction("memory.recalled", **memory_event, alive=True)
             last_health = (
                 float(state.health_history[-1].get("score", 50.0))
                 if state.health_history
@@ -1203,7 +1228,12 @@ def run(
                     "ecological_debt": resource_manager.ecological_debt,
                     "relational_debt": resource_manager.relational_debt,
                 },
-                perception_signals={**signals, "planner_narrative_signals": planner_narrative_signals},
+                perception_signals={
+                    **signals,
+                    "planner_narrative_signals": planner_narrative_signals,
+                    "recalled_memory_summary": recalled_memory_summary,
+                    "recalled_memories": recalled_memories,
+                },
             )
             baseline_failure_risk = (
                 float(state.health_counters.get("sandbox_failures", 0))
@@ -1252,7 +1282,10 @@ def run(
                     long_term=entry["long_term"],
                     sandbox_risk=entry["sandbox_risk"],
                     resource_cost=entry["resource_cost"],
-                    metadata={"goal_weights": asdict(goal_weights)},
+                    metadata={
+                        "goal_weights": asdict(goal_weights),
+                        "recalled_memory_summary": recalled_memory_summary,
+                    },
                 )
                 for entry in adjusted_hypotheses
             ]
@@ -1426,6 +1459,8 @@ def run(
                     "planner_narrative_signals": planner_narrative_signals,
                     "weights_after": asdict(goal_weights),
                     "combined_bias_after": combined_bias,
+                    "recalled_memory_summary": recalled_memory_summary,
+                    "recalled_memories": recalled_memories,
                     "identity_violations": identity_violations,
                     "identity_wounds": float(getattr(psyche, "identity_wounds", 0.0)),
                 },
@@ -1573,6 +1608,21 @@ def run(
                     score_after=mutated_score,
                 )
 
+            if recalled_memories:
+                used_event = {
+                    "source": "life.loop",
+                    "iteration": state.iteration,
+                    "organism": org_name,
+                    "skill": selected_skill_key,
+                    "operator": op_name,
+                    "decision": "mutation",
+                    "accepted": accepted,
+                    "memories": recalled_memories,
+                    "summary": recalled_memory_summary,
+                }
+                add_episode({"event": "memory.used_for_decision", **used_event})
+                logger.log_interaction("memory.used_for_decision", **used_event, alive=True)
+
             objective_weights = asdict(goal_weights)
             dominant_objective = max(
                 objective_weights,
@@ -1599,7 +1649,11 @@ def run(
                     for hypothesis_index, hypothesis in enumerate(weighted_hypotheses)
                 ],
                 final_choice=op_name,
-                justification=reflection.decision_reason,
+                justification=(
+                    f"{reflection.decision_reason}; souvenirs={recalled_memory_summary}"
+                    if recalled_memories
+                    else reflection.decision_reason
+                ),
                 objective=dominant_objective,
                 mood=mood_value,
                 energy=float(getattr(psyche, "energy", resource_manager.energy)),

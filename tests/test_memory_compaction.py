@@ -130,3 +130,21 @@ def test_compact_generations_keeps_recent_and_minimal_audit(tmp_path: Path) -> N
 
     assert any(row.get("event") == "generations.rejected.aggregate" for row in compacted)
     assert any(row.get("event") == "generations.compaction.meta" for row in compacted)
+
+
+def test_compact_episodic_emits_memory_consolidated(tmp_path):
+    mem_dir = tmp_path / "mem"
+    mem_dir.mkdir()
+    episodic = mem_dir / "episodic.jsonl"
+    rows = [
+        {"event": "user", "text": f"souvenir bug {idx}", "ts": f"2026-01-01T00:00:0{idx}+00:00"}
+        for idx in range(4)
+    ]
+    episodic.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+
+    result = compact_episodic_jsonl(mem_dir=mem_dir, keep_last_events=1, snapshot_chunk_size=2)
+
+    assert result["compacted"] is True
+    compacted = [json.loads(line) for line in episodic.read_text(encoding="utf-8").splitlines()]
+    assert compacted[0]["event"] == "memory.consolidated"
+    assert "Consolidated 3 historical episodic events" in compacted[0]["summary"]
