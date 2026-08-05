@@ -155,3 +155,97 @@ def test_skill_genesis_traceability_in_run_logs(monkeypatch, tmp_path: Path) -> 
     assert any(rec.get("interaction") == "skill_genesis" for rec in records)
     journal = (tmp_path / "mem" / "skill_genesis.jsonl").read_text(encoding="utf-8").splitlines()
     assert journal
+
+
+def test_skill_genesis_rejects_empty_scaffold_without_publication(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    from singular.life import skill_genesis as genesis_mod
+
+    skills_dir = tmp_path / "life" / "skills"
+    mem_dir = tmp_path / "mem"
+    skills_dir.mkdir(parents=True)
+    mem_dir.mkdir(parents=True, exist_ok=True)
+    (mem_dir / "skills.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(genesis_mod, "_render_skill_template", lambda _name: "\n")
+
+    policy = MutationGovernancePolicy(
+        modifiable_paths=("skills",),
+        review_required_paths=("skills/review",),
+        forbidden_paths=("src",),
+    )
+    result = genesis_mod.create_skill(
+        skills_dir=skills_dir,
+        mem_dir=mem_dir,
+        governance_policy=policy,
+        trigger="empty",
+        signal_snapshot={},
+    )
+
+    assert result.accepted is False
+    assert result.policy_level == "validation_failed"
+    assert not result.target.exists()
+    assert not list(skills_dir.glob("*.py"))
+    journal = [json.loads(line) for line in (mem_dir / "skill_genesis.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert journal[-1]["event"] == "autogen.validation_failed"
+
+
+def test_skill_genesis_rejects_missing_function_without_publication(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    from singular.life import skill_genesis as genesis_mod
+
+    skills_dir = tmp_path / "life" / "skills"
+    mem_dir = tmp_path / "mem"
+    skills_dir.mkdir(parents=True)
+    mem_dir.mkdir(parents=True, exist_ok=True)
+    (mem_dir / "skills.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(genesis_mod, "_render_skill_template", lambda _name: "result = 1\n")
+
+    policy = MutationGovernancePolicy(
+        modifiable_paths=("skills",),
+        review_required_paths=("skills/review",),
+        forbidden_paths=("src",),
+    )
+    result = genesis_mod.create_skill(
+        skills_dir=skills_dir,
+        mem_dir=mem_dir,
+        governance_policy=policy,
+        trigger="no_function",
+        signal_snapshot={},
+    )
+
+    assert result.accepted is False
+    assert not result.target.exists()
+    assert not list(skills_dir.glob("*.py"))
+
+
+def test_skill_genesis_rejects_always_none_function_without_publication(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    from singular.life import skill_genesis as genesis_mod
+
+    skills_dir = tmp_path / "life" / "skills"
+    mem_dir = tmp_path / "mem"
+    skills_dir.mkdir(parents=True)
+    mem_dir.mkdir(parents=True, exist_ok=True)
+    (mem_dir / "skills.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(genesis_mod, "_render_skill_template", lambda _name: "def run():\n    return None\n")
+
+    policy = MutationGovernancePolicy(
+        modifiable_paths=("skills",),
+        review_required_paths=("skills/review",),
+        forbidden_paths=("src",),
+    )
+    result = genesis_mod.create_skill(
+        skills_dir=skills_dir,
+        mem_dir=mem_dir,
+        governance_policy=policy,
+        trigger="none",
+        signal_snapshot={},
+    )
+
+    assert result.accepted is False
+    assert "only returns None" in result.reason
+    assert not result.target.exists()
+    assert not list(skills_dir.glob("*.py"))
