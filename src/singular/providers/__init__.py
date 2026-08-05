@@ -11,7 +11,7 @@ from typing import Any, Callable, Protocol
 
 DEFAULT_PROVIDER_TIMEOUT_SECONDS = 8.0
 DEFAULT_PROVIDER_MAX_RETRIES = 2
-DEFAULT_FALLBACK_CHAIN = ("local", "openai", "dummy")
+DEFAULT_FALLBACK_CHAIN = ("local", "ollama", "openai", "dummy")
 
 
 class LLMProviderError(RuntimeError):
