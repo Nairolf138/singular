@@ -155,6 +155,24 @@ Les sous-commandes qui consultent la mémoire (``talk``, ``run``, ``loop``,
 sélectionnée. Utilisez ``singular lives delete <nom>`` pour supprimer une vie et
 libérer son espace disque.
 
+### Format de quête auto-documenté
+
+La commande ``quest`` synthétise une compétence depuis une specification JSON.
+Pour découvrir le format sans modifier le disque ni sélectionner de vie active,
+utilisez les sorties intégrées :
+
+```bash
+singular quest --example
+singular quest --schema
+```
+
+Un exemple complet versionné est également disponible dans
+``examples/quest/complete_quest.json``. Les champs obligatoires sont ``name``,
+``signature``, ``examples`` et ``constraints``. Chaque erreur de validation
+indique le champ concerné, le type attendu et un exemple minimal. Une
+spécification invalide est rejetée avant toute création de mémoire ou de fichier
+de compétence.
+
 ### Piège courant : changer de root sans le voir
 
 La résolution du root de registre est désormais **unique et explicite** :

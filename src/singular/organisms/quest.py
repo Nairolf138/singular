@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from singular.life.quest import SpecValidationError, load
 from singular.life.synthesis import synthesise
 
 from ..memory import add_episode, ensure_memory_structure, update_score
@@ -19,6 +20,13 @@ def quest(spec: Path) -> None:
     spec:
         Path to the JSON specification describing the desired skill.
     """
+
+    # Validate before touching memory or skill directories so malformed user specs
+    # do not create any files as a side effect.
+    try:
+        load(spec)
+    except SpecValidationError:
+        raise
 
     ensure_memory_structure()
     psyche = Psyche.load_state()

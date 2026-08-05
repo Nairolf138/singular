@@ -83,3 +83,57 @@ def test_load_invalid_origin(tmp_path):
 
     with pytest.raises(quest.SpecValidationError):
         quest.load(path)
+
+
+def test_validation_error_names_field_and_minimal_example(tmp_path):
+    path = tmp_path / "spec.json"
+    path.write_text(
+        json.dumps(
+            {
+                "name": "adder",
+                "signature": "adder(a, b)",
+                "examples": [{"input": [1, 2]}],
+                "constraints": {"pure": True, "no_import": True, "time_ms_max": 50},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(quest.SpecValidationError) as excinfo:
+        quest.load(path)
+
+    message = str(excinfo.value)
+    assert "examples[0].output" in message
+    assert "expected the expected return value" in message
+    assert "Minimal example" in message
+    assert '"output": 3' in message
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_field"),
+    [
+        ("examples", [], "examples"),
+        ("triggers", {"signal": "noise"}, "triggers"),
+        ("cooldown", -1, "cooldown"),
+    ],
+)
+def test_validation_errors_are_self_explanatory_for_common_user_mistakes(
+    tmp_path, field, value, expected_field
+):
+    spec_data = {
+        "name": "adder",
+        "signature": "adder(a, b)",
+        "examples": [{"input": [1, 2], "output": 3}],
+        "constraints": {"pure": True, "no_import": True, "time_ms_max": 50},
+    }
+    spec_data[field] = value
+    path = tmp_path / "spec.json"
+    path.write_text(json.dumps(spec_data), encoding="utf-8")
+
+    with pytest.raises(quest.SpecValidationError) as excinfo:
+        quest.load(path)
+
+    message = str(excinfo.value)
+    assert expected_field in message
+    assert "expected" in message
+    assert "Minimal example" in message
