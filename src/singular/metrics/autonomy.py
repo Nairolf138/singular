@@ -26,6 +26,8 @@ def _parse_ts(value: object) -> datetime | None:
 
 
 def _is_action_record(record: dict[str, Any]) -> bool:
+    if record.get("fallback_used") is True and record.get("llm_real") is False:
+        return False
     event = record.get("event")
     if event in {"mutation", "interaction", "refuse", "delay", "test_coevolution"}:
         return True

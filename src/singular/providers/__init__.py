@@ -155,6 +155,77 @@ class FallbackLLMClient(LLMProviderClient):
         raise ProviderUnavailableError("No provider available in fallback chain")
 
 
+def provider_is_real(name: str | None) -> bool:
+    """Return whether a provider name points to a real LLM backend."""
+
+    if not name:
+        return False
+    return name.strip().lower() not in {"stub", "dummy"}
+
+
+def describe_client(client: LLMProviderClient | None, requested: str) -> dict[str, Any]:
+    """Return status details for a loaded provider client."""
+
+    active = client.name if client is not None else requested
+    chain = (
+        [child.name for child in client.chain]
+        if isinstance(client, FallbackLLMClient)
+        else ([client.name] if client else [])
+    )
+    return {
+        "requested_provider": requested,
+        "active_provider": active,
+        "provider_chain": chain,
+        "llm_real": (
+            any(provider_is_real(name) for name in chain)
+            if chain
+            else provider_is_real(active)
+        ),
+    }
+
+
+def doctor_providers(names: list[str] | None = None) -> list[dict[str, Any]]:
+    """Healthcheck configured providers without issuing a conversational success signal."""
+
+    provider_names = names or ["openai", "ollama", "local"]
+    results: list[dict[str, Any]] = []
+    for name in provider_names:
+        try:
+            contract = _load_provider_contract(name)
+            if contract is None:
+                results.append(
+                    {
+                        "provider": name,
+                        "ok": False,
+                        "llm_real": provider_is_real(name),
+                        "error_category": "provider_missing",
+                    }
+                )
+                continue
+            status = contract.healthcheck()
+            ok = bool(status.get("ok"))
+            results.append(
+                {
+                    **status,
+                    "provider": str(status.get("provider") or name),
+                    "ok": ok,
+                    "llm_real": provider_is_real(name),
+                    "error_category": None if ok else "unavailable",
+                }
+            )
+        except LLMProviderError as exc:
+            results.append(
+                {
+                    "provider": name,
+                    "ok": False,
+                    "llm_real": provider_is_real(name),
+                    "error_category": getattr(exc, "category", "provider_error"),
+                    "error": str(exc),
+                }
+            )
+    return results
+
+
 def _invoke_provider(fn: Callable[..., Any], **kwargs: Any) -> Any:
     """Invoke provider callables while supporting legacy signatures."""
 
