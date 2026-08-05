@@ -94,6 +94,55 @@ def _normalized_event(record: dict[str, object]) -> str:
     return ""
 
 
+def _is_voluntary_budget_record(record: dict[str, object]) -> bool:
+    return record.get("voluntary_budget") is True or _normalized_event(record) in {
+        "loop.budget_exhausted",
+        "daemon.budget_exhausted",
+    }
+
+
+def compute_mutation_viability(records: list[dict[str, object]]) -> dict[str, object]:
+    mutation_records = [
+        record for record in records
+        if any(key in record for key in ("score_base", "score_new", "accepted", "ok", "operator", "op"))
+    ]
+    decided = []
+    useful = 0
+    failures = 0
+    for record in mutation_records:
+        accepted = record.get("accepted")
+        if not isinstance(accepted, bool):
+            accepted = record.get("ok")
+        if isinstance(accepted, bool):
+            decided.append(accepted)
+            if not accepted:
+                failures += 1
+        score_base = record.get("score_base")
+        score_new = record.get("score_new")
+        improved = (
+            isinstance(score_base, (int, float))
+            and isinstance(score_new, (int, float))
+            and float(score_new) < float(score_base)
+        )
+        health = record.get("health")
+        has_health = isinstance(health, dict) and isinstance(health.get("score"), (int, float))
+        if accepted is True and (improved or has_health):
+            useful += 1
+    score = None
+    if mutation_records:
+        acceptance = sum(1 for value in decided if value) / len(decided) if decided else 0.0
+        usefulness = useful / len(mutation_records)
+        failure_penalty = failures / len(mutation_records)
+        score = round(max(0.0, min(1.0, (acceptance * 0.5) + (usefulness * 0.5) - (failure_penalty * 0.25))) * 100.0, 1)
+    return {
+        "score": score,
+        "mutation_count": len(mutation_records),
+        "accepted_count": sum(1 for value in decided if value),
+        "rejected_count": sum(1 for value in decided if not value),
+        "accepted_useful_changes": useful,
+    }
+
+
 def compute_liveness_index(
     records: list[dict[str, object]],
     *,
@@ -101,6 +150,8 @@ def compute_liveness_index(
 ) -> dict[str, object]:
     reference = now or datetime.now(timezone.utc)
     sorted_records = sorted(records, key=lambda rec: str(rec.get("ts", "")))
+    autonomy_records = [record for record in sorted_records if not _is_voluntary_budget_record(record)]
+    budgeted_periods_ignored = len(sorted_records) - len(autonomy_records)
     recent_cutoff = reference - timedelta(hours=24)
     loop_cutoff = reference - timedelta(hours=48)
     interaction_cutoff = reference - timedelta(days=7)
@@ -308,6 +359,12 @@ def compute_liveness_index(
         )
     ]
     index = round((sum(component_scores) / 5.0) * 100.0, 1)
+    if budgeted_periods_ignored:
+        autonomy_payload = compute_liveness_index(autonomy_records, now=reference)
+        autonomy_index = autonomy_payload["index"]
+    else:
+        autonomy_index = index
+    mutation_viability = compute_mutation_viability(sorted_records)
 
     sorted_proofs = sorted(
         proofs,
@@ -316,6 +373,9 @@ def compute_liveness_index(
     )
     return {
         "index": index,
+        "autonomy_index": autonomy_index,
+        "budgeted_periods_ignored": budgeted_periods_ignored,
+        "mutation_viability": mutation_viability,
         "components": component_details,
         "proofs": sorted_proofs[:5],
     }
@@ -406,6 +466,8 @@ def aggregate_lives(
                 registry_status=registry_status,
             ),
             "life_liveness_index": 0.0,
+            "autonomy_index": 0.0,
+            "mutation_viability": {"score": None, "mutation_count": 0, "accepted_count": 0, "rejected_count": 0, "accepted_useful_changes": 0},
             "life_liveness_components": {
                 "recent_activity": {"score": 0.0, "count": 0},
                 "perception_decision_action_loop": {"score": 0.0, "completed": False},
@@ -550,6 +612,8 @@ def aggregate_lives(
                 registry_status=registry_status,
             ),
             "life_liveness_index": liveness["index"],
+            "autonomy_index": liveness.get("autonomy_index", liveness["index"]),
+            "mutation_viability": liveness.get("mutation_viability", compute_mutation_viability(all_records)),
             "life_liveness_components": liveness["components"],
             "life_liveness_proofs": liveness["proofs"],
         }

@@ -171,7 +171,7 @@ const showCockpitEndpointWarnings=issues=>{
   const labels=issues.map(issue=>{
     const label=endpointLabels[issue.key]||issue.key;
     if(issue.type==='invalid'){return `${label}: payload invalide`;}
-    return `${label}: endpoint indisponible (${endpointFailureMessage(issue.result)})`;
+    return `${label}: ${endpointFailureMessage(issue.result)}`;
   }).join(' · ');
   banner.classList.remove('panel-hidden');
   banner.textContent=`⚠️ Données cockpit partielles : ${labels}. Les données disponibles restent affichées, sans confondre données vides et erreur API.`;
@@ -513,7 +513,7 @@ export const loadCockpit=()=>Promise.allSettled([
   if(cockpitResult.status==='fulfilled'&&!isObjectPayload(cockpitResult.value)){invalidIssues.push({key:'cockpit',result:cockpitResult,type:'invalid'});}
   const issues=[...endpointIssues,...invalidIssues];
   showCockpitEndpointWarnings(issues);
-  const shouldRethrow=issues.filter(issue=>['context','comparison','cockpit'].includes(issue.key));
+  const shouldRethrow=issues.filter(issue=>['context','comparison'].includes(issue.key));
   if(cockpitResult.status==='rejected'){
     setPanelState('cockpit','error',`Endpoint principal ${endpointLabels.cockpit} indisponible : ${endpointFailureMessage(cockpitResult)}.`);
   }
@@ -567,9 +567,9 @@ export const loadCockpit=()=>Promise.allSettled([
   if(selectedLifeEl){selectedLifeEl.textContent=String(essentialPayload.selected_life||'Aucune');}
   const incidentsEl=document.getElementById('essential-active-incidents');
   if(incidentsEl){incidentsEl.textContent=String(essentialPayload.active_incidents_count??alertsCount);}
-  setText('kpi-autonomy-proactive',fmtPct(autonomy.proactive_initiative_rate));
+  setText('kpi-autonomy-proactive',`${fmtNum(autonomy.autonomy_index)} / ${fmtPct(autonomy.proactive_initiative_rate)}`);
   setText('kpi-autonomy-stability',fmtPct(autonomy.long_term_stability));
-  setText('kpi-autonomy-decision',`${fmtPct(decisionQuality.acceptance_rate)} / ${fmtPct(decisionQuality.regression_rate)}`);
+  setText('kpi-autonomy-decision',`${fmtPct(decisionQuality.acceptance_rate)} / ${fmtPct(decisionQuality.regression_rate)} · viabilité=${fmtNum(autonomy.mutation_viability)}`);
   setText('kpi-autonomy-latency',fmtNum(autonomy.perception_to_action_latency_ms,' ms'));
   setText('kpi-autonomy-cost',fmtNum(autonomy.resource_cost_per_gain));
   const behavior=d.behavioral_regulation_metrics||{};

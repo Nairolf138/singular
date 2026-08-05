@@ -13,18 +13,19 @@ from singular.life.life_status import (
 
 def test_authorized_life_statuses_are_stable_contract() -> None:
     assert AUTHORIZED_LIFE_STATUSES == (
-        "not_alive_yet",
-        "fragile",
-        "alive",
-        "dying",
-        "extinct",
+        "running",
+        "budget_exhausted",
+        "degraded",
+        "mutation_paused",
+        "terminal",
+        "dead",
     )
 
 
 def test_life_status_result_to_payload_serializes_portable_contract() -> None:
     computed_at = datetime(2026, 7, 7, 12, 30, tzinfo=UTC)
     result = LifeStatusResult(
-        status=LifeStatus.ALIVE,
+        status=LifeStatus.RUNNING,
         score=0.91,
         explanation="Stable identity and cycle are observed.",
         signals={"stable_cycle": True, "observed_cycles": 4},
@@ -34,7 +35,7 @@ def test_life_status_result_to_payload_serializes_portable_contract() -> None:
     )
 
     assert result.to_payload() == {
-        "status": "alive",
+        "status": "running",
         "score": 0.91,
         "explanation": "Stable identity and cycle are observed.",
         "signals": {"stable_cycle": True, "observed_cycles": 4},
@@ -87,7 +88,7 @@ def test_compute_life_status_aggregates_configured_signals(tmp_path) -> None:
         runs=runs,
     )
 
-    assert result.status == LifeStatus.ALIVE
+    assert result.status == LifeStatus.RUNNING
     assert result.score == 100.0
     assert result.signals["persistent_identity"] is True
     assert result.signals["stable_cycle"] is True
@@ -158,7 +159,7 @@ def test_compute_life_status_terminal_signal_dominates(tmp_path) -> None:
         runs=[],
     )
 
-    assert result.status == LifeStatus.EXTINCT
+    assert result.status == LifeStatus.DEAD
     assert result.signals["terminal"] is True
 
 
@@ -188,7 +189,7 @@ def test_compute_life_status_uses_vital_terminal_without_extinction(tmp_path) ->
         runs=runs,
     )
 
-    assert result.status == LifeStatus.DYING
+    assert result.status == LifeStatus.TERMINAL
     assert result.signals["terminal"] is True
     assert result.signals["extinction"] is False
     assert result.evidence["vital_timeline"]["state"] == "terminal"
@@ -378,7 +379,7 @@ def test_compute_life_status_no_artifacts_is_not_alive_yet(life_home_factory) ->
 
     result = compute_life_status(life_home, registry_entry={}, runs=[])
 
-    assert result.status == LifeStatus.NOT_ALIVE_YET
+    assert result.status == LifeStatus.DEGRADED
     assert "world_state" in result.missing_signals
     assert "self_narrative" in result.missing_signals
     assert "registry_entry" in result.missing_signals
@@ -405,7 +406,7 @@ def test_compute_life_status_identity_and_partial_cycle_is_fragile(
         config=config,
     )
 
-    assert result.status == LifeStatus.FRAGILE
+    assert result.status == LifeStatus.DEGRADED
     assert result.signals["persistent_identity"] is True
     assert result.signals["observed_cycles"] == 1
     assert result.signals["stable_cycle"] is False
@@ -447,7 +448,7 @@ def test_compute_life_status_full_durable_signals_are_alive(life_home_factory) -
         runs=_cycle_runs(3),
     )
 
-    assert result.status == LifeStatus.ALIVE
+    assert result.status == LifeStatus.RUNNING
     assert result.signals["persistent_identity"] is True
     assert result.signals["generation_registry"] is True
     assert result.signals["stable_cycle"] is True
@@ -487,7 +488,7 @@ def test_compute_life_status_terminal_health_or_long_failures_are_dying(
         runs=runs,
     )
 
-    assert result.status == LifeStatus.DYING
+    assert result.status == LifeStatus.TERMINAL
     assert result.signals["terminal"] is True
     assert result.signals["extinction"] is False
     _assert_status_contract(result)
@@ -520,7 +521,7 @@ def test_compute_life_status_extinction_evidence_is_extinct(
         runs=runs,
     )
 
-    assert result.status == LifeStatus.EXTINCT
+    assert result.status == LifeStatus.DEAD
     assert result.signals["extinction"] is True
     _assert_status_contract(result)
 
@@ -540,7 +541,7 @@ def test_compute_life_status_corrupt_json_and_missing_files_are_explanatory(
         runs=[],
     )
 
-    assert result.status == LifeStatus.NOT_ALIVE_YET
+    assert result.status == LifeStatus.DEGRADED
     assert (
         result.signals["structured"]["goals"]["reason"]
         == "no active self-generated intrinsic goal evidence found"
@@ -648,3 +649,22 @@ def test_compute_life_status_stable_cycle_rejects_terminal_dominance(
     assert result.signals["observed_cycles"] == 3
     assert result.signals["stable_cycle"] is False
     assert cycle["terminal_dominates"] is True
+
+
+def test_compute_life_status_budget_exhaustion_is_not_death(life_home_factory) -> None:
+    from singular.life.life_status import LifeStatus, compute_life_status
+
+    life_home, mem = life_home_factory()
+    _write_json(mem / "world_state.json", {"global_health": {"score": 90}})
+    _write_json(mem / "self_narrative.json", {"identity": {"name": "Alpha", "slug": "alpha"}})
+    _write_json(mem / "quests_state.json", {})
+
+    result = compute_life_status(
+        life_home,
+        registry_entry={"name": "Alpha", "slug": "alpha", "status": "active"},
+        runs=[{"event": "loop.budget_exhausted", "voluntary_budget": True}],
+    )
+
+    assert result.status == LifeStatus.BUDGET_EXHAUSTED
+    assert result.signals["budget_exhausted"] is True
+    assert result.signals["extinction"] is False

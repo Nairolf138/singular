@@ -24,11 +24,19 @@ if TYPE_CHECKING:  # pragma: no cover - imported only for static typing.
 class LifeStatus(str, Enum):
     """Authorized philosophical-operational life statuses."""
 
-    NOT_ALIVE_YET = "not_alive_yet"
-    FRAGILE = "fragile"
-    ALIVE = "alive"
-    DYING = "dying"
-    EXTINCT = "extinct"
+    RUNNING = "running"
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    DEGRADED = "degraded"
+    MUTATION_PAUSED = "mutation_paused"
+    TERMINAL = "terminal"
+    DEAD = "dead"
+
+    # Backward-compatible aliases for callers that still import the old names.
+    ALIVE = "running"
+    FRAGILE = "degraded"
+    DYING = "terminal"
+    EXTINCT = "dead"
+    NOT_ALIVE_YET = "degraded"
 
 
 AUTHORIZED_LIFE_STATUSES: tuple[str, ...] = tuple(status.value for status in LifeStatus)
@@ -194,6 +202,8 @@ def _event_text(row: Mapping[str, Any]) -> str:
 
 REQUIRED_CYCLE_PHASES = ("veille", "action", "introspection", "sommeil")
 TERMINAL_PHASE_TOKENS = ("extinct", "extinction", "death", "terminal", "dying", "stop")
+BUDGET_EXHAUSTED_EVENTS = {"loop.budget_exhausted", "daemon.budget_exhausted"}
+MUTATION_PAUSED_TOKENS = ("mutation_paused", "mutation.paused", "safe_mode", "quota_exhausted")
 
 
 def _row_phase(row: Mapping[str, Any]) -> str | None:
@@ -787,6 +797,9 @@ def compute_life_status(
         registry_status=registry_status or None,
     )
     vital_state = str(vital_timeline.get("state", ""))
+    latest_event = str(run_rows[-1].get("event", "")).strip().lower() if run_rows else ""
+    budget_exhausted = latest_event in BUDGET_EXHAUSTED_EVENTS
+    mutation_paused = any(token in _event_text(row) for row in run_rows[-10:] for token in MUTATION_PAUSED_TOKENS)
     terminal = vital_state in {"terminal", "extinct"}
     reproduction_eligible = vital_timeline.get("reproduction_eligible") is True
     reproduction_capability = bool(
@@ -824,7 +837,6 @@ def compute_life_status(
         return value * total_points if 0.0 <= value <= 1.0 else value
 
     alive_minimum_score = _score_threshold(cfg.thresholds.alive_minimum_score)
-    fragile_minimum_score = _score_threshold(cfg.thresholds.fragile_minimum_score)
     required_for_alive = [
         name
         for name, (configured, _) in criteria.items()
@@ -835,18 +847,18 @@ def compute_life_status(
     required_for_alive_present = all(criteria[name][1] for name in required_for_alive)
     if vital_state == "extinct":
         score = min(score, 20.0)
-        status = LifeStatus.EXTINCT
+        status = LifeStatus.DEAD
     elif vital_state == "terminal":
         score = min(score, 40.0)
-        status = LifeStatus.DYING
-    elif not persistent_identity and not run_rows:
-        status = LifeStatus.NOT_ALIVE_YET
+        status = LifeStatus.TERMINAL
+    elif budget_exhausted:
+        status = LifeStatus.BUDGET_EXHAUSTED
+    elif mutation_paused:
+        status = LifeStatus.MUTATION_PAUSED
     elif score >= alive_minimum_score and required_for_alive_present:
-        status = LifeStatus.ALIVE
-    elif score >= fragile_minimum_score:
-        status = LifeStatus.FRAGILE
+        status = LifeStatus.RUNNING
     else:
-        status = LifeStatus.NOT_ALIVE_YET
+        status = LifeStatus.DEGRADED
 
     positives = [name for name, value in enabled if value]
     negatives = [name for name, value in enabled if not value]
@@ -876,7 +888,9 @@ def compute_life_status(
         "narrative_continuity": narrative_continuity,
         "narrative_age_days": age_days,
         "terminal": terminal,
-        "extinction": status is LifeStatus.EXTINCT,
+        "budget_exhausted": budget_exhausted,
+        "mutation_paused": mutation_paused,
+        "extinction": status is LifeStatus.DEAD,
         "vital_state": vital_state,
         "vital_risk_level": vital_timeline.get("risk_level"),
         "structured": {

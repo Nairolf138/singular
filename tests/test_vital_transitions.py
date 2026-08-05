@@ -65,3 +65,18 @@ def test_vital_reproduction_window_boundary_conditions() -> None:
     assert eligible["reproduction_eligible"] is True
     assert too_old["reproduction_eligible"] is False
 
+
+
+def test_vital_budget_exhaustion_is_not_extinction_marker(tmp_path) -> None:
+    from singular.life.life_status import LifeStatus, compute_life_status
+
+    mem = tmp_path / "mem"
+    mem.mkdir()
+    (mem / "world_state.json").write_text('{"global_health":{"score":80}}', encoding="utf-8")
+    (mem / "self_narrative.json").write_text('{"identity":{"name":"Alpha","slug":"alpha"}}', encoding="utf-8")
+    (mem / "quests_state.json").write_text('{}', encoding="utf-8")
+
+    result = compute_life_status(tmp_path, registry_entry={"status": "active"}, runs=[{"event": "loop.budget_exhausted", "voluntary_budget": True}])
+
+    assert result.status == LifeStatus.BUDGET_EXHAUSTED
+    assert result.evidence["vital_timeline"]["state"] != "extinct"

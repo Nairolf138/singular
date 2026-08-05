@@ -203,6 +203,7 @@ const renderLivesTable=(rows)=>{
     if(row.life&&row.life===livesUiState.selectedLife){tr.classList.add('selected');}
     const score=row.current_health_score===null||row.current_health_score===undefined?na():Number(row.current_health_score).toFixed(1);
     const liveness=row.life_liveness_index===null||row.life_liveness_index===undefined?na():Number(row.life_liveness_index).toFixed(1);
+    const autonomy=row.autonomy_index===null||row.autonomy_index===undefined?na():Number(row.autonomy_index).toFixed(1);
     const lastActivity=row.last_activity||na();
     const state=rowStateSummary(row);
     const risk=rowRiskSummary(row);
@@ -219,7 +220,7 @@ const renderLivesTable=(rows)=>{
     lifeCell.appendChild(auditLink);
     appendCell(tr,score);
     appendCell(tr,lastActivity);
-    appendCell(tr,liveness);
+    appendCell(tr,`${liveness} / auto ${autonomy}`);
     for(const summary of [state,risk,activity]){
       const cell=document.createElement('td');
       const pill=document.createElement('span');
@@ -272,6 +273,8 @@ const showLifeDetails=lifeName=>{
     ['Score courant',row.current_health_score===null||row.current_health_score===undefined?na():Number(row.current_health_score).toFixed(1)],
     ['Dernière activité',row.last_activity],
     ['Life liveness index',row.life_liveness_index===null||row.life_liveness_index===undefined?na():Number(row.life_liveness_index).toFixed(1)],
+    ['Autonomy index',row.autonomy_index===null||row.autonomy_index===undefined?na():Number(row.autonomy_index).toFixed(1)],
+    ['Mutation viability',row.mutation_viability?.score===null||row.mutation_viability?.score===undefined?na():Number(row.mutation_viability.score).toFixed(1)],
     ['Alertes',row.alerts_count??0],
   ];
   const expertMetadata=[

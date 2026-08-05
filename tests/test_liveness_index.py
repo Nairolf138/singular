@@ -117,3 +117,27 @@ def test_lives_comparison_exposes_liveness_fields() -> None:
     assert "recent_activity" in alpha["life_liveness_components"]
     assert isinstance(alpha["life_liveness_proofs"], list)
     assert len(alpha["life_liveness_proofs"]) <= 5
+
+
+def test_autonomy_index_ignores_voluntary_budget_records() -> None:
+    payload = compute_liveness_index(
+        [
+            {"ts": "2026-04-15T10:00:00+00:00", "event": "perception"},
+            {"ts": "2026-04-15T10:01:00+00:00", "event": "loop.budget_exhausted", "voluntary_budget": True},
+        ],
+        now=NOW,
+    )
+
+    assert payload["budgeted_periods_ignored"] == 1
+    assert payload["autonomy_index"] == 10.0
+    assert payload["mutation_viability"]["mutation_count"] == 0
+
+
+def test_liveness_index_reports_mutation_viability_separately() -> None:
+    payload = compute_liveness_index(
+        [{"ts": "2026-04-15T10:00:00+00:00", "event": "mutation", "accepted": True, "score_base": 5, "score_new": 4}],
+        now=NOW,
+    )
+
+    assert payload["mutation_viability"]["score"] == 100.0
+    assert payload["mutation_viability"]["accepted_useful_changes"] == 1

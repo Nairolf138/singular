@@ -2532,6 +2532,15 @@ def run(
             persistent_world_state.save(persistent_world_state_path)
             tick_count += 1
 
+        if time.time() - start >= budget_seconds:
+            logger.log_event(
+                "loop.budget_exhausted",
+                budget_seconds=budget_seconds,
+                elapsed_seconds=round(time.time() - start, 6),
+                voluntary_budget=True,
+                status="budget_exhausted",
+            )
+
     for org in world.organisms.values():
         if org.last_score != float("-inf"):
             continue
