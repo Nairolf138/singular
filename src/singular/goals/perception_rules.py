@@ -2,8 +2,30 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-
 RULESET_VERSION = "2026-04-14.v1"
+
+SYSTEM_DECISION_DELTAS: dict[str, dict[str, float]] = {
+    "reduce_mutation_cadence": {
+        "efficacite": -0.04,
+        "robustesse": 0.08,
+        "exploration": -0.05,
+    },
+    "delay_heavy_synthesis": {
+        "efficacite": -0.03,
+        "robustesse": 0.06,
+        "exploration": -0.04,
+    },
+    "prioritize_memory_compaction": {
+        "robustesse": 0.09,
+        "efficacite": 0.03,
+        "exploration": -0.03,
+    },
+    "trigger_economy_mode": {
+        "robustesse": 0.12,
+        "efficacite": -0.05,
+        "exploration": -0.08,
+    },
+}
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -17,7 +39,9 @@ def _float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _extract_tech_debt_markers(perception_signals: Mapping[str, Any]) -> tuple[float | None, float | None]:
+def _extract_tech_debt_markers(
+    perception_signals: Mapping[str, Any],
+) -> tuple[float | None, float | None]:
     artifact_events = perception_signals.get("artifact_events")
     latest: float | None = None
     if isinstance(artifact_events, list):
@@ -35,11 +59,14 @@ def _extract_tech_debt_markers(perception_signals: Mapping[str, Any]) -> tuple[f
         perception_signals.get("tech_debt_baseline_markers"),
         perception_signals.get("artifact_tech_debt_previous"),
     )
-    previous = next((
-        _float(candidate)
-        for candidate in previous_candidates
-        if candidate is not None
-    ), None)
+    previous = next(
+        (
+            _float(candidate)
+            for candidate in previous_candidates
+            if candidate is not None
+        ),
+        None,
+    )
     return latest, previous
 
 
@@ -72,7 +99,9 @@ def _extract_user_friction_index(perception_signals: Mapping[str, Any]) -> float
     return None
 
 
-def apply_perception_rules(perception_signals: Mapping[str, Any] | None) -> dict[str, Any]:
+def apply_perception_rules(
+    perception_signals: Mapping[str, Any] | None,
+) -> dict[str, Any]:
     """Return deterministic objective deltas derived from perception signals."""
 
     deltas = {
@@ -84,10 +113,18 @@ def apply_perception_rules(perception_signals: Mapping[str, Any] | None) -> dict
     applied_rules: list[dict[str, Any]] = []
 
     if not isinstance(perception_signals, Mapping):
-        return {"version": RULESET_VERSION, "deltas": deltas, "applied_rules": applied_rules}
+        return {
+            "version": RULESET_VERSION,
+            "deltas": deltas,
+            "applied_rules": applied_rules,
+        }
 
     current_markers, previous_markers = _extract_tech_debt_markers(perception_signals)
-    if current_markers is not None and previous_markers is not None and current_markers > previous_markers:
+    if (
+        current_markers is not None
+        and previous_markers is not None
+        and current_markers > previous_markers
+    ):
         delta = min(0.16, (current_markers - previous_markers) * 0.02)
         deltas["robustesse"] += delta
         deltas["exploration"] -= delta * 0.35
@@ -128,4 +165,31 @@ def apply_perception_rules(perception_signals: Mapping[str, Any] | None) -> dict
                 }
             )
 
-    return {"version": RULESET_VERSION, "deltas": deltas, "applied_rules": applied_rules}
+    perception_decisions = perception_signals.get("perception_decisions")
+    if isinstance(perception_decisions, list):
+        for decision_entry in perception_decisions:
+            if not isinstance(decision_entry, Mapping):
+                continue
+            decision = str(decision_entry.get("decision", ""))
+            decision_deltas = SYSTEM_DECISION_DELTAS.get(decision)
+            if not decision_deltas:
+                continue
+            for objective, delta in decision_deltas.items():
+                deltas[objective] += delta
+            applied_rules.append(
+                {
+                    "rule_id": f"R-010-system-{decision}",
+                    "decision": decision,
+                    "perception": decision_entry.get("perception"),
+                    "source_metric": decision_entry.get("source_metric"),
+                    "source_value": decision_entry.get("source_value"),
+                    "source_threshold": decision_entry.get("source_threshold"),
+                    "deltas": dict(decision_deltas),
+                }
+            )
+
+    return {
+        "version": RULESET_VERSION,
+        "deltas": deltas,
+        "applied_rules": applied_rules,
+    }

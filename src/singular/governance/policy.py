@@ -33,9 +33,7 @@ SANDBOX_INFRASTRUCTURE_ERROR_TYPES = frozenset(
 SANDBOX_INVALID_CANDIDATE_ERROR_TYPES = frozenset(
     {"syntax_error", "missing_result", "non_numeric_result", "non_finite_result"}
 )
-SANDBOX_POLICY_VIOLATION_ERROR_TYPES = frozenset(
-    {"forbidden_syntax", "forbidden_name"}
-)
+SANDBOX_POLICY_VIOLATION_ERROR_TYPES = frozenset({"forbidden_syntax", "forbidden_name"})
 
 _ROOT_POLICY_FILE = "policy.yaml"
 _POLICY_DECISIONS_LOG = "policy_decisions.jsonl"
@@ -73,7 +71,16 @@ def _default_policy_payload() -> dict[str, Any]:
         "memory": {"preserve_threshold": 0.6},
         "forgetting": {"enabled": True, "max_episodic_entries": 5000},
         "sensors": {
-            "allowed": ["host_metrics", "artifact_scan", "virtual_environment"],
+            "allowed": [
+                "host_metrics",
+                "host_cpu",
+                "host_ram",
+                "host_disk",
+                "host_temperature",
+                "ambient_noise",
+                "artifact_scan",
+                "virtual_environment",
+            ],
             "blocked": [],
             "max_export_granularity": "standard",
             "anonymization": {
@@ -114,7 +121,11 @@ def _default_policy_payload() -> dict[str, Any]:
             "skill_creation_quota_per_window": 3,
             "skill_creation_quota_window_seconds": 900.0,
             "file_creation_review_required": False,
-            "safe_mode_review_required_skill_families": ["network", "shell", "filesystem"],
+            "safe_mode_review_required_skill_families": [
+                "network",
+                "shell",
+                "filesystem",
+            ],
             "circuit_breaker_threshold": 15,
             "circuit_breaker_window_seconds": 180.0,
             "circuit_breaker_cooldown_seconds": 60.0,
@@ -151,7 +162,9 @@ def _coerce_bool(payload: Mapping[str, Any], key: str) -> bool:
     return bool(payload[key])
 
 
-def _coerce_float(payload: Mapping[str, Any], key: str, *, minimum: float = 0.0) -> float:
+def _coerce_float(
+    payload: Mapping[str, Any], key: str, *, minimum: float = 0.0
+) -> float:
     if key not in payload:
         raise PolicySchemaError(f"missing required key: {key}")
     try:
@@ -285,7 +298,9 @@ class RuntimePolicy:
                 "mutation_quota_per_window": self.mutation_quota_per_window,
                 "mutation_quota_window_seconds": self.mutation_quota_window_seconds,
                 "runtime_call_quota_per_hour": self.runtime_call_quota_per_hour,
-                "runtime_blacklisted_capabilities": list(self.runtime_blacklisted_capabilities),
+                "runtime_blacklisted_capabilities": list(
+                    self.runtime_blacklisted_capabilities
+                ),
                 "auto_rollback_failure_threshold": self.auto_rollback_failure_threshold,
                 "auto_rollback_cost_threshold": self.auto_rollback_cost_threshold,
                 "skill_creation_quota_per_window": self.skill_creation_quota_per_window,
@@ -305,7 +320,9 @@ class RuntimePolicy:
             },
             "social": {
                 "max_influence_per_life": self.social_max_influence_per_life,
-                "blocked_hostile_behaviors": list(self.social_blocked_hostile_behaviors),
+                "blocked_hostile_behaviors": list(
+                    self.social_blocked_hostile_behaviors
+                ),
                 "conflict_events": list(self.social_conflict_events),
                 "conflict_mediation_threshold": self.social_conflict_mediation_threshold,
                 "conflict_window_seconds": self.social_conflict_window_seconds,
@@ -342,7 +359,15 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
     mutable_payload.setdefault("sensors", _default_policy_payload()["sensors"])
     mutable_payload.setdefault("social", _default_policy_payload()["social"])
     payload = mutable_payload
-    root_keys = {"version", "memory", "forgetting", "sensors", "permissions", "autonomy", "social"}
+    root_keys = {
+        "version",
+        "memory",
+        "forgetting",
+        "sensors",
+        "permissions",
+        "autonomy",
+        "social",
+    }
     unexpected = sorted(set(payload.keys()) - root_keys)
     if unexpected:
         raise PolicySchemaError(f"unexpected root keys: {', '.join(unexpected)}")
@@ -458,16 +483,21 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
     anonymization = sensors["anonymization"]
     if not isinstance(anonymization, Mapping):
         raise PolicySchemaError("section 'sensors.anonymization' must be a mapping")
-    anonymization_unexpected = sorted(set(anonymization.keys()) - expected_sensors_anonymization)
+    anonymization_unexpected = sorted(
+        set(anonymization.keys()) - expected_sensors_anonymization
+    )
     if anonymization_unexpected:
         raise PolicySchemaError(
             "section 'sensors.anonymization' has unexpected keys: "
             + ", ".join(anonymization_unexpected)
         )
-    anonymization_missing = sorted(expected_sensors_anonymization - set(anonymization.keys()))
+    anonymization_missing = sorted(
+        expected_sensors_anonymization - set(anonymization.keys())
+    )
     if anonymization_missing:
         raise PolicySchemaError(
-            "section 'sensors.anonymization' missing keys: " + ", ".join(anonymization_missing)
+            "section 'sensors.anonymization' missing keys: "
+            + ", ".join(anonymization_missing)
         )
 
     preserve_threshold = _coerce_float(memory, "preserve_threshold", minimum=0.0)
@@ -481,7 +511,9 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
         version=version,
         memory_preserve_threshold=preserve_threshold,
         forgetting_enabled=_coerce_bool(forgetting, "enabled"),
-        forgetting_max_episodic_entries=_coerce_int(forgetting, "max_episodic_entries", minimum=1),
+        forgetting_max_episodic_entries=_coerce_int(
+            forgetting, "max_episodic_entries", minimum=1
+        ),
         sensors_allowed=_coerce_string_list(sensors, "allowed"),
         sensors_blocked=_coerce_string_list(sensors, "blocked"),
         sensors_max_export_granularity=_coerce_enum(
@@ -494,7 +526,9 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
         sensors_allow_sensitive_metrics_opt_in=_coerce_bool(
             anonymization, "allow_sensitive_metrics_opt_in"
         ),
-        sensors_redact_machine_user_info=_coerce_bool(anonymization, "redact_machine_user_info"),
+        sensors_redact_machine_user_info=_coerce_bool(
+            anonymization, "redact_machine_user_info"
+        ),
         sensors_sensitive_metric_keys_blocklist=_coerce_string_list(
             anonymization, "sensitive_metric_keys_blocklist"
         ),
@@ -503,9 +537,15 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
         forbidden_paths=_coerce_path_list(permissions, "forbidden_paths"),
         force_allow_paths=_coerce_path_list(permissions, "force_allow_paths"),
         safe_mode=_coerce_bool(autonomy, "safe_mode"),
-        mutation_quota_per_window=_coerce_int(autonomy, "mutation_quota_per_window", minimum=1),
-        mutation_quota_window_seconds=_coerce_float(autonomy, "mutation_quota_window_seconds", minimum=1.0),
-        runtime_call_quota_per_hour=_coerce_int(autonomy, "runtime_call_quota_per_hour", minimum=1),
+        mutation_quota_per_window=_coerce_int(
+            autonomy, "mutation_quota_per_window", minimum=1
+        ),
+        mutation_quota_window_seconds=_coerce_float(
+            autonomy, "mutation_quota_window_seconds", minimum=1.0
+        ),
+        runtime_call_quota_per_hour=_coerce_int(
+            autonomy, "runtime_call_quota_per_hour", minimum=1
+        ),
         runtime_blacklisted_capabilities=_coerce_string_list(
             autonomy,
             "runtime_blacklisted_capabilities",
@@ -526,14 +566,22 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
             "skill_creation_quota_window_seconds",
             minimum=1.0,
         ),
-        file_creation_review_required=_coerce_bool(autonomy, "file_creation_review_required"),
+        file_creation_review_required=_coerce_bool(
+            autonomy, "file_creation_review_required"
+        ),
         safe_mode_review_required_skill_families=_coerce_string_list(
             autonomy,
             "safe_mode_review_required_skill_families",
         ),
-        circuit_breaker_threshold=_coerce_int(autonomy, "circuit_breaker_threshold", minimum=1),
-        circuit_breaker_window_seconds=_coerce_float(autonomy, "circuit_breaker_window_seconds", minimum=1.0),
-        circuit_breaker_cooldown_seconds=_coerce_float(autonomy, "circuit_breaker_cooldown_seconds", minimum=1.0),
+        circuit_breaker_threshold=_coerce_int(
+            autonomy, "circuit_breaker_threshold", minimum=1
+        ),
+        circuit_breaker_window_seconds=_coerce_float(
+            autonomy, "circuit_breaker_window_seconds", minimum=1.0
+        ),
+        circuit_breaker_cooldown_seconds=_coerce_float(
+            autonomy, "circuit_breaker_cooldown_seconds", minimum=1.0
+        ),
         circuit_breaker_critical_threshold=_coerce_int(
             autonomy, "circuit_breaker_critical_threshold", minimum=1
         ),
@@ -556,7 +604,9 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
             minimum=1.0,
         ),
         social_max_influence_per_life=max_influence,
-        social_blocked_hostile_behaviors=_coerce_string_list(social, "blocked_hostile_behaviors"),
+        social_blocked_hostile_behaviors=_coerce_string_list(
+            social, "blocked_hostile_behaviors"
+        ),
         social_conflict_events=_coerce_string_list(social, "conflict_events"),
         social_conflict_mediation_threshold=_coerce_int(
             social, "conflict_mediation_threshold", minimum=1
@@ -567,7 +617,9 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
         social_mediation_cooldown_seconds=_coerce_float(
             social, "mediation_cooldown_seconds", minimum=1.0
         ),
-        social_prudent_mode_on_mediation=_coerce_bool(social, "prudent_mode_on_mediation"),
+        social_prudent_mode_on_mediation=_coerce_bool(
+            social, "prudent_mode_on_mediation"
+        ),
     )
 
 
@@ -627,8 +679,6 @@ def _dump_policy_payload(payload: Mapping[str, Any]) -> str:
     except ImportError:
         return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     return yaml.safe_dump(dict(payload), sort_keys=False)
-
-
 
 
 @dataclass(frozen=True)
@@ -706,15 +756,19 @@ class MutationGovernancePolicy:
             p.strip("/") for p in (modifiable_paths or runtime_policy.modifiable_paths)
         )
         self.review_required_paths = tuple(
-            p.strip("/") for p in (review_required_paths or runtime_policy.review_required_paths)
+            p.strip("/")
+            for p in (review_required_paths or runtime_policy.review_required_paths)
         )
         self.forbidden_paths = tuple(
             p.strip("/") for p in (forbidden_paths or runtime_policy.forbidden_paths)
         )
-        self.force_allow_paths = tuple(p.strip("/") for p in runtime_policy.force_allow_paths)
+        self.force_allow_paths = tuple(
+            p.strip("/") for p in runtime_policy.force_allow_paths
+        )
         self.value_weights = (value_weights or ValueWeights()).normalized()
         self.mutation_quota_per_window = max(
-            int(mutation_quota_per_window or runtime_policy.mutation_quota_per_window), 1
+            int(mutation_quota_per_window or runtime_policy.mutation_quota_per_window),
+            1,
         )
         self.mutation_quota_window_seconds = max(
             float(
@@ -724,7 +778,10 @@ class MutationGovernancePolicy:
             1.0,
         )
         self.runtime_call_quota_per_hour = max(
-            int(runtime_call_quota_per_hour or runtime_policy.runtime_call_quota_per_hour),
+            int(
+                runtime_call_quota_per_hour
+                or runtime_policy.runtime_call_quota_per_hour
+            ),
             1,
         )
         blacklisted_capabilities = (
@@ -736,11 +793,17 @@ class MutationGovernancePolicy:
             item.strip().lower() for item in blacklisted_capabilities if item.strip()
         )
         self.auto_rollback_failure_threshold = max(
-            int(auto_rollback_failure_threshold or runtime_policy.auto_rollback_failure_threshold),
+            int(
+                auto_rollback_failure_threshold
+                or runtime_policy.auto_rollback_failure_threshold
+            ),
             1,
         )
         self.auto_rollback_cost_threshold = max(
-            float(auto_rollback_cost_threshold or runtime_policy.auto_rollback_cost_threshold),
+            float(
+                auto_rollback_cost_threshold
+                or runtime_policy.auto_rollback_cost_threshold
+            ),
             0.0,
         )
         self.skill_creation_quota_per_window = max(
@@ -758,7 +821,8 @@ class MutationGovernancePolicy:
             1.0,
         )
         self.file_creation_review_required = bool(
-            file_creation_review_required or runtime_policy.file_creation_review_required
+            file_creation_review_required
+            or runtime_policy.file_creation_review_required
         )
         required_skill_families = (
             safe_mode_review_required_skill_families
@@ -769,7 +833,8 @@ class MutationGovernancePolicy:
             item.strip().lower() for item in required_skill_families if item.strip()
         )
         self.circuit_breaker_threshold = max(
-            int(circuit_breaker_threshold or runtime_policy.circuit_breaker_threshold), 1
+            int(circuit_breaker_threshold or runtime_policy.circuit_breaker_threshold),
+            1,
         )
         self.circuit_breaker_window_seconds = max(
             float(
@@ -829,16 +894,30 @@ class MutationGovernancePolicy:
         self.safe_mode = bool(safe_mode or runtime_policy.safe_mode)
         self.memory_preserve_threshold = runtime_policy.memory_preserve_threshold
         self.sensors_allowed = frozenset(
-            item.strip().lower() for item in runtime_policy.sensors_allowed if item.strip()
+            item.strip().lower()
+            for item in runtime_policy.sensors_allowed
+            if item.strip()
         )
         self.sensors_blocked = frozenset(
-            item.strip().lower() for item in runtime_policy.sensors_blocked if item.strip()
+            item.strip().lower()
+            for item in runtime_policy.sensors_blocked
+            if item.strip()
         )
-        self.sensors_max_export_granularity = runtime_policy.sensors_max_export_granularity
-        self.sensors_anonymization_enabled = runtime_policy.sensors_anonymization_enabled
-        self.sensors_block_sensitive_by_default = runtime_policy.sensors_block_sensitive_by_default
-        self.sensors_allow_sensitive_metrics_opt_in = runtime_policy.sensors_allow_sensitive_metrics_opt_in
-        self.sensors_redact_machine_user_info = runtime_policy.sensors_redact_machine_user_info
+        self.sensors_max_export_granularity = (
+            runtime_policy.sensors_max_export_granularity
+        )
+        self.sensors_anonymization_enabled = (
+            runtime_policy.sensors_anonymization_enabled
+        )
+        self.sensors_block_sensitive_by_default = (
+            runtime_policy.sensors_block_sensitive_by_default
+        )
+        self.sensors_allow_sensitive_metrics_opt_in = (
+            runtime_policy.sensors_allow_sensitive_metrics_opt_in
+        )
+        self.sensors_redact_machine_user_info = (
+            runtime_policy.sensors_redact_machine_user_info
+        )
         self.sensors_sensitive_metric_keys_blocklist = frozenset(
             item.strip().lower()
             for item in runtime_policy.sensors_sensitive_metric_keys_blocklist
@@ -849,10 +928,14 @@ class MutationGovernancePolicy:
             0.0,
         )
         self.social_blocked_hostile_behaviors = frozenset(
-            item.strip().lower() for item in runtime_policy.social_blocked_hostile_behaviors if item.strip()
+            item.strip().lower()
+            for item in runtime_policy.social_blocked_hostile_behaviors
+            if item.strip()
         )
         self.social_conflict_events = frozenset(
-            item.strip().lower() for item in runtime_policy.social_conflict_events if item.strip()
+            item.strip().lower()
+            for item in runtime_policy.social_conflict_events
+            if item.strip()
         )
         self.social_conflict_mediation_threshold = max(
             int(runtime_policy.social_conflict_mediation_threshold), 1
@@ -863,7 +946,9 @@ class MutationGovernancePolicy:
         self.social_mediation_cooldown_seconds = max(
             float(runtime_policy.social_mediation_cooldown_seconds), 1.0
         )
-        self.social_prudent_mode_on_mediation = bool(runtime_policy.social_prudent_mode_on_mediation)
+        self.social_prudent_mode_on_mediation = bool(
+            runtime_policy.social_prudent_mode_on_mediation
+        )
         self._mutation_timestamps: deque[datetime] = deque()
         self._skill_creation_timestamps: deque[datetime] = deque()
         self._violation_timestamps: deque[datetime] = deque()
@@ -951,7 +1036,8 @@ class MutationGovernancePolicy:
             payload = {
                 key: value
                 for key, value in payload.items()
-                if key.strip().lower() not in self.sensors_sensitive_metric_keys_blocklist
+                if key.strip().lower()
+                not in self.sensors_sensitive_metric_keys_blocklist
             }
         if self.sensors_anonymization_enabled and self.sensors_redact_machine_user_info:
             payload = {
@@ -982,7 +1068,10 @@ class MutationGovernancePolicy:
     def mutation_lock_reason(self) -> str | None:
         if self.safe_mode:
             return "safe-mode enabled"
-        if self._circuit_open_until is not None and self._now() < self._circuit_open_until:
+        if (
+            self._circuit_open_until is not None
+            and self._now() < self._circuit_open_until
+        ):
             return "circuit-breaker open after repeated violations"
         return None
 
@@ -992,19 +1081,29 @@ class MutationGovernancePolicy:
         while self._mutation_timestamps and self._mutation_timestamps[0] < quota_cutoff:
             self._mutation_timestamps.popleft()
         violation_cutoff = now - timedelta(seconds=self.circuit_breaker_window_seconds)
-        while self._violation_timestamps and self._violation_timestamps[0] < violation_cutoff:
+        while (
+            self._violation_timestamps
+            and self._violation_timestamps[0] < violation_cutoff
+        ):
             self._violation_timestamps.popleft()
-        creation_cutoff = now - timedelta(seconds=self.skill_creation_quota_window_seconds)
+        creation_cutoff = now - timedelta(
+            seconds=self.skill_creation_quota_window_seconds
+        )
         while (
             self._skill_creation_timestamps
             and self._skill_creation_timestamps[0] < creation_cutoff
         ):
             self._skill_creation_timestamps.popleft()
         runtime_cutoff = now - timedelta(hours=1)
-        while self._runtime_call_timestamps and self._runtime_call_timestamps[0] < runtime_cutoff:
+        while (
+            self._runtime_call_timestamps
+            and self._runtime_call_timestamps[0] < runtime_cutoff
+        ):
             self._runtime_call_timestamps.popleft()
         for skill_name, failures in list(self._skill_failure_timestamps.items()):
-            failure_cutoff = now - timedelta(seconds=self.skill_circuit_breaker_cooldown_seconds)
+            failure_cutoff = now - timedelta(
+                seconds=self.skill_circuit_breaker_cooldown_seconds
+            )
             while failures and failures[0] < failure_cutoff:
                 failures.popleft()
             if not failures:
@@ -1060,7 +1159,9 @@ class MutationGovernancePolicy:
             return None
 
         now = self._now()
-        was_open = self._circuit_open_until is not None and now < self._circuit_open_until
+        was_open = (
+            self._circuit_open_until is not None and now < self._circuit_open_until
+        )
         self._violation_timestamps.append(now)
         threshold = (
             self.circuit_breaker_critical_threshold
@@ -1068,7 +1169,9 @@ class MutationGovernancePolicy:
             else self.circuit_breaker_threshold
         )
         if not was_open and len(self._violation_timestamps) >= threshold:
-            self._circuit_open_until = now + timedelta(seconds=self.circuit_breaker_cooldown_seconds)
+            self._circuit_open_until = now + timedelta(
+                seconds=self.circuit_breaker_cooldown_seconds
+            )
             state = CircuitBreakerState(
                 category=category,
                 severity=severity,
@@ -1111,7 +1214,10 @@ class MutationGovernancePolicy:
 
     def social_prudent_mode_enabled(self) -> bool:
         self._prune_history()
-        return self._social_prudent_until is not None and self._now() < self._social_prudent_until
+        return (
+            self._social_prudent_until is not None
+            and self._now() < self._social_prudent_until
+        )
 
     def evaluate_interlife_interaction(
         self,
@@ -1134,7 +1240,9 @@ class MutationGovernancePolicy:
             )
             self._journal_decision(
                 decision=decision,
-                target=Path(f"interaction://{source_life}->{target_life}/{interaction_key or 'unknown'}"),
+                target=Path(
+                    f"interaction://{source_life}->{target_life}/{interaction_key or 'unknown'}"
+                ),
                 justification="Décision bloquée: interaction inter-vies invalide (identifiants incohérents).",
                 category="inter_life",
             )
@@ -1185,7 +1293,9 @@ class MutationGovernancePolicy:
                 category="inter_life",
             )
             return decision
-        projected_influence = self._social_influence.get(pair, 0.0) + float(influence_delta)
+        projected_influence = self._social_influence.get(pair, 0.0) + float(
+            influence_delta
+        )
         if abs(projected_influence) > self.social_max_influence_per_life:
             decision = GovernanceDecision(
                 level=AUTH_REVIEW_REQUIRED,
@@ -1230,7 +1340,9 @@ class MutationGovernancePolicy:
         interaction_key = interaction.strip().lower()
         if not decision.allowed:
             return decision
-        self._social_influence[pair] = self._social_influence.get(pair, 0.0) + float(influence_delta)
+        self._social_influence[pair] = self._social_influence.get(pair, 0.0) + float(
+            influence_delta
+        )
         if interaction_key in self.social_conflict_events:
             now = self._now()
             timestamps = self._social_conflict_timestamps.setdefault(pair, deque())
@@ -1301,7 +1413,10 @@ class MutationGovernancePolicy:
                 corrective_action="wait for hourly window reset",
                 severity="medium",
             )
-        if self.safe_mode and skill_family in self.safe_mode_review_required_skill_families:
+        if (
+            self.safe_mode
+            and skill_family in self.safe_mode_review_required_skill_families
+        ):
             return GovernanceDecision(
                 level=AUTH_REVIEW_REQUIRED,
                 allowed=False,
@@ -1347,12 +1462,13 @@ class MutationGovernancePolicy:
             return
         failures = self._skill_failure_timestamps.setdefault(normalized_skill, deque())
         failures.append(now)
-        self._skill_cost_totals[normalized_skill] = (
-            self._skill_cost_totals.get(normalized_skill, 0.0) + max(operation_cost, 0.0)
-        )
+        self._skill_cost_totals[normalized_skill] = self._skill_cost_totals.get(
+            normalized_skill, 0.0
+        ) + max(operation_cost, 0.0)
         if (
             len(failures) >= self.skill_circuit_breaker_failure_threshold
-            or self._skill_cost_totals[normalized_skill] >= self.auto_rollback_cost_threshold
+            or self._skill_cost_totals[normalized_skill]
+            >= self.auto_rollback_cost_threshold
             or len(failures) >= self.auto_rollback_failure_threshold
         ):
             self._skill_circuit_open_until[normalized_skill] = now + timedelta(
@@ -1415,7 +1531,11 @@ class MutationGovernancePolicy:
             )
 
         if root is None:
-            root = target.parent.parent if target.parent.name == "skills" else target.parent
+            root = (
+                target.parent.parent
+                if target.parent.name == "skills"
+                else target.parent
+            )
         rel = self._relative(target, root)
 
         if rel.is_absolute():
@@ -1501,7 +1621,9 @@ class MutationGovernancePolicy:
 
         decision = self.simulate_write(target, root=root, operation=operation)
         if not decision.allowed:
-            self.record_violation(category="governance_violation", severity=decision.severity)
+            self.record_violation(
+                category="governance_violation", severity=decision.severity
+            )
             log.warning(
                 "governance blocked write: target=%s level=%s severity=%s reason=%s corrective_action=%s",
                 target,
@@ -1520,9 +1642,16 @@ class MutationGovernancePolicy:
             )
             return decision
 
-        if target.exists() and self.value_weights.preservation_memoire >= self.memory_preserve_threshold:
+        if (
+            target.exists()
+            and self.value_weights.preservation_memoire
+            >= self.memory_preserve_threshold
+        ):
             previous = target.read_text(encoding="utf-8")
-            if len(content.strip()) < len(previous.strip()) * self.memory_preserve_threshold:
+            if (
+                len(content.strip())
+                < len(previous.strip()) * self.memory_preserve_threshold
+            ):
                 blocked = GovernanceDecision(
                     level=AUTH_BLOCKED,
                     allowed=False,

@@ -634,6 +634,13 @@ class OrchestratorService:
         skip_action_tick = False
         allow_aggressive_exploration = False
         rule_triggers: list[str] = []
+        perception_decisions = self._latest_signals.get("perception_decisions")
+        system_decisions = (
+            [dict(entry) for entry in perception_decisions if isinstance(entry, dict)]
+            if isinstance(perception_decisions, list)
+            else []
+        )
+        decision_names = {str(entry.get("decision")) for entry in system_decisions}
 
         # Explicit rule 1: high CPU => reduce action frequency/tick budget.
         if cpu_percent >= self._host_thresholds.cpu_critical_percent:
@@ -678,6 +685,22 @@ class OrchestratorService:
             allow_aggressive_exploration = True
             rule_triggers.append("resources_stable_explore")
 
+        if "reduce_mutation_cadence" in decision_names:
+            tick_budget_scale *= 0.7
+            rule_triggers.append("perception_reduce_mutation_cadence")
+        if "delay_heavy_synthesis" in decision_names:
+            tick_budget_scale *= 0.85
+            rule_triggers.append("perception_delay_heavy_synthesis")
+        if "prioritize_memory_compaction" in decision_names:
+            enforce_prudent_mode = True
+            rule_triggers.append("perception_prioritize_memory_compaction")
+        if "trigger_economy_mode" in decision_names:
+            enforce_prudent_mode = True
+            cpu_budget_scale *= 0.75
+            rule_triggers.append("perception_trigger_economy_mode")
+        if system_decisions:
+            log.info("system perception decisions applied: %s", system_decisions)
+
         return {
             "tick_budget_scale": tick_budget_scale,
             "cpu_budget_scale": cpu_budget_scale,
@@ -695,6 +718,7 @@ class OrchestratorService:
                 "food": self.resource_manager.food,
                 "warmth": self.resource_manager.warmth,
             },
+            "system_decisions": system_decisions,
         }
 
     def _compute_behavioral_metrics(self) -> dict[str, Any]:
