@@ -26,7 +26,6 @@ from singular.beliefs.meta_learning import (
 from singular.events import EventBus, get_global_event_bus
 from singular.memory import (
     add_causal_trace,
-    add_episode,
     read_skills,
     register_memory_event_handlers,
     temporarily_disable_skill,
@@ -67,7 +66,7 @@ from singular.governance.policy import (
 )
 from singular.governance.values import load_value_weights
 
-from .checkpointing import Checkpoint, CHECKPOINT_VERSION, load_checkpoint, save_checkpoint, _migrate_checkpoint_data
+from .checkpointing import Checkpoint, load_checkpoint, save_checkpoint
 from .sandbox_scoring import SandboxScore, score_code_with_error, score_code, _sandbox_failure_category
 from .mutation_flow import apply_mutation, select_operator, _load_default_operators
 from .resource_flow import manage_resources
@@ -393,11 +392,33 @@ def _critical_extinction_indicators(
     return organism.energy <= 0.0 and organism.resources <= 0.0
 
 
+def _coverage_gap_spec_signals(signals: Mapping[str, object]) -> dict[str, object]:
+    """Extract optional structured coverage-gap specification inputs."""
+
+    spec: dict[str, object] = {}
+    direct_keys = {
+        "coverage_gap_examples",
+        "coverage_gap_success_criteria",
+        "coverage_gap_signature",
+        "coverage_gap_cooldown",
+        "coverage_gap_expected_impact",
+    }
+    for key in direct_keys:
+        if key in signals:
+            spec[key] = signals[key]
+    coverage_spec = signals.get("coverage_gap_spec")
+    if isinstance(coverage_spec, Mapping):
+        for key in ("examples", "success_criteria", "signature", "cooldown", "expected_impact"):
+            if key in coverage_spec:
+                spec[key] = coverage_spec[key]
+    return spec
+
+
 def _should_trigger_skill_genesis(
     *,
     signals: Mapping[str, object],
     health_counters: Mapping[str, float | int],
-) -> tuple[bool, str, dict[str, float]]:
+) -> tuple[bool, str, dict[str, object]]:
     tech_debt_markers = 0.0
     artifact_events = signals.get("artifact_events")
     if isinstance(artifact_events, list):
@@ -431,6 +452,7 @@ def _should_trigger_skill_genesis(
     if repeated_failures >= SKILL_GENESIS_FAILURE_STREAK_THRESHOLD:
         return True, "repeated_failures", snapshot
     if coverage_gap >= SKILL_GENESIS_COVERAGE_GAP_THRESHOLD:
+        snapshot.update(_coverage_gap_spec_signals(signals))
         return True, "coverage_gap", snapshot
     return False, "", snapshot
 
@@ -1620,7 +1642,6 @@ def run(
             can_mutate, state_flag = resource_manager.apply_capability_cost("mutation")
             if not can_mutate:
                 accepted = False
-                decision_reason = f"blocked_by_homeostasis:{state_flag.value}"
             elif state_flag == CapabilityStatus.FATIGUED:
                 accepted = accepted and (mutated_score <= base_score)
             if "tired" in moods:

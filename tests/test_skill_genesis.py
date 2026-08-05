@@ -5,6 +5,7 @@ import random
 from pathlib import Path
 
 import singular.life.loop as life_loop
+from singular.events import EventBus
 from singular.governance.policy import AUTH_REVIEW_REQUIRED, MutationGovernancePolicy
 from singular.life.loop import run
 from singular.life.skill_genesis import create_skill
@@ -68,7 +69,11 @@ def test_skill_genesis_creation_refused_by_policy(monkeypatch, tmp_path: Path) -
         mem_dir=mem_dir,
         governance_policy=policy,
         trigger="coverage_gap",
-        signal_snapshot={"coverage_gap": 0.9},
+        signal_snapshot={
+            "coverage_gap": 0.9,
+            "coverage_gap_examples": [{"input": {"value": 1}, "output": {"ok": True}}],
+            "coverage_gap_success_criteria": "returns ok for the documented gap example",
+        },
     )
 
     assert result.accepted is False
@@ -76,7 +81,100 @@ def test_skill_genesis_creation_refused_by_policy(monkeypatch, tmp_path: Path) -
     assert not result.target.exists()
 
 
-def test_skill_genesis_rolls_back_on_invalid_generation(monkeypatch, tmp_path: Path) -> None:
+def test_coverage_gap_requires_spec_and_publishes_unresolved(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    from singular.life import skill_genesis as genesis_mod
+
+    events = []
+    bus = EventBus()
+    bus.subscribe("coverage_gap.unresolved", events.append)
+    monkeypatch.setattr(genesis_mod, "get_global_event_bus", lambda: bus)
+
+    skills_dir = tmp_path / "life" / "skills"
+    mem_dir = tmp_path / "mem"
+    skills_dir.mkdir(parents=True)
+    policy = MutationGovernancePolicy(
+        modifiable_paths=("skills",),
+        review_required_paths=("skills/review",),
+        forbidden_paths=("src",),
+    )
+
+    result = create_skill(
+        skills_dir=skills_dir,
+        mem_dir=mem_dir,
+        governance_policy=policy,
+        trigger="coverage_gap",
+        signal_snapshot={"coverage_gap": 0.9},
+    )
+
+    assert result.accepted is False
+    assert result.policy_level == "unresolved"
+    assert "requires at least one input/output example" in result.reason
+    assert not result.target.exists()
+    assert events and events[-1].event_type == "coverage_gap.unresolved"
+    journal = [
+        json.loads(line)
+        for line in (mem_dir / "skill_genesis.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert journal[-1]["event"] == "coverage_gap.unresolved"
+
+
+def test_coverage_gap_skill_spec_and_diversity_limit(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    skills_dir = tmp_path / "life" / "skills"
+    mem_dir = tmp_path / "mem"
+    skills_dir.mkdir(parents=True)
+    mem_dir.mkdir(parents=True, exist_ok=True)
+    (mem_dir / "skills.json").write_text("{}", encoding="utf-8")
+    policy = MutationGovernancePolicy(
+        modifiable_paths=("skills",),
+        review_required_paths=("skills/review",),
+        forbidden_paths=("src",),
+    )
+    snapshot = {
+        "coverage_gap": 0.9,
+        "coverage_gap_signature": "run(context: dict) -> dict",
+        "coverage_gap_examples": [
+            {"input": {"case": "missing"}, "output": {"covered": True}}
+        ],
+        "coverage_gap_success_criteria": "covers the missing case deterministically",
+        "coverage_gap_cooldown": 3,
+        "coverage_gap_expected_impact": "increase functional coverage",
+    }
+
+    first = create_skill(
+        skills_dir=skills_dir,
+        mem_dir=mem_dir,
+        governance_policy=policy,
+        trigger="coverage_gap",
+        signal_snapshot=snapshot,
+    )
+    second = create_skill(
+        skills_dir=skills_dir,
+        mem_dir=mem_dir,
+        governance_policy=policy,
+        trigger="coverage_gap",
+        signal_snapshot=snapshot,
+    )
+
+    assert first.accepted is True
+    assert "SPEC =" in first.target.read_text(encoding="utf-8")
+    assert second.accepted is False
+    assert second.policy_level == "diversity_limit"
+    assert not second.target.exists()
+
+
+def test_skill_genesis_rolls_back_on_invalid_generation(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
     monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
     from singular.life import skill_genesis as genesis_mod
@@ -85,8 +183,12 @@ def test_skill_genesis_rolls_back_on_invalid_generation(monkeypatch, tmp_path: P
     mem_dir = tmp_path / "mem"
     skills_dir.mkdir(parents=True)
     mem_dir.mkdir(parents=True, exist_ok=True)
-    (mem_dir / "skills.json").write_text(json.dumps({"keep": {"score": 1.0}}), encoding="utf-8")
-    monkeypatch.setattr(genesis_mod, "_render_skill_template", lambda _name: "def bad(:\n")
+    (mem_dir / "skills.json").write_text(
+        json.dumps({"keep": {"score": 1.0}}), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        genesis_mod, "_render_skill_template", lambda _name: "def bad(:\n"
+    )
 
     policy = MutationGovernancePolicy(
         modifiable_paths=("skills",),
@@ -151,13 +253,21 @@ def test_skill_genesis_traceability_in_run_logs(monkeypatch, tmp_path: Path) -> 
     )
 
     log_file = next((tmp_path / "logs").glob("loop-*.jsonl"))
-    records = [json.loads(line) for line in log_file.read_text(encoding="utf-8").splitlines()]
+    records = [
+        json.loads(line) for line in log_file.read_text(encoding="utf-8").splitlines()
+    ]
     assert any(rec.get("interaction") == "skill_genesis" for rec in records)
-    journal = (tmp_path / "mem" / "skill_genesis.jsonl").read_text(encoding="utf-8").splitlines()
+    journal = (
+        (tmp_path / "mem" / "skill_genesis.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
     assert journal
 
 
-def test_skill_genesis_rejects_empty_scaffold_without_publication(monkeypatch, tmp_path: Path) -> None:
+def test_skill_genesis_rejects_empty_scaffold_without_publication(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
     monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
     from singular.life import skill_genesis as genesis_mod
@@ -186,11 +296,18 @@ def test_skill_genesis_rejects_empty_scaffold_without_publication(monkeypatch, t
     assert result.policy_level == "validation_failed"
     assert not result.target.exists()
     assert not list(skills_dir.glob("*.py"))
-    journal = [json.loads(line) for line in (mem_dir / "skill_genesis.jsonl").read_text(encoding="utf-8").splitlines()]
+    journal = [
+        json.loads(line)
+        for line in (mem_dir / "skill_genesis.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
     assert journal[-1]["event"] == "autogen.validation_failed"
 
 
-def test_skill_genesis_rejects_missing_function_without_publication(monkeypatch, tmp_path: Path) -> None:
+def test_skill_genesis_rejects_missing_function_without_publication(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
     monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
     from singular.life import skill_genesis as genesis_mod
@@ -200,7 +317,9 @@ def test_skill_genesis_rejects_missing_function_without_publication(monkeypatch,
     skills_dir.mkdir(parents=True)
     mem_dir.mkdir(parents=True, exist_ok=True)
     (mem_dir / "skills.json").write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(genesis_mod, "_render_skill_template", lambda _name: "result = 1\n")
+    monkeypatch.setattr(
+        genesis_mod, "_render_skill_template", lambda _name: "result = 1\n"
+    )
 
     policy = MutationGovernancePolicy(
         modifiable_paths=("skills",),
@@ -220,7 +339,9 @@ def test_skill_genesis_rejects_missing_function_without_publication(monkeypatch,
     assert not list(skills_dir.glob("*.py"))
 
 
-def test_skill_genesis_rejects_always_none_function_without_publication(monkeypatch, tmp_path: Path) -> None:
+def test_skill_genesis_rejects_always_none_function_without_publication(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
     monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
     from singular.life import skill_genesis as genesis_mod
@@ -230,7 +351,11 @@ def test_skill_genesis_rejects_always_none_function_without_publication(monkeypa
     skills_dir.mkdir(parents=True)
     mem_dir.mkdir(parents=True, exist_ok=True)
     (mem_dir / "skills.json").write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(genesis_mod, "_render_skill_template", lambda _name: "def run():\n    return None\n")
+    monkeypatch.setattr(
+        genesis_mod,
+        "_render_skill_template",
+        lambda _name: "def run():\n    return None\n",
+    )
 
     policy = MutationGovernancePolicy(
         modifiable_paths=("skills",),
