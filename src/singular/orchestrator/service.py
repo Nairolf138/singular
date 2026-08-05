@@ -23,6 +23,7 @@ from singular.goals import IntrinsicGoals
 from singular.governance.policy import MutationGovernancePolicy
 from singular.life.coevolution_flow import LivingTestPool
 from singular.life.loop import WorldState, run_tick
+from singular.lives import resolve_life
 from singular.memory import (
     _atomic_write_text,
     get_base_dir,
@@ -42,7 +43,11 @@ from singular.quests import QuestRuntime
 from singular.sensors import load_host_sensor_thresholds
 from singular.skills.runtime import SkillRuntime
 from singular.routines import RoutinesOrchestrator
-from singular.metrics import compute_behavioral_regulation_metrics, compute_regulation_inputs
+from singular.runs.logger import RunLogger
+from singular.metrics import (
+    compute_behavioral_regulation_metrics,
+    compute_regulation_inputs,
+)
 
 log = logging.getLogger(__name__)
 
@@ -135,10 +140,16 @@ class OrchestratorService:
             mem_dir=self.mem_dir,
             bus=self.bus,
         )
-        self.governance_policy = MutationGovernancePolicy(safe_mode=self.config.safe_mode)
+        self.governance_policy = MutationGovernancePolicy(
+            safe_mode=self.config.safe_mode
+        )
         self.world_state = WorldState()
-        self.test_pool = LivingTestPool(initial_ttl=max(1, int(self.config.coevolution_ttl)))
-        self.routines = RoutinesOrchestrator(state_path=self.mem_dir / "routines_state.json")
+        self.test_pool = LivingTestPool(
+            initial_ttl=max(1, int(self.config.coevolution_ttl))
+        )
+        self.routines = RoutinesOrchestrator(
+            state_path=self.mem_dir / "routines_state.json"
+        )
         self.goals = IntrinsicGoals(path=self.mem_dir / "goals.json")
         self._running = False
         self._wake_requested = False
@@ -198,7 +209,9 @@ class OrchestratorService:
             "last_watch_mtime": self.state.last_watch_mtime,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
-        _atomic_write_text(self.state_path, json.dumps(payload, ensure_ascii=False, indent=2))
+        _atomic_write_text(
+            self.state_path, json.dumps(payload, ensure_ascii=False, indent=2)
+        )
 
     def _next_phase(self, phase: LifecyclePhase) -> LifecyclePhase:
         order = [
@@ -249,19 +262,12 @@ class OrchestratorService:
         latest_run = self._runs_mtime()
         latest_watch = self._watch_mtime()
 
-        run_changed = (
-            latest_run is not None
-            and (
-                self.state.last_run_mtime is None
-                or latest_run > self.state.last_run_mtime
-            )
+        run_changed = latest_run is not None and (
+            self.state.last_run_mtime is None or latest_run > self.state.last_run_mtime
         )
-        watch_changed = (
-            latest_watch is not None
-            and (
-                self.state.last_watch_mtime is None
-                or latest_watch > self.state.last_watch_mtime
-            )
+        watch_changed = latest_watch is not None and (
+            self.state.last_watch_mtime is None
+            or latest_watch > self.state.last_watch_mtime
         )
 
         self.state.last_run_mtime = latest_run
@@ -305,11 +311,15 @@ class OrchestratorService:
         last_events = self.state.last_events[-20:]
 
         latest_goal = goal_history[-1] if goal_history else {}
-        latest_weights = latest_goal.get("weights", {}) if isinstance(latest_goal, dict) else {}
+        latest_weights = (
+            latest_goal.get("weights", {}) if isinstance(latest_goal, dict) else {}
+        )
         strategy = self.goals.derive_execution_strategy(self._latest_signals)
         dominant_goal = None
         if isinstance(latest_weights, dict) and latest_weights:
-            dominant_goal = max(latest_weights.items(), key=lambda item: float(item[1]))[0]
+            dominant_goal = max(
+                latest_weights.items(), key=lambda item: float(item[1])
+            )[0]
 
         heading_parts: list[str] = []
         if dominant_goal:
@@ -319,10 +329,21 @@ class OrchestratorService:
             heading_parts.append(f"Mode {mode}.")
         if isinstance(psyche_state, dict) and psyche_state.get("last_mood"):
             heading_parts.append(f"Humeur {psyche_state['last_mood']}.")
-        current_heading = " ".join(heading_parts).strip() or "Clarifier ma prochaine étape utile."
+        current_heading = (
+            " ".join(heading_parts).strip() or "Clarifier ma prochaine étape utile."
+        )
 
-        successes = [str(ep.get("event")) for ep in recent_episodes if ep.get("status") == "success"]
-        failures = [str(ep.get("event")) for ep in recent_episodes if ep.get("status") == "failure"]
+        successes = [
+            str(ep.get("event"))
+            for ep in recent_episodes
+            if ep.get("status") == "success"
+        ]
+        failures = [
+            str(ep.get("event"))
+            for ep in recent_episodes
+            if ep.get("status") == "failure"
+        ]
+
         def _trait_value(name: str) -> float:
             try:
                 return float(psyche_state.get(name, 0.5))
@@ -333,16 +354,27 @@ class OrchestratorService:
             {
                 "current_heading": current_heading,
                 "trait_trends": {
-                    "curiosity": {"value": _trait_value("curiosity"), "trend": "stable"},
+                    "curiosity": {
+                        "value": _trait_value("curiosity"),
+                        "trend": "stable",
+                    },
                     "patience": {"value": _trait_value("patience"), "trend": "stable"},
-                    "playfulness": {"value": _trait_value("playfulness"), "trend": "stable"},
+                    "playfulness": {
+                        "value": _trait_value("playfulness"),
+                        "trend": "stable",
+                    },
                     "optimism": {"value": _trait_value("optimism"), "trend": "stable"},
-                    "resilience": {"value": _trait_value("resilience"), "trend": "stable"},
+                    "resilience": {
+                        "value": _trait_value("resilience"),
+                        "trend": "stable",
+                    },
                 },
                 "regrets_and_pride": {
                     "significant_successes": successes[-3:],
                     "significant_failures": failures[-3:],
-                    "costly_incidents": [str(event.get("phase")) for event in last_events[-3:]],
+                    "costly_incidents": [
+                        str(event.get("phase")) for event in last_events[-3:]
+                    ],
                 },
             },
             self.mem_dir / "self_narrative.json",
@@ -398,7 +430,9 @@ class OrchestratorService:
             regulation_inputs = compute_regulation_inputs(behavior_metrics)
             tick_budget *= adaptation["tick_budget_scale"]
             tick_budget *= regulation_inputs["mutation_rate_scale"]
-            tick_budget = max(0.01, min(tick_budget, self.config.mutation_window_seconds))
+            tick_budget = max(
+                0.01, min(tick_budget, self.config.mutation_window_seconds)
+            )
             cpu_budget_percent *= adaptation["cpu_budget_scale"]
             cpu_budget_percent *= regulation_inputs["metabolic_pressure_scale"]
             previous_safe_mode = bool(self.governance_policy.safe_mode)
@@ -417,12 +451,16 @@ class OrchestratorService:
                     "tick_budget_seconds": tick_budget,
                     "cpu_budget_percent": cpu_budget_percent,
                     "safe_mode": self.governance_policy.safe_mode,
-                    "aggressive_exploration": adaptation["allow_aggressive_exploration"],
+                    "aggressive_exploration": adaptation[
+                        "allow_aggressive_exploration"
+                    ],
                     "skip_action_tick": adaptation["skip_action_tick"],
                     "behavioral_metrics": behavior_metrics,
                     "regulation_inputs": regulation_inputs,
                 }
-                self.bus.publish("orchestrator.adaptation", audit_payload, payload_version=1)
+                self.bus.publish(
+                    "orchestrator.adaptation", audit_payload, payload_version=1
+                )
                 log.info("orchestrator adaptation applied: %s", audit_payload)
                 self._push_event(phase, {"adaptation": audit_payload})
             if adaptation["skip_action_tick"]:
@@ -444,9 +482,14 @@ class OrchestratorService:
             if not self.config.dry_run:
                 strategy = self.goals.derive_execution_strategy(self._latest_signals)
                 execution_strategy = dict(strategy)
-                if adaptation["allow_aggressive_exploration"] or regulation_inputs["exploration_intensity_scale"] > 1.15:
+                if (
+                    adaptation["allow_aggressive_exploration"]
+                    or regulation_inputs["exploration_intensity_scale"] > 1.15
+                ):
                     execution_strategy["exploration_intensity"] = "aggressive"
-                    execution_strategy["adaptation_source"] = "stable_resources+behavioral_metrics"
+                    execution_strategy["adaptation_source"] = (
+                        "stable_resources+behavioral_metrics"
+                    )
                 routine_specs = [
                     {"id": spec.id, "prompt": spec.prompt, "priority": spec.priority}
                     for spec in self.routines.specs
@@ -502,7 +545,9 @@ class OrchestratorService:
                 )
             host_metrics = self._latest_signals.get("host_metrics", {})
             world_health = self._latest_signals.get("world.global_health.score")
-            health_score = world_health if isinstance(world_health, (int, float)) else None
+            health_score = (
+                world_health if isinstance(world_health, (int, float)) else None
+            )
             load_score = None
             if isinstance(host_metrics, dict):
                 cpu_percent = host_metrics.get("cpu_percent")
@@ -543,7 +588,11 @@ class OrchestratorService:
 
         if phase is LifecyclePhase.INTROSPECTION:
             self._introspection_tick_count += 1
-            if self._introspection_tick_count % self.config.introspection_frequency_ticks != 0:
+            if (
+                self._introspection_tick_count
+                % self.config.introspection_frequency_ticks
+                != 0
+            ):
                 self._push_event(phase, {"skipped": True, "reason": "frequency_gate"})
                 return
             mood = self.psyche.update_from_resource_manager(self.resource_manager)
@@ -619,7 +668,8 @@ class OrchestratorService:
         resources_stable = (
             cpu_percent < (self._host_thresholds.cpu_warning_percent * 0.6)
             and ram_used_percent < (self._host_thresholds.ram_warning_percent * 0.7)
-            and host_temperature_c < (self._host_thresholds.temperature_warning_c - 10.0)
+            and host_temperature_c
+            < (self._host_thresholds.temperature_warning_c - 10.0)
             and self.resource_manager.energy >= 60.0
             and self.resource_manager.food >= 40.0
         )
@@ -650,10 +700,14 @@ class OrchestratorService:
     def _compute_behavioral_metrics(self) -> dict[str, Any]:
         records = self._load_recent_run_events(limit=80)
         major_decisions = [
-            e for e in self.state.last_events
-            if isinstance(e, dict) and str(e.get("phase", "")) == LifecyclePhase.ACTION.value
+            e
+            for e in self.state.last_events
+            if isinstance(e, dict)
+            and str(e.get("phase", "")) == LifecyclePhase.ACTION.value
         ]
-        metrics = compute_behavioral_regulation_metrics(records, decision_events=major_decisions)
+        metrics = compute_behavioral_regulation_metrics(
+            records, decision_events=major_decisions
+        )
         self._behavioral_metrics = metrics
         return metrics
 
@@ -679,7 +733,10 @@ class OrchestratorService:
             helper_life=None,
             task=task_name,
             attempts=current,
-            metadata={"status": status, "reason": getattr(skill_execution, "reason", None)},
+            metadata={
+                "status": status,
+                "reason": getattr(skill_execution, "reason", None),
+            },
         )
         self.bus.publish(HELP_REQUESTED, payload, payload_version=1)
 
@@ -717,7 +774,9 @@ class OrchestratorService:
                 self._running = False
             while self._running:
                 if self.stop_signal_path.exists():
-                    log.info("orchestrator stop requested via %s", self.stop_signal_path)
+                    log.info(
+                        "orchestrator stop requested via %s", self.stop_signal_path
+                    )
                     self._running = False
                     break
                 try:
@@ -741,10 +800,14 @@ class OrchestratorService:
                         exc,
                         exc_info=True,
                     )
-                    max_failures = max(1, int(self.config.max_consecutive_tick_failures))
+                    max_failures = max(
+                        1, int(self.config.max_consecutive_tick_failures)
+                    )
                     if consecutive_tick_failures >= max_failures:
                         raise
-                    backoff_seconds = max(self.config.tick_failure_backoff_seconds, 0.05)
+                    backoff_seconds = max(
+                        self.config.tick_failure_backoff_seconds, 0.05
+                    )
                     time.sleep(backoff_seconds)
                     continue
                 if self._external_stimulus_detected():
@@ -849,9 +912,7 @@ def run_orchestrator_daemon(
         else lifecycle_clock.cycle.sommeil_seconds
     )
     resolved_introspection = (
-        introspection_seconds
-        if introspection_seconds is not None
-        else 1.0
+        introspection_seconds if introspection_seconds is not None else 1.0
     )
     resolved_action = action_seconds if action_seconds is not None else 1.0
     resolved_poll = poll_interval_seconds if poll_interval_seconds is not None else 0.3
@@ -897,4 +958,144 @@ def run_orchestrator_daemon(
     except KeyboardInterrupt:
         pass
     print("Orchestrateur arrêté proprement.")
+    return 0
+
+
+def run_life_daemon(
+    *,
+    life_name: str,
+    interval_seconds: float,
+    budget_seconds: float | None,
+    max_errors: int,
+    dashboard: bool,
+    dry_run: bool = False,
+    safe_mode: bool = False,
+) -> int:
+    """Run a simple periodic daemon for one registered life.
+
+    The daemon resolves ``life_name`` through the multi-life registry, makes that
+    life the active ``SINGULAR_HOME``, then executes orchestrator ticks until a
+    signal, error budget, stop file or wall-clock budget asks it to stop.
+    """
+
+    if interval_seconds <= 0:
+        raise ValueError("--interval doit être strictement positif")
+    if budget_seconds is not None and budget_seconds <= 0:
+        raise ValueError("--budget-seconds doit être strictement positif")
+    max_errors = max(1, int(max_errors))
+
+    life_dir = resolve_life(life_name)
+    if life_dir is None:
+        raise KeyError(life_name)
+
+    import os
+
+    os.environ["SINGULAR_HOME"] = str(life_dir)
+    service = OrchestratorService(
+        config=OrchestratorConfig(
+            scheduler=SchedulerConfig(
+                veille_seconds=interval_seconds,
+                action_seconds=interval_seconds,
+                introspection_seconds=interval_seconds,
+                sommeil_seconds=interval_seconds,
+            ),
+            poll_interval_seconds=interval_seconds,
+            tick_budget_seconds=min(interval_seconds, 1.0),
+            mutation_window_seconds=min(interval_seconds, 1.0),
+            dry_run=dry_run,
+            safe_mode=safe_mode,
+            max_consecutive_tick_failures=max_errors,
+        ),
+        base_dir=life_dir,
+    )
+    run_id = f"daemon-{life_name}"
+    logger = RunLogger(run_id=run_id, root=life_dir / "runs")
+    stop_requested = False
+    error_count = 0
+    started = time.monotonic()
+
+    def _handle_signal(signum: int, _frame: Any) -> None:
+        nonlocal stop_requested
+        stop_requested = True
+        logger.log_event("daemon.signal", life=life_name, signal=signum)
+
+    previous_int = signal.signal(signal.SIGINT, _handle_signal)
+    previous_term = signal.signal(signal.SIGTERM, _handle_signal)
+
+    logger.log_event(
+        "daemon.start",
+        life=life_name,
+        life_dir=str(life_dir),
+        interval_seconds=interval_seconds,
+        budget_seconds=budget_seconds,
+        max_errors=max_errors,
+        dashboard=dashboard,
+        dry_run=dry_run,
+        safe_mode=safe_mode,
+    )
+    if dashboard:
+        logger.log_event(
+            "daemon.dashboard",
+            life=life_name,
+            message="Dashboard demandé; lancez `singular dashboard` dans un autre processus pour l'UI.",
+        )
+
+    try:
+        while not stop_requested:
+            if (
+                budget_seconds is not None
+                and (time.monotonic() - started) >= budget_seconds
+            ):
+                logger.log_event("daemon.budget_exhausted", life=life_name)
+                break
+            if service.stop_signal_path.exists():
+                logger.log_event(
+                    "daemon.stop_file",
+                    life=life_name,
+                    path=str(service.stop_signal_path),
+                )
+                break
+            tick_started = time.monotonic()
+            try:
+                current_phase = service.state.current_phase
+                next_phase = service.tick()
+                logger.log_event(
+                    "daemon.tick",
+                    life=life_name,
+                    phase=current_phase,
+                    next_phase=next_phase.value,
+                    tick_count=service._tick_count,
+                    duration_seconds=round(time.monotonic() - tick_started, 6),
+                )
+                error_count = 0
+            except Exception as exc:
+                error_count += 1
+                service._save_state()
+                logger.log_event(
+                    "daemon.error",
+                    life=life_name,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                    error_count=error_count,
+                    max_errors=max_errors,
+                )
+                if error_count >= max_errors:
+                    raise
+            remaining_sleep = interval_seconds - (time.monotonic() - tick_started)
+            if remaining_sleep > 0:
+                time.sleep(remaining_sleep)
+    finally:
+        signal.signal(signal.SIGINT, previous_int)
+        signal.signal(signal.SIGTERM, previous_term)
+        service._save_state()
+        service.psyche.save_state()
+        logger.log_event(
+            "daemon.checkpoint",
+            life=life_name,
+            state_path=str(service.state_path),
+            checkpoint_path=str(service.checkpoint_path),
+            tick_count=service._tick_count,
+        )
+        logger.close()
+
     return 0

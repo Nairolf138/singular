@@ -7,13 +7,13 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import signal
 import tempfile
 import time
 from typing import Any
 
 from ..memory import get_mem_dir
 from ..perception import capture_signals
-
 
 SUPPORTED_SOURCES = {"file", "weather", "runs", "folder"}
 
@@ -92,7 +92,9 @@ class WatchDaemon:
             prev_file = previous.get("signals", {}).get("file")
             curr_file = current.get("signals", {}).get("file")
             if prev_file != curr_file:
-                changes.append({"source": "file", "before": prev_file, "after": curr_file})
+                changes.append(
+                    {"source": "file", "before": prev_file, "after": curr_file}
+                )
 
         if "weather" in enabled:
             prev_weather = previous.get("signals", {}).get("weather")
@@ -104,7 +106,11 @@ class WatchDaemon:
 
         if "runs" in enabled and previous.get("runs") != current.get("runs"):
             changes.append(
-                {"source": "runs", "before": previous.get("runs"), "after": current.get("runs")}
+                {
+                    "source": "runs",
+                    "before": previous.get("runs"),
+                    "after": current.get("runs"),
+                }
             )
 
         if "folder" in enabled and previous.get("folder") != current.get("folder"):
@@ -123,13 +129,21 @@ class WatchDaemon:
         for change in changes:
             source = change["source"]
             if source == "file":
-                suggestions.append("Valider les nouveaux signaux fichier avant la prochaine run.")
+                suggestions.append(
+                    "Valider les nouveaux signaux fichier avant la prochaine run."
+                )
             elif source == "weather":
-                suggestions.append("Adapter la stratégie selon les variations météo détectées.")
+                suggestions.append(
+                    "Adapter la stratégie selon les variations météo détectées."
+                )
             elif source == "runs":
-                suggestions.append("Relire les derniers runs pour prioriser les actions utiles.")
+                suggestions.append(
+                    "Relire les derniers runs pour prioriser les actions utiles."
+                )
             elif source == "folder":
-                suggestions.append("Analyser les nouveaux artefacts du dossier surveillé.")
+                suggestions.append(
+                    "Analyser les nouveaux artefacts du dossier surveillé."
+                )
         return suggestions
 
     def _persist_inbox(self, suggestions: list[str]) -> None:
@@ -190,11 +204,27 @@ class WatchDaemon:
         return changes
 
     def run_forever(self) -> None:
-        """Run the daemon loop until interrupted."""
+        """Run the daemon loop until interrupted, checkpointing the latest snapshot."""
 
-        while True:
-            self.tick()
-            time.sleep(max(self.config.interval_seconds, 0.1))
+        running = True
+
+        def _handle_signal(_signum: int, _frame: Any) -> None:
+            nonlocal running
+            running = False
+
+        previous_int = signal.signal(signal.SIGINT, _handle_signal)
+        previous_term = signal.signal(signal.SIGTERM, _handle_signal)
+        try:
+            while running:
+                self.tick()
+                time.sleep(max(self.config.interval_seconds, 0.1))
+        finally:
+            signal.signal(signal.SIGINT, previous_int)
+            signal.signal(signal.SIGTERM, previous_term)
+            if self.previous_snapshot is not None:
+                self.previous_snapshot["checkpointed_at"] = datetime.now(
+                    timezone.utc
+                ).isoformat()
 
 
 def _parse_sources(raw_sources: str | None) -> set[str]:
@@ -240,8 +270,6 @@ def run_watch_daemon(
         f"(interval={interval_seconds}s, sources={','.join(sorted(parsed_sources))}, "
         f"cpu={cpu_budget_percent}%, mem={memory_budget_mb}MB, dry_run={dry_run})."
     )
-    try:
-        daemon.run_forever()
-    except KeyboardInterrupt:
-        print("Watch daemon arrêté.")
+    daemon.run_forever()
+    print("Watch daemon arrêté.")
     return 0
