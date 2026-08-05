@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import ast
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +10,7 @@ from singular.governance.policy import MutationGovernancePolicy
 from singular.memory import read_skills, write_skills
 
 from .skill_catalog import refresh_skill_catalog
+from .skill_validation import validate_generated_skill
 
 
 @dataclass(frozen=True)
@@ -40,14 +41,13 @@ def _render_skill_template(skill_name: str) -> str:
         '"""Auto-generated skill scaffold.\n'
         "Created by life.skill_genesis with governance safeguards.\n"
         '"""\n\n'
-        "from __future__ import annotations\n\n\n"
         "def run(context: dict | None = None) -> dict:\n"
         '    """Run a deterministic safe placeholder skill."""\n'
         "    context = context or {}\n"
         "    return {\n"
         f'        "skill": "{skill_name}",\n'
         '        "status": "ready",\n'
-        '        "received_keys": sorted(context.keys()),\n'
+        '        "received_key_count": len(context),\n'
         "    }\n"
     )
 
@@ -103,23 +103,17 @@ def create_skill(
 
     source = _render_skill_template(skill_name)
     skills_before = read_skills(mem_dir / "skills.json")
+    staging_dir = skills_dir / ".staging"
+    staged_path = staging_dir / target.name
     target_created = False
     try:
-        ast.parse(source)
-        decision = governance_policy.enforce_write(
-            target,
-            source,
-            root=skills_dir.parent,
-            operation="skill_creation",
-        )
-        if not decision.allowed:
-            return SkillGenesisResult(
-                accepted=False,
-                skill_name=skill_name,
-                target=target,
-                reason=decision.reason,
-                policy_level=decision.level,
-            )
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        staged_path.write_text(source, encoding="utf-8")
+        validation = validate_generated_skill(source, expected_symbol="run")
+        if not validation.ok:
+            raise RuntimeError(validation.reason)
+        os.replace(staged_path, target)
+        decision = proposal
         target_created = True
         skills_after = dict(skills_before)
         skills_after[skill_name] = {
@@ -153,12 +147,14 @@ def create_skill(
     except Exception as exc:
         if target_created and target.exists():
             target.unlink()
+        if staged_path.exists():
+            staged_path.unlink()
         write_skills(skills_before, mem_dir / "skills.json")
         _append_journal(
             mem_dir,
             {
                 "ts": _utc_iso(),
-                "event": "skill_genesis_rolled_back",
+                "event": "autogen.validation_failed",
                 "skill": skill_name,
                 "target": str(target),
                 "trigger": trigger,
@@ -169,8 +165,8 @@ def create_skill(
             accepted=False,
             skill_name=skill_name,
             target=target,
-            reason=f"generation failed: {exc}",
-            policy_level="rollback",
+            reason=f"validation failed: {exc}",
+            policy_level="validation_failed",
             rolled_back=True,
         )
 

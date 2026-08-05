@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 import ast
+import os
 
 # mypy: ignore-errors
 
-from . import sandbox, quest
+from . import quest
+from .skill_validation import validate_generated_skill
 
 
 def _build_stub(spec: quest.Spec) -> str:
@@ -58,21 +60,6 @@ def _build_stub(spec: quest.Spec) -> str:
     return ast.unparse(module)
 
 
-def _verify(code: str, spec: quest.Spec) -> bool:
-    """Return ``True`` if *code* satisfies all examples in *spec* when run in the sandbox."""
-
-    for ex in spec.examples:
-        args = ", ".join(repr(x) for x in ex.inputs)
-        test = f"{code}\nresult = {spec.name}({args})"
-        try:
-            out = sandbox.run(test, timeout=spec.constraints.time_ms_max / 1000)
-        except Exception:
-            return False
-        if out != ex.output:
-            return False
-    return True
-
-
 def synthesise(spec_path: Path, skills_dir: Path | None = None) -> Path:
     """Generate a skill from *spec_path* and persist it to *skills_dir*.
 
@@ -83,13 +70,24 @@ def synthesise(spec_path: Path, skills_dir: Path | None = None) -> Path:
 
     spec = quest.load(spec_path)
     code = _build_stub(spec)
-    if not _verify(code, spec):
-        raise RuntimeError("generated skill does not satisfy examples")
+    examples = [(ex.inputs, ex.output) for ex in spec.examples]
+    validation = validate_generated_skill(
+        code,
+        expected_symbol=spec.name,
+        examples=examples,
+        timeout=spec.constraints.time_ms_max / 1000,
+    )
+    if not validation.ok:
+        raise RuntimeError(f"generated skill validation failed: {validation.reason}")
 
     skills_dir = skills_dir or Path("skills")
     skills_dir.mkdir(parents=True, exist_ok=True)
+    staging_dir = skills_dir / ".staging"
+    staging_dir.mkdir(parents=True, exist_ok=True)
     skill_path = skills_dir / f"{spec.name}.py"
-    skill_path.write_text(code, encoding="utf-8")
+    staged_path = staging_dir / f"{spec.name}.py"
+    staged_path.write_text(code, encoding="utf-8")
+    os.replace(staged_path, skill_path)
 
     _log_birth(spec.name)
     return skill_path
