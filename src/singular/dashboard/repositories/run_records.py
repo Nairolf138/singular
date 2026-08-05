@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from ...storage import RunsRepository, SQLiteStorage, StorageConfig
+
 
 def is_run_jsonl_file(path: Path) -> bool:
     """Return whether *path* is a persisted or in-progress run JSONL file."""
@@ -114,7 +116,9 @@ class RunRecordsRepository:
         seen: set[str] = set()
         for life_dir in self._registry_lives_paths():
             candidate = life_dir / "runs"
-            candidate_key = str(candidate.resolve()) if candidate.exists() else str(candidate)
+            candidate_key = (
+                str(candidate.resolve()) if candidate.exists() else str(candidate)
+            )
             if candidate_key in seen:
                 continue
             seen.add(candidate_key)
@@ -123,8 +127,17 @@ class RunRecordsRepository:
             dirs.append(self.base_dir / "runs")
         return dirs
 
-    def load_run_records(self, current_life_only: bool = False) -> list[dict[str, object]]:
+    def load_run_records(
+        self, current_life_only: bool = False
+    ) -> list[dict[str, object]]:
         """Load valid records and annotate each one with its logical run id."""
+        db_path = self.base_dir / "mem" / "singular.sqlite3"
+        if db_path.exists():
+            sqlite_records = RunsRepository(
+                SQLiteStorage(StorageConfig(root=self.base_dir, db_path=db_path))
+            ).list_events()
+            if sqlite_records:
+                return sqlite_records
         records: list[dict[str, object]] = []
         for directory in self.runs_dirs(current_life_only=current_life_only):
             if not directory.exists():
@@ -192,10 +205,16 @@ class RunRecordsRepository:
 
         return max(
             files,
-            key=lambda path: (path.stat().st_mtime_ns, _latest_ts_in_file(path), path.name),
+            key=lambda path: (
+                path.stat().st_mtime_ns,
+                _latest_ts_in_file(path),
+                path.name,
+            ),
         )
 
-    def resolve_run_file(self, run_id: str, current_life_only: bool = False) -> Path | None:
+    def resolve_run_file(
+        self, run_id: str, current_life_only: bool = False
+    ) -> Path | None:
         """Resolve a logical run id to persisted or in-progress JSONL storage."""
         for directory in self.runs_dirs(current_life_only=current_life_only):
             for filename in (f"{run_id}.jsonl", f"{run_id}.jsonl.tmp"):
@@ -205,7 +224,10 @@ class RunRecordsRepository:
             if not directory.exists():
                 continue
             for candidate in self.iter_run_files(current_life_only=current_life_only):
-                if candidate.parent == directory and logical_run_file_stem(candidate) == run_id:
+                if (
+                    candidate.parent == directory
+                    and logical_run_file_stem(candidate) == run_id
+                ):
                     return candidate
         return None
 

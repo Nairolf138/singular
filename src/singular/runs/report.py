@@ -12,6 +12,7 @@ from ..governance.policy import load_runtime_policy
 from ..life.health import detect_health_state
 from ..life.life_status import compute_life_status
 from ..memory import read_skills, get_skills_file
+from ..storage import RunsRepository, SQLiteStorage, StorageConfig
 from ..sensors import compute_host_metrics_aggregates, summarize_environmental_impact
 
 
@@ -20,6 +21,13 @@ def load_run_records(
 ) -> list[dict[str, Any]]:
     """Load run records for ``run_id`` from JSONL log file."""
     runs_dir = Path(runs_dir)
+    db_path = runs_dir.parent / "mem" / "singular.sqlite3"
+    if db_path.exists():
+        records = RunsRepository(
+            SQLiteStorage(StorageConfig(root=runs_dir.parent, db_path=db_path))
+        ).list_events(run_id)
+        if records:
+            return records
     event_path = runs_dir / run_id / "events.jsonl"
     records: list[dict[str, Any]] = []
     if event_path.exists():

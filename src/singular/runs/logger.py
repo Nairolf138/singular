@@ -11,6 +11,13 @@ import os
 from typing import Any, Mapping
 
 from ..storage_retention import run_retention_service
+from ..storage import (
+    ProviderEventsRepository,
+    RunsRepository,
+    SQLiteStorage,
+    SkillScoresRepository,
+    StorageConfig,
+)
 
 from ..psyche import Psyche
 from ..memory import add_episode, add_procedural_memory
@@ -22,7 +29,9 @@ _BASE_DIR = Path(os.environ.get("SINGULAR_HOME", "."))
 RUNS_DIR = _BASE_DIR / "runs"
 EVENT_SCHEMA_VERSION = 1
 USAGE_REPUTATION_SCHEMA_VERSION = 1
-DEFAULT_REPUTATION_UPDATE_EVERY = int(os.environ.get("SINGULAR_REPUTATION_UPDATE_EVERY", "5"))
+DEFAULT_REPUTATION_UPDATE_EVERY = int(
+    os.environ.get("SINGULAR_REPUTATION_UPDATE_EVERY", "5")
+)
 
 # ---------------------------------------------------------------------------
 # Mood style helpers
@@ -79,6 +88,11 @@ def log_provider_event(
         "llm_real": llm_real,
     }
     _provider_logger.info("provider_call", extra={"payload": payload})
+    try:
+        root = Path(os.environ.get("SINGULAR_HOME", "."))
+        ProviderEventsRepository(SQLiteStorage(StorageConfig(root=root))).add(payload)
+    except Exception:
+        _provider_logger.debug("provider_event_sqlite_persist_failed", exc_info=True)
 
 
 def _ensure_dir(path: Path) -> None:
@@ -117,7 +131,12 @@ class RunLogger:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self._active_lock_path = self.run_dir / ".active.lock"
         self._active_lock_path.write_text(
-            json.dumps({"run_id": self.run_id, "started_at": datetime.utcnow().isoformat(timespec="seconds")}),
+            json.dumps(
+                {
+                    "run_id": self.run_id,
+                    "started_at": datetime.utcnow().isoformat(timespec="seconds"),
+                }
+            ),
             encoding="utf-8",
         )
         self.events_path = self.run_dir / "events.jsonl"
@@ -128,6 +147,9 @@ class RunLogger:
         self._skill_telemetry: dict[str, dict[str, float | int]] = {}
         self._skill_reputation: dict[str, dict[str, float | int]] = {}
         self._load_skill_reputation()
+        self._storage = SQLiteStorage(StorageConfig(root=self.root.parent))
+        self._runs_repository = RunsRepository(self._storage)
+        self._skill_scores_repository = SkillScoresRepository(self._storage)
 
         # Resume from existing temporary file if present
         tmp_pattern = f"{self.run_id}-*.jsonl.tmp"
@@ -193,16 +215,27 @@ class RunLogger:
         )
         telemetry["count"] = int(telemetry["count"]) + 1
         telemetry["successes"] = int(telemetry["successes"]) + int(bool(success))
-        telemetry["total_latency_ms"] = float(telemetry["total_latency_ms"]) + float(latency_ms)
-        telemetry["total_resource_cost"] = float(telemetry["total_resource_cost"]) + float(resource_cost)
-        telemetry["total_quality"] = float(telemetry["total_quality"]) + float(perceived_quality)
-        telemetry["total_satisfaction"] = float(telemetry["total_satisfaction"]) + float(user_satisfaction)
+        telemetry["total_latency_ms"] = float(telemetry["total_latency_ms"]) + float(
+            latency_ms
+        )
+        telemetry["total_resource_cost"] = float(
+            telemetry["total_resource_cost"]
+        ) + float(resource_cost)
+        telemetry["total_quality"] = float(telemetry["total_quality"]) + float(
+            perceived_quality
+        )
+        telemetry["total_satisfaction"] = float(
+            telemetry["total_satisfaction"]
+        ) + float(user_satisfaction)
         telemetry["recent_failures"] = (
             0 if success else min(int(telemetry["recent_failures"]) + 1, 1000)
         )
 
     def _maybe_update_skill_reputation(self, *, force: bool = False) -> None:
-        pending = sum(int(skill_data.get("count", 0)) for skill_data in self._skill_telemetry.values())
+        pending = sum(
+            int(skill_data.get("count", 0))
+            for skill_data in self._skill_telemetry.values()
+        )
         threshold = max(1, int(self.reputation_update_every))
         if not force and pending < threshold:
             return
@@ -219,16 +252,26 @@ class RunLogger:
 
             previous = self._skill_reputation.get(skill_name, {})
             previous_count = int(previous.get("use_count", 0))
-            blend = 0.0 if previous_count <= 0 else min(0.8, previous_count / (previous_count + count))
+            blend = (
+                0.0
+                if previous_count <= 0
+                else min(0.8, previous_count / (previous_count + count))
+            )
             self._skill_reputation[skill_name] = {
-                "success_rate": (float(previous.get("success_rate", success_rate)) * blend)
+                "success_rate": (
+                    float(previous.get("success_rate", success_rate)) * blend
+                )
                 + (success_rate * (1.0 - blend)),
                 "mean_cost": (float(previous.get("mean_cost", mean_cost)) * blend)
                 + (mean_cost * (1.0 - blend)),
                 "recent_failures": recent_failures,
-                "mean_quality": (float(previous.get("mean_quality", mean_quality)) * blend)
+                "mean_quality": (
+                    float(previous.get("mean_quality", mean_quality)) * blend
+                )
                 + (mean_quality * (1.0 - blend)),
-                "mean_satisfaction": (float(previous.get("mean_satisfaction", mean_satisfaction)) * blend)
+                "mean_satisfaction": (
+                    float(previous.get("mean_satisfaction", mean_satisfaction)) * blend
+                )
                 + (mean_satisfaction * (1.0 - blend)),
                 "use_count": previous_count + count,
             }
@@ -239,6 +282,8 @@ class RunLogger:
             "skills": self._skill_reputation,
         }
         self.skill_reputation_path.write_text(json.dumps(payload), encoding="utf-8")
+        for skill_name, stats in self._skill_reputation.items():
+            self._skill_scores_repository.upsert(skill_name, stats)
         self._skill_telemetry.clear()
 
     def skill_reputation(self) -> dict[str, dict[str, float | int]]:
@@ -248,6 +293,7 @@ class RunLogger:
         self._file.write(json.dumps(record) + "\n")
         self._file.flush()
         os.fsync(self._file.fileno())
+        self._runs_repository.add_event(self.run_id, record)
 
     def _write_event(self, event_type: str, payload: dict[str, Any], ts: str) -> None:
         event = {
@@ -362,7 +408,6 @@ class RunLogger:
             {"event": "mutation", "mood": mood_val, **record}, mood_styles=mood_styles
         )
         add_procedural_memory(record)
-
 
     def log_phase_metrics(
         self,
