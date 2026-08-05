@@ -117,3 +117,32 @@ def test_choose_skill_prioritizes_frequent_low_quality_skills(tmp_path: Path) ->
         for seed in range(25)
     ]
     assert selections.count("high_use_low_quality") > selections.count("healthy")
+
+
+def test_perception_decisions_modulate_intrinsic_strategy_and_rules(
+    tmp_path: Path,
+) -> None:
+    from singular.goals.intrinsic import IntrinsicGoals
+    from singular.goals.perception_rules import apply_perception_rules
+
+    signals = {
+        "perception_decisions": [
+            {
+                "decision": "trigger_economy_mode",
+                "perception": "system.disk.critical",
+                "source_metric": "disk_used_percent",
+                "source_value": 98.0,
+                "source_threshold": 95.0,
+            }
+        ]
+    }
+
+    modulation = apply_perception_rules(signals)
+    assert modulation["deltas"]["robustesse"] > 0
+    assert modulation["deltas"]["exploration"] < 0
+    assert modulation["applied_rules"][0]["source_metric"] == "disk_used_percent"
+
+    goals = IntrinsicGoals(path=tmp_path / "goals.json")
+    strategy = goals.derive_execution_strategy(signals)
+    assert strategy["mode"] == "cautious"
+    assert strategy["system_decisions"] == ["trigger_economy_mode"]

@@ -31,7 +31,9 @@ class _FakePsutil:
         temperatures: dict[str, list[object]] | None,
     ) -> None:
         self._cpu_percent = cpu_percent
-        self._vm = types.SimpleNamespace(percent=ram_percent, available=ram_available_bytes)
+        self._vm = types.SimpleNamespace(
+            percent=ram_percent, available=ram_available_bytes
+        )
         self._du = types.SimpleNamespace(percent=disk_percent, free=disk_free_bytes)
         self._process = _FakeProcess(process_cpu_percent, process_rss_bytes)
         self._temperatures = temperatures
@@ -92,9 +94,17 @@ def test_collect_host_metrics_nominal_with_psutil(monkeypatch) -> None:
 
 def test_collect_host_metrics_handles_unavailable_sensors(monkeypatch) -> None:
     monkeypatch.setattr(host, "psutil", None)
-    monkeypatch.setattr(host.os, "getloadavg", lambda: (_ for _ in ()).throw(OSError("unsupported")))
-    monkeypatch.setattr(host.os, "sysconf", lambda _key: (_ for _ in ()).throw(OSError("unsupported")))
-    monkeypatch.setattr(host.shutil, "disk_usage", lambda _path: (_ for _ in ()).throw(OSError("unsupported")))
+    monkeypatch.setattr(
+        host.os, "getloadavg", lambda: (_ for _ in ()).throw(OSError("unsupported"))
+    )
+    monkeypatch.setattr(
+        host.os, "sysconf", lambda _key: (_ for _ in ()).throw(OSError("unsupported"))
+    )
+    monkeypatch.setattr(
+        host.shutil,
+        "disk_usage",
+        lambda _path: (_ for _ in ()).throw(OSError("unsupported")),
+    )
     monkeypatch.setattr(host, "_collect_process_stdlib", lambda: (0.0, 0.0))
 
     metrics = host.collect_host_metrics()
@@ -171,10 +181,14 @@ def test_collect_host_metrics_unit_conversions(monkeypatch) -> None:
     assert metrics["process_rss_mb"] == 512.0
 
 
-def test_collect_host_metrics_windows_minimal_fallback_not_all_unsupported(monkeypatch) -> None:
+def test_collect_host_metrics_windows_minimal_fallback_not_all_unsupported(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(host, "psutil", None)
     monkeypatch.setattr(host.platform, "system", lambda: "Windows")
-    monkeypatch.setattr(host.os, "getloadavg", lambda: (_ for _ in ()).throw(OSError("unsupported")))
+    monkeypatch.setattr(
+        host.os, "getloadavg", lambda: (_ for _ in ()).throw(OSError("unsupported"))
+    )
     monkeypatch.setattr(host, "_collect_memory_stdlib", lambda: (0.0, 2048.0))
     monkeypatch.setattr(host, "_collect_disk_stdlib", lambda: (0.0, 0.0))
     monkeypatch.setattr(host, "_collect_uptime_seconds", lambda: (3600.0, None))
@@ -220,3 +234,19 @@ def test_collect_host_metrics_linux_and_macos_temperature_status(monkeypatch) ->
     monkeypatch.setattr(host.platform, "system", lambda: "Darwin")
     mac_metrics = host.collect_host_metrics()
     assert mac_metrics["metric_status"]["host_temperature_c"]["status"] == "available"
+
+
+def test_default_policy_allows_individual_host_decision_sensors(
+    tmp_path, monkeypatch
+) -> None:
+    from singular.governance.policy import MutationGovernancePolicy
+
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    policy = MutationGovernancePolicy()
+
+    assert policy.allow_sensor("host_cpu")
+    assert policy.allow_sensor("host_ram")
+    assert policy.allow_sensor("host_disk")
+    assert policy.allow_sensor("host_temperature")
+    assert policy.allow_sensor("ambient_noise")

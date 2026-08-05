@@ -9,7 +9,6 @@ from singular.governance.values import ValueWeights
 from singular.memory import _atomic_write_text, get_mem_dir
 from singular.goals.perception_rules import apply_perception_rules
 
-
 OBJECTIVE_CATALOGUE = ("coherence", "robustesse", "efficacite", "exploration")
 INTRINSIC_MODULATION_VERSION = "intrinsic-mod-v2"
 INTRINSIC_GOAL_SOURCE = "intrinsic"
@@ -52,7 +51,9 @@ class GoalWeights:
         total = sum(max(0.0, float(v)) for v in values.values())
         if total <= 0.0:
             return GoalWeights()
-        return GoalWeights(**{name: max(0.0, float(value)) / total for name, value in values.items()})
+        return GoalWeights(
+            **{name: max(0.0, float(value)) / total for name, value in values.items()}
+        )
 
 
 @dataclass
@@ -122,7 +123,9 @@ class IntrinsicGoals:
         return GoalState.from_dict(data)
 
     def _save(self) -> None:
-        _atomic_write_text(self.path, json.dumps(self.state.to_dict(), ensure_ascii=False))
+        _atomic_write_text(
+            self.path, json.dumps(self.state.to_dict(), ensure_ascii=False)
+        )
 
     def update_tick(
         self,
@@ -146,22 +149,42 @@ class IntrinsicGoals:
 
         curiosity = _clamp(float(getattr(psyche, "curiosity", 0.5))) if psyche else 0.5
         patience = _clamp(float(getattr(psyche, "patience", 0.5))) if psyche else 0.5
-        resilience = _clamp(float(getattr(psyche, "resilience", 0.5))) if psyche else 0.5
+        resilience = (
+            _clamp(float(getattr(psyche, "resilience", 0.5))) if psyche else 0.5
+        )
         optimism = _clamp(float(getattr(psyche, "optimism", 0.5))) if psyche else 0.5
-        playfulness = _clamp(float(getattr(psyche, "playfulness", 0.5))) if psyche else 0.5
+        playfulness = (
+            _clamp(float(getattr(psyche, "playfulness", 0.5))) if psyche else 0.5
+        )
 
-        health_norm = _clamp((float(health_score) if health_score is not None else 50.0) / 100.0)
+        health_norm = _clamp(
+            (float(health_score) if health_score is not None else 50.0) / 100.0
+        )
         energy = _clamp(float((resources or {}).get("energy", 50.0)) / 100.0)
         food = _clamp(float((resources or {}).get("food", 50.0)) / 100.0)
         warmth = _clamp(float((resources or {}).get("warmth", 50.0)) / 100.0)
-        ecological_debt = _clamp(float((resources or {}).get("ecological_debt", 0.0)) / 100.0)
-        relational_debt = _clamp(float((resources or {}).get("relational_debt", 0.0)) / 100.0)
+        ecological_debt = _clamp(
+            float((resources or {}).get("ecological_debt", 0.0)) / 100.0
+        )
+        relational_debt = _clamp(
+            float((resources or {}).get("relational_debt", 0.0)) / 100.0
+        )
         resource_stability = (energy + food + warmth) / 3.0
         telemetry_efficiency_penalty = 0.0
         telemetry_quality_pressure = 0.0
         telemetry_failure_pressure = 0.0
         host_environmental_pressure = 0.0
         host_environmental_variance = 0.0
+        system_decisions = (perception_signals or {}).get("perception_decisions")
+        system_decision_names = (
+            [
+                str(entry.get("decision"))
+                for entry in system_decisions
+                if isinstance(entry, Mapping) and entry.get("decision")
+            ]
+            if isinstance(system_decisions, list)
+            else []
+        )
         narrative = (perception_signals or {}).get("narrative_indicators")
         planner_narrative = (perception_signals or {}).get("planner_narrative_signals")
         execution_history = (perception_signals or {}).get("execution_history")
@@ -176,25 +199,47 @@ class IntrinsicGoals:
         narrative_regret = 0.0
         narrative_pride = 0.0
         identity_drift = 0.0
-        identity_wounds = _clamp(_as_float(getattr(psyche, "identity_wounds", 0.0), default=0.0)) if psyche else 0.0
+        identity_wounds = (
+            _clamp(_as_float(getattr(psyche, "identity_wounds", 0.0), default=0.0))
+            if psyche
+            else 0.0
+        )
         if isinstance(narrative, Mapping):
-            risk_aversion = _mean_mapping_value(narrative.get("risk_aversion_by_action_family"))
+            risk_aversion = _mean_mapping_value(
+                narrative.get("risk_aversion_by_action_family")
+            )
             confidence_map = narrative.get("accumulated_confidence_by_action_family")
             if isinstance(confidence_map, Mapping) and confidence_map:
                 accumulated_confidence = _mean_mapping_value(confidence_map)
             else:
-                accumulated_confidence = _clamp(_as_float(narrative.get("accumulated_confidence", 0.5), default=0.5))
+                accumulated_confidence = _clamp(
+                    _as_float(narrative.get("accumulated_confidence", 0.5), default=0.5)
+                )
         if isinstance(execution_history, Mapping):
-            injuries_pressure = _clamp(_as_float(execution_history.get("recent_injuries", 0.0)) / 5.0)
-            success_boost = _clamp(_as_float(execution_history.get("recent_successes", 0.0)) / 6.0)
+            injuries_pressure = _clamp(
+                _as_float(execution_history.get("recent_injuries", 0.0)) / 5.0
+            )
+            success_boost = _clamp(
+                _as_float(execution_history.get("recent_successes", 0.0)) / 6.0
+            )
             repeated_failure_pressure = _clamp(
-                _as_float(execution_history.get("repeated_failure_pressure", 0.0), default=0.0)
+                _as_float(
+                    execution_history.get("repeated_failure_pressure", 0.0), default=0.0
+                )
             )
         if isinstance(planner_narrative, Mapping):
-            narrative_coherence = _clamp(_as_float(planner_narrative.get("coherence_signal", 0.5), default=0.5))
-            narrative_regret = _clamp(_as_float(planner_narrative.get("regret_pressure", 0.0), default=0.0))
-            narrative_pride = _clamp(_as_float(planner_narrative.get("pride_drive", 0.0), default=0.0))
-            identity_drift = _clamp(_as_float(planner_narrative.get("identity_drift", 0.0), default=0.0))
+            narrative_coherence = _clamp(
+                _as_float(planner_narrative.get("coherence_signal", 0.5), default=0.5)
+            )
+            narrative_regret = _clamp(
+                _as_float(planner_narrative.get("regret_pressure", 0.0), default=0.0)
+            )
+            narrative_pride = _clamp(
+                _as_float(planner_narrative.get("pride_drive", 0.0), default=0.0)
+            )
+            identity_drift = _clamp(
+                _as_float(planner_narrative.get("identity_drift", 0.0), default=0.0)
+            )
         world_events = (perception_signals or {}).get("world_events")
         if isinstance(world_events, list):
             total_events = float(len(world_events))
@@ -242,27 +287,41 @@ class IntrinsicGoals:
                 ram_roll = rolling.get("ram_used_percent")
                 temp_roll = rolling.get("host_temperature_c")
                 cpu_pressure = (
-                    _clamp(_as_float(cpu_roll.get("20", cpu_roll.get("5", 0.0))) / 100.0)
+                    _clamp(
+                        _as_float(cpu_roll.get("20", cpu_roll.get("5", 0.0))) / 100.0
+                    )
                     if isinstance(cpu_roll, Mapping)
                     else 0.0
                 )
                 ram_pressure = (
-                    _clamp(_as_float(ram_roll.get("20", ram_roll.get("5", 0.0))) / 100.0)
+                    _clamp(
+                        _as_float(ram_roll.get("20", ram_roll.get("5", 0.0))) / 100.0
+                    )
                     if isinstance(ram_roll, Mapping)
                     else 0.0
                 )
                 thermal_pressure = (
-                    _clamp(_as_float(temp_roll.get("20", temp_roll.get("5", 0.0))) / 95.0)
+                    _clamp(
+                        _as_float(temp_roll.get("20", temp_roll.get("5", 0.0))) / 95.0
+                    )
                     if isinstance(temp_roll, Mapping)
                     else 0.0
                 )
                 host_environmental_pressure = _clamp(
-                    (cpu_pressure * 0.45) + (ram_pressure * 0.35) + (thermal_pressure * 0.2)
+                    (cpu_pressure * 0.45)
+                    + (ram_pressure * 0.35)
+                    + (thermal_pressure * 0.2)
                 )
             if isinstance(variance, Mapping):
-                cpu_variance = _clamp(_as_float(variance.get("cpu_percent", 0.0)) / 400.0)
-                ram_variance = _clamp(_as_float(variance.get("ram_used_percent", 0.0)) / 400.0)
-                host_environmental_variance = _clamp((cpu_variance + ram_variance) / 2.0)
+                cpu_variance = _clamp(
+                    _as_float(variance.get("cpu_percent", 0.0)) / 400.0
+                )
+                ram_variance = _clamp(
+                    _as_float(variance.get("ram_used_percent", 0.0)) / 400.0
+                )
+                host_environmental_variance = _clamp(
+                    (cpu_variance + ram_variance) / 2.0
+                )
 
         base_weights = GoalWeights(
             coherence=0.2
@@ -304,7 +363,11 @@ class IntrinsicGoals:
             - 0.25 * risk_aversion
             - 0.18 * repeated_failure_pressure,
         )
-        base_weights.coherence += (0.25 * narrative_coherence) + (0.12 * narrative_pride) - (0.2 * identity_drift)
+        base_weights.coherence += (
+            (0.25 * narrative_coherence)
+            + (0.12 * narrative_pride)
+            - (0.2 * identity_drift)
+        )
         base_weights.robustesse += (0.2 * narrative_regret) + (0.25 * identity_wounds)
         base_weights.efficacite += (0.12 * narrative_pride) - (0.1 * narrative_regret)
         base_weights.exploration -= (0.15 * narrative_regret) + (0.2 * identity_wounds)
@@ -354,8 +417,12 @@ class IntrinsicGoals:
                     "intrinsic_modulation_version": INTRINSIC_MODULATION_VERSION,
                     "perception_rules_version": modulation["version"],
                     "perception_rule_count": len(modulation["applied_rules"]),
+                    "system_decisions": system_decision_names,
                 },
                 "perception_rules": modulation,
+                "system_decision_log": (
+                    list(system_decisions) if isinstance(system_decisions, list) else []
+                ),
             }
         )
         if len(self.state.history) > self.history_limit:
@@ -378,30 +445,74 @@ class IntrinsicGoals:
         """
 
         memory = (perception_signals or {}).get("episode_memory", {})
-        structured = memory.get("structured_feedback", {}) if isinstance(memory, Mapping) else {}
+        structured = (
+            memory.get("structured_feedback", {}) if isinstance(memory, Mapping) else {}
+        )
         narrative = (perception_signals or {}).get("narrative_indicators")
         execution_history = (perception_signals or {}).get("execution_history")
-        frustration = _clamp(_as_float(structured.get("frustration", 0.0))) if isinstance(structured, Mapping) else 0.0
-        satisfaction = _clamp(_as_float(structured.get("satisfaction", 0.0))) if isinstance(structured, Mapping) else 0.0
-        urgency = _clamp(_as_float(structured.get("urgency", 0.0))) if isinstance(structured, Mapping) else 0.0
-        theme = str(structured.get("theme", "general")) if isinstance(structured, Mapping) else "general"
-        negative_streak = int(memory.get("negative_feedback_streak", 0)) if isinstance(memory, Mapping) else 0
-        risk_aversion = _mean_mapping_value(narrative.get("risk_aversion_by_action_family")) if isinstance(narrative, Mapping) else 0.0
+        frustration = (
+            _clamp(_as_float(structured.get("frustration", 0.0)))
+            if isinstance(structured, Mapping)
+            else 0.0
+        )
+        satisfaction = (
+            _clamp(_as_float(structured.get("satisfaction", 0.0)))
+            if isinstance(structured, Mapping)
+            else 0.0
+        )
+        urgency = (
+            _clamp(_as_float(structured.get("urgency", 0.0)))
+            if isinstance(structured, Mapping)
+            else 0.0
+        )
+        theme = (
+            str(structured.get("theme", "general"))
+            if isinstance(structured, Mapping)
+            else "general"
+        )
+        negative_streak = (
+            int(memory.get("negative_feedback_streak", 0))
+            if isinstance(memory, Mapping)
+            else 0
+        )
+        risk_aversion = (
+            _mean_mapping_value(narrative.get("risk_aversion_by_action_family"))
+            if isinstance(narrative, Mapping)
+            else 0.0
+        )
         confidence = 0.5
         if isinstance(narrative, Mapping):
             confidence_map = narrative.get("accumulated_confidence_by_action_family")
             if isinstance(confidence_map, Mapping) and confidence_map:
                 confidence = _mean_mapping_value(confidence_map)
             else:
-                confidence = _clamp(_as_float(narrative.get("accumulated_confidence", 0.5), default=0.5))
+                confidence = _clamp(
+                    _as_float(narrative.get("accumulated_confidence", 0.5), default=0.5)
+                )
         repeated_failure_penalty = (
             _clamp(_as_float(execution_history.get("repeated_failure_pressure", 0.0)))
             if isinstance(execution_history, Mapping)
             else 0.0
         )
+        decisions = (perception_signals or {}).get("perception_decisions")
+        decision_names = (
+            {
+                str(entry.get("decision"))
+                for entry in decisions
+                if isinstance(entry, Mapping) and entry.get("decision")
+            }
+            if isinstance(decisions, list)
+            else set()
+        )
 
         mode = "balanced"
-        if frustration >= 0.6 or negative_streak >= 2 or repeated_failure_penalty >= 0.5 or risk_aversion >= 0.7:
+        if (
+            "trigger_economy_mode" in decision_names
+            or frustration >= 0.6
+            or negative_streak >= 2
+            or repeated_failure_penalty >= 0.5
+            or risk_aversion >= 0.7
+        ):
             mode = "cautious"
         elif urgency >= 0.6 and repeated_failure_penalty < 0.45:
             mode = "utility_focused"
@@ -418,6 +529,7 @@ class IntrinsicGoals:
             "risk_aversion": risk_aversion,
             "confidence": confidence,
             "repeated_failure_penalty": repeated_failure_penalty,
+            "system_decisions": sorted(decision_names),
             "intrinsic_modulation_version": INTRINSIC_MODULATION_VERSION,
         }
 
@@ -444,18 +556,30 @@ class IntrinsicGoals:
             prompt = str(payload.get("prompt", "")).lower()
             if mode == "cautious":
                 priority += int(10 + frustration * 20)
-                if any(token in routine_id or token in prompt for token in ("check", "verify", "monitor", "safety")):
+                if any(
+                    token in routine_id or token in prompt
+                    for token in ("check", "verify", "monitor", "safety")
+                ):
                     priority += 8
-                if any(token in routine_id or token in prompt for token in ("help", "user", "support", "respond")):
+                if any(
+                    token in routine_id or token in prompt
+                    for token in ("help", "user", "support", "respond")
+                ):
                     priority += int(12 + urgency * 12)
                 elif urgency >= 0.6:
                     priority -= int(8 + urgency * 18)
             elif mode == "utility_focused":
                 priority += int(6 + urgency * 18)
-                if any(token in routine_id or token in prompt for token in ("help", "user", "support", "respond")):
+                if any(
+                    token in routine_id or token in prompt
+                    for token in ("help", "user", "support", "respond")
+                ):
                     priority += 12
             elif mode == "exploratory":
-                if any(token in routine_id or token in prompt for token in ("research", "explore", "discover")):
+                if any(
+                    token in routine_id or token in prompt
+                    for token in ("research", "explore", "discover")
+                ):
                     priority += 14
                 else:
                     priority -= 4
@@ -480,7 +604,9 @@ class IntrinsicGoals:
         v = self.value_weights
         coherence_score = 1.0 - abs(_clamp(expected_gain + 0.5, 0.0, 1.0) - 0.5) * 2.0
         robustesse_score = 1.0 - _clamp(sandbox_risk * (1.0 + v.securite * 0.5))
-        efficacite_score = (1.0 - _clamp(resource_cost)) * (0.7 + 0.3 * v.utilite_utilisateur)
+        efficacite_score = (1.0 - _clamp(resource_cost)) * (
+            0.7 + 0.3 * v.utilite_utilisateur
+        )
         exploration_score = _clamp(novelty) * (0.3 + 0.7 * v.curiosite_bornee)
         arbitration = (
             w.coherence * coherence_score
@@ -492,7 +618,9 @@ class IntrinsicGoals:
         utility_bonus = v.utilite_utilisateur * _clamp(expected_gain + 0.5, 0.0, 1.0)
         return arbitration + 0.15 * preservation_bonus + 0.1 * utility_bonus
 
-    def influence_action_hypotheses(self, hypotheses: list[Any]) -> list[dict[str, Any]]:
+    def influence_action_hypotheses(
+        self, hypotheses: list[Any]
+    ) -> list[dict[str, Any]]:
         """Apply intrinsic-goal influence and return adjusted hypothesis payloads."""
 
         adjusted: list[dict[str, Any]] = []
@@ -508,8 +636,13 @@ class IntrinsicGoals:
             adjusted.append(
                 {
                     "action": getattr(hypothesis, "action", ""),
-                    "long_term": _clamp(float(getattr(hypothesis, "long_term", 0.0)) * 0.6 + arbitration * 0.6),
-                    "sandbox_risk": _clamp(float(getattr(hypothesis, "sandbox_risk", 0.0))),
+                    "long_term": _clamp(
+                        float(getattr(hypothesis, "long_term", 0.0)) * 0.6
+                        + arbitration * 0.6
+                    ),
+                    "sandbox_risk": _clamp(
+                        float(getattr(hypothesis, "sandbox_risk", 0.0))
+                    ),
                     "resource_cost": _clamp(
                         float(getattr(hypothesis, "resource_cost", 0.0))
                         * (0.7 + (1.0 - self.state.weights.efficacite) * 0.3)
@@ -528,7 +661,9 @@ class IntrinsicGoals:
 
         if not operator_stats:
             return {}
-        max_count = max(float(stats.get("count", 0.0)) for stats in operator_stats.values())
+        max_count = max(
+            float(stats.get("count", 0.0)) for stats in operator_stats.values()
+        )
         if max_count <= 0.0:
             max_count = 1.0
         reputation_cost = 0.0
@@ -541,13 +676,29 @@ class IntrinsicGoals:
                 reputation_failures += float(stats.get("recent_failures", 0.0))
                 reputation_quality += float(stats.get("mean_quality", 0.0))
                 reputation_samples += 1.0
-        mean_reputation_cost = reputation_cost / reputation_samples if reputation_samples else 0.0
-        mean_reputation_quality = reputation_quality / reputation_samples if reputation_samples else 0.5
-        reputation_failure_penalty = _clamp(reputation_failures / max(reputation_samples, 1.0) / 3.0, 0.0, 1.0)
+        mean_reputation_cost = (
+            reputation_cost / reputation_samples if reputation_samples else 0.0
+        )
+        mean_reputation_quality = (
+            reputation_quality / reputation_samples if reputation_samples else 0.5
+        )
+        reputation_failure_penalty = _clamp(
+            reputation_failures / max(reputation_samples, 1.0) / 3.0, 0.0, 1.0
+        )
 
         biases: dict[str, float] = {}
-        coherence_bonus = _clamp(_as_float((planner_narrative_signals or {}).get("coherence_signal", 0.0), default=0.0))
-        dissonance_malus = _clamp(_as_float((planner_narrative_signals or {}).get("dissonance_signal", 0.0), default=0.0))
+        coherence_bonus = _clamp(
+            _as_float(
+                (planner_narrative_signals or {}).get("coherence_signal", 0.0),
+                default=0.0,
+            )
+        )
+        dissonance_malus = _clamp(
+            _as_float(
+                (planner_narrative_signals or {}).get("dissonance_signal", 0.0),
+                default=0.0,
+            )
+        )
         for name, stats in operator_stats.items():
             count = float(stats.get("count", 0.0))
             reward = float(stats.get("reward", 0.0))
@@ -557,12 +708,18 @@ class IntrinsicGoals:
             telemetry_alignment = _clamp(
                 mean_reputation_quality * 0.7 + (1.0 - reputation_failure_penalty) * 0.3
             )
-            biases[name] = self.objective_arbitration(
-                expected_gain=mean_reward,
-                sandbox_risk=reputation_failure_penalty,
-                resource_cost=_clamp((count / max_count) * 0.6 + mean_reputation_cost * 0.4),
-                novelty=exploration_signal,
-            ) + self.state.weights.efficacite * efficiency_signal + self.state.weights.coherence * telemetry_alignment
-            biases[name] += (self.state.weights.coherence * 0.2 * coherence_bonus)
-            biases[name] -= (self.state.weights.robustesse * 0.25 * dissonance_malus)
+            biases[name] = (
+                self.objective_arbitration(
+                    expected_gain=mean_reward,
+                    sandbox_risk=reputation_failure_penalty,
+                    resource_cost=_clamp(
+                        (count / max_count) * 0.6 + mean_reputation_cost * 0.4
+                    ),
+                    novelty=exploration_signal,
+                )
+                + self.state.weights.efficacite * efficiency_signal
+                + self.state.weights.coherence * telemetry_alignment
+            )
+            biases[name] += self.state.weights.coherence * 0.2 * coherence_bonus
+            biases[name] -= self.state.weights.robustesse * 0.25 * dissonance_malus
         return biases

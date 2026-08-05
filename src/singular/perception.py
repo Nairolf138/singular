@@ -144,6 +144,22 @@ class PerceptionNoiseFilter:
 _ARTIFACT_STATE = _ArtifactScanState()
 _NOISE_FILTER = PerceptionNoiseFilter()
 
+DERIVED_SYSTEM_PERCEPTIONS = (
+    "system.cpu.high",
+    "system.ram.high",
+    "system.disk.critical",
+    "system.temperature.high",
+    "system.environment.calm",
+)
+
+SYSTEM_PERCEPTION_SENSOR_NAMES = {
+    "cpu": "host_cpu",
+    "ram": "host_ram",
+    "disk": "host_disk",
+    "temperature": "host_temperature",
+    "noise": "ambient_noise",
+}
+
 
 def _build_perception_event(
     *,
@@ -161,8 +177,6 @@ def _build_perception_event(
         "timestamp": _iso_now(),
         "data": data,
     }
-
-
 
 
 def _collect_host_signals() -> dict[str, float | None] | None:
@@ -190,6 +204,109 @@ def _collect_host_signals() -> dict[str, float | None] | None:
         return None
 
 
+def _derive_system_perceptions(
+    *,
+    host_metrics: dict[str, Any] | None,
+    noise: float | None,
+) -> list[dict[str, Any]]:
+    """Derive policy-gated system perceptions that drive runtime decisions."""
+
+    try:
+        policy = MutationGovernancePolicy()
+    except Exception:
+        policy = None
+
+    def allowed(metric: str) -> bool:
+        sensor_name = SYSTEM_PERCEPTION_SENSOR_NAMES[metric]
+        if policy is None:
+            return True
+        if sensor_name in getattr(policy, "sensors_blocked", frozenset()):
+            return policy.allow_sensor(sensor_name)
+        return policy.allow_sensor(sensor_name) or policy.allow_sensor("host_metrics")
+
+    thresholds = load_host_sensor_thresholds()
+    metrics = host_metrics if isinstance(host_metrics, dict) else {}
+    perceptions: list[dict[str, Any]] = []
+
+    def append(
+        kind: str, metric: str, value: float, threshold: float, decisions: list[str]
+    ) -> None:
+        perceptions.append(
+            {
+                "type": kind,
+                "source": (
+                    "host_metrics" if metric != "noise" else "virtual_environment"
+                ),
+                "metric": metric,
+                "value": value,
+                "threshold": threshold,
+                "decisions": decisions,
+                "timestamp": _iso_now(),
+            }
+        )
+
+    cpu = metrics.get("cpu_percent")
+    if (
+        allowed("cpu")
+        and isinstance(cpu, (int, float))
+        and float(cpu) >= thresholds.cpu_warning_percent
+    ):
+        append(
+            "system.cpu.high",
+            "cpu_percent",
+            float(cpu),
+            thresholds.cpu_warning_percent,
+            ["reduce_mutation_cadence"],
+        )
+
+    ram = metrics.get("ram_used_percent")
+    if (
+        allowed("ram")
+        and isinstance(ram, (int, float))
+        and float(ram) >= thresholds.ram_warning_percent
+    ):
+        append(
+            "system.ram.high",
+            "ram_used_percent",
+            float(ram),
+            thresholds.ram_warning_percent,
+            ["prioritize_memory_compaction", "delay_heavy_synthesis"],
+        )
+
+    disk = metrics.get("disk_used_percent")
+    if (
+        allowed("disk")
+        and isinstance(disk, (int, float))
+        and float(disk) >= thresholds.disk_critical_percent
+    ):
+        append(
+            "system.disk.critical",
+            "disk_used_percent",
+            float(disk),
+            thresholds.disk_critical_percent,
+            ["prioritize_memory_compaction", "trigger_economy_mode"],
+        )
+
+    temp = metrics.get("host_temperature_c")
+    if (
+        allowed("temperature")
+        and isinstance(temp, (int, float))
+        and float(temp) >= thresholds.temperature_warning_c
+    ):
+        append(
+            "system.temperature.high",
+            "host_temperature_c",
+            float(temp),
+            thresholds.temperature_warning_c,
+            ["delay_heavy_synthesis", "trigger_economy_mode"],
+        )
+
+    if allowed("noise") and isinstance(noise, (int, float)) and float(noise) <= 0.2:
+        append("system.environment.calm", "noise", float(noise), 0.2, [])
+
+    return perceptions
+
+
 def _derive_host_events(host_metrics: dict[str, Any] | None) -> list[dict[str, Any]]:
     """Emit normalized host events when predefined thresholds are exceeded."""
 
@@ -200,7 +317,10 @@ def _derive_host_events(host_metrics: dict[str, Any] | None) -> list[dict[str, A
     events: list[dict[str, Any]] = []
 
     cpu_percent = host_metrics.get("cpu_percent")
-    if isinstance(cpu_percent, (int, float)) and float(cpu_percent) >= thresholds.cpu_critical_percent:
+    if (
+        isinstance(cpu_percent, (int, float))
+        and float(cpu_percent) >= thresholds.cpu_critical_percent
+    ):
         events.append(
             _build_perception_event(
                 event_type="host.cpu.critical",
@@ -213,7 +333,10 @@ def _derive_host_events(host_metrics: dict[str, Any] | None) -> list[dict[str, A
                 },
             )
         )
-    elif isinstance(cpu_percent, (int, float)) and float(cpu_percent) >= thresholds.cpu_warning_percent:
+    elif (
+        isinstance(cpu_percent, (int, float))
+        and float(cpu_percent) >= thresholds.cpu_warning_percent
+    ):
         events.append(
             _build_perception_event(
                 event_type="host.cpu.warning",
@@ -228,7 +351,10 @@ def _derive_host_events(host_metrics: dict[str, Any] | None) -> list[dict[str, A
         )
 
     ram_used_percent = host_metrics.get("ram_used_percent")
-    if isinstance(ram_used_percent, (int, float)) and float(ram_used_percent) >= thresholds.ram_critical_percent:
+    if (
+        isinstance(ram_used_percent, (int, float))
+        and float(ram_used_percent) >= thresholds.ram_critical_percent
+    ):
         events.append(
             _build_perception_event(
                 event_type="host.memory.critical",
@@ -241,7 +367,10 @@ def _derive_host_events(host_metrics: dict[str, Any] | None) -> list[dict[str, A
                 },
             )
         )
-    elif isinstance(ram_used_percent, (int, float)) and float(ram_used_percent) >= thresholds.ram_warning_percent:
+    elif (
+        isinstance(ram_used_percent, (int, float))
+        and float(ram_used_percent) >= thresholds.ram_warning_percent
+    ):
         events.append(
             _build_perception_event(
                 event_type="host.memory.warning",
@@ -290,7 +419,10 @@ def _derive_host_events(host_metrics: dict[str, Any] | None) -> list[dict[str, A
         )
 
     disk_used_percent = host_metrics.get("disk_used_percent")
-    if isinstance(disk_used_percent, (int, float)) and float(disk_used_percent) >= thresholds.disk_critical_percent:
+    if (
+        isinstance(disk_used_percent, (int, float))
+        and float(disk_used_percent) >= thresholds.disk_critical_percent
+    ):
         events.append(
             _build_perception_event(
                 event_type="host.disk.critical",
@@ -307,7 +439,9 @@ def _derive_host_events(host_metrics: dict[str, Any] | None) -> list[dict[str, A
     return events
 
 
-def _collect_artifact_signals(root: Path, state: _ArtifactScanState) -> list[dict[str, Any]]:
+def _collect_artifact_signals(
+    root: Path, state: _ArtifactScanState
+) -> list[dict[str, Any]]:
     files_mtime = _list_sandbox_files(root)
     previous_files = state.files_mtime
 
@@ -362,7 +496,11 @@ def _derive_world_events(world_state: dict[str, Any] | None) -> list[dict[str, A
     if not isinstance(world_state, dict):
         return []
     events: list[dict[str, Any]] = []
-    health = world_state.get("global_health", {}) if isinstance(world_state.get("global_health"), dict) else {}
+    health = (
+        world_state.get("global_health", {})
+        if isinstance(world_state.get("global_health"), dict)
+        else {}
+    )
     trend = str(health.get("trend", "stable"))
     score = float(health.get("score", 50.0) or 50.0)
     if trend == "degrading" or score < 45.0:
@@ -375,8 +513,16 @@ def _derive_world_events(world_state: dict[str, Any] | None) -> list[dict[str, A
             )
         )
 
-    resources = world_state.get("resources", {}) if isinstance(world_state.get("resources"), dict) else {}
-    renewable = resources.get("renewable", {}) if isinstance(resources.get("renewable"), dict) else {}
+    resources = (
+        world_state.get("resources", {})
+        if isinstance(world_state.get("resources"), dict)
+        else {}
+    )
+    renewable = (
+        resources.get("renewable", {})
+        if isinstance(resources.get("renewable"), dict)
+        else {}
+    )
     scarcity: list[dict[str, float | str]] = []
     opportunities: list[dict[str, float | str]] = []
     for name, payload in renewable.items():
@@ -388,7 +534,9 @@ def _derive_world_events(world_state: dict[str, Any] | None) -> list[dict[str, A
         if coverage <= 0.2:
             scarcity.append({"resource": str(name), "coverage": round(coverage, 3)})
         if coverage >= 0.8:
-            opportunities.append({"resource": str(name), "coverage": round(coverage, 3)})
+            opportunities.append(
+                {"resource": str(name), "coverage": round(coverage, 3)}
+            )
 
     if scarcity:
         events.append(
@@ -408,7 +556,9 @@ def _derive_world_events(world_state: dict[str, Any] | None) -> list[dict[str, A
                 data={"resources": opportunities},
             )
         )
-    signals = health.get("signals", {}) if isinstance(health.get("signals"), dict) else {}
+    signals = (
+        health.get("signals", {}) if isinstance(health.get("signals"), dict) else {}
+    )
     delayed_risk = float(signals.get("delayed_risk", 0.0) or 0.0)
     if delayed_risk >= 0.35:
         events.append(
@@ -431,7 +581,6 @@ def _derive_world_events(world_state: dict[str, Any] | None) -> list[dict[str, A
     return events
 
 
-
 def reset_perception_state() -> None:
     """Reset in-memory artifact scan and anti-noise state (tests/helpers)."""
 
@@ -439,6 +588,7 @@ def reset_perception_state() -> None:
     _ARTIFACT_STATE.seen_logs.clear()
     _NOISE_FILTER._seen_signatures.clear()
     _NOISE_FILTER._last_emitted_at.clear()
+
 
 def get_temperature() -> float:
     """Return the current temperature.
@@ -491,6 +641,27 @@ def capture_signals(
             signals["host_metrics_aggregates"] = compute_host_metrics_aggregates()
         except Exception:
             pass
+    system_perceptions = _derive_system_perceptions(
+        host_metrics=host_metrics,
+        noise=(
+            float(signals["noise"])
+            if isinstance(signals.get("noise"), (int, float))
+            else None
+        ),
+    )
+    if system_perceptions:
+        signals["derived_perceptions"] = system_perceptions
+        signals["perception_decisions"] = [
+            {
+                "decision": decision,
+                "perception": perception["type"],
+                "source_metric": perception["metric"],
+                "source_value": perception["value"],
+                "source_threshold": perception["threshold"],
+            }
+            for perception in system_perceptions
+            for decision in perception.get("decisions", [])
+        ]
 
     root = _resolve_sandbox_root(sandbox_root)
     state = artifact_state or _ARTIFACT_STATE
@@ -505,34 +676,46 @@ def capture_signals(
             resolved_world_state = None
     world_events = _derive_world_events(resolved_world_state)
     candidate_events = [*artifact_events, *host_events, *world_events]
-    filtered_events = [event for event in candidate_events if filter_instance.allow(event)]
+    filtered_events = [
+        event for event in candidate_events if filter_instance.allow(event)
+    ]
     if filtered_events:
         signals["artifact_events"] = [
-            event for event in filtered_events if str(event.get("type", "")).startswith("artifact.")
+            event
+            for event in filtered_events
+            if str(event.get("type", "")).startswith("artifact.")
         ]
         signals["host_events"] = [
-            event for event in filtered_events if str(event.get("type", "")).startswith("host.")
+            event
+            for event in filtered_events
+            if str(event.get("type", "")).startswith("host.")
         ]
         if not signals["artifact_events"]:
             signals.pop("artifact_events")
         if not signals["host_events"]:
             signals.pop("host_events")
         signals["world_events"] = [
-            event for event in filtered_events if str(event.get("type", "")).startswith("world.")
+            event
+            for event in filtered_events
+            if str(event.get("type", "")).startswith("world.")
         ]
         if not signals["world_events"]:
             signals.pop("world_events")
 
     if publish_event:
         emitter = bus or get_global_event_bus()
-        emitter.publish("signal.captured", {"signals": dict(signals)}, payload_version=1)
+        emitter.publish(
+            "signal.captured", {"signals": dict(signals)}, payload_version=1
+        )
         for event in filtered_events:
             topic = (
                 "artifact.perception"
                 if str(event.get("type", "")).startswith("artifact.")
-                else "host.perception"
-                if str(event.get("type", "")).startswith("host.")
-                else "world.perception"
+                else (
+                    "host.perception"
+                    if str(event.get("type", "")).startswith("host.")
+                    else "world.perception"
+                )
             )
             emitter.publish(
                 topic,

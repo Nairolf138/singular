@@ -78,9 +78,13 @@ def test_capture_signals_publishes_normalized_artifact_events(tmp_path):
     code.write_text("# FIXME: remove this hack\nprint('ok')\n", encoding="utf-8")
     signals = capture_signals(bus=bus, sandbox_root=sandbox)
 
-    assert any(evt.payload["event"]["type"] == "artifact.files.modified" for evt in captured)
+    assert any(
+        evt.payload["event"]["type"] == "artifact.files.modified" for evt in captured
+    )
     assert any(evt.payload["event"]["type"] == "artifact.logs.new" for evt in captured)
-    assert any(evt.payload["event"]["type"] == "artifact.tech_debt.simple" for evt in captured)
+    assert any(
+        evt.payload["event"]["type"] == "artifact.tech_debt.simple" for evt in captured
+    )
 
     for event in captured:
         assert event.payload_version == 1
@@ -92,7 +96,9 @@ def test_capture_signals_publishes_normalized_artifact_events(tmp_path):
     assert "artifact_events" in signals
 
 
-def test_capture_signals_integrates_host_metrics_and_publishes_host_events(tmp_path, monkeypatch):
+def test_capture_signals_integrates_host_metrics_and_publishes_host_events(
+    tmp_path, monkeypatch
+):
     reset_perception_state()
 
     monkeypatch.setattr(
@@ -132,8 +138,12 @@ def test_capture_signals_integrates_host_metrics_and_publishes_host_events(tmp_p
     }.issubset(event_types)
 
     assert any(evt.payload["event"]["type"] == "host.cpu.critical" for evt in captured)
-    assert any(evt.payload["event"]["type"] == "host.memory.critical" for evt in captured)
-    assert any(evt.payload["event"]["type"] == "host.thermal.critical" for evt in captured)
+    assert any(
+        evt.payload["event"]["type"] == "host.memory.critical" for evt in captured
+    )
+    assert any(
+        evt.payload["event"]["type"] == "host.thermal.critical" for evt in captured
+    )
     assert any(evt.payload["event"]["type"] == "host.disk.critical" for evt in captured)
 
     for event in captured:
@@ -154,7 +164,9 @@ def test_capture_signals_skips_host_metrics_when_sensor_unavailable(monkeypatch)
     assert "host_metrics" not in signals
 
 
-def test_capture_signals_blocks_disallowed_host_sensor_and_journals_refusal(tmp_path, monkeypatch):
+def test_capture_signals_blocks_disallowed_host_sensor_and_journals_refusal(
+    tmp_path, monkeypatch
+):
     reset_perception_state()
     monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
@@ -173,9 +185,16 @@ def test_capture_signals_blocks_disallowed_host_sensor_and_journals_refusal(tmp_
 
     journal = tmp_path / "mem" / "policy_decisions.jsonl"
     assert journal.exists()
-    entries = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines() if line.strip()]
+    entries = [
+        json.loads(line)
+        for line in journal.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     assert any(entry.get("category") == "sensor_access" for entry in entries)
-    assert any(str(entry.get("target", "")).startswith("sensor://host_metrics") for entry in entries)
+    assert any(
+        str(entry.get("target", "")).startswith("sensor://host_metrics")
+        for entry in entries
+    )
 
 
 def test_capture_signals_sanitizes_sensitive_host_metrics(monkeypatch):
@@ -202,7 +221,9 @@ def test_capture_signals_sanitizes_sensitive_host_metrics(monkeypatch):
     assert "username" not in host_metrics
 
 
-def test_capture_signals_publishes_host_star_events_on_host_perception_topic(monkeypatch):
+def test_capture_signals_publishes_host_star_events_on_host_perception_topic(
+    monkeypatch,
+):
     reset_perception_state()
     monkeypatch.setattr(
         "singular.perception.collect_host_metrics",
@@ -234,7 +255,9 @@ def test_capture_signals_publishes_host_star_events_on_host_perception_topic(mon
         "host.disk.critical",
     }
     assert all(event_type.startswith("host.") for event_type in emitted_types)
-    assert all(signal_event["type"] in emitted_types for signal_event in signals["host_events"])
+    assert all(
+        signal_event["type"] in emitted_types for signal_event in signals["host_events"]
+    )
 
 
 def test_capture_signals_derives_world_events(monkeypatch):
@@ -257,3 +280,65 @@ def test_capture_signals_derives_world_events(monkeypatch):
     assert "world.health.degradation" in event_types
     assert "world.resource.scarcity" in event_types
     assert "world.opportunity.window" in event_types
+
+
+def test_capture_signals_derives_system_perceptions_and_decisions(monkeypatch):
+    reset_perception_state()
+    monkeypatch.setattr("singular.perception.random.random", lambda: 0.1)
+    monkeypatch.setattr(
+        "singular.perception.collect_host_metrics",
+        lambda: {
+            "cpu_percent": 90.0,
+            "ram_used_percent": 85.0,
+            "disk_used_percent": 96.0,
+            "host_temperature_c": 80.0,
+        },
+    )
+
+    signals = capture_signals(publish_event=False)
+
+    perceptions = {entry["type"]: entry for entry in signals["derived_perceptions"]}
+    assert set(perceptions) >= {
+        "system.cpu.high",
+        "system.ram.high",
+        "system.disk.critical",
+        "system.temperature.high",
+        "system.environment.calm",
+    }
+    decisions = {entry["decision"]: entry for entry in signals["perception_decisions"]}
+    assert decisions["reduce_mutation_cadence"]["source_metric"] == "cpu_percent"
+    assert decisions["delay_heavy_synthesis"]["source_metric"] in {
+        "ram_used_percent",
+        "host_temperature_c",
+    }
+    assert decisions["prioritize_memory_compaction"]["source_metric"] in {
+        "ram_used_percent",
+        "disk_used_percent",
+    }
+    assert decisions["trigger_economy_mode"]["source_metric"] in {
+        "disk_used_percent",
+        "host_temperature_c",
+    }
+
+
+def test_capture_signals_policy_blocks_individual_derived_sensor(tmp_path, monkeypatch):
+    reset_perception_state()
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    policy = load_runtime_policy()
+    save_runtime_policy(replace(policy, sensors_blocked=("host_cpu",)))
+    monkeypatch.setattr(
+        "singular.perception.collect_host_metrics",
+        lambda: {
+            "cpu_percent": 99.0,
+            "ram_used_percent": 10.0,
+            "disk_used_percent": 10.0,
+        },
+    )
+
+    signals = capture_signals(publish_event=False)
+
+    assert all(
+        entry["type"] != "system.cpu.high"
+        for entry in signals.get("derived_perceptions", [])
+    )
