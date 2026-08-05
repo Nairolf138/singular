@@ -60,3 +60,55 @@ def test_create_lineage_record_rejects_empty_ids() -> None:
         assert "organism_id" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_life_registry_lineage_records_realistic_reproduction(
+    tmp_path, monkeypatch
+) -> None:
+    import json
+
+    from singular.lives import create_life, load_registry, reproduce_lives
+
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path / "root"))
+    parent_a = create_life("Alpha")
+    parent_b = create_life("Beta")
+    for parent, skill in ((parent_a, "observe"), (parent_b, "plan")):
+        (parent.path / "skills").mkdir(parents=True, exist_ok=True)
+        (parent.path / "mem").mkdir(parents=True, exist_ok=True)
+        (parent.path / "skills" / f"{skill}.py").write_text(
+            "def mix(x):\n    y = x + 1\n    return y\n",
+            encoding="utf-8",
+        )
+        (parent.path / "mem" / "psyche.json").write_text(
+            json.dumps({"curiosity": 0.75, "maturity_score": 0.9}),
+            encoding="utf-8",
+        )
+        (parent.path / "mem" / "life_events.jsonl").write_text(
+            "".join(
+                json.dumps(
+                    {
+                        "event": "tick",
+                        "status": "stable",
+                        "mode": "normal",
+                        "breaker": False,
+                    }
+                )
+                + "\n"
+                for _ in range(3)
+            ),
+            encoding="utf-8",
+        )
+
+    result = reproduce_lives("alpha", "beta", new_name="Gamma", seed=2)
+
+    assert result["status"] == "created"
+    registry = load_registry()
+    gamma = registry["lives"]["gamma"]
+    assert gamma.parents == ("alpha", "beta")
+    assert gamma.lineage_depth == 1
+    assert "gamma" in registry["lives"]["alpha"].children
+    assert "gamma" in registry["lives"]["beta"].children
+    lineage_payload = json.loads(
+        (gamma.path / "mem" / "lineage.json").read_text(encoding="utf-8")
+    )
+    assert lineage_payload["parents"] == ["alpha", "beta"]
