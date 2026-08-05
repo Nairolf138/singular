@@ -61,7 +61,10 @@ from singular.life.ecosystem import ARCHETYPES, EcosystemRulesConfig, compute_po
 
 from .death import DeathMonitor
 from .health import HealthTracker
-from singular.governance.policy import MutationGovernancePolicy
+from singular.governance.policy import (
+    MutationGovernancePolicy,
+    classify_sandbox_error_type,
+)
 from singular.governance.values import load_value_weights
 
 from .checkpointing import Checkpoint, CHECKPOINT_VERSION, load_checkpoint, save_checkpoint, _migrate_checkpoint_data
@@ -646,6 +649,25 @@ def _first_sandbox_error_type(
     """Prefer mutation diagnostics, falling back to source diagnostics."""
 
     return mutated_result.error_type or base_result.error_type
+
+
+def _sandbox_failure_classification(result: SandboxScore) -> str:
+    """Return the governance failure class for one sandbox score."""
+
+    return classify_sandbox_error_type(result.error_type, result.error_message)
+
+
+def _should_count_skill_quarantine_failure(
+    base_result: SandboxScore, mutated_result: SandboxScore
+) -> bool:
+    """Count only deterministic source failures observed in a healthy sandbox."""
+
+    if base_result.is_infrastructure_failure or mutated_result.is_infrastructure_failure:
+        return False
+    return (not base_result.ok) and _sandbox_failure_classification(base_result) in {
+        "invalid_candidate",
+        "policy_violation",
+    }
 
 
 def _choose_skill(
@@ -1907,18 +1929,37 @@ def run(
             }
             if sandbox_failure:
                 attempts = skill_sandbox_failures.get(selected_skill_key, 0)
+                skill_quarantine_failure = _should_count_skill_quarantine_failure(
+                    base_score_result,
+                    mutated_score_result,
+                )
                 if critical_sandbox_failure:
                     org.sandbox_violation_streak += 1
+                if skill_quarantine_failure:
                     attempts += 1
                     skill_sandbox_failures[selected_skill_key] = attempts
                     failed_skill_paths[selected_skill_key] = (org_name, skill_path)
+                elif not base_score_result.is_infrastructure_failure:
+                    skill_sandbox_failures.pop(selected_skill_key, None)
+                    failed_skill_paths.pop(selected_skill_key, None)
+                    attempts = 0
                 sandbox_diagnostic["sandbox_violation_streak"] = (
                     org.sandbox_violation_streak
                 )
                 sandbox_diagnostic["skill_sandbox_failure_streak"] = attempts
+                sandbox_diagnostic["skill_quarantine_failure_counted"] = (
+                    skill_quarantine_failure
+                )
+                sandbox_diagnostic["source_failure_classification"] = (
+                    _sandbox_failure_classification(base_score_result)
+                )
+                sandbox_diagnostic["mutation_failure_classification"] = (
+                    _sandbox_failure_classification(mutated_score_result)
+                )
                 logger.log_interaction("sandbox_violation", **sandbox_diagnostic)
-                quarantine_triggered = critical_sandbox_failure and attempts >= max(
-                    SKILL_SANDBOX_QUARANTINE_THRESHOLD, 1
+                quarantine_triggered = (
+                    skill_quarantine_failure
+                    and attempts >= max(SKILL_SANDBOX_QUARANTINE_THRESHOLD, 1)
                 )
                 if quarantine_triggered:
                     reason = "consecutive_sandbox_failures"

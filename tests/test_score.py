@@ -58,6 +58,21 @@ def test_sandbox_score_startup_timeout_is_infrastructure_failure(monkeypatch):
     assert result.is_candidate_failure is False
 
 
+def test_sandbox_score_execution_timeout_is_infrastructure_failure(monkeypatch):
+    def fail_execution(_code: str):
+        raise TimeoutError("sandbox execution timed out")
+
+    monkeypatch.setattr(sandbox, "run", fail_execution)
+
+    result = score_code_with_error("result = 1")
+
+    assert result.ok is False
+    assert result.error_type == "timeout"
+    assert result.comparable_score is None
+    assert result.is_infrastructure_failure is True
+    assert result.is_candidate_failure is False
+
+
 def test_sandbox_failure_category_distinguishes_base_and_mutation_failures():
     base = SandboxScore(score=float("-inf"), ok=False, error_type="syntax_error")
     mutation = SandboxScore(score=1.0)
