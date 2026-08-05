@@ -13,7 +13,9 @@ class _CaptureGoals:
     def __init__(self, *args, **kwargs):
         pass
 
-    def update_tick(self, *, tick, psyche, health_score, resources, perception_signals=None):
+    def update_tick(
+        self, *, tick, psyche, health_score, resources, perception_signals=None
+    ):
         _CaptureGoals.last_perception_signals = perception_signals
         return GoalWeights()
 
@@ -28,7 +30,9 @@ class _CaptureGoals:
             for h in hypotheses
         ]
 
-    def influence_operator_scores(self, operator_stats, skill_reputation=None):
+    def influence_operator_scores(
+        self, operator_stats, skill_reputation=None, **_kwargs
+    ):
         _CaptureGoals.last_skill_reputation = skill_reputation
         return {name: 0.0 for name in operator_stats}
 
@@ -37,7 +41,9 @@ def _dec_operator(tree, rng=None):
     return tree
 
 
-def test_run_passes_capture_signals_to_intrinsic_goals(tmp_path: Path, monkeypatch) -> None:
+def test_run_passes_capture_signals_to_intrinsic_goals(
+    tmp_path: Path, monkeypatch
+) -> None:
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     (skills_dir / "foo.py").write_text("result = 1", encoding="utf-8")
@@ -66,7 +72,10 @@ def test_run_passes_capture_signals_to_intrinsic_goals(tmp_path: Path, monkeypat
 
     assert _CaptureGoals.last_perception_signals is not None
     assert "artifact_events" in _CaptureGoals.last_perception_signals
-    assert _CaptureGoals.last_perception_signals["artifact_events"][0]["type"] == "artifact.tech_debt.simple"
+    assert (
+        _CaptureGoals.last_perception_signals["artifact_events"][0]["type"]
+        == "artifact.tech_debt.simple"
+    )
     assert isinstance(_CaptureGoals.last_skill_reputation, dict)
     traces = read_causal_timeline()
     assert traces
