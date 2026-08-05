@@ -122,6 +122,26 @@ unique et quitter immédiatement :
 singular talk --prompt "Bonjour"
 ```
 
+### Utiliser Ollama comme fournisseur LLM local
+
+Si Ollama tourne sur votre machine (API HTTP locale par défaut sur
+``http://127.0.0.1:11434``), sélectionnez le provider ``ollama`` avec
+``LLM_PROVIDER`` :
+
+```bash
+LLM_PROVIDER=ollama singular talk --prompt "Bonjour, qui es-tu ?"
+```
+
+Configuration utile :
+
+- ``OLLAMA_HOST`` : URL de l'API Ollama (défaut : ``http://127.0.0.1:11434``) ;
+- ``OLLAMA_MODEL`` : modèle de génération (défaut : ``llama3.2``) ;
+- ``OLLAMA_EMBED_MODEL`` : modèle d'embeddings si différent du modèle de génération.
+
+La chaîne de fallback intégrée essaie ``local``, ``ollama``, ``openai`` puis
+``dummy``. Vous pouvez la personnaliser avec ``LLM_PROVIDER_FALLBACK`` (ex.
+``LLM_PROVIDER_FALLBACK=ollama,dummy``).
+
 ### CLI `loop` (budget en secondes)
 
 La syntaxe officielle utilise désormais un budget temporel explicite :
