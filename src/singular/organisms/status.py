@@ -407,6 +407,9 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             ["Verdict de vie", str((payload.get("life_status") or {}).get("status") or "-")],
             ["Score de vie", _fmt_number((payload.get("life_status") or {}).get("score"))],
             ["Explication", str((payload.get("life_status") or {}).get("explanation") or "-")],
+            ["Autonomy index", _fmt_number(autonomy.get("autonomy_index"))],
+            ["Mutation viability", _fmt_number(autonomy.get("mutation_viability"))],
+            ["Périodes budgétées ignorées", str(autonomy.get("budgeted_periods_ignored") or 0)],
             ["Taux d’initiatives proactives", _fmt_ratio(autonomy.get("proactive_initiative_rate"))],
             ["Stabilité long terme", _fmt_ratio(autonomy.get("long_term_stability"))],
             [
@@ -501,6 +504,9 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         print(f"Mutation count: {payload['mutation_count']}")
         autonomy = payload.get("autonomy_metrics") if isinstance(payload.get("autonomy_metrics"), dict) else {}
         decision_quality = autonomy.get("decision_quality") if isinstance(autonomy.get("decision_quality"), dict) else {}
+        print(f"Autonomy index: {_fmt_number(autonomy.get('autonomy_index'))}")
+        print(f"Mutation viability: {_fmt_number(autonomy.get('mutation_viability'))}")
+        print(f"Périodes budgétées ignorées: {autonomy.get('budgeted_periods_ignored') or 0}")
         print(f"Taux d’initiatives proactives: {_fmt_ratio(autonomy.get('proactive_initiative_rate'))}")
         print(f"Stabilité long terme: {_fmt_ratio(autonomy.get('long_term_stability'))}")
         print(

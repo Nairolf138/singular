@@ -42,10 +42,21 @@ def _is_proactive_record(record: dict[str, Any]) -> bool:
     return event in {"mutation", "interaction", "test_coevolution"} or "score_new" in record
 
 
-def compute_autonomy_metrics(records: list[dict[str, Any]]) -> dict[str, float | dict[str, float] | None]:
-    """Compute autonomy-oriented metrics from run records."""
+def _is_voluntary_budget_record(record: dict[str, Any]) -> bool:
+    event = str(record.get("event", "")).strip().lower()
+    return record.get("voluntary_budget") is True or event in {"loop.budget_exhausted", "daemon.budget_exhausted"}
 
-    action_records = [record for record in records if _is_action_record(record)]
+
+def compute_autonomy_metrics(records: list[dict[str, Any]]) -> dict[str, float | dict[str, float] | None]:
+    """Compute autonomy-oriented metrics from run records.
+
+    ``autonomy_index`` deliberately excludes voluntary wall-clock budget markers so
+    a deliberately bounded ``loop --budget-seconds`` run is not interpreted as a
+    loss of autonomy or death.
+    """
+
+    effective_records = [record for record in records if not _is_voluntary_budget_record(record)]
+    action_records = [record for record in effective_records if _is_action_record(record)]
     proactive_records = [record for record in action_records if _is_proactive_record(record)]
     proactive_rate = (
         len(proactive_records) / len(action_records) if action_records else None
@@ -103,7 +114,7 @@ def compute_autonomy_metrics(records: list[dict[str, Any]]) -> dict[str, float |
 
     latencies_ms: list[float] = []
     last_perception_ts: datetime | None = None
-    for record in records:
+    for record in effective_records:
         if record.get("event") == "consciousness":
             parsed = _parse_ts(record.get("ts"))
             if parsed is not None:
@@ -151,7 +162,14 @@ def compute_autonomy_metrics(records: list[dict[str, Any]]) -> dict[str, float |
     if resource_costs and total_positive_gain > 0:
         resource_cost_per_gain = sum(resource_costs) / total_positive_gain
 
+    autonomy_components = [value for value in (proactive_rate, long_term_stability, acceptance_rate) if value is not None]
+    autonomy_index = round((sum(autonomy_components) / len(autonomy_components)) * 100.0, 1) if autonomy_components else None
+    mutation_viability = round((acceptance_rate or 0.0) * 100.0, 1) if decisions else None
+
     return {
+        "autonomy_index": autonomy_index,
+        "budgeted_periods_ignored": len(records) - len(effective_records),
+        "mutation_viability": mutation_viability,
         "proactive_initiative_rate": proactive_rate,
         "long_term_stability": long_term_stability,
         "decision_quality": {
