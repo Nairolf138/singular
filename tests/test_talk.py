@@ -389,3 +389,33 @@ def test_talk_status_includes_active_fallback_and_error_category(monkeypatch, tm
 
     assert any("Provider active: missing" in out for out in outputs)
     assert any("fallback=true" in out and "error_category=provider_missing" in out for out in outputs)
+
+
+def test_talk_recalls_prior_episode_in_provider_prompt(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    captured: dict[str, str] = {}
+
+    class CapturingClient:
+        name = "stub"
+        llm_real = True
+
+        def generate_reply(self, prompt: str) -> str:
+            captured["prompt"] = prompt
+            return "je m'en souviens"
+
+    monkeypatch.setattr(
+        "singular.organisms.talk.load_llm_client", lambda _name: CapturingClient()
+    )
+    outputs: list[str] = []
+    monkeypatch.setattr("builtins.print", lambda msg: outputs.append(msg))
+
+    talk(provider="stub", prompt="Peux-tu aider avec ce bug urgent ?")
+    talk(provider="stub", prompt="Le bug est-il toujours prioritaire ?")
+
+    assert "Peux-tu aider avec ce bug urgent" in captured["prompt"]
+    episodes = read_episodes()
+    assert any(e.get("event") == "memory.recalled" for e in episodes)
+    assert any(e.get("event") == "memory.used_for_decision" for e in episodes)
+    assistant = [e for e in episodes if e.get("role") == "assistant"][-1]
+    assert "Peux-tu aider avec ce bug urgent" in assistant["context"]["recalled_memory_summary"]

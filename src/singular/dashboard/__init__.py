@@ -18,7 +18,7 @@ from singular.life.life_status import compute_life_status
 from singular.life.vital import compute_vital_timeline
 from singular.metrics.autonomy import compute_autonomy_metrics
 from singular.metrics.behavioral_regulation import compute_behavioral_regulation_metrics
-from singular.memory import read_causal_timeline, read_skills
+from singular.memory import read_causal_timeline, read_episodes, read_skills
 from singular.storage_retention import retention_status_snapshot
 
 from singular.dashboard.actions import DashboardActionService
@@ -687,11 +687,32 @@ def create_app(
         except Exception:
             causal_items = []
         causal_count = len(causal_items) if isinstance(causal_items, list) else 0
+        episodic_items = []
+        try:
+            episodic_items = read_episodes()
+        except Exception:
+            episodic_items = []
+        used_memories = []
+        for episode in reversed(episodic_items):
+            if episode.get("event") != "memory.used_for_decision":
+                continue
+            used_memories.append({
+                "timestamp": episode.get("ts"),
+                "source": episode.get("source"),
+                "decision": episode.get("decision"),
+                "summary": episode.get("summary"),
+                "memories": episode.get("memories", []),
+                "skill": episode.get("skill"),
+                "operator": episode.get("operator"),
+            })
+            if len(used_memories) >= 10:
+                break
         return {
             "records_count": len(memory_records),
             "causal_timeline_items": causal_count,
             "latest_memory": latest_memory,
-            "has_memory_signal": bool(memory_records or causal_count),
+            "used_memories": used_memories,
+            "has_memory_signal": bool(memory_records or causal_count or used_memories),
         }
 
     def _summarize_performance(records: list[dict[str, object]]) -> dict[str, object]:
@@ -939,12 +960,7 @@ def create_app(
                 "global_status": "unknown",
                 "autonomy_metrics": {},
                 "behavioral_regulation_metrics": {},
-                "memory_metrics": {
-                    "records_count": 0,
-                    "causal_timeline_items": 0,
-                    "latest_memory": None,
-                    "has_memory_signal": False,
-                },
+                "memory_metrics": _summarize_memory([]),
                 "performance_metrics": {
                     "records_count": 0,
                     "mutation_count": 0,

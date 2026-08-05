@@ -9,7 +9,14 @@ import re
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from ..memory import add_causal_trace, add_episode, ensure_memory_structure, read_episodes
+from ..memory import (
+    add_causal_trace,
+    add_episode,
+    ensure_memory_structure,
+    format_recalled_memories,
+    read_episodes,
+    recall_relevant_episodes,
+)
 from ..perception import capture_signals
 from ..psyche import Mood, Psyche
 from ..self_narrative import load as load_self_narrative, summarize_short
@@ -144,6 +151,7 @@ def _build_system_preamble(
     narrative_summary: str,
     last_event: str | None,
     mood_event: str | None,
+    recalled_memory_summary: str | None = None,
 ) -> str:
     available_for_summary = max(0, _CONTEXT_BUDGET_CHARS - len(_UNKNOWN_GUARD) - 120)
     summary = _trim_for_budget(narrative_summary, available_for_summary)
@@ -153,6 +161,7 @@ def _build_system_preamble(
         f"Contexte identitaire: {summary}\n"
         f"Dernier événement utilisateur: {event_fragment}\n"
         f"Humeur récente: {mood_fragment}\n"
+        f"Souvenirs pertinents: {_trim_for_budget(recalled_memory_summary or 'aucun souvenir pertinent', 120)}\n"
         f"{_UNKNOWN_GUARD}"
     )
     return _trim_for_budget(preamble, _CONTEXT_BUDGET_CHARS)
@@ -254,6 +263,17 @@ def talk(
         self_narrative_version: int,
     ) -> None:
         user_signals = _extract_structured_signals(user_input)
+        theme = str(user_signals.get("theme", "general"))
+        recall_terms = [theme] if theme != "general" else []
+        recalled_memories = recall_relevant_episodes(
+            themes=recall_terms,
+            objectives=[f"user_dialogue:{theme}"] if theme != "general" else [],
+            limit=3,
+        )
+        recall_summary = format_recalled_memories(recalled_memories)
+        if recalled_memories:
+            add_episode({"event": "memory.recalled", "source": "talk", "query": user_input, "memories": recalled_memories, "summary": recall_summary})
+            add_episode({"event": "memory.used_for_decision", "source": "talk", "decision": "assistant_reply", "memories": recalled_memories, "summary": recall_summary})
         add_episode({"role": "user", "text": user_input, "structured_signals": user_signals})
         mood = psyche.feel(Mood.NEUTRAL)
         mood_report = mood_event or mood.value
@@ -261,6 +281,7 @@ def talk(
             narrative_summary=self_narrative_summary,
             last_event=last_event,
             mood_event=mood_event,
+            recalled_memory_summary=format_recalled_memories(recalled_memories),
         )
         provider_prompt = f"{system_preamble}\n\nUtilisateur: {user_input}"
 
@@ -337,6 +358,8 @@ def talk(
                     "self_narrative_summary": _trim_for_budget(
                         self_narrative_summary, 180
                     ),
+                    "recalled_memories": recalled_memories,
+                    "recalled_memory_summary": recall_summary,
                 },
             }
         )
@@ -364,6 +387,8 @@ def talk(
                     "error_category": error_category,
                     "llm_real": llm_real,
                     "mood": mood_report,
+                    "recalled_memory_summary": recall_summary,
+                    "recalled_memories": recalled_memories,
                 },
                 "action": {
                     "kind": "assistant_reply",

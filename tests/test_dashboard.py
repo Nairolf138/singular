@@ -2348,3 +2348,31 @@ def test_chat_post_remains_the_message_execution_path(
     assert response.status_code == 200
     assert response.json()["status"] == "message_missing"
     assert response.json()["response"] == "Message vide: saisissez un contenu à envoyer."
+
+
+def test_dashboard_cockpit_exposes_used_memories(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    mem_dir = tmp_path / "mem"
+    mem_dir.mkdir()
+    (mem_dir / "episodic.jsonl").write_text(
+        json.dumps(
+            {
+                "event": "memory.used_for_decision",
+                "source": "talk",
+                "decision": "assistant_reply",
+                "summary": "bug prioritaire rappelé",
+                "memories": [{"summary": "ancien bug urgent"}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+
+    payload = TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")).get(
+        "/api/cockpit"
+    ).json()
+
+    assert payload["memory_metrics"]["has_memory_signal"] is True
+    assert payload["memory_metrics"]["used_memories"][0]["summary"] == "bug prioritaire rappelé"
