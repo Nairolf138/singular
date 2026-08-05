@@ -131,14 +131,14 @@ def test_policy_logs_circuit_breaker_opened_only_once_when_already_open(
     policy._now = lambda: clock["now"]  # type: ignore[method-assign]
     caplog.set_level(logging.ERROR, logger="singular.governance.policy")
 
-    first = policy.record_violation(category="quota", severity="high")
-    opened = policy.record_violation(category="quota", severity="high")
-    repeated = policy.record_violation(category="quota", severity="high")
-    policy.record_violation(category="quota", severity="high")
+    first = policy.record_violation(category="governance_violation", severity="high")
+    opened = policy.record_violation(category="governance_violation", severity="high")
+    repeated = policy.record_violation(category="governance_violation", severity="high")
+    policy.record_violation(category="governance_violation", severity="high")
 
     assert first is None
     assert opened is not None
-    assert opened.category == "quota"
+    assert opened.category == "governance_violation"
     assert opened.severity == "high"
     assert opened.threshold == 2
     assert opened.cooldown_seconds == 120.0

@@ -2004,17 +2004,24 @@ def run(
                             sandbox_diagnostic
                         )
                         logger.log_event(
+                            "governance.security_circuit_breaker_opened", **breaker_payload
+                        )
+                        logger.log_event(
                             "governance.circuit_breaker_opened", **breaker_payload
                         )
-                        event_bus.publish(
+                        for breaker_event_name in (
+                            "governance.security_circuit_breaker_opened",
                             "governance.circuit_breaker_opened",
-                            {
-                                "life": org_name,
-                                "iteration": state.iteration,
-                                **breaker_payload,
-                            },
-                            payload_version=1,
-                        )
+                        ):
+                            event_bus.publish(
+                                breaker_event_name,
+                                {
+                                    "life": org_name,
+                                    "iteration": state.iteration,
+                                    **breaker_payload,
+                                },
+                                payload_version=1,
+                            )
                 if (
                     org.sandbox_violation_streak >= SANDBOX_DEGRADED_MODE_THRESHOLD
                     and not org.degraded_mode
