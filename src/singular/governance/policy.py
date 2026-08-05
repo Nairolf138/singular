@@ -115,9 +115,11 @@ def _default_policy_payload() -> dict[str, Any]:
             "skill_creation_quota_window_seconds": 900.0,
             "file_creation_review_required": False,
             "safe_mode_review_required_skill_families": ["network", "shell", "filesystem"],
-            "circuit_breaker_threshold": 3,
+            "circuit_breaker_threshold": 15,
             "circuit_breaker_window_seconds": 180.0,
-            "circuit_breaker_cooldown_seconds": 300.0,
+            "circuit_breaker_cooldown_seconds": 60.0,
+            "circuit_breaker_critical_threshold": 3,
+            "circuit_breaker_invalid_mutation_threshold": 15,
             "skill_circuit_breaker_failure_threshold": 3,
             "skill_circuit_breaker_cost_threshold": 5.0,
             "skill_circuit_breaker_cooldown_seconds": 600.0,
@@ -237,6 +239,8 @@ class RuntimePolicy:
     circuit_breaker_threshold: int
     circuit_breaker_window_seconds: float
     circuit_breaker_cooldown_seconds: float
+    circuit_breaker_critical_threshold: int
+    circuit_breaker_invalid_mutation_threshold: int
     skill_circuit_breaker_failure_threshold: int
     skill_circuit_breaker_cost_threshold: float
     skill_circuit_breaker_cooldown_seconds: float
@@ -293,6 +297,8 @@ class RuntimePolicy:
                 "circuit_breaker_threshold": self.circuit_breaker_threshold,
                 "circuit_breaker_window_seconds": self.circuit_breaker_window_seconds,
                 "circuit_breaker_cooldown_seconds": self.circuit_breaker_cooldown_seconds,
+                "circuit_breaker_critical_threshold": self.circuit_breaker_critical_threshold,
+                "circuit_breaker_invalid_mutation_threshold": self.circuit_breaker_invalid_mutation_threshold,
                 "skill_circuit_breaker_failure_threshold": self.skill_circuit_breaker_failure_threshold,
                 "skill_circuit_breaker_cost_threshold": self.skill_circuit_breaker_cost_threshold,
                 "skill_circuit_breaker_cooldown_seconds": self.skill_circuit_breaker_cooldown_seconds,
@@ -324,7 +330,8 @@ class RuntimePolicy:
                 f"quota-runtime={self.runtime_call_quota_per_hour}/h, "
                 f"quota-creation={self.skill_creation_quota_per_window}/{self.skill_creation_quota_window_seconds:.0f}s, "
                 f"review-creation={'on' if self.file_creation_review_required else 'off'}, "
-                f"circuit={self.circuit_breaker_threshold} violations/{self.circuit_breaker_window_seconds:.0f}s, "
+                f"circuit={self.circuit_breaker_threshold} violations/{self.circuit_breaker_window_seconds:.0f}s "
+                f"(critical={self.circuit_breaker_critical_threshold}, invalid={self.circuit_breaker_invalid_mutation_threshold}), "
                 f"safe_mode={'on' if self.safe_mode else 'off'}."
             ),
         ]
@@ -368,6 +375,8 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
             "safe_mode_review_required_skill_families",
             ["network", "shell", "filesystem"],
         )
+        autonomy.setdefault("circuit_breaker_critical_threshold", 3)
+        autonomy.setdefault("circuit_breaker_invalid_mutation_threshold", 15)
         autonomy.setdefault("skill_circuit_breaker_failure_threshold", 3)
         autonomy.setdefault("skill_circuit_breaker_cost_threshold", 5.0)
         autonomy.setdefault("skill_circuit_breaker_cooldown_seconds", 600.0)
@@ -413,6 +422,8 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
         "circuit_breaker_threshold",
         "circuit_breaker_window_seconds",
         "circuit_breaker_cooldown_seconds",
+        "circuit_breaker_critical_threshold",
+        "circuit_breaker_invalid_mutation_threshold",
         "skill_circuit_breaker_failure_threshold",
         "skill_circuit_breaker_cost_threshold",
         "skill_circuit_breaker_cooldown_seconds",
@@ -523,6 +534,12 @@ def _validate_runtime_policy(payload: Mapping[str, Any]) -> RuntimePolicy:
         circuit_breaker_threshold=_coerce_int(autonomy, "circuit_breaker_threshold", minimum=1),
         circuit_breaker_window_seconds=_coerce_float(autonomy, "circuit_breaker_window_seconds", minimum=1.0),
         circuit_breaker_cooldown_seconds=_coerce_float(autonomy, "circuit_breaker_cooldown_seconds", minimum=1.0),
+        circuit_breaker_critical_threshold=_coerce_int(
+            autonomy, "circuit_breaker_critical_threshold", minimum=1
+        ),
+        circuit_breaker_invalid_mutation_threshold=_coerce_int(
+            autonomy, "circuit_breaker_invalid_mutation_threshold", minimum=1
+        ),
         skill_circuit_breaker_failure_threshold=_coerce_int(
             autonomy,
             "skill_circuit_breaker_failure_threshold",
@@ -673,9 +690,11 @@ class MutationGovernancePolicy:
         skill_creation_quota_window_seconds: float = 900.0,
         file_creation_review_required: bool = False,
         safe_mode_review_required_skill_families: tuple[str, ...] | None = None,
-        circuit_breaker_threshold: int = 3,
+        circuit_breaker_threshold: int = 15,
         circuit_breaker_window_seconds: float = 180.0,
-        circuit_breaker_cooldown_seconds: float = 300.0,
+        circuit_breaker_cooldown_seconds: float = 60.0,
+        circuit_breaker_critical_threshold: int | None = None,
+        circuit_breaker_invalid_mutation_threshold: int | None = None,
         skill_circuit_breaker_failure_threshold: int = 3,
         skill_circuit_breaker_cost_threshold: float = 5.0,
         skill_circuit_breaker_cooldown_seconds: float = 600.0,
@@ -765,6 +784,26 @@ class MutationGovernancePolicy:
                 or runtime_policy.circuit_breaker_cooldown_seconds
             ),
             1.0,
+        )
+        default_critical_threshold = min(
+            runtime_policy.circuit_breaker_critical_threshold,
+            self.circuit_breaker_threshold,
+        )
+        self.circuit_breaker_critical_threshold = max(
+            int(
+                circuit_breaker_critical_threshold
+                if circuit_breaker_critical_threshold is not None
+                else default_critical_threshold
+            ),
+            1,
+        )
+        self.circuit_breaker_invalid_mutation_threshold = max(
+            int(
+                circuit_breaker_invalid_mutation_threshold
+                if circuit_breaker_invalid_mutation_threshold is not None
+                else runtime_policy.circuit_breaker_invalid_mutation_threshold
+            ),
+            1,
         )
         self.skill_circuit_breaker_failure_threshold = max(
             int(
@@ -1002,25 +1041,48 @@ class MutationGovernancePolicy:
         """
 
         self._prune_history()
+        normalized_category = category.strip().lower()
+        normalized_severity = severity.strip().lower()
+        dangerous_categories = {
+            "dangerous_mutation_violation",
+            "source_sandbox_violation",
+            "governance_violation",
+        }
+        if normalized_category == "infrastructure" or normalized_severity in {
+            "info",
+            "low",
+        }:
+            return None
+        if (
+            normalized_category not in dangerous_categories
+            and normalized_severity != "critical"
+        ):
+            return None
+
         now = self._now()
         was_open = self._circuit_open_until is not None and now < self._circuit_open_until
         self._violation_timestamps.append(now)
-        if not was_open and len(self._violation_timestamps) >= self.circuit_breaker_threshold:
+        threshold = (
+            self.circuit_breaker_critical_threshold
+            if normalized_severity == "critical"
+            else self.circuit_breaker_threshold
+        )
+        if not was_open and len(self._violation_timestamps) >= threshold:
             self._circuit_open_until = now + timedelta(seconds=self.circuit_breaker_cooldown_seconds)
             state = CircuitBreakerState(
                 category=category,
                 severity=severity,
-                threshold=self.circuit_breaker_threshold,
+                threshold=threshold,
                 cooldown_seconds=self.circuit_breaker_cooldown_seconds,
                 open_until=self._circuit_open_until.isoformat(),
-                corrective_action="halt mutations until the circuit-breaker cooldown expires",
+                corrective_action="halt mutations until the security circuit-breaker cooldown expires",
             )
             self._last_circuit_breaker_state = state
             log.error(
                 "governance circuit breaker opened: category=%s severity=%s threshold=%s cooldown=%ss",
                 category,
                 severity,
-                self.circuit_breaker_threshold,
+                threshold,
                 self.circuit_breaker_cooldown_seconds,
             )
             return state
