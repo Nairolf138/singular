@@ -25,6 +25,7 @@ class SandboxScore:
     _legacy_exception_type: str | None
 
     INFRASTRUCTURE_ERROR_TYPES: ClassVar[frozenset[str]] = frozenset({
+        "timeout",
         "sandbox_startup_timeout",
         "sandbox_worker_no_payload",
         "multiprocessing_error",
@@ -38,7 +39,6 @@ class SandboxScore:
         "forbidden_name",
         "sandbox_error",
         "runtime_exception",
-        "timeout",
     })
 
     def __init__(
@@ -200,6 +200,10 @@ def _classify_score_exception(exception: BaseException) -> str:
         return "syntax_error"
     if isinstance(exception, sandbox.SandboxError):
         message = str(exception).lower()
+        if "forbidden syntax" in message:
+            return "forbidden_syntax"
+        if "forbidden" in message and "use of" in message:
+            return "forbidden_name"
         if "worker" in message and (
             "without payload" in message or "without returning" in message
         ):

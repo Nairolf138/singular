@@ -22,12 +22,49 @@ AUTH_BLOCKED = "blocked"
 AUTH_FORCED = "forced"
 POLICY_SCHEMA_VERSION = 1
 
+SANDBOX_INFRASTRUCTURE_ERROR_TYPES = frozenset(
+    {
+        "timeout",
+        "sandbox_startup_timeout",
+        "sandbox_worker_no_payload",
+        "multiprocessing_error",
+    }
+)
+SANDBOX_INVALID_CANDIDATE_ERROR_TYPES = frozenset(
+    {"syntax_error", "missing_result", "non_numeric_result", "non_finite_result"}
+)
+SANDBOX_POLICY_VIOLATION_ERROR_TYPES = frozenset(
+    {"forbidden_syntax", "forbidden_name"}
+)
+
 _ROOT_POLICY_FILE = "policy.yaml"
 _POLICY_DECISIONS_LOG = "policy_decisions.jsonl"
 
 
 class PolicySchemaError(ValueError):
     """Raised when ``policy.yaml`` does not respect strict governance schema."""
+
+
+def classify_sandbox_error_type(
+    error_type: str | None, error_message: str | None = None
+) -> str:
+    """Classify stable ``SandboxScore.error_type`` values for governance."""
+
+    if error_type in SANDBOX_INFRASTRUCTURE_ERROR_TYPES:
+        return "infrastructure"
+    if error_type in SANDBOX_INVALID_CANDIDATE_ERROR_TYPES:
+        return "invalid_candidate"
+    message = (error_message or "").lower()
+    if error_type in SANDBOX_POLICY_VIOLATION_ERROR_TYPES or (
+        error_type == "sandbox_error"
+        and ("forbidden" in message or "use of" in message)
+    ):
+        return "policy_violation"
+    if error_type == "sandbox_error":
+        return "invalid_candidate"
+    if error_type is None:
+        return "none"
+    return "invalid_candidate"
 
 
 def _default_policy_payload() -> dict[str, Any]:
