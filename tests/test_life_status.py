@@ -8,7 +8,24 @@ from singular.life.life_status import (
     AUTHORIZED_LIFE_STATUSES,
     LifeStatus,
     LifeStatusResult,
+    _failure_streak,
 )
+
+
+@pytest.mark.parametrize(
+    ("outcomes", "expected"),
+    [
+        ([False, False, True], 0),
+        ([True, False, False], 2),
+        ([False] * 6 + [True, False], 1),
+    ],
+)
+def test_failure_streak_counts_only_trailing_failures(
+    outcomes: list[bool], expected: int
+) -> None:
+    rows = [{"accepted": outcome} for outcome in outcomes]
+
+    assert _failure_streak(rows) == expected
 
 
 def test_authorized_life_statuses_are_stable_contract() -> None:

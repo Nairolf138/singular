@@ -11,6 +11,9 @@ class VitalThresholds:
     terminal_age: int = 120
     terminal_health: float = 25.0
     high_failure_rate: float = 0.6
+    # Five unresolved consecutive failures indicate a terminal condition. A
+    # subsequent success resets the current streak and therefore clears this
+    # cause; historical failure peaks must not be supplied here.
     terminal_failure_streak: int = 5
     reproduction_min_age: int = 3
     reproduction_max_age: int = 80
@@ -26,7 +29,14 @@ def compute_vital_timeline(
     registry_status: str | None = None,
     thresholds: VitalThresholds = VitalThresholds(),
 ) -> dict[str, object]:
-    """Return an observable timeline payload from deterministic rules."""
+    """Return an observable timeline payload from deterministic rules.
+
+    ``failure_streak`` is the *current* number of consecutive failed outcomes
+    at the end of the relevant sequence, not its historical maximum. A later
+    successful outcome resets it to zero. The terminal streak threshold is
+    intentionally applied only to this unresolved, current run of failures;
+    extinction remains driven by explicit extinction evidence/status.
+    """
 
     causes: list[str] = []
     if extinction_seen or registry_status == "extinct":
@@ -68,6 +78,7 @@ def compute_vital_timeline(
 
     return {
         "age": age,
+        "current_failure_streak": failure_streak,
         "state": state,
         "risk_level": risk_level,
         "terminal": state in {"terminal", "extinct"},
@@ -85,4 +96,3 @@ def compute_vital_timeline(
             ],
         },
     }
-
