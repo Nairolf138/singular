@@ -539,6 +539,37 @@ def test_dashboard_cockpit_endpoint_schema(tmp_path: Path) -> None:
     assert isinstance(payload["life_status_missing_signals"], list)
 
 
+def test_dashboard_vital_state_recovers_after_historical_failure_peak(
+    tmp_path: Path,
+) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    records = [
+        {
+            "ts": f"2026-04-12T10:{index:02d}:00",
+            "accepted": accepted,
+            "score_base": 10.0,
+            "score_new": 11.0,
+            "health": {"score": 90.0},
+        }
+        for index, accepted in enumerate([False] * 5 + [True])
+    ]
+    (runs_dir / "recovery.jsonl").write_text(
+        "\n".join(json.dumps(record) for record in records) + "\n",
+        encoding="utf-8",
+    )
+
+    payload = TestClient(
+        create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    ).get("/api/cockpit").json()
+
+    assert payload["vital_timeline"]["state"] != "terminal"
+    assert payload["vital_timeline"]["current_failure_streak"] == 0
+    code_generation = payload["vital_metrics"]["code_generation"]
+    assert code_generation["current_failure_streak"] == 0
+    assert code_generation["max_failure_streak"] == 5
+
+
 def test_dashboard_cockpit_sandbox_governance_summary(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()

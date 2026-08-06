@@ -1168,7 +1168,7 @@ def create_app(
             age=len(mutations),
             current_health=health_score,
             failure_rate=(1 - accepted_rate) if accepted_rate is not None else None,
-            failure_streak=max_failure_streak,
+            failure_streak=failure_streak,
             extinction_seen=any(rec.get("event") == "death" for rec in records),
         )
         comparison, _ = _aggregate_lives(current_life_only=current_life_only)
@@ -1246,6 +1246,8 @@ def create_app(
                     "rejected": rejected_count,
                     "success_rate": accepted_rate,
                     "risk_level": code_risk,
+                    "current_failure_streak": failure_streak,
+                    "max_failure_streak": max_failure_streak,
                 },
                 "risks": [str(alert.get("kind", "")) for alert in critical_alerts],
             },

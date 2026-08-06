@@ -345,16 +345,16 @@ def _accepted_value(row: Mapping[str, Any]) -> bool | None:
 
 
 def _failure_streak(rows: Sequence[Mapping[str, Any]]) -> int:
+    """Return the consecutive failure count at the end of the known outcomes."""
+
     current = 0
-    longest = 0
     for row in rows:
         accepted = _accepted_value(row)
         if accepted is False:
             current += 1
-            longest = max(longest, current)
         elif accepted is True:
             current = 0
-    return longest
+    return current
 
 
 def _list_count(value: Any) -> int:
