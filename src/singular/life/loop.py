@@ -89,6 +89,8 @@ from .profiling import LifeLoopProfiler
 
 log = logging.getLogger(__name__)
 
+_DEFAULT_RUN_LOGGER = RunLogger
+
 # Energy management during the evolutionary loop. When the psyche's energy
 # falls below ``SLEEP_THRESHOLD`` the organism will enter a sleeping phase for
 # ``SLEEP_TICKS`` iterations where no mutations are attempted.
@@ -929,11 +931,17 @@ def run(
         with current_tick_profiler.phase("test_runner"):
             return test_runner()
 
-    with RunLogger(run_id, psyche=psyche) as logger:
+    life_root = Path(os.environ.get("SINGULAR_HOME", "."))
+    logger_kwargs: dict[str, object] = {"psyche": psyche}
+    # Keep the injection point used by tests and downstream integrations while
+    # making the production logger's active-life destination explicit.
+    if RunLogger is _DEFAULT_RUN_LOGGER:
+        logger_kwargs["root"] = life_root / "runs"
+    with RunLogger(run_id, **logger_kwargs) as logger:
         health_tracker = HealthTracker.from_state(state.health_counters)
         delayed: list[tuple[float, str, Path]] = []
         tick_count = 0
-        persistent_world_state_path = Path(os.environ.get("SINGULAR_HOME", ".")) / "mem" / "world_state.lifecycle.json"
+        persistent_world_state_path = life_root / "mem" / "world_state.lifecycle.json"
         persistent_world_state = PersistentWorldState.load(persistent_world_state_path)
         while time.time() - start < budget_seconds:
             if max_iterations is not None and tick_count >= max_iterations:

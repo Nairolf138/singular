@@ -103,7 +103,11 @@ def _ensure_dir(path: Path) -> None:
 def _enforce_retention(root: Path) -> None:
     """Apply retention policy to run logs and temporary files."""
 
-    run_retention_service(base_dir=_BASE_DIR, runs_dir=root)
+    run_retention_service(
+        base_dir=root.parent,
+        runs_dir=root,
+        enforce_minimum_interval=False,
+    )
 
 
 @dataclass
@@ -115,16 +119,21 @@ class RunLogger:
     run_id:
         Identifier for the run.
     root:
-        Directory in which log files are written. Defaults to :data:`RUNS_DIR`.
+        Directory in which log files are written. When omitted, it is resolved
+        from the current ``SINGULAR_HOME`` value at construction time.
     """
 
     run_id: str
-    root: Path = RUNS_DIR
+    root: Path | None = None
     psyche: Psyche = field(default_factory=Psyche.load_state)
     reputation_update_every: int = DEFAULT_REPUTATION_UPDATE_EVERY
 
     def __post_init__(self) -> None:
-        self.root = Path(self.root)
+        self.root = (
+            Path(self.root)
+            if self.root is not None
+            else Path(os.environ.get("SINGULAR_HOME", ".")) / "runs"
+        )
         self.root.mkdir(parents=True, exist_ok=True)
 
         self.run_dir = self.root / self.run_id
