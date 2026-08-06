@@ -33,9 +33,7 @@ from ..providers import (
 from ..runs.logger import log_provider_event
 
 _CONTEXT_BUDGET_CHARS = 420
-_UNKNOWN_GUARD = (
-    "Garde anti-hallucination: si une information demandée est inconnue, réponds explicitement \"inconnu\"."
-)
+_UNKNOWN_GUARD = 'Garde anti-hallucination: si une information demandée est inconnue, réponds explicitement "inconnu".'
 
 
 def _default_reply(prompt: str, rng: random.Random) -> str:
@@ -108,11 +106,13 @@ def _extract_structured_signals(text: str) -> dict[str, object]:
     token_count = max(1, len(re.findall(r"\w+", lowered)))
     frustration = min(
         1.0,
-        sum(1 for token in frustration_tokens if token in lowered) / max(1.0, token_count * 0.2),
+        sum(1 for token in frustration_tokens if token in lowered)
+        / max(1.0, token_count * 0.2),
     )
     satisfaction = min(
         1.0,
-        sum(1 for token in satisfaction_tokens if token in lowered) / max(1.0, token_count * 0.2),
+        sum(1 for token in satisfaction_tokens if token in lowered)
+        / max(1.0, token_count * 0.2),
     )
     urgency = min(
         1.0,
@@ -178,22 +178,28 @@ def talk(
 
     rng = random.Random(seed)
 
-    provider_name = provider or os.getenv("LLM_PROVIDER")
-    if not provider_name:
-        provider_name = "openai" if os.getenv("OPENAI_API_KEY") else "stub"
-    print(f"Provider: {provider_name}")
+    # Keep the user's selection separate from the backend (or fallback chain)
+    # resolved by the provider loader.  None deliberately enables its automatic
+    # fallback policy; credentials must not silently turn into a selection here.
+    requested_provider = provider or os.getenv("LLM_PROVIDER") or None
+    provider_selection = requested_provider or "automatic"
+    print(f"Provider: {provider_selection}")
 
-    client = load_llm_client(provider_name)
-    provider_status = describe_client(client, provider_name)
+    client = load_llm_client(requested_provider)
+    provider_status = describe_client(client, requested_provider)
     print(
         f"Provider active: {provider_status['active_provider']} | "
         f"llm_real={str(provider_status['llm_real']).lower()} | fallback=not-yet"
     )
     if client is None:
-        print(
-            f"Provider '{provider_name}' not found. "
-            "Using local fallback replies."
-        )
+        if requested_provider:
+            print(
+                f"Provider '{requested_provider}' not found. Using local fallback replies."
+            )
+        else:
+            print(
+                "Automatic provider selection found no available backend. Using local fallback replies."
+            )
 
     psyche = Psyche.load_state()
 
@@ -272,9 +278,27 @@ def talk(
         )
         recall_summary = format_recalled_memories(recalled_memories)
         if recalled_memories:
-            add_episode({"event": "memory.recalled", "source": "talk", "query": user_input, "memories": recalled_memories, "summary": recall_summary})
-            add_episode({"event": "memory.used_for_decision", "source": "talk", "decision": "assistant_reply", "memories": recalled_memories, "summary": recall_summary})
-        add_episode({"role": "user", "text": user_input, "structured_signals": user_signals})
+            add_episode(
+                {
+                    "event": "memory.recalled",
+                    "source": "talk",
+                    "query": user_input,
+                    "memories": recalled_memories,
+                    "summary": recall_summary,
+                }
+            )
+            add_episode(
+                {
+                    "event": "memory.used_for_decision",
+                    "source": "talk",
+                    "decision": "assistant_reply",
+                    "memories": recalled_memories,
+                    "summary": recall_summary,
+                }
+            )
+        add_episode(
+            {"role": "user", "text": user_input, "structured_signals": user_signals}
+        )
         mood = psyche.feel(Mood.NEUTRAL)
         mood_report = mood_event or mood.value
         system_preamble = _build_system_preamble(
@@ -304,7 +328,7 @@ def talk(
                 fallback_used = True
                 llm_real = False
                 error_category = getattr(err, "category", "provider_error")
-                print(_user_message_for_error(provider_name, err))
+                print(_user_message_for_error(provider_selection, err))
                 print(
                     f"LLM status: active={active_provider} fallback=true "
                     f"error_category={error_category} llm_real=false"
@@ -319,7 +343,7 @@ def talk(
 
         latency_ms = (time.perf_counter() - start) * 1000
         log_provider_event(
-            provider=provider_name,
+            provider=provider_selection,
             latency_ms=latency_ms,
             fallback=fallback_used,
             error_category=error_category,
@@ -381,7 +405,10 @@ def talk(
                     "structured_signals": user_signals,
                 },
                 "decision": {
-                    "provider": provider_name,
+                    "provider": provider_selection,
+                    "provider_selection": (
+                        "explicit" if requested_provider else "automatic"
+                    ),
                     "active_provider": active_provider,
                     "fallback_used": fallback_used,
                     "error_category": error_category,
