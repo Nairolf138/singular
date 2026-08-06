@@ -149,17 +149,35 @@ class FallbackLLMClient(LLMProviderClient):
     """Client that tries multiple providers in order."""
 
     chain: list[LLMProviderClient] = field(default_factory=list)
+    last_active_provider: str | None = field(default=None, init=False)
+    last_fallback_used: bool = field(default=False, init=False)
+    last_errors: list[dict[str, str]] = field(default_factory=list, init=False)
 
     def generate_reply(
         self, prompt: str, *, timeout: float = DEFAULT_PROVIDER_TIMEOUT_SECONDS
     ) -> str:
+        # These values describe one generation only; do not leak the winner or
+        # failures from a previous call when this instance is reused.
+        self.last_active_provider = None
+        self.last_fallback_used = False
+        self.last_errors = []
         last_error: LLMProviderError | None = None
-        for client in self.chain:
+        for index, client in enumerate(self.chain):
             try:
-                return client.generate_reply(prompt, timeout=timeout)
+                reply = client.generate_reply(prompt, timeout=timeout)
             except LLMProviderError as exc:
                 last_error = exc
+                self.last_errors.append(
+                    {
+                        "provider": client.name,
+                        "category": getattr(exc, "category", "provider_error"),
+                        "error": str(exc),
+                    }
+                )
                 continue
+            self.last_active_provider = client.name
+            self.last_fallback_used = index > 0
+            return reply
         if last_error is not None:
             raise last_error
         raise ProviderUnavailableError("No provider available in fallback chain")

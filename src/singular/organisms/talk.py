@@ -21,6 +21,7 @@ from ..perception import capture_signals
 from ..psyche import Mood, Psyche
 from ..self_narrative import load as load_self_narrative, summarize_short
 from ..providers import (
+    FallbackLLMClient,
     LLMProviderError,
     ProviderMisconfiguredError,
     ProviderQuotaExceededError,
@@ -29,6 +30,7 @@ from ..providers import (
     ProviderUnavailableError,
     describe_client,
     load_llm_client,
+    provider_is_real,
 )
 from ..runs.logger import log_provider_event
 
@@ -187,11 +189,11 @@ def talk(
 
     client = load_llm_client(requested_provider)
     provider_status = describe_client(client, requested_provider)
-    print(
-        f"Provider active: {provider_status['active_provider']} | "
-        f"llm_real={str(provider_status['llm_real']).lower()} | fallback=not-yet"
-    )
     if client is None:
+        print(
+            f"Provider active: {provider_status['active_provider']} | "
+            "llm_real=false | fallback=true"
+        )
         if requested_provider:
             print(
                 f"Provider '{requested_provider}' not found. Using local fallback replies."
@@ -203,9 +205,9 @@ def talk(
 
     psyche = Psyche.load_state()
 
-    def gather_context() -> (
-        tuple[str | None, dict | None, dict | None, str | None, str | None]
-    ):
+    def gather_context() -> tuple[
+        str | None, dict | None, dict | None, str | None, str | None
+    ]:
         signals = capture_signals()
         add_episode({"event": "perception", **signals})
         psyche.consume()
@@ -335,9 +337,23 @@ def talk(
                 )
                 reply = _default_reply(user_input, rng)
             else:
+                if isinstance(client, FallbackLLMClient):
+                    active_provider = client.last_active_provider or active_provider
+                    fallback_used = client.last_fallback_used
+                    error_category = (
+                        client.last_errors[-1]["category"]
+                        if client.last_errors
+                        else None
+                    )
+                else:
+                    active_provider = client.name
+                    fallback_used = False
+                    error_category = None
+                llm_real = provider_is_real(active_provider)
                 print(
-                    f"LLM status: active={active_provider} fallback=false "
-                    "error_category=none "
+                    f"LLM status: active={active_provider} "
+                    f"fallback={str(fallback_used).lower()} "
+                    f"error_category={error_category or 'none'} "
                     f"llm_real={str(llm_real).lower()}"
                 )
 
@@ -374,6 +390,7 @@ def talk(
                 "raw_reply": reply,
                 "mood": mood.value,
                 "llm_real": llm_real,
+                "active_provider": active_provider,
                 "fallback_used": fallback_used,
                 "error_category": error_category,
                 "structured_signals": user_signals,
