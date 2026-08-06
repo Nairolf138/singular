@@ -130,7 +130,18 @@ def test_talk_automatic_chain_tries_next_provider_after_failure(monkeypatch, tmp
 
     assert attempts == ["first", "second"]
     assert outputs[0] == "Provider: automatic"
+    assert any("active=second fallback=true" in output for output in outputs)
     assert outputs[-1] == "reply from second | Mood: neutral"
+    assistant = next(
+        episode
+        for episode in reversed(read_episodes())
+        if episode.get("role") == "assistant"
+    )
+    assert assistant["active_provider"] == "second"
+    assert assistant["fallback_used"] is True
+    trace = read_causal_timeline()[-1]
+    assert trace["decision"]["active_provider"] == "second"
+    assert trace["decision"]["fallback_used"] is True
 
 
 def test_talk_handles_keyboard_interrupt(monkeypatch, tmp_path):
