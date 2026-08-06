@@ -275,7 +275,11 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
 def load_world_state(path: Path | str | None = None) -> dict[str, Any]:
     """Load world state from disk, creating defaults if absent."""
 
-    world_path = Path(path) if path is not None else DEFAULT_WORLD_STATE_PATH
+    world_path = (
+        Path(path)
+        if path is not None
+        else Path(os.environ.get("SINGULAR_HOME", ".")) / "mem" / "world_state.json"
+    )
     if not world_path.exists():
         state = default_world_state()
         _atomic_write_json(world_path, state)
@@ -287,7 +291,11 @@ def load_world_state(path: Path | str | None = None) -> dict[str, Any]:
 def save_world_state(state: dict[str, Any], path: Path | str | None = None) -> None:
     """Persist world state to disk."""
 
-    world_path = Path(path) if path is not None else DEFAULT_WORLD_STATE_PATH
+    world_path = (
+        Path(path)
+        if path is not None
+        else Path(os.environ.get("SINGULAR_HOME", ".")) / "mem" / "world_state.json"
+    )
     _atomic_write_json(world_path, state)
 
 
@@ -541,7 +549,9 @@ def apply_action_effects(
     save_world_state(next_state, state_path)
 
     ledger_path = (
-        Path(effects_path) if effects_path is not None else DEFAULT_WORLD_EFFECTS_PATH
+        Path(effects_path)
+        if effects_path is not None
+        else Path(os.environ.get("SINGULAR_HOME", ".")) / "mem" / "world_effects.json"
     )
     ledger = {
         "version": 1,

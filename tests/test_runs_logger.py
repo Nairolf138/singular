@@ -5,6 +5,34 @@ from singular.runs import RunLogger
 from singular.runs.explain import summarize_mutation
 
 
+def test_default_root_uses_singular_home_at_construction_time(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # RunLogger was imported above, before the environment changed.
+    home = tmp_path / "new-home"
+    monkeypatch.setenv("SINGULAR_HOME", str(home))
+
+    with RunLogger("late-home"):
+        pass
+
+    assert (home / "runs" / "late-home").is_dir()
+
+
+def test_default_root_follows_two_successive_lives(
+    tmp_path: Path, monkeypatch
+) -> None:
+    homes = [tmp_path / "life-a", tmp_path / "life-b"]
+
+    for index, home in enumerate(homes):
+        monkeypatch.setenv("SINGULAR_HOME", str(home))
+        with RunLogger(f"run-{index}"):
+            pass
+
+    assert (homes[0] / "runs" / "run-0").is_dir()
+    assert (homes[1] / "runs" / "run-1").is_dir()
+    assert not (homes[0] / "runs" / "run-1").exists()
+
+
 def test_log_creation(tmp_path: Path) -> None:
     logger = RunLogger("test", root=tmp_path)
     assert (tmp_path / "test" / ".active.lock").exists()
