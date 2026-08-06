@@ -8,7 +8,9 @@ from singular.lives import load_registry
 from singular.memory import read_causal_timeline, read_episodes
 from singular.organisms.talk import _default_reply, talk
 from singular.providers import (
+    LLMProviderContract,
     LLMProviderClient,
+    ProviderUnavailableError,
     ProviderQuotaExceededError,
     ProviderTimeoutError,
 )
@@ -61,6 +63,76 @@ def test_cli_provider_precedence(monkeypatch, tmp_path):
     assert captured["provider"] == "cli"
 
 
+def test_talk_uses_automatic_provider_selection_without_configuration(
+    monkeypatch, tmp_path
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    captured: list[str | None] = []
+
+    def fake_load(name: str | None):
+        captured.append(name)
+        return None
+
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", fake_load)
+    outputs: list[str] = []
+    monkeypatch.setattr("builtins.print", lambda message: outputs.append(message))
+
+    talk(prompt="hello", seed=1)
+
+    assert captured == [None]
+    assert outputs[0] == "Provider: automatic"
+    assert read_causal_timeline()[-1]["decision"]["provider"] == "automatic"
+    assert read_causal_timeline()[-1]["decision"]["provider_selection"] == "automatic"
+
+
+def test_talk_automatic_chain_tries_next_provider_after_failure(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("LLM_PROVIDER_FALLBACK", raising=False)
+    attempts: list[str] = []
+
+    def contract(name: str, generate):
+        return LLMProviderContract(
+            name=name,
+            generate=generate,
+            embed=lambda _text, timeout=8.0: [],
+            healthcheck=lambda: {"ok": True, "provider": name},
+            cost_estimate=lambda _prompt, completion="": 0.0,
+            max_retries=0,
+        )
+
+    def first(_prompt: str, *, timeout: float = 8.0) -> str:
+        attempts.append("first")
+        raise ProviderUnavailableError("offline")
+
+    def second(_prompt: str, *, timeout: float = 8.0) -> str:
+        attempts.append("second")
+        return "reply from second"
+
+    contracts = {
+        "first": contract("first", first),
+        "second": contract("second", second),
+    }
+    monkeypatch.setattr(
+        "singular.providers.DEFAULT_FALLBACK_CHAIN", ("first", "second")
+    )
+    monkeypatch.setattr(
+        "singular.providers._load_provider_contract", lambda name: contracts.get(name)
+    )
+    outputs: list[str] = []
+    monkeypatch.setattr("builtins.print", lambda message: outputs.append(message))
+
+    talk(prompt="hello")
+
+    assert attempts == ["first", "second"]
+    assert outputs[0] == "Provider: automatic"
+    assert outputs[-1] == "reply from second | Mood: neutral"
+
+
 def test_talk_handles_keyboard_interrupt(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("SINGULAR_HOME", raising=False)
@@ -98,7 +170,7 @@ def test_talk_single_prompt(monkeypatch, tmp_path):
     assert episodes[0]["text"] == "hello"
     assert episodes[0]["structured_signals"]["theme"] == "general"
     expected = _default_reply("hello", random.Random(123)) + " | Mood: neutral"
-    assert outputs[0] == "Provider: stub"
+    assert outputs[0] == "Provider: automatic"
     assert outputs[-1] == expected
 
 
@@ -122,9 +194,9 @@ def test_talk_seed_controls_stub(monkeypatch, tmp_path):
     third = _run_talk(monkeypatch, tmp_path, 321, 3)
     expected_first = _default_reply("hello", random.Random(123)) + " | Mood: neutral"
     expected_third = _default_reply("hello", random.Random(321)) + " | Mood: neutral"
-    assert first[0] == "Provider: stub"
-    assert second[0] == "Provider: stub"
-    assert third[0] == "Provider: stub"
+    assert first[0] == "Provider: automatic"
+    assert second[0] == "Provider: automatic"
+    assert third[0] == "Provider: automatic"
     assert first[-1] == expected_first
     assert second[-1] == expected_first
     assert third[-1] == expected_third
@@ -355,7 +427,9 @@ def test_unknown_argument_that_looks_like_life_suggests_life_flag(
     assert "singular --root <root> --life <slug> talk" in stderr
 
 
-def test_talk_marks_fallback_as_not_real_llm_in_memory_and_traces(monkeypatch, tmp_path):
+def test_talk_marks_fallback_as_not_real_llm_in_memory_and_traces(
+    monkeypatch, tmp_path
+):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("SINGULAR_HOME", raising=False)
     inputs = iter(["hello", "quit"])
@@ -388,7 +462,10 @@ def test_talk_status_includes_active_fallback_and_error_category(monkeypatch, tm
     talk(provider="missing", seed=2)
 
     assert any("Provider active: missing" in out for out in outputs)
-    assert any("fallback=true" in out and "error_category=provider_missing" in out for out in outputs)
+    assert any(
+        "fallback=true" in out and "error_category=provider_missing" in out
+        for out in outputs
+    )
 
 
 def test_talk_recalls_prior_episode_in_provider_prompt(monkeypatch, tmp_path):
@@ -418,4 +495,7 @@ def test_talk_recalls_prior_episode_in_provider_prompt(monkeypatch, tmp_path):
     assert any(e.get("event") == "memory.recalled" for e in episodes)
     assert any(e.get("event") == "memory.used_for_decision" for e in episodes)
     assistant = [e for e in episodes if e.get("role") == "assistant"][-1]
-    assert "Peux-tu aider avec ce bug urgent" in assistant["context"]["recalled_memory_summary"]
+    assert (
+        "Peux-tu aider avec ce bug urgent"
+        in assistant["context"]["recalled_memory_summary"]
+    )

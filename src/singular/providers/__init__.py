@@ -11,7 +11,9 @@ from typing import Any, Callable, Protocol
 
 DEFAULT_PROVIDER_TIMEOUT_SECONDS = 8.0
 DEFAULT_PROVIDER_MAX_RETRIES = 2
-DEFAULT_FALLBACK_CHAIN = ("local", "ollama", "openai", "dummy")
+# Automatic selection prefers a locally managed Ollama model, then the built-in
+# local backend, before trying the remote OpenAI service and deterministic dummy.
+DEFAULT_FALLBACK_CHAIN = ("ollama", "local", "openai", "dummy")
 
 
 class LLMProviderError(RuntimeError):
@@ -70,14 +72,18 @@ class ProviderMetrics:
 class ReplyGenerator(Protocol):
     """Runtime protocol for provider generation functions."""
 
-    def __call__(self, prompt: str, *, timeout: float = DEFAULT_PROVIDER_TIMEOUT_SECONDS) -> str:  # pragma: no cover - typing only
+    def __call__(
+        self, prompt: str, *, timeout: float = DEFAULT_PROVIDER_TIMEOUT_SECONDS
+    ) -> str:  # pragma: no cover - typing only
         ...
 
 
 class Embedder(Protocol):
     """Runtime protocol for provider embedding functions."""
 
-    def __call__(self, text: str, *, timeout: float = DEFAULT_PROVIDER_TIMEOUT_SECONDS) -> list[float]:  # pragma: no cover - typing only
+    def __call__(
+        self, text: str, *, timeout: float = DEFAULT_PROVIDER_TIMEOUT_SECONDS
+    ) -> list[float]:  # pragma: no cover - typing only
         ...
 
 
@@ -103,7 +109,9 @@ class LLMProviderClient:
     healthcheck: Callable[[], dict[str, Any]] | None = None
     cost_estimate: Callable[..., float] | None = None
     max_retries: int = DEFAULT_PROVIDER_MAX_RETRIES
-    metrics: ProviderMetrics = field(default_factory=lambda: ProviderMetrics(provider="unknown"))
+    metrics: ProviderMetrics = field(
+        default_factory=lambda: ProviderMetrics(provider="unknown")
+    )
 
     def __post_init__(self) -> None:
         if self.metrics.provider == "unknown":
@@ -142,7 +150,9 @@ class FallbackLLMClient(LLMProviderClient):
 
     chain: list[LLMProviderClient] = field(default_factory=list)
 
-    def generate_reply(self, prompt: str, *, timeout: float = DEFAULT_PROVIDER_TIMEOUT_SECONDS) -> str:
+    def generate_reply(
+        self, prompt: str, *, timeout: float = DEFAULT_PROVIDER_TIMEOUT_SECONDS
+    ) -> str:
         last_error: LLMProviderError | None = None
         for client in self.chain:
             try:
@@ -163,10 +173,12 @@ def provider_is_real(name: str | None) -> bool:
     return name.strip().lower() not in {"stub", "dummy"}
 
 
-def describe_client(client: LLMProviderClient | None, requested: str) -> dict[str, Any]:
+def describe_client(
+    client: LLMProviderClient | None, requested: str | None
+) -> dict[str, Any]:
     """Return status details for a loaded provider client."""
 
-    active = client.name if client is not None else requested
+    active = client.name if client is not None else (requested or "automatic")
     chain = (
         [child.name for child in client.chain]
         if isinstance(client, FallbackLLMClient)
@@ -261,7 +273,12 @@ def _load_provider_contract(name: str) -> LLMProviderContract | None:
         embed = getattr(module, "embed", None)
         healthcheck = getattr(module, "healthcheck", None)
         cost_estimate = getattr(module, "cost_estimate", None)
-        if callable(generate) and callable(embed) and callable(healthcheck) and callable(cost_estimate):
+        if (
+            callable(generate)
+            and callable(embed)
+            and callable(healthcheck)
+            and callable(cost_estimate)
+        ):
             retries = getattr(module, "MAX_RETRIES", DEFAULT_PROVIDER_MAX_RETRIES)
             return LLMProviderContract(
                 name=name,
@@ -284,8 +301,17 @@ def _load_provider_contract(name: str) -> LLMProviderContract | None:
             continue
         obj = ep.load()
         generate = getattr(obj, "generate", getattr(obj, "generate_reply", obj))
-        embed = getattr(obj, "embed", lambda text, timeout=DEFAULT_PROVIDER_TIMEOUT_SECONDS: [float(len(text)), float(timeout)])
-        healthcheck = getattr(obj, "healthcheck", lambda: {"ok": True, "provider": name})
+        embed = getattr(
+            obj,
+            "embed",
+            lambda text, timeout=DEFAULT_PROVIDER_TIMEOUT_SECONDS: [
+                float(len(text)),
+                float(timeout),
+            ],
+        )
+        healthcheck = getattr(
+            obj, "healthcheck", lambda: {"ok": True, "provider": name}
+        )
         cost_estimate = getattr(obj, "cost_estimate", lambda prompt, completion="": 0.0)
         if callable(generate):
             retries = getattr(obj, "MAX_RETRIES", DEFAULT_PROVIDER_MAX_RETRIES)
