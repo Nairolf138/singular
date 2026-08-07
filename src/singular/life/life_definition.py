@@ -8,13 +8,10 @@ from typing import Any
 
 from singular.life.life_status import AUTHORIZED_LIFE_STATUSES
 from singular.orchestrator.lifecycle_clock import _load_simple_yaml
+from singular.resources import config_resource
 
-DEFAULT_LIFECYCLE_CONFIG_PATH = (
-    Path(__file__).resolve().parents[3] / "configs" / "lifecycle.yaml"
-)
-DEFAULT_LIFE_DEFINITION_CONFIG_PATH = (
-    Path(__file__).resolve().parents[3] / "configs" / "life_definition.yaml"
-)
+DEFAULT_LIFECYCLE_CONFIG_PATH = config_resource("lifecycle.yaml")
+DEFAULT_LIFE_DEFINITION_CONFIG_PATH = config_resource("life_definition.yaml")
 
 
 @dataclass(frozen=True)

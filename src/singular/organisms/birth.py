@@ -19,14 +19,13 @@ from ..identity import create_identity
 from ..memory import ensure_memory_structure, update_score, write_profile
 from ..psyche import Psyche
 from ..life.skill_catalog import refresh_skill_catalog
+from ..resources import config_resource
 
 _PSYCHE_TRAITS = ("curiosity", "patience", "playfulness", "optimism", "resilience")
 _PSYCHE_DEFAULTS = {trait: 0.5 for trait in _PSYCHE_TRAITS}
 _DEFAULT_STARTER_PROFILE = "minimal"
 _BIRTH_SCHEMA_VERSION = 1
-_STARTER_CONFIG_PATH = (
-    Path(__file__).resolve().parents[3] / "configs" / "starter_skills.yaml"
-)
+_STARTER_CONFIG_PATH = config_resource("starter_skills.yaml")
 _DEFAULT_STARTER_PROFILES: dict[str, list[str]] = {
     "minimal": ["addition", "subtraction", "multiplication"],
 }
@@ -145,9 +144,7 @@ def _resolve_psyche_overrides(
     return normalized
 
 
-def _load_starter_profiles(
-    config_path: Path = _STARTER_CONFIG_PATH,
-) -> dict[str, list[str]]:
+def _load_starter_profiles(config_path: Any = _STARTER_CONFIG_PATH) -> dict[str, list[str]]:
     """Load starter skill profiles from configuration with a safe default fallback."""
 
     if not config_path.exists():

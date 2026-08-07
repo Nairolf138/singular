@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import ast
 import difflib
+from importlib.resources import as_file
 import json
 import logging
 import math
@@ -37,6 +38,7 @@ from singular.memory import (
     recall_relevant_episodes,
 )
 from singular.psyche import Psyche, Mood, choose_action_from_psyche
+from singular.resources import config_resource
 from singular.runs.logger import RunLogger
 from singular.runs.explain import summarize_mutation
 from singular.runs.generations import record_generation
@@ -898,10 +900,9 @@ def run(
 
     world = world or WorldState()
     if ecosystem_rules is None:
-        config_path = (
-            Path(__file__).resolve().parents[3] / "configs" / "ecosystem" / f"{ecosystem_mode}.json"
-        )
-        config = _load_ecosystem_rules_config_cached(config_path, setup_profiler)
+        resource = config_resource("ecosystem", f"{ecosystem_mode}.json")
+        with as_file(resource) as config_path:
+            config = _load_ecosystem_rules_config_cached(config_path, setup_profiler)
         if config is not None:
             ecosystem_rules = EcosystemRules(
                 resource_competition_unit=config.resource_competition_unit,
