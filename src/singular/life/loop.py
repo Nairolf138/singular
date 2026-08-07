@@ -85,6 +85,7 @@ from .coevolution_flow import CoevolutionConfig, CoevolutionFlow, MapElites, Liv
 from .skill_genesis import create_skill
 from .social_decision import decide_social_actions
 from .profiling import LifeLoopProfiler
+from singular.learning.imitation import ImitationEngine
 
 # mypy: ignore-errors
 
@@ -832,6 +833,8 @@ def run(
     ecosystem_rules: EcosystemRules | None = None,
     ecosystem_mode: str = "production",
     social_graph: SocialGraph | None = None,
+    imitation_engine: ImitationEngine | None = None,
+    learning_budget: int = 1,
 ) -> Checkpoint:
     """Run the evolutionary loop for at most ``budget_seconds`` seconds.
 
@@ -894,6 +897,7 @@ def run(
     social_graph = social_graph or SocialGraph()
     register_memory_event_handlers(event_bus)
     start = time.time()
+    learning_attempts = 0
     last_post = 0.0
     initial_freq = max(
         1,
@@ -969,6 +973,11 @@ def run(
         while time.time() - start < budget_seconds:
             if max_iterations is not None and tick_count >= max_iterations:
                 break
+            # Learning is metered separately and remains inactive until every
+            # sandbox, baseline, governance, and publication gate has passed.
+            if imitation_engine is not None and learning_attempts < max(0, learning_budget):
+                imitation_engine.learn_next()
+                learning_attempts += 1
             if getattr(psyche, "sleeping", False) or (
                 hasattr(psyche, "energy")
                 and getattr(psyche, "energy") < SLEEP_THRESHOLD
@@ -2666,6 +2675,8 @@ def run_tick(
     multiagent_runtime: MultiAgentRuntime | None = None,
     tick_budget_seconds: float = 0.2,
     ecosystem_rules: EcosystemRules | None = None,
+    imitation_engine: ImitationEngine | None = None,
+    learning_budget: int = 1,
 ) -> Checkpoint:
     """Execute one mutation tick and persist checkpoint state."""
 
@@ -2691,6 +2702,8 @@ def run_tick(
         multiagent_runtime=multiagent_runtime,
         max_iterations=1,
         ecosystem_rules=ecosystem_rules,
+        imitation_engine=imitation_engine,
+        learning_budget=learning_budget,
     )
 
 
