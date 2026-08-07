@@ -11,7 +11,7 @@ import logging
 import signal
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from singular.events import (
     Event,
@@ -39,7 +39,13 @@ from singular.orchestrator.lifecycle_clock import (
 )
 from singular.perception import capture_signals
 from singular.psyche import Psyche
-from singular.self_narrative import summarize_long, summarize_short, update_from_signals
+from singular.self_narrative import (
+    infer_trend,
+    load_snapshots,
+    summarize_long,
+    summarize_short,
+    update_from_signals,
+)
 from singular.resource_manager import ResourceManager
 from singular.quests import QuestRuntime
 from singular.sensors import load_host_sensor_thresholds
@@ -123,10 +129,12 @@ class OrchestratorService:
         config: OrchestratorConfig,
         bus: EventBus | None = None,
         base_dir: Path | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.config = config
         self.bus = bus or get_global_event_bus()
         self.base_dir = base_dir or get_base_dir()
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.mem_dir = get_mem_dir()
         self.state_path = self.mem_dir / "orchestrator_state.json"
         self.stop_signal_path = self.mem_dir / "orchestrator.stop.json"
@@ -415,25 +423,66 @@ class OrchestratorService:
             except (TypeError, ValueError):
                 return 0.5
 
+        now = self.clock()
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        snapshots = load_snapshots(self.mem_dir / "self_narrative.json")
+
+        def _history_values(
+            group: str, name: str, current: float
+        ) -> list[tuple[datetime, float]]:
+            values: list[tuple[datetime, float]] = []
+            for snapshot in snapshots:
+                try:
+                    at = datetime.fromisoformat(str(snapshot["recorded_at"]))
+                    entry = snapshot["narrative"][group][name]
+                    values.append((at, float(entry["value"])))
+                except (KeyError, TypeError, ValueError):
+                    continue
+            values.append((now, current))
+            return values
+
+        trait_values = {
+            name: _trait_value(name)
+            for name in (
+                "curiosity",
+                "patience",
+                "playfulness",
+                "optimism",
+                "resilience",
+            )
+        }
+        objective_trends = (
+            {
+                str(name): {
+                    "value": float(value),
+                    "trend": infer_trend(
+                        _history_values("objective_trends", str(name), float(value)),
+                        now=now,
+                    ),
+                }
+                for name, value in latest_weights.items()
+            }
+            if isinstance(latest_weights, dict)
+            else {}
+        )
+
         narrative = update_from_signals(
             {
                 "current_heading": current_heading,
                 "trait_trends": {
-                    "curiosity": {
-                        "value": _trait_value("curiosity"),
-                        "trend": "stable",
-                    },
-                    "patience": {"value": _trait_value("patience"), "trend": "stable"},
-                    "playfulness": {
-                        "value": _trait_value("playfulness"),
-                        "trend": "stable",
-                    },
-                    "optimism": {"value": _trait_value("optimism"), "trend": "stable"},
-                    "resilience": {
-                        "value": _trait_value("resilience"),
-                        "trend": "stable",
-                    },
+                    name: {
+                        "value": value,
+                        "trend": infer_trend(
+                            _history_values("trait_trends", name, value), now=now
+                        ),
+                    }
+                    for name, value in trait_values.items()
                 },
+                "objective_trends": objective_trends,
+                "event_count": len(recent_episodes)
+                + len(run_events)
+                + len(last_events),
                 "regrets_and_pride": {
                     "significant_successes": successes[-3:],
                     "significant_failures": failures[-3:],
@@ -443,6 +492,7 @@ class OrchestratorService:
                 },
             },
             self.mem_dir / "self_narrative.json",
+            clock=self.clock,
         )
         summary_short = summarize_short(narrative=narrative)
         summary_long = summarize_long(narrative=narrative)

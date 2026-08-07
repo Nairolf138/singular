@@ -86,3 +86,97 @@ def test_summaries_include_current_heading(tmp_path: Path) -> None:
     assert "Mieux décider." in short
     assert "Cap actuel" in long
     assert "Mieux décider." in long
+
+
+def test_versioned_timeline_keeps_seven_injected_clock_days(tmp_path: Path) -> None:
+    from singular.life.life_status import _extract_narrative_continuity_signal
+    from singular.self_narrative import load_snapshots
+
+    path = tmp_path / "mem" / "self_narrative.json"
+    start = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    for offset in range(7):
+        instant = start + timedelta(days=offset)
+        update_from_signals(
+            {
+                "identity": {"name": "Nova"},
+                "current_heading": "Continuer",
+                "event_count": 2,
+            },
+            path,
+            clock=lambda instant=instant: instant,
+        )
+
+    snapshots = load_snapshots(path)
+    signal = _extract_narrative_continuity_signal(
+        {}, 7, snapshots=snapshots, now=start + timedelta(days=6, hours=1)
+    )
+    assert signal["ok"] is True
+    assert signal["evidence"]["distinct_days"] == 7
+
+
+def test_timeline_detects_missing_day_and_unexplained_identity_drift(
+    tmp_path: Path,
+) -> None:
+    from singular.life.life_status import _extract_narrative_continuity_signal
+    from singular.self_narrative import load_snapshots
+
+    path = tmp_path / "mem" / "self_narrative.json"
+    start = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    for offset in (0, 1, 2, 4, 5, 6):
+        update_from_signals(
+            {"identity": {"name": "Nova"}, "current_heading": "Continuer"},
+            path,
+            clock=lambda offset=offset: start + timedelta(days=offset),
+        )
+    missing = _extract_narrative_continuity_signal(
+        {}, 7, snapshots=load_snapshots(path), now=start + timedelta(days=6, hours=1)
+    )
+    assert missing["ok"] is False
+    assert missing["evidence"]["distinct_days"] == 6
+
+    update_from_signals(
+        {"identity": {"name": "Autre"}, "current_heading": "Continuer"},
+        path,
+        clock=lambda: start + timedelta(days=7),
+    )
+    drift = _extract_narrative_continuity_signal(
+        {}, 7, snapshots=load_snapshots(path), now=start + timedelta(days=7, hours=1)
+    )
+    assert drift["ok"] is False
+    assert drift["evidence"]["unexplained_identity_ruptures"]
+
+
+def test_trajectory_recovers_after_interruption_and_retention_preserves_it(
+    tmp_path: Path,
+) -> None:
+    from singular.life.life_status import _extract_narrative_continuity_signal
+    from singular.self_narrative import load_snapshots, timeline_path
+    from singular.storage_retention import RetentionConfig, apply_runs_retention
+
+    path = tmp_path / "mem" / "self_narrative.json"
+    start = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    for offset in (*range(3), *range(10, 17)):
+        update_from_signals(
+            {
+                "identity": {"name": "Nova"},
+                "current_heading": "Reprendre",
+                "event_count": 1,
+            },
+            path,
+            clock=lambda offset=offset: start + timedelta(days=offset),
+        )
+    signal = _extract_narrative_continuity_signal(
+        {}, 7, snapshots=load_snapshots(path), now=start + timedelta(days=16, hours=1)
+    )
+    assert signal["ok"] is True
+
+    before = timeline_path(path).read_bytes()
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    (runs / "old.jsonl").write_text("{}\n", encoding="utf-8")
+    apply_runs_retention(
+        runs_dir=runs,
+        config=RetentionConfig(max_runs=1, max_run_age_days=1),
+        now=start + timedelta(days=30),
+    )
+    assert timeline_path(path).read_bytes() == before

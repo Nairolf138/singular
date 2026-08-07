@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping, Sequence
 import json
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+TIMELINE_SUFFIX = ".timeline.jsonl"
 
 _TRAIT_KEYS = ("curiosity", "patience", "playfulness", "optimism", "resilience")
 
@@ -60,11 +61,15 @@ class SelfNarrative:
     trait_trends: dict[str, TraitTrend]
     regrets_and_pride: RegretsAndPride
     current_heading: str
+    objective_trends: dict[str, TraitTrend] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["trait_trends"] = {
             key: asdict(value) for key, value in self.trait_trends.items()
+        }
+        payload["objective_trends"] = {
+            key: asdict(value) for key, value in self.objective_trends.items()
         }
         return payload
 
@@ -78,12 +83,26 @@ def extract_planner_signals(narrative: SelfNarrative | None = None) -> dict[str,
     incidents = len(regrets.costly_incidents)
     successes = len(regrets.significant_successes)
     abandoned = len(regrets.abandoned_skills)
-    drift = sum(1 for trend in current.trait_trends.values() if trend.trend in {"up", "down"})
-    coherence = max(0.0, min(1.0, 1.0 - ((failures + incidents + abandoned) / max(1.0, successes + failures + 1.0))))
+    drift = sum(
+        1 for trend in current.trait_trends.values() if trend.trend in {"up", "down"}
+    )
+    coherence = max(
+        0.0,
+        min(
+            1.0,
+            1.0
+            - (
+                (failures + incidents + abandoned)
+                / max(1.0, successes + failures + 1.0)
+            ),
+        ),
+    )
     regret_pressure = max(0.0, min(1.0, (failures + incidents + abandoned) / 12.0))
     pride_drive = max(0.0, min(1.0, successes / 12.0))
     identity_drift = max(0.0, min(1.0, drift / max(1.0, len(current.trait_trends))))
-    dissonance = max(0.0, min(1.0, regret_pressure * 0.6 + identity_drift * 0.4 - pride_drive * 0.3))
+    dissonance = max(
+        0.0, min(1.0, regret_pressure * 0.6 + identity_drift * 0.4 - pride_drive * 0.3)
+    )
     return {
         "coherence_signal": coherence,
         "regret_pressure": regret_pressure,
@@ -111,6 +130,7 @@ def _default_narrative() -> SelfNarrative:
         trait_trends=_default_trait_trends(),
         regrets_and_pride=RegretsAndPride(),
         current_heading="Clarifier ma prochaine étape utile.",
+        objective_trends={},
     )
 
 
@@ -160,9 +180,70 @@ def _path_or_default(path: Path | str | None) -> Path:
     return Path("mem") / "self_narrative.json"
 
 
+def timeline_path(path: Path | str | None = None) -> Path:
+    """Return the append-only timeline belonging to a narrative projection."""
+
+    current = _path_or_default(path)
+    return current.with_name(current.stem + TIMELINE_SUFFIX)
+
+
+def load_snapshots(path: Path | str | None = None) -> list[dict[str, Any]]:
+    """Read valid snapshots without letting a damaged line hide later history."""
+
+    snapshots: list[dict[str, Any]] = []
+    try:
+        lines = timeline_path(path).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return snapshots
+    for line in lines:
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict) and _parse_iso(item.get("recorded_at")):
+            snapshots.append(item)
+    return sorted(snapshots, key=lambda item: str(item["recorded_at"]))
+
+
+def infer_trend(
+    observations: Sequence[tuple[datetime, float]],
+    *,
+    now: datetime,
+    window: timedelta = timedelta(days=7),
+    minimum_observations: int = 3,
+    minimum_delta: float = 0.03,
+) -> str:
+    """Infer a bounded linear trend from sufficiently dense recent evidence."""
+
+    recent = sorted(
+        ((at, value) for at, value in observations if now - window <= at <= now),
+        key=lambda item: item[0],
+    )
+    if len(recent) < minimum_observations:
+        return "stable"
+    xs = [(at - recent[0][0]).total_seconds() / 86400 for at, _ in recent]
+    ys = [value for _, value in recent]
+    mean_x, mean_y = sum(xs) / len(xs), sum(ys) / len(ys)
+    denominator = sum((x - mean_x) ** 2 for x in xs)
+    if denominator == 0:
+        return "stable"
+    projected_delta = (
+        sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
+        / denominator
+        * max(xs[-1] - xs[0], 1.0)
+    )
+    return (
+        "up"
+        if projected_delta >= minimum_delta
+        else "down" if projected_delta <= -minimum_delta else "stable"
+    )
+
+
 def _materialize(payload: Mapping[str, Any]) -> SelfNarrative:
     schema_version = int(payload.get("schema_version", 0) or 0)
-    identity_payload = payload.get("identity") if isinstance(payload.get("identity"), Mapping) else {}
+    identity_payload = (
+        payload.get("identity") if isinstance(payload.get("identity"), Mapping) else {}
+    )
     born_at = identity_payload.get("born_at")
 
     identity = IdentitySummary(
@@ -181,9 +262,15 @@ def _materialize(payload: Mapping[str, Any]) -> SelfNarrative:
             life_periods.append(
                 LifePeriod(
                     title=str(item.get("title", "Période")),
-                    start_at=str(item.get("start_at")) if item.get("start_at") else None,
+                    start_at=(
+                        str(item.get("start_at")) if item.get("start_at") else None
+                    ),
                     end_at=str(item.get("end_at")) if item.get("end_at") else None,
-                    highlights=[str(h) for h in highlights] if isinstance(highlights, list) else [],
+                    highlights=(
+                        [str(h) for h in highlights]
+                        if isinstance(highlights, list)
+                        else []
+                    ),
                 )
             )
 
@@ -194,8 +281,12 @@ def _materialize(payload: Mapping[str, Any]) -> SelfNarrative:
             current = raw_traits.get(key)
             if isinstance(current, Mapping):
                 trait_trends[key] = TraitTrend(
-                    value=_coerce_float(current.get("value"), default=trait_trends[key].value),
-                    trend=_coerce_trend(current.get("trend") if isinstance(current, Mapping) else None),
+                    value=_coerce_float(
+                        current.get("value"), default=trait_trends[key].value
+                    ),
+                    trend=_coerce_trend(
+                        current.get("trend") if isinstance(current, Mapping) else None
+                    ),
                 )
 
     regrets_payload = (
@@ -232,7 +323,21 @@ def _materialize(payload: Mapping[str, Any]) -> SelfNarrative:
         life_periods=life_periods,
         trait_trends=trait_trends,
         regrets_and_pride=regrets,
-        current_heading=str(payload.get("current_heading", "Clarifier ma prochaine étape utile.")),
+        current_heading=str(
+            payload.get("current_heading", "Clarifier ma prochaine étape utile.")
+        ),
+        objective_trends={
+            str(key): TraitTrend(
+                value=_coerce_float(value.get("value")),
+                trend=_coerce_trend(value.get("trend")),
+            )
+            for key, value in (
+                payload.get("objective_trends", {}).items()
+                if isinstance(payload.get("objective_trends"), Mapping)
+                else []
+            )
+            if isinstance(value, Mapping)
+        },
     )
     narrative.identity.logical_age = _compute_logical_age(narrative.identity.born_at)
     return narrative
@@ -253,32 +358,41 @@ def load(path: Path | str | None = None) -> SelfNarrative:
     file_path = _path_or_default(path)
     if not file_path.exists():
         narrative = _default_narrative()
-        save(narrative, file_path)
+        save(narrative, file_path, record_snapshot=False)
         return narrative
 
     try:
         payload = json.loads(file_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        backup = file_path.with_suffix(file_path.suffix + f".corrupt-{int(datetime.now(timezone.utc).timestamp())}")
+        backup = file_path.with_suffix(
+            file_path.suffix + f".corrupt-{int(datetime.now(timezone.utc).timestamp())}"
+        )
         try:
             file_path.rename(backup)
         except OSError:
             pass
         narrative = _default_narrative()
-        save(narrative, file_path)
+        save(narrative, file_path, record_snapshot=False)
         return narrative
 
     if not isinstance(payload, Mapping):
         narrative = _default_narrative()
-        save(narrative, file_path)
+        save(narrative, file_path, record_snapshot=False)
         return narrative
 
     narrative = _migrate(payload)
-    save(narrative, file_path)
+    save(narrative, file_path, record_snapshot=False)
     return narrative
 
 
-def save(narrative: SelfNarrative, path: Path | str | None = None) -> SelfNarrative:
+def save(
+    narrative: SelfNarrative,
+    path: Path | str | None = None,
+    *,
+    clock: Callable[[], datetime] | None = None,
+    record_snapshot: bool = True,
+    snapshot_metadata: Mapping[str, Any] | None = None,
+) -> SelfNarrative:
     """Persist narrative JSON and return canonicalized object."""
 
     file_path = _path_or_default(path)
@@ -289,6 +403,20 @@ def save(narrative: SelfNarrative, path: Path | str | None = None) -> SelfNarrat
         json.dumps(narrative.to_dict(), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    if record_snapshot:
+        now = (clock or (lambda: datetime.now(timezone.utc)))()
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        snapshot = {
+            "recorded_at": now.astimezone(timezone.utc).isoformat(),
+            "schema_version": SCHEMA_VERSION,
+            "narrative": narrative.to_dict(),
+            "metadata": dict(snapshot_metadata or {}),
+        }
+        history = timeline_path(file_path)
+        history.parent.mkdir(parents=True, exist_ok=True)
+        with history.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(snapshot, ensure_ascii=False) + "\n")
     return narrative
 
 
@@ -302,7 +430,10 @@ def _extend_unique(target: list[str], values: Any) -> None:
 
 
 def update_from_signals(
-    signals: Mapping[str, Any], path: Path | str | None = None
+    signals: Mapping[str, Any],
+    path: Path | str | None = None,
+    *,
+    clock: Callable[[], datetime] | None = None,
 ) -> SelfNarrative:
     """Update persisted narrative from external signals and return it."""
 
@@ -311,7 +442,9 @@ def update_from_signals(
     identity_patch = signals.get("identity")
     if isinstance(identity_patch, Mapping):
         if "name" in identity_patch:
-            narrative.identity.name = str(identity_patch.get("name") or narrative.identity.name)
+            narrative.identity.name = str(
+                identity_patch.get("name") or narrative.identity.name
+            )
         if "born_at" in identity_patch:
             narrative.identity.born_at = str(identity_patch.get("born_at") or "")
 
@@ -327,11 +460,15 @@ def update_from_signals(
             narrative.life_periods.append(
                 LifePeriod(
                     title=str(period.get("title", "Période")),
-                    start_at=str(period.get("start_at")) if period.get("start_at") else None,
+                    start_at=(
+                        str(period.get("start_at")) if period.get("start_at") else None
+                    ),
                     end_at=str(period.get("end_at")) if period.get("end_at") else None,
-                    highlights=[str(x) for x in period.get("highlights", [])]
-                    if isinstance(period.get("highlights"), list)
-                    else [],
+                    highlights=(
+                        [str(x) for x in period.get("highlights", [])]
+                        if isinstance(period.get("highlights"), list)
+                        else []
+                    ),
                 )
             )
 
@@ -344,6 +481,17 @@ def update_from_signals(
             baseline = narrative.trait_trends[trait]
             baseline.value = _coerce_float(patch.get("value"), baseline.value)
             baseline.trend = _coerce_trend(patch.get("trend"))
+
+    objective_signals = signals.get("objective_trends")
+    if isinstance(objective_signals, Mapping):
+        narrative.objective_trends = {
+            str(name): TraitTrend(
+                value=_coerce_float(patch.get("value")),
+                trend=_coerce_trend(patch.get("trend")),
+            )
+            for name, patch in objective_signals.items()
+            if isinstance(patch, Mapping)
+        }
 
     regrets_signals = signals.get("regrets_and_pride")
     if isinstance(regrets_signals, Mapping):
@@ -364,11 +512,21 @@ def update_from_signals(
             regrets_signals.get("costly_incidents"),
         )
 
-    save(narrative, path)
+    save(
+        narrative,
+        path,
+        clock=clock,
+        snapshot_metadata={
+            "event_count": max(0, int(signals.get("event_count", 1))),
+            "identity_transition": signals.get("identity_transition"),
+        },
+    )
     return narrative
 
 
-def summarize_short(narrative: SelfNarrative | None = None, path: Path | str | None = None) -> str:
+def summarize_short(
+    narrative: SelfNarrative | None = None, path: Path | str | None = None
+) -> str:
     """Return a compact one-line summary."""
 
     current = narrative or load(path)
@@ -378,7 +536,9 @@ def summarize_short(narrative: SelfNarrative | None = None, path: Path | str | N
     )
 
 
-def summarize_long(narrative: SelfNarrative | None = None, path: Path | str | None = None) -> str:
+def summarize_long(
+    narrative: SelfNarrative | None = None, path: Path | str | None = None
+) -> str:
     """Return a richer human-readable summary."""
 
     current = narrative or load(path)
@@ -386,7 +546,10 @@ def summarize_long(narrative: SelfNarrative | None = None, path: Path | str | No
         f"{name}={trend.value:.2f} ({trend.trend})"
         for name, trend in current.trait_trends.items()
     )
-    periods = "; ".join(period.title for period in current.life_periods[-3:]) or "aucune période marquante"
+    periods = (
+        "; ".join(period.title for period in current.life_periods[-3:])
+        or "aucune période marquante"
+    )
 
     wins = ", ".join(current.regrets_and_pride.significant_successes[-3:]) or "aucune"
     losses = ", ".join(current.regrets_and_pride.significant_failures[-3:]) or "aucune"
