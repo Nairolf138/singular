@@ -6,6 +6,8 @@ import os
 import random
 import time
 import re
+from typing import Mapping, Any
+from pathlib import Path
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -33,6 +35,7 @@ from ..providers import (
     provider_is_real,
 )
 from ..runs.logger import log_provider_event
+from ..learning.imitation import ImitationEngine
 
 _CONTEXT_BUDGET_CHARS = 420
 _UNKNOWN_GUARD = 'Garde anti-hallucination: si une information demandée est inconnue, réponds explicitement "inconnu".'
@@ -173,10 +176,20 @@ def talk(
     provider: str | None = None,
     seed: int | None = None,
     prompt: str | None = None,
+    demonstration: Mapping[str, Any] | None = None,
+    imitation_engine: ImitationEngine | None = None,
 ) -> None:
     """Handle the ``talk`` subcommand."""
 
     ensure_memory_structure()
+
+    # Human dialogue is eligible for teaching only through a separate,
+    # structured and explicitly consented demonstration payload.
+    if demonstration is not None:
+        (
+            imitation_engine
+            or ImitationEngine(Path(os.environ.get("SINGULAR_HOME", ".")))
+        ).ingest_interaction(demonstration, source="human:talk")
 
     rng = random.Random(seed)
 
@@ -205,9 +218,9 @@ def talk(
 
     psyche = Psyche.load_state()
 
-    def gather_context() -> (
-        tuple[str | None, dict | None, dict | None, str | None, str | None]
-    ):
+    def gather_context() -> tuple[
+        str | None, dict | None, dict | None, str | None, str | None
+    ]:
         signals = capture_signals()
         add_episode({"event": "perception", **signals})
         psyche.consume()
