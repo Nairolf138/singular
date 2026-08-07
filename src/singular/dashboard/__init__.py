@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import os
 import sys
+from importlib.resources import files
 from pathlib import Path
 from urllib.parse import quote
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -106,8 +107,9 @@ def create_app(
     quests_path = base_dir / "mem" / "quests_state.json"
     app = FastAPI()
     actions = DashboardActionService(home=base_dir)
-    templates_dir = Path(__file__).parent / "templates"
-    static_dir = Path(__file__).parent / "static"
+    dashboard_resources = files("singular.dashboard")
+    templates_dir = dashboard_resources.joinpath("templates")
+    static_dir = dashboard_resources.joinpath("static")
     app.mount("/static", StaticFiles(directory=static_dir), name="dashboard-static")
     run_repository = RunRecordsRepository(
         base_dir=base_dir,

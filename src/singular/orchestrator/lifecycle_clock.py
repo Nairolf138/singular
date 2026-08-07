@@ -6,8 +6,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from singular.resources import config_resource
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "lifecycle.yaml"
+
+DEFAULT_CONFIG_PATH = config_resource("lifecycle.yaml")
 
 
 @dataclass(frozen=True)

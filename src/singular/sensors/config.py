@@ -8,7 +8,9 @@ import os
 from pathlib import Path
 from typing import Any, Mapping
 
-DEFAULT_HOST_SENSORS_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "host_sensors.yaml"
+from singular.resources import config_resource
+
+DEFAULT_HOST_SENSORS_CONFIG_PATH = config_resource("host_sensors.yaml")
 ENV_HOST_SENSORS_CONFIG_PATH = "SINGULAR_HOST_SENSORS_CONFIG"
 ENV_HOST_SENSORS_OVERRIDES = "SINGULAR_HOST_SENSORS_OVERRIDES"
 HOST_METRIC_STATUS_AVAILABLE = "available"
