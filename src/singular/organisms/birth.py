@@ -254,6 +254,7 @@ def birth(
     seed: int | None = None,
     home: Path | None = None,
     *,
+    name: str | None = None,
     psyche_overrides: dict[str, Any] | None = None,
     starter_profile: str = _DEFAULT_STARTER_PROFILE,
     starter_skills: list[str] | None = None,
@@ -308,7 +309,7 @@ def birth(
     rng = random.Random(seed)
 
     # Generate a random name and soulseed for the new identity
-    name = f"organism-{rng.randint(0, 999999):06d}"
+    name = name or f"organism-{rng.randint(0, 999999):06d}"
     soulseed = "".join(rng.choices(string.ascii_lowercase + string.digits, k=16))
 
     # Create the identity file and persist a base profile

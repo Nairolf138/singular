@@ -304,11 +304,27 @@ def _write_json(path: Path, payload: Mapping[str, object]) -> None:
     )
 
 
-def _build_final_biography(*, reason: str, state: Checkpoint, psyche: Psyche) -> dict[str, object]:
+def _persistent_identity_id(life_root: Path) -> str | None:
+    """Read the durable identity without making lifecycle output depend on it."""
+    try:
+        payload = json.loads((life_root / "id.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    value = payload.get("id") if isinstance(payload, Mapping) else None
+    return str(value) if value else None
+
+
+def _build_final_biography(
+    *,
+    reason: str,
+    state: Checkpoint,
+    psyche: Psyche,
+    identity_id: str | None = None,
+) -> dict[str, object]:
     mood = getattr(getattr(psyche, "last_mood", None), "value", None)
     if mood is None and getattr(psyche, "last_mood", None) is not None:
         mood = str(getattr(psyche, "last_mood"))
-    return {
+    result: dict[str, object] = {
         "schema_version": 1,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "periods": [
@@ -336,6 +352,9 @@ def _build_final_biography(*, reason: str, state: Checkpoint, psyche: Psyche) ->
             "pride": [f"Dernière humeur observée: {mood or 'inconnue'}"],
         },
     }
+    if identity_id:
+        result["identity_id"] = identity_id
+    return result
 
 
 def _build_autopsy_report(
@@ -345,6 +364,7 @@ def _build_autopsy_report(
     health_snapshot: Mapping[str, float | int] | None,
     reflection: ReflectionDecision,
     psyche: Psyche,
+    identity_id: str | None = None,
 ) -> dict[str, object]:
     technical_causes = [f"monitor:{reason}"]
     if health_snapshot:
@@ -358,13 +378,16 @@ def _build_autopsy_report(
             behavioral_causes.append(f"mutation_policy:{mutation_policy()}")
         except TypeError:
             pass
-    return {
+    result: dict[str, object] = {
         "schema_version": 1,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "iteration": state.iteration,
         "technical_causes": technical_causes,
         "behavioral_causes": behavioral_causes,
     }
+    if identity_id:
+        result["identity_id"] = identity_id
+    return result
 
 
 def _aggregate_health_bucket(
@@ -2336,6 +2359,7 @@ def run(
                 candidate_code=mutated,
                 skill_relative_path=skill_relative_path,
                 security_metadata=security_metadata,
+                identity_id=_persistent_identity_id(life_root),
             )
             log_mutation(
                 logger,
@@ -2423,12 +2447,14 @@ def run(
                     alive=False,
                 )
                 mem_dir = Path(os.environ.get("SINGULAR_HOME", ".")) / "mem"
+                identity_id = _persistent_identity_id(mem_dir.parent)
                 autopsy_payload = _build_autopsy_report(
                     reason=death_reason,
                     state=state,
                     health_snapshot=health_snapshot.to_dict(),
                     reflection=reflection,
                     psyche=psyche,
+                    identity_id=identity_id,
                 )
                 autopsy_path = mem_dir / "autopsy.json"
                 _write_json(autopsy_path, autopsy_payload)
@@ -2437,6 +2463,7 @@ def run(
                     reason=death_reason,
                     state=state,
                     psyche=psyche,
+                    identity_id=identity_id,
                 )
                 biography_path = mem_dir / "biography.final.json"
                 _write_json(biography_path, biography_payload)
