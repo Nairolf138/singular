@@ -1245,12 +1245,7 @@ def create_app(
             suggested_actions.append(
                 "Ralentir l'exploration et privilégier les mutations sûres"
             )
-        if not suggested_actions:
-            suggested_actions.append(
-                "Continuer avec les paramètres actuels et surveiller les alertes"
-            )
-
-        next_action = suggested_actions[0]
+        next_action = suggested_actions[0] if suggested_actions else None
         if critical_alerts:
             global_status = "critical"
         elif trend == "dégradation":
@@ -1370,6 +1365,10 @@ def create_app(
             if records
             else {"index": 0.0, "components": {}, "proofs": []}
         )
+        component_actions = liveness_payload.get("recommendations", [])
+        if isinstance(component_actions, list):
+            suggested_actions.extend(str(action) for action in component_actions)
+        next_action = suggested_actions[0] if suggested_actions else None
         life_status_payload = _cockpit_life_status_payload(
             records=records,
             selected_life=selected_life,
@@ -1436,6 +1435,7 @@ def create_app(
             "life_liveness_index": liveness_payload.get("index", 0.0),
             "life_liveness_components": liveness_payload.get("components", {}),
             "life_liveness_proofs": liveness_payload.get("proofs", []),
+            "score_diagnostics": liveness_payload.get("indices", {}),
             "life_liveness_life": selected_life,
             "life_status": life_status_payload.get("status", "not_alive_yet"),
             "life_status_score": life_status_payload.get("score", 0.0),
