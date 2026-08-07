@@ -127,6 +127,18 @@ Recommended practice:
 - use `skills/experimental` for work that should be surfaced but not auto-applied;
 - treat `force_allow_paths` as temporary and document why it was used.
 
+### Network and trust boundaries
+
+Treat the host process, LLM providers, and mutated code as separate security
+domains. The host assembles prompts and may include secrets or sensitive memories,
+depending on the caller. OpenAI sends those prompts to its external service. Ollama
+is local only when `OLLAMA_HOST` resolves exclusively to loopback addresses:
+`OLLAMA_NETWORK_POLICY=local` is the restrictive default and validates HTTP
+redirect destinations, `disabled` blocks calls, and `unrestricted` is an explicit
+opt-in for LAN/public endpoints. Untrusted mutated code is governed separately by
+`SINGULAR_SANDBOX_NETWORK_POLICY=none`; the sandbox refuses other values and asks
+the OCI runtime for system-level `--network=none` isolation.
+
 ### `autonomy`
 
 Controls mutation, runtime execution, rollback and circuit breakers:

@@ -134,6 +134,16 @@ def test_adversarial_io_is_rejected_before_execution(attack):
         run(attack)
 
 
+def test_sandbox_rejects_enabled_network_policy():
+    with pytest.raises(SandboxError, match="only supports disabled"):
+        sandbox._command("docker", SandboxConfig(network_policy="host"))
+
+
+def test_sandbox_network_policy_defaults_to_none(monkeypatch):
+    monkeypatch.delenv("SINGULAR_SANDBOX_NETWORK_POLICY", raising=False)
+    assert SandboxConfig.from_environment().network_policy == "none"
+
+
 def test_refuses_platform_without_resource_limits(monkeypatch):
     monkeypatch.setattr(sandbox, "resource_module", None)
     with pytest.raises(SandboxError, match="resource limits"):

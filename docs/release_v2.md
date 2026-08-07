@@ -51,6 +51,14 @@ Les parcours suivants sont bloquants avant release:
 
 ## 4) Checklist sécurité sandbox
 
+Frontières à ne pas confondre : le processus hôte orchestre et peut construire des
+prompts contenant, selon le flux, des secrets ou souvenirs sensibles ; OpenAI les
+transmet à son service externe ; Ollama n'est local que si `OLLAMA_HOST` résout vers
+loopback ; enfin le code muté est non fiable. La politique Ollama restrictive par
+défaut est `OLLAMA_NETWORK_POLICY=local` (`disabled` coupe le réseau et
+`unrestricted` est un opt-in distant), redirections comprises. Le sandbox du code
+muté impose `SINGULAR_SANDBOX_NETWORK_POLICY=none` au niveau OCI.
+
 Avant release, vérifier systématiquement:
 
 - [ ] Exécution de code utilisateur dans un conteneur OCI dédié sous Linux ; le filtre AST reste une validation fonctionnelle, pas la frontière de sécurité.

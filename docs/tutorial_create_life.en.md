@@ -85,6 +85,14 @@ During this tick, Singular may select a skill, propose a mutation, evaluate it i
 
 > **Security prerequisite:** evaluating untrusted code requires Linux, `resource` limits, and Docker or Podman with active seccomp and the `python:3.11-alpine` image already available (override with `SINGULAR_SANDBOX_IMAGE`). The container runs without networking or capabilities, as an unprivileged user, with a read-only root, isolated `/tmp`, and CPU/memory/process limits. AST filtering is only complementary functional validation. Singular explicitly refuses evaluation when it cannot establish the system-isolation guarantees.
 
+The host process, the LLM provider, and untrusted mutated code are three separate
+trust boundaries. The OpenAI provider sends prompts to an external service; prompts
+may contain secrets or sensitive memories depending on the calling flow. Ollama is
+local only when `OLLAMA_HOST` really resolves to loopback. The restrictive default
+`OLLAMA_NETWORK_POLICY=local` validates redirects too; use `disabled` to prevent all
+calls. Independently, the sandbox enforces `SINGULAR_SANDBOX_NETWORK_POLICY=none`
+and refuses a less restrictive mode.
+
 ## 4. Inspect memory and checkpoint
 
 The life memory lives in `mem/`:
