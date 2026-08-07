@@ -9,6 +9,7 @@ from typing import Dict, Optional
 from singular.cognition.reflect import ActionHypothesis, reflect_action
 from singular.memory import add_episode
 from singular.morals.moral_rules import score_action
+from singular.morals import MoralAction, MoralDecisionEngine
 
 from singular.models.agents.motivation import Motivation
 
@@ -62,10 +63,24 @@ class Agent:
 
         context = context or {}
         action_costs = context.get("action_costs", {})
+        moral_engine = MoralDecisionEngine(journal=add_episode)
+        moral_decisions = {
+            act: moral_engine.evaluate(
+                MoralAction(act, context.get("action_parameters", {}).get(act, {})),
+                context.get("consequences", {}).get(act, ()),
+                context.get("affected_parties", ()),
+                context.get("identity_commitments", ()),
+                context.get("uncertainty", {}).get(act, 0.0)
+                if isinstance(context.get("uncertainty", 0.0), dict)
+                else context.get("uncertainty", 0.0),
+            )
+            for act in actions
+        }
         allowed_actions = {
             act: val
             for act, val in actions.items()
             if score_action(act, context) >= -self.moral_tolerance
+            and not moral_decisions[act].veto
         }
 
         if not allowed_actions:
@@ -75,7 +90,7 @@ class Agent:
         hypotheses = [
             ActionHypothesis(
                 action=action,
-                long_term=value / max_value,
+                long_term=(value / max_value) + moral_decisions[action].scores["overall"],
                 sandbox_risk=max(0.0, -score_action(action, context)),
                 resource_cost=float(action_costs.get(action, 0.0)),
                 metadata={"raw_value": value},
