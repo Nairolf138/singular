@@ -77,6 +77,33 @@ normalement puisqu'elles ne contiennent aucun secret. L'override de
 développement non authentifié ne doit jamais être employé sur une écoute
 publique.
 
+Le proxy doit aussi transmettre explicitement l'upgrade WebSocket. Par exemple,
+avec nginx (le bloc `location` doit correspondre au chemin public retenu) :
+
+```nginx
+location /ws {
+    proxy_pass http://127.0.0.1:8000/ws;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+}
+```
+
+Le navigateur sélectionne automatiquement `ws:` pour une page HTTP et `wss:`
+pour une page HTTPS. Si le dashboard est publié sous un sous-chemin (par exemple
+`/singular/dashboard`), définir le préfixe avant de charger le module du
+dashboard, puis exposer le WebSocket au chemin préfixé correspondant :
+
+```html
+<script>window.SINGULAR_DASHBOARD_PATH_PREFIX = '/singular/dashboard';</script>
+<script type="module" src="/singular/dashboard/static/dashboard.js"></script>
+```
+
+Dans cet exemple, le client se connecte à `/singular/dashboard/ws`; le reverse
+proxy doit router ce chemin vers `/ws` sur le service Singular en conservant les
+en-têtes `Upgrade`, `Connection` et `Host` montrés ci-dessus.
+
 ## Données affichées
 
 Le cockpit agrège plusieurs familles de signaux :

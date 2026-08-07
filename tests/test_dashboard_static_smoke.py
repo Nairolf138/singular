@@ -501,6 +501,31 @@ if (!result.textContent.includes('Saisissez le nom exact')) {{ throw new Error(`
     subprocess.run(["node", str(script)], check=True)
 
 
+def test_dashboard_websocket_url_supports_http_https_and_proxy_prefix(tmp_path: Path) -> None:
+    """The browser protocol and optional reverse-proxy prefix determine the WebSocket URL."""
+    script = tmp_path / "dashboard_websocket_url_check.mjs"
+    module_path = (Path.cwd() / DASHBOARD_STATIC / "bootstrap.js").as_uri()
+    script.write_text(
+        f"""
+globalThis.window = {{ SINGULAR_DASHBOARD_PATH_PREFIX: '' }};
+const {{ buildWebSocketUrl }} = await import('{module_path}');
+
+const cases = [
+  [{{ protocol: 'http:', host: 'localhost:8000' }}, '', 'ws://localhost:8000/ws'],
+  [{{ protocol: 'https:', host: 'dashboard.example.test' }}, '', 'wss://dashboard.example.test/ws'],
+  [{{ protocol: 'https:', host: 'example.test' }}, '/singular/dashboard/', 'wss://example.test/singular/dashboard/ws'],
+];
+for (const [location, prefix, expected] of cases) {{
+  const actual = buildWebSocketUrl(location, prefix);
+  if (actual !== expected) {{ throw new Error(`expected ${{expected}}, got ${{actual}}`); }}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(["node", str(script)], check=True)
+
+
 def test_empty_lives_comparison_keeps_birth_action_enabled(tmp_path: Path) -> None:
     """Critical birth action remains usable when /lives/comparison has no lives."""
     script = tmp_path / "empty_lives_birth_action_check.mjs"
