@@ -7,8 +7,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 import json
+import hashlib
 
-SCHEMA_VERSION = 2
+from singular.identity.coherence import detect_contradictions
+from singular.io_utils import append_jsonl_line, atomic_write_text
+
+SCHEMA_VERSION = 3
 TIMELINE_SUFFIX = ".timeline.jsonl"
 
 _TRAIT_KEYS = ("curiosity", "patience", "playfulness", "optimism", "resilience")
@@ -52,6 +56,25 @@ class RegretsAndPride:
 
 
 @dataclass
+class NarrativeEntry:
+    """One attributable, causal and explicitly qualified story statement."""
+
+    entry_id: str
+    life_id: str
+    event_type: str
+    occurred_at: str
+    summary: str
+    source_event_ids: list[str] = field(default_factory=list)
+    objective_ids: list[str] = field(default_factory=list)
+    participants: list[str] = field(default_factory=list)
+    confidence: float = 1.0
+    change_type: str = "observation"
+    causal_links: list[dict[str, str]] = field(default_factory=list)
+    certainty: str = "certain"
+    contradictions: list[dict[str, str]] = field(default_factory=list)
+
+
+@dataclass
 class SelfNarrative:
     """Persistent self narrative with explicit schema version."""
 
@@ -62,6 +85,8 @@ class SelfNarrative:
     regrets_and_pride: RegretsAndPride
     current_heading: str
     objective_trends: dict[str, TraitTrend] = field(default_factory=dict)
+    life_id: str = "default"
+    entries: list[NarrativeEntry] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -71,6 +96,7 @@ class SelfNarrative:
         payload["objective_trends"] = {
             key: asdict(value) for key, value in self.objective_trends.items()
         }
+        payload["entries"] = [asdict(entry) for entry in self.entries]
         return payload
 
 
@@ -131,6 +157,8 @@ def _default_narrative() -> SelfNarrative:
         regrets_and_pride=RegretsAndPride(),
         current_heading="Clarifier ma prochaine étape utile.",
         objective_trends={},
+        life_id="default",
+        entries=[],
     )
 
 
@@ -190,6 +218,14 @@ def timeline_path(path: Path | str | None = None) -> Path:
 def load_snapshots(path: Path | str | None = None) -> list[dict[str, Any]]:
     """Read valid snapshots without letting a damaged line hide later history."""
 
+    return sorted(
+        _load_timeline_records(path), key=lambda item: str(item["recorded_at"])
+    )
+
+
+def _load_timeline_records(path: Path | str | None = None) -> list[dict[str, Any]]:
+    """Read timeline records in append order, independently of wall-clock drift."""
+
     snapshots: list[dict[str, Any]] = []
     try:
         lines = timeline_path(path).read_text(encoding="utf-8").splitlines()
@@ -202,7 +238,7 @@ def load_snapshots(path: Path | str | None = None) -> list[dict[str, Any]]:
             continue
         if isinstance(item, dict) and _parse_iso(item.get("recorded_at")):
             snapshots.append(item)
-    return sorted(snapshots, key=lambda item: str(item["recorded_at"]))
+    return snapshots
 
 
 def infer_trend(
@@ -317,6 +353,46 @@ def _materialize(payload: Mapping[str, Any]) -> SelfNarrative:
         ],
     )
 
+    entries: list[NarrativeEntry] = []
+    raw_entries = payload.get("entries")
+    if isinstance(raw_entries, list):
+        for item in raw_entries:
+            if not isinstance(item, Mapping):
+                continue
+            entries.append(
+                NarrativeEntry(
+                    entry_id=str(item.get("entry_id", "")),
+                    life_id=str(item.get("life_id", payload.get("life_id", "default"))),
+                    event_type=str(item.get("event_type", "unknown")),
+                    occurred_at=str(item.get("occurred_at", "")),
+                    summary=str(item.get("summary", "")),
+                    source_event_ids=_string_list(item.get("source_event_ids")),
+                    objective_ids=_string_list(item.get("objective_ids")),
+                    participants=_string_list(item.get("participants")),
+                    confidence=_coerce_float(item.get("confidence"), 1.0),
+                    change_type=str(item.get("change_type", "observation")),
+                    causal_links=(
+                        [
+                            {str(k): str(v) for k, v in link.items()}
+                            for link in item.get("causal_links", [])
+                            if isinstance(link, Mapping)
+                        ]
+                        if isinstance(item.get("causal_links"), list)
+                        else []
+                    ),
+                    certainty=str(item.get("certainty", "certain")),
+                    contradictions=(
+                        [
+                            dict(value)
+                            for value in item.get("contradictions", [])
+                            if isinstance(value, Mapping)
+                        ]
+                        if isinstance(item.get("contradictions"), list)
+                        else []
+                    ),
+                )
+            )
+
     narrative = SelfNarrative(
         schema_version=max(schema_version, SCHEMA_VERSION),
         identity=identity,
@@ -338,6 +414,8 @@ def _materialize(payload: Mapping[str, Any]) -> SelfNarrative:
             )
             if isinstance(value, Mapping)
         },
+        life_id=str(payload.get("life_id", "default")),
+        entries=entries,
     )
     narrative.identity.logical_age = _compute_logical_age(narrative.identity.born_at)
     return narrative
@@ -371,7 +449,7 @@ def load(path: Path | str | None = None) -> SelfNarrative:
             file_path.rename(backup)
         except OSError:
             pass
-        narrative = _default_narrative()
+        narrative = rebuild_from_timeline(file_path, persist=False)
         save(narrative, file_path, record_snapshot=False)
         return narrative
 
@@ -399,9 +477,9 @@ def save(
     file_path.parent.mkdir(parents=True, exist_ok=True)
     narrative.schema_version = SCHEMA_VERSION
     narrative.identity.logical_age = _compute_logical_age(narrative.identity.born_at)
-    file_path.write_text(
+    atomic_write_text(
+        file_path,
         json.dumps(narrative.to_dict(), ensure_ascii=False, indent=2),
-        encoding="utf-8",
     )
     if record_snapshot:
         now = (clock or (lambda: datetime.now(timezone.utc)))()
@@ -427,6 +505,231 @@ def _extend_unique(target: list[str], values: Any) -> None:
         text = str(value).strip()
         if text and text not in target:
             target.append(text)
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [str(item) for item in value if str(item).strip()]
+
+
+SIGNIFICANT_EVENT_TYPES = frozenset(
+    {
+        "birth",
+        "goal",
+        "conversation",
+        "learning",
+        "moral_decision",
+        "relationship",
+        "mutation",
+        "incident",
+        "life_transition",
+    }
+)
+_EVENT_TYPE_ALIASES = {
+    "born": "birth",
+    "life.birth": "birth",
+    "goal.created": "goal",
+    "goal.updated": "goal",
+    "conversation.message": "conversation",
+    "learning.completed": "learning",
+    "action.moral.decision": "moral_decision",
+    "relationship.changed": "relationship",
+    "mutation.applied": "mutation",
+    "mutation.rejected": "mutation",
+    "incident.detected": "incident",
+    "life.transition": "life_transition",
+    "vital.transition": "life_transition",
+}
+
+
+def _normalize_event_type(value: Any) -> str:
+    raw = str(value or "").strip()
+    return _EVENT_TYPE_ALIASES.get(raw, raw)
+
+
+def _event_identifier(event: Mapping[str, Any]) -> str:
+    explicit = event.get("event_id") or event.get("id")
+    if explicit:
+        return str(explicit)
+    canonical = json.dumps(dict(event), ensure_ascii=False, sort_keys=True, default=str)
+    return "event-" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:20]
+
+
+def _apply_entry(narrative: SelfNarrative, entry: NarrativeEntry) -> bool:
+    if entry.life_id != narrative.life_id:
+        return False
+    if any(current.entry_id == entry.entry_id for current in narrative.entries):
+        return False
+    narrative.entries.append(entry)
+    return True
+
+
+def rebuild_from_timeline(
+    path: Path | str | None = None,
+    *,
+    life_id: str | None = None,
+    persist: bool = True,
+) -> SelfNarrative:
+    """Rebuild a projection from valid append-only records, skipping damage."""
+
+    wanted_life = life_id
+    narrative = _default_narrative()
+    if wanted_life is not None:
+        narrative.life_id = wanted_life
+    for record in _load_timeline_records(path):
+        projection = record.get("narrative")
+        if isinstance(projection, Mapping) and not record.get("entry"):
+            candidate = _migrate(projection)
+            if wanted_life is None or candidate.life_id == wanted_life:
+                narrative = candidate
+            continue
+        raw_entry = record.get("entry")
+        if not isinstance(raw_entry, Mapping):
+            continue
+        record_life = str(raw_entry.get("life_id", "default"))
+        if wanted_life is None and not narrative.entries:
+            narrative.life_id = record_life
+        if record_life != narrative.life_id:
+            continue
+        entry_payload = dict(raw_entry)
+        temp = _materialize({"life_id": record_life, "entries": [entry_payload]})
+        if temp.entries:
+            _apply_entry(narrative, temp.entries[0])
+        resulting = record.get("resulting_narrative")
+        if isinstance(resulting, Mapping):
+            candidate = _migrate(resulting)
+            if candidate.life_id == narrative.life_id:
+                narrative = candidate
+    if persist:
+        save(narrative, path, record_snapshot=False)
+    return narrative
+
+
+def project_event(
+    event: Mapping[str, Any],
+    path: Path | str | None = None,
+    *,
+    life_id: str = "default",
+    autobiographical_facts: Sequence[Mapping[str, Any]] = (),
+    commitments: Sequence[Mapping[str, Any]] = (),
+    history: Sequence[Mapping[str, Any]] = (),
+    clock: Callable[[], datetime] | None = None,
+) -> SelfNarrative:
+    """Incrementally project one significant event with provenance and coherence."""
+
+    event_type = _normalize_event_type(event.get("event_type") or event.get("type"))
+    if event_type not in SIGNIFICANT_EVENT_TYPES:
+        raise ValueError(f"unsupported narrative event type: {event_type or 'missing'}")
+    file_path = _path_or_default(path)
+    projected = load(file_path)
+    if projected.entries and projected.life_id != life_id:
+        # A path is the storage boundary of one life; never mix identities.
+        raise ValueError("narrative path belongs to a different life")
+    narrative = (
+        rebuild_from_timeline(file_path, life_id=life_id, persist=False)
+        if timeline_path(file_path).exists()
+        else projected
+    )
+    if narrative.entries and narrative.life_id != life_id:
+        raise ValueError("narrative path belongs to a different life")
+    narrative.life_id = life_id
+    event_id = _event_identifier(event)
+    if any(event_id in entry.source_event_ids for entry in narrative.entries):
+        return narrative
+
+    now = (clock or (lambda: datetime.now(timezone.utc)))()
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    summary = str(event.get("summary") or event.get("statement") or event_type).strip()
+    contradictions = detect_contradictions(
+        beliefs=[
+            {"statement": summary},
+            *[dict(item) for item in autobiographical_facts],
+        ],
+        goals=[dict(item) for item in commitments],
+        history=[
+            *[{"summary": entry.summary} for entry in narrative.entries],
+            *[dict(item) for item in history],
+        ],
+    )
+    certainty = (
+        "uncertain" if contradictions else str(event.get("certainty", "certain"))
+    )
+    entry = NarrativeEntry(
+        entry_id=str(event.get("entry_id") or f"narrative-{event_id}"),
+        life_id=life_id,
+        event_type=event_type,
+        occurred_at=str(
+            event.get("occurred_at") or now.astimezone(timezone.utc).isoformat()
+        ),
+        summary=summary,
+        source_event_ids=list(
+            dict.fromkeys([event_id, *_string_list(event.get("source_event_ids"))])
+        ),
+        objective_ids=_string_list(event.get("objective_ids") or event.get("goals")),
+        participants=_string_list(event.get("participants")),
+        confidence=_coerce_float(event.get("confidence"), 1.0),
+        change_type=str(event.get("change_type", event_type)),
+        causal_links=(
+            [
+                dict(link)
+                for link in event.get("causal_links", [])
+                if isinstance(link, Mapping)
+            ]
+            if isinstance(event.get("causal_links"), list)
+            else []
+        ),
+        certainty=certainty,
+        contradictions=contradictions,
+    )
+    _apply_entry(narrative, entry)
+
+    # Contradictory claims remain visible evidence but cannot replace prior state.
+    if not contradictions:
+        if event_type == "birth":
+            narrative.identity.name = str(event.get("name") or narrative.identity.name)
+            narrative.identity.born_at = str(event.get("born_at") or entry.occurred_at)
+        heading = event.get("current_heading")
+        if isinstance(heading, str) and heading.strip():
+            narrative.current_heading = heading.strip()
+
+    record = {
+        "recorded_at": now.astimezone(timezone.utc).isoformat(),
+        "schema_version": SCHEMA_VERSION,
+        "record_type": "narrative_event",
+        "life_id": life_id,
+        "entry": asdict(entry),
+        "resulting_narrative": narrative.to_dict(),
+    }
+    append_jsonl_line(timeline_path(file_path), record)
+    save(narrative, file_path, record_snapshot=False)
+    return narrative
+
+
+class NarrativeProjector:
+    """Small event-consumer facade suitable for synchronous event buses."""
+
+    def __init__(self, path: Path | str, *, life_id: str) -> None:
+        self.path = Path(path)
+        self.life_id = life_id
+
+    def consume(self, event: Any) -> SelfNarrative:
+        payload = dict(getattr(event, "payload", event))
+        if getattr(event, "event_type", None):
+            payload.setdefault("event_type", _normalize_event_type(event.event_type))
+            payload.setdefault(
+                "event_id",
+                payload.get("event_id")
+                or f"{event.event_type}:{getattr(event, 'emitted_at', '')}",
+            )
+        return project_event(payload, self.path, life_id=self.life_id)
+
+    def subscribe(self, bus: Any) -> None:
+        """Subscribe incremental projection to every known major bus event."""
+
+        for event_type in _EVENT_TYPE_ALIASES:
+            bus.subscribe(event_type, self.consume)
 
 
 def update_from_signals(
