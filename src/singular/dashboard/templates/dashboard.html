@@ -109,6 +109,30 @@
       </ul>
       <a id='digital-life-details-link' class='filter-chip' href='#tab-comparer-vies'>Voir détail</a>
     </div>
+    <section id='life-snapshot' class='life-snapshot panel panel-compact panel-bordered content-top-gap' aria-live='polite' aria-labelledby='life-snapshot-title'>
+      <h3 id='life-snapshot-title' class='heading-reset-top'>Fiche synthétique · sélectionnez une vie</h3>
+      <p class='section-help'>Une lecture progressive de la vie sélectionnée, construite par les services du serveur.</p>
+      <div id='life-snapshot-summary' class='snapshot-grid' data-snapshot-level='summary'>
+        <div class='card'><div class='card-label'>État actuel</div><div data-snapshot-field='current_state' class='card-value'>Non disponible</div></div>
+        <div class='card'><div class='card-label'>Évolution récente</div><div data-snapshot-field='recent_evolution' class='card-value'>Non disponible</div></div>
+        <div class='card'><div class='card-label'>Besoin dominant</div><div data-snapshot-field='dominant_need' class='card-value'>Non disponible</div></div>
+        <div class='card'><div class='card-label'>Objectif actif</div><div data-snapshot-field='active_objective' class='card-value'>Non disponible</div></div>
+        <div class='card'><div class='card-label'>Dernière décision</div><div data-snapshot-field='last_decision' class='card-value'>Non disponible</div></div>
+        <div class='card'><div class='card-label'>Dernière action</div><div data-snapshot-field='last_action' class='card-value'>Non disponible</div></div>
+        <div class='card'><div class='card-label'>Conséquence observée</div><div data-snapshot-field='observed_consequence' class='card-value'>Non disponible</div></div>
+        <div class='card'><div class='card-label'>Changement mémorisé</div><div data-snapshot-field='memorized_change' class='card-value'>Non disponible</div></div>
+        <div class='card'><div class='card-label'>Alerte principale</div><div data-snapshot-field='primary_alert' class='card-value'>Aucune alerte</div></div>
+        <div class='card'><div class='card-label'>Prochaine action recommandée</div><div data-snapshot-field='recommended_next_action' class='card-value'>Non disponible</div></div>
+      </div>
+      <details id='life-snapshot-evidence' data-snapshot-level='evidence'>
+        <summary>Preuves et causalité</summary>
+        <div id='life-snapshot-evidence-content' class='snapshot-evidence'>Aucune preuve disponible.</div>
+      </details>
+      <details id='life-snapshot-raw' data-snapshot-level='technical' class='technical-only'>
+        <summary>Données techniques brutes</summary>
+        <pre id='life-snapshot-raw-content'>{}</pre>
+      </details>
+    </section>
     <ul id='operator-lives-empty-states' class='list-tight-top'>
       <li>Chargement du registre des vies…</li>
     </ul>

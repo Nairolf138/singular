@@ -1,7 +1,7 @@
 import {fetchJson,withScope} from './api.js';
 import {fetchSharedDashboardContext,fetchSharedLivesComparison,fetchSharedCockpitEssential} from './dashboard-data.js';
 import {mergeLifeRows,updateOperatorLifeOptions} from './actions.js';
-import {HOST_SENSORS_THRESHOLD,na,setPanelState,setStatusTone,applyStatusIndicator,getSelectedLife,setSelectedLife,staleTimeoutTasks} from './state.js';
+import {HOST_SENSORS_THRESHOLD,na,setPanelState,setStatusTone,applyStatusIndicator,getSelectedLife,getRememberedLife,setSelectedLife,staleTimeoutTasks} from './state.js';
 import {renderQuestsSection} from './render-quests.js';
 import {renderObjectivesSection} from './render-objectives.js';
 import {renderConversationsSection} from './render-conversations.js';
@@ -331,7 +331,9 @@ const renderOperatorSummary=()=>{
         option.textContent=row.life||na();
         select.appendChild(option);
       }
-      select.value=currentValue&&rows.some(row=>row.life===currentValue)?currentValue:'';
+      const remembered=getRememberedLife();
+      select.value=currentValue&&rows.some(row=>row.life===currentValue)?currentValue:(remembered&&rows.some(row=>row.life===remembered)?remembered:'');
+      if(select.value&&!getSelectedLife()){setSelectedLife(select.value,{source:'remembered-selection'});}
     }
     if(select.dataset.bound!=='true'){
       select.dataset.bound='true';
