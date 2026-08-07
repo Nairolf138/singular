@@ -85,6 +85,15 @@ Pendant ce tick, Singular peut sélectionner une skill, proposer une mutation, l
 
 > **Prérequis de sécurité :** l'évaluation de code non fiable exige Linux, les limites `resource`, et Docker ou Podman avec seccomp actif et l'image `python:3.11-alpine` déjà disponible (modifiable via `SINGULAR_SANDBOX_IMAGE`). Le conteneur est lancé sans réseau, sans capabilities, avec un utilisateur non privilégié, une racine en lecture seule, un `/tmp` isolé et des limites CPU/mémoire/processus. Le contrôle AST n'est qu'une validation fonctionnelle complémentaire. Singular refuse explicitement l'évaluation si l'isolation système ne peut pas être garantie.
 
+Le processus hôte, le fournisseur LLM et le code muté non fiable sont trois
+frontières distinctes. Le fournisseur OpenAI envoie les prompts à un service
+externe ; selon le flux appelant, ces prompts peuvent inclure des secrets ou des
+souvenirs sensibles. Ollama n'est local que si `OLLAMA_HOST` résout réellement vers
+une adresse loopback. La politique restrictive par défaut
+`OLLAMA_NETWORK_POLICY=local` vérifie aussi les redirections ; utilisez `disabled`
+pour couper les appels. Le sandbox impose séparément
+`SINGULAR_SANDBOX_NETWORK_POLICY=none` et refuse tout mode moins restrictif.
+
 ## 4. Inspecter mémoire et checkpoint
 
 La mémoire de la vie est située dans `mem/` :

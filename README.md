@@ -345,7 +345,18 @@ le fichier hybride dans `child/`.
 
 ## 🔒 Security
 
-- Pas de réseau (no net).
+- **Frontières de confiance** : le processus hôte orchestre les appels et peut lire la
+  mémoire ; les fournisseurs LLM sont des services séparés ; le code produit par les
+  mutations est non fiable et n'est exécuté que dans le sandbox OCI.
+- Le fournisseur OpenAI transmet ses prompts au service externe d'OpenAI. Selon le
+  flux appelant, un prompt peut contenir des secrets ou des souvenirs sensibles :
+  inspectez/minimisez les données avant d'activer ce fournisseur.
+- Ollama n'est « local » que si `OLLAMA_HOST` pointe réellement vers une adresse
+  loopback. `OLLAMA_NETWORK_POLICY=local` (valeur restrictive par défaut) le vérifie,
+  y compris après une redirection HTTP ; `disabled` interdit tout appel et
+  `unrestricted` autorise explicitement les hôtes distants.
+- Le code muté n'a pas de réseau : `SINGULAR_SANDBOX_NETWORK_POLICY=none` (défaut).
+  Toute demande d'un autre mode est refusée plutôt que silencieusement affaiblie.
 - Pas d’accès disque externe (hors dossier de l’organisme).
 - Sandbox stricte :
   - Limites CPU/RAM (`timeout` & `memory_limit` : 1.5s et 256 MB par défaut).

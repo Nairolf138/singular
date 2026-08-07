@@ -2,26 +2,87 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import socket
 import time
 from typing import Any
+from urllib.parse import urlparse
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
-from . import ProviderExecutionError, ProviderMetrics, ProviderTimeoutError, ProviderUnavailableError
+from . import (
+    ProviderExecutionError,
+    ProviderMetrics,
+    ProviderMisconfiguredError,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+)
 
 MAX_RETRIES = 1
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
 DEFAULT_OLLAMA_MODEL = "llama3.2"
 DEFAULT_OLLAMA_EMBED_MODEL = "nomic-embed-text"
+DEFAULT_NETWORK_POLICY = "local"
 
 LAST_METRICS = ProviderMetrics(provider="ollama")
 
 
+class _RejectRedirects(HTTPRedirectHandler):
+    """Prevent a prompt-bearing POST from being forwarded to another host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        raise ProviderMisconfiguredError("Ollama HTTP redirects are refused by policy")
+
+
+def _urlopen(request: Request, *, timeout: float):
+    if _network_policy() == "unrestricted":
+        return urlopen(request, timeout=timeout)  # noqa: S310 - explicitly unrestricted
+    return build_opener(_RejectRedirects()).open(request, timeout=timeout)
+
+
 def _host() -> str:
-    return (os.getenv("OLLAMA_HOST") or DEFAULT_OLLAMA_HOST).strip().rstrip("/")
+    host = (os.getenv("OLLAMA_HOST") or DEFAULT_OLLAMA_HOST).strip().rstrip("/")
+    _validate_network_target(host)
+    return host
+
+
+def _network_policy() -> str:
+    policy = (os.getenv("OLLAMA_NETWORK_POLICY") or DEFAULT_NETWORK_POLICY).strip().lower()
+    aliases = {"strict": "local", "none": "disabled", "off": "disabled"}
+    policy = aliases.get(policy, policy)
+    if policy not in {"disabled", "local", "unrestricted"}:
+        raise ProviderMisconfiguredError(
+            "OLLAMA_NETWORK_POLICY must be disabled, local, or unrestricted"
+        )
+    return policy
+
+
+def _validate_network_target(url: str) -> None:
+    """Enforce the configured policy for an initial or redirected URL."""
+
+    policy = _network_policy()
+    if policy == "disabled":
+        raise ProviderMisconfiguredError("Ollama network access is disabled by policy")
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ProviderMisconfiguredError("OLLAMA_HOST must be an HTTP(S) URL")
+    if parsed.username or parsed.password:
+        raise ProviderMisconfiguredError("OLLAMA_HOST must not contain credentials")
+    if policy == "unrestricted":
+        return
+    try:
+        addresses = {
+            item[4][0]
+            for item in socket.getaddrinfo(parsed.hostname, parsed.port, type=socket.SOCK_STREAM)
+        }
+    except socket.gaierror as exc:
+        raise ProviderMisconfiguredError("OLLAMA_HOST could not be resolved locally") from exc
+    if not addresses or any(not ipaddress.ip_address(address).is_loopback for address in addresses):
+        raise ProviderMisconfiguredError(
+            "OLLAMA_HOST must resolve only to loopback addresses in local mode"
+        )
 
 
 def _model() -> str:
@@ -43,7 +104,8 @@ def _post_json(path: str, payload: dict[str, Any], *, timeout: float) -> dict[st
     data = json.dumps(payload).encode("utf-8")
     request = Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
     try:
-        with urlopen(request, timeout=timeout) as response:  # noqa: S310 - configured local provider URL
+        with _urlopen(request, timeout=timeout) as response:
+            _validate_network_target(response.geturl())
             raw = response.read().decode("utf-8")
     except TimeoutError as exc:
         raise ProviderTimeoutError("Ollama request timed out") from exc

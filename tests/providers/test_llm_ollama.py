@@ -6,13 +6,19 @@ from urllib.error import URLError
 
 import pytest
 
-from singular.providers import ProviderExecutionError, ProviderTimeoutError, ProviderUnavailableError
+from singular.providers import (
+    ProviderExecutionError,
+    ProviderMisconfiguredError,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+)
 from singular.providers import llm_ollama
 
 
 class FakeHTTPResponse:
-    def __init__(self, payload: dict[str, object]):
+    def __init__(self, payload: dict[str, object], url: str = "http://127.0.0.1:11434/api"):
         self.payload = payload
+        self.url = url
 
     def __enter__(self):
         return self
@@ -23,17 +29,21 @@ class FakeHTTPResponse:
     def read(self) -> bytes:
         return json.dumps(self.payload).encode("utf-8")
 
+    def geturl(self) -> str:
+        return self.url
+
 
 def test_generate_reply_posts_to_configured_ollama_host(monkeypatch):
     calls = []
     monkeypatch.setenv("OLLAMA_HOST", "http://ollama.test/")
     monkeypatch.setenv("OLLAMA_MODEL", " mistral ")
+    monkeypatch.setenv("OLLAMA_NETWORK_POLICY", "unrestricted")
 
     def fake_urlopen(request, timeout):
         calls.append((request.full_url, json.loads(request.data.decode("utf-8")), timeout))
         return FakeHTTPResponse({"response": "bonjour\x00"})
 
-    monkeypatch.setattr(llm_ollama, "urlopen", fake_urlopen)
+    monkeypatch.setattr(llm_ollama, "_urlopen", fake_urlopen)
 
     assert llm_ollama.generate_reply("salut", timeout=2.5) == "bonjour"
     assert calls == [
@@ -53,7 +63,7 @@ def test_embed_uses_configured_embedding_model(monkeypatch):
         calls.append((request.full_url, json.loads(request.data.decode("utf-8")), timeout))
         return FakeHTTPResponse({"embedding": [1, "2.5", 3.0]})
 
-    monkeypatch.setattr(llm_ollama, "urlopen", fake_urlopen)
+    monkeypatch.setattr(llm_ollama, "_urlopen", fake_urlopen)
 
     assert llm_ollama.embed("texte", timeout=4.0) == [1.0, 2.5, 3.0]
     assert calls[0][1] == {"model": "nomic-embed-text", "prompt": "texte"}
@@ -64,7 +74,7 @@ def test_timeout_maps_to_provider_timeout(monkeypatch):
     def fake_urlopen(_request, timeout):
         raise socket.timeout("too slow")
 
-    monkeypatch.setattr(llm_ollama, "urlopen", fake_urlopen)
+    monkeypatch.setattr(llm_ollama, "_urlopen", fake_urlopen)
 
     with pytest.raises(ProviderTimeoutError):
         llm_ollama.generate_reply("salut")
@@ -74,7 +84,7 @@ def test_network_error_maps_to_provider_unavailable(monkeypatch):
     def fake_urlopen(_request, timeout):
         raise URLError("connection refused")
 
-    monkeypatch.setattr(llm_ollama, "urlopen", fake_urlopen)
+    monkeypatch.setattr(llm_ollama, "_urlopen", fake_urlopen)
 
     with pytest.raises(ProviderUnavailableError):
         llm_ollama.generate_reply("salut")
@@ -84,7 +94,7 @@ def test_schema_errors_map_to_provider_execution(monkeypatch):
     def fake_urlopen(_request, timeout):
         return FakeHTTPResponse({"not_response": "missing"})
 
-    monkeypatch.setattr(llm_ollama, "urlopen", fake_urlopen)
+    monkeypatch.setattr(llm_ollama, "_urlopen", fake_urlopen)
 
     with pytest.raises(ProviderExecutionError, match="missing response text"):
         llm_ollama.generate_reply("salut")
@@ -94,7 +104,7 @@ def test_healthcheck_reports_unavailable(monkeypatch):
     def fake_urlopen(_request, timeout):
         raise URLError("connection refused")
 
-    monkeypatch.setattr(llm_ollama, "urlopen", fake_urlopen)
+    monkeypatch.setattr(llm_ollama, "_urlopen", fake_urlopen)
 
     result = llm_ollama.healthcheck()
     assert result["ok"] is False
@@ -104,3 +114,35 @@ def test_healthcheck_reports_unavailable(monkeypatch):
 
 def test_cost_estimate_is_zero_for_local_ollama():
     assert llm_ollama.cost_estimate("prompt", "completion") == 0.0
+
+
+@pytest.mark.parametrize("host", ["http://127.0.0.1:11434", "http://[::1]:11434", "http://localhost:11434"])
+def test_local_policy_accepts_loopback(monkeypatch, host):
+    monkeypatch.setenv("OLLAMA_HOST", host)
+    monkeypatch.setenv("OLLAMA_NETWORK_POLICY", "local")
+    assert llm_ollama._host() == host
+
+
+@pytest.mark.parametrize("host", ["http://192.168.1.20:11434", "https://203.0.113.10"])
+def test_local_policy_rejects_lan_and_public_hosts(monkeypatch, host):
+    monkeypatch.setenv("OLLAMA_HOST", host)
+    monkeypatch.setenv("OLLAMA_NETWORK_POLICY", "local")
+    with pytest.raises(ProviderMisconfiguredError, match="loopback"):
+        llm_ollama._host()
+
+
+def test_local_policy_rejects_http_redirect_to_public_host(monkeypatch):
+    monkeypatch.setenv("OLLAMA_NETWORK_POLICY", "local")
+
+    def fake_urlopen(_request, timeout):
+        return FakeHTTPResponse({"response": "unsafe"}, "https://203.0.113.10/api/generate")
+
+    monkeypatch.setattr(llm_ollama, "_urlopen", fake_urlopen)
+    with pytest.raises(ProviderMisconfiguredError, match="loopback"):
+        llm_ollama.generate("hello")
+
+
+def test_disabled_policy_refuses_even_loopback(monkeypatch):
+    monkeypatch.setenv("OLLAMA_NETWORK_POLICY", "disabled")
+    with pytest.raises(ProviderMisconfiguredError, match="disabled"):
+        llm_ollama.generate("hello")

@@ -57,6 +57,7 @@ class SandboxConfig:
     multiprocessing_method: str | None = None  # retained for API compatibility
     runtime: str | None = None
     image: str = DEFAULT_IMAGE
+    network_policy: str = "none"
 
     @classmethod
     def from_environment(
@@ -84,6 +85,7 @@ class SandboxConfig:
             ),
             runtime=os.getenv("SINGULAR_SANDBOX_RUNTIME") or None,
             image=os.getenv("SINGULAR_SANDBOX_IMAGE", DEFAULT_IMAGE),
+            network_policy=os.getenv("SINGULAR_SANDBOX_NETWORK_POLICY", "none").strip().lower(),
         )
 
 
@@ -144,6 +146,10 @@ except BaseException as exc:
 
 
 def _command(runtime: str, config: SandboxConfig) -> list[str]:
+    if config.network_policy not in {"none", "disabled"}:
+        raise SandboxError(
+            "untrusted-code sandbox only supports disabled system networking"
+        )
     cpu_seconds = max(1, math.ceil(config.execution_timeout_s))
     return [
         runtime,
