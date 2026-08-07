@@ -29,6 +29,8 @@ jobs:
         run: ruff check .
       - name: Black
         run: black --check --target-version py310 --fast .
+      - name: Deployment manifests
+        run: python scripts/check_deployment_manifests.py
 
   typecheck:
     runs-on: ubuntu-latest
