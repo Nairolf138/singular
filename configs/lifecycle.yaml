@@ -21,9 +21,9 @@ phases:
     slowdown_on_fatigue: 1.5
   introspection:
     cpu_budget_percent: 40
-    allowed_actions: [self_review, memory_consolidation]
+    allowed_actions: [self_review]
     slowdown_on_fatigue: 1.2
   sommeil:
     cpu_budget_percent: 15
-    allowed_actions: [recovery, cooldown]
+    allowed_actions: [recovery, cooldown, memory_consolidation]
     slowdown_on_fatigue: 1.0

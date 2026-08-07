@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+import hashlib
 import json
 import logging
 import signal
@@ -20,6 +21,7 @@ from singular.events import (
     get_global_event_bus,
 )
 from singular.goals import IntrinsicGoals
+from singular.identity import ConsolidationPipeline
 from singular.governance.policy import MutationGovernancePolicy
 from singular.life.coevolution_flow import LivingTestPool
 from singular.life.loop import WorldState, run_tick
@@ -88,6 +90,7 @@ class OrchestratorState:
     last_events: list[dict[str, Any]] = field(default_factory=list)
     last_run_mtime: float | None = None
     last_watch_mtime: float | None = None
+    last_consolidated_episode_id: str | None = None
 
 
 @dataclass
@@ -151,6 +154,7 @@ class OrchestratorService:
             state_path=self.mem_dir / "routines_state.json"
         )
         self.goals = IntrinsicGoals(path=self.mem_dir / "goals.json")
+        self.consolidation_pipeline = ConsolidationPipeline(mem_dir=self.mem_dir)
         self._running = False
         self._wake_requested = False
         self._pending_events: list[dict[str, Any]] = []
@@ -198,6 +202,7 @@ class OrchestratorService:
             last_events=list(raw.get("last_events", [])),
             last_run_mtime=raw.get("last_run_mtime"),
             last_watch_mtime=raw.get("last_watch_mtime"),
+            last_consolidated_episode_id=raw.get("last_consolidated_episode_id"),
         )
 
     def _save_state(self) -> None:
@@ -207,6 +212,7 @@ class OrchestratorService:
             "last_events": self.state.last_events[-100:],
             "last_run_mtime": self.state.last_run_mtime,
             "last_watch_mtime": self.state.last_watch_mtime,
+            "last_consolidated_episode_id": self.state.last_consolidated_episode_id,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         _atomic_write_text(
@@ -232,6 +238,65 @@ class OrchestratorService:
             }
         )
         self.state.last_events = self.state.last_events[-100:]
+
+    def _action_allowed(self, phase: LifecyclePhase, action: str) -> bool:
+        """Return whether phase configuration permits an action to execute.
+
+        An absent behavior remains permissive for programmatic/backward-compatible
+        configurations; once ``allowed_actions`` is supplied it is authoritative.
+        """
+
+        behavior = self.config.phase_behaviors.get(phase.value, {})
+        if "allowed_actions" not in behavior:
+            return True
+        actions = behavior.get("allowed_actions", [])
+        return action in actions if isinstance(actions, (list, tuple, set)) else False
+
+    @staticmethod
+    def _episode_id(episode: dict[str, Any]) -> str:
+        canonical = json.dumps(episode, sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    def _run_memory_consolidation(self) -> dict[str, Any]:
+        """Consolidate episodes after the durable cursor and record every attempt."""
+
+        attempted_at = datetime.now(timezone.utc).isoformat()
+        episodes = self.consolidation_pipeline.episodic.read_all()
+        start = 0
+        cursor = self.state.last_consolidated_episode_id
+        if cursor:
+            for index, episode in enumerate(episodes):
+                if self._episode_id(episode) == cursor:
+                    start = index + 1
+        pending = episodes[start:]
+        details: dict[str, Any] = {
+            "event_type": "memory.consolidated",
+            "consolidated_at": attempted_at,
+            "episodes_seen": len(pending),
+            "facts_count": 0,
+            "episodic_compaction": None,
+            "errors": [],
+        }
+        try:
+            result = self.consolidation_pipeline.run(episodes=pending)
+            details.update(
+                {
+                    "consolidated_at": result.consolidated_at,
+                    "episodes_seen": result.episodes_seen,
+                    "facts_count": result.facts_count,
+                    "episodic_compaction": result.episodic_compaction,
+                }
+            )
+            if episodes:
+                self.state.last_consolidated_episode_id = self._episode_id(episodes[-1])
+            self.bus.publish("memory.consolidated", details, payload_version=1)
+        except Exception as exc:  # cycle errors must be durable and retryable
+            details["event_type"] = "memory.consolidation_failed"
+            details["errors"] = [f"{type(exc).__name__}: {exc}"]
+            log.exception("identity memory consolidation failed")
+            self.bus.publish("memory.consolidation_failed", details, payload_version=1)
+        self._push_event(LifecyclePhase.SOMMEIL, details)
+        return details
 
     def _runs_mtime(self) -> float | None:
         runs_dir = self.base_dir / "runs"
@@ -609,10 +674,21 @@ class OrchestratorService:
             )
             return
 
+        consolidation = None
+        if self._action_allowed(phase, "memory_consolidation"):
+            consolidation = self._run_memory_consolidation()
         self.psyche.sleep_tick()
         self.psyche.sleeping = True
         self.psyche.save_state()
-        self._push_event(phase, {"energy": self.psyche.energy})
+        self._push_event(
+            phase,
+            {
+                "energy": self.psyche.energy,
+                "memory_consolidation": (
+                    consolidation["event_type"] if consolidation else "disabled"
+                ),
+            },
+        )
 
     def _compute_runtime_adaptation(self) -> dict[str, Any]:
         host_metrics = self._latest_signals.get("host_metrics", {})

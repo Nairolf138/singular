@@ -7,6 +7,7 @@ import random
 import pytest
 
 from singular.events import EventBus
+from singular.identity import EpisodicStore
 from singular.life.death import DeathMonitor
 from singular.life.loop import run as run_life_loop
 from singular.orchestrator.service import (
@@ -61,6 +62,110 @@ def test_orchestrator_tick_persists_state(monkeypatch, tmp_path: Path) -> None:
     assert state_path.exists()
     payload = state_path.read_text(encoding="utf-8")
     assert "current_phase" in payload
+
+
+def test_orchestrator_sleep_consolidates_identity_memory(
+    monkeypatch, tmp_path: Path
+) -> None:
+    life = tmp_path / "life"
+    (life / "skills").mkdir(parents=True)
+    monkeypatch.setenv("SINGULAR_HOME", str(life))
+    store = EpisodicStore(life / "mem" / "episodic.jsonl")
+    store.append({"event": "conversation", "user_fact": "user_name:Alice"})
+    store.append({"event": "conversation", "preference": "likes:tea"})
+
+    service = OrchestratorService(
+        config=OrchestratorConfig(
+            dry_run=True,
+            phase_behaviors={
+                "sommeil": {"allowed_actions": ["memory_consolidation"]}
+            },
+        ),
+        bus=EventBus(),
+    )
+    service.state.current_phase = LifecyclePhase.SOMMEIL.value
+
+    service.tick()
+
+    semantic = json.loads(
+        (life / "mem" / "semantic_memory.json").read_text(encoding="utf-8")
+    )
+    self_model = json.loads(
+        (life / "mem" / "self_model.json").read_text(encoding="utf-8")
+    )
+    assert {fact["value"] for fact in semantic} == {"user_name:Alice", "likes:tea"}
+    assert "user_name:Alice" in self_model["traits"]
+    assert "likes:tea" in self_model["preferences"]
+    event = next(
+        item
+        for item in service.state.last_events
+        if item.get("details", {}).get("event_type") == "memory.consolidated"
+    )
+    assert event["details"]["episodes_seen"] == 2
+    assert event["details"]["facts_count"] == 2
+    assert event["details"]["episodic_compaction"] is not None
+    assert event["details"]["consolidated_at"]
+    assert event["details"]["errors"] == []
+
+    # The durable cursor prevents the next sleep from counting the same facts again.
+    service.state.current_phase = LifecyclePhase.SOMMEIL.value
+    service.tick()
+    semantic = json.loads(
+        (life / "mem" / "semantic_memory.json").read_text(encoding="utf-8")
+    )
+    assert all(fact["mentions"] == 1 for fact in semantic)
+
+
+def test_orchestrator_sleep_retries_after_interrupted_consolidation(
+    monkeypatch, tmp_path: Path
+) -> None:
+    life = tmp_path / "life"
+    (life / "skills").mkdir(parents=True)
+    monkeypatch.setenv("SINGULAR_HOME", str(life))
+    EpisodicStore(life / "mem" / "episodic.jsonl").append(
+        {"event": "conversation", "constraint": "prefers:privacy"}
+    )
+    service = OrchestratorService(
+        config=OrchestratorConfig(
+            dry_run=True,
+            phase_behaviors={
+                "sommeil": {"allowed_actions": ["memory_consolidation"]}
+            },
+        ),
+        bus=EventBus(),
+    )
+    service.state.current_phase = LifecyclePhase.SOMMEIL.value
+    real_run = service.consolidation_pipeline.run
+    attempts = 0
+
+    def interrupted_run(*, episodes):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise InterruptedError("simulated interruption")
+        return real_run(episodes=episodes)
+
+    monkeypatch.setattr(service.consolidation_pipeline, "run", interrupted_run)
+    service.tick()
+    persisted = json.loads(service.state_path.read_text(encoding="utf-8"))
+    failed = next(
+        item
+        for item in persisted["last_events"]
+        if item.get("details", {}).get("event_type")
+        == "memory.consolidation_failed"
+    )
+    assert "InterruptedError" in failed["details"]["errors"][0]
+    assert persisted["last_consolidated_episode_id"] is None
+
+    service.state.current_phase = LifecyclePhase.SOMMEIL.value
+    service.tick()
+
+    self_model = json.loads(
+        (life / "mem" / "self_model.json").read_text(encoding="utf-8")
+    )
+    assert "prefers:privacy" in self_model["constraints"]
+    assert service.state.last_consolidated_episode_id is not None
+    assert attempts == 2
 
 
 def test_orchestrator_detects_external_stimulus(monkeypatch, tmp_path: Path) -> None:
