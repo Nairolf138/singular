@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "stages": [
+    {"id": "observation", "prerequisites": {}, "allowed_skills": ["observe", "ask_help"], "allowed_actions": ["observe", "ask_help", "imitate_safe"], "sensitive_actions": [], "autonomy": "none", "max_difficulty": 0.2, "supervision": "continuous", "exploration_budget": 0.05, "promotion": {"min_score": 0.65, "consecutive_observations": 2}, "regression": {"incident_threshold": 1}},
+    {"id": "guided_practice", "prerequisites": {"calibration": 0.6, "stability": 0.6, "retention": 0.6, "skill_mastery": 0.55, "constraint_adherence": 0.9, "recovery": 0.5, "min_samples": 10}, "allowed_skills": ["observe", "ask_help", "practice"], "allowed_actions": ["observe", "ask_help", "imitate_safe", "practice"], "sensitive_actions": [], "autonomy": "guided", "max_difficulty": 0.5, "supervision": "on-each-action", "exploration_budget": 0.15, "promotion": {"min_score": 0.8, "consecutive_observations": 3}, "regression": {"incident_threshold": 1}},
+    {"id": "bounded_autonomy", "prerequisites": {"calibration": 0.8, "stability": 0.8, "retention": 0.8, "skill_mastery": 0.75, "constraint_adherence": 0.98, "recovery": 0.75, "min_samples": 30}, "allowed_skills": ["*"], "allowed_actions": ["*"], "sensitive_actions": ["network_write", "physical_actuation", "delete_data"], "autonomy": "bounded", "max_difficulty": 0.8, "supervision": "exception-and-sensitive-actions", "exploration_budget": 0.3, "promotion": {"min_score": 0.9, "consecutive_observations": 5}, "regression": {"incident_threshold": 1}}
+  ]
+}

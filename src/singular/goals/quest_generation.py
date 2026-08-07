@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Mapping, Literal
+from typing import Any, Mapping, Literal, Protocol
 
 Origin = Literal["intrinsic", "external"]
+
+
+class QuestDevelopmentGate(Protocol):
+    def filter_quests(self, quests: list[Any]) -> list[Any]: ...
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -32,6 +36,7 @@ class GeneratedQuest:
     rationale: str
     origin: Origin
     priority: float
+    difficulty: float = 0.5
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -47,6 +52,7 @@ def generate_quests(
     world_state: Mapping[str, Any] | None,
     resources: Mapping[str, Any] | None,
     surprise_signals: Mapping[str, Any] | None = None,
+    developmental_model: QuestDevelopmentGate | None = None,
 ) -> list[GeneratedQuest]:
     """Generate candidate quests from psyche, history, tensions, and world/resources."""
 
@@ -156,4 +162,4 @@ def generate_quests(
         )
 
     generated.sort(key=lambda quest: quest.priority, reverse=True)
-    return generated
+    return developmental_model.filter_quests(generated) if developmental_model else generated
