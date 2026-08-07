@@ -12,6 +12,10 @@ Chaque instance est **singulière** : deux personnes qui font naître un organis
 La taxonomie canonique (`stable`, `experimental`, `optional`, `target-only`,
 `deprecated`) et le registre d'acceptation des fonctions stables sont dans
 [`docs/README.md`](docs/README.md#taxonomie-de-statut).
+La chaîne perception → motivation → décision → action → effet → mémoire →
+adaptation, ses preuves et les limites des termes « vivant », apprentissage,
+émergence et conscience sont détaillées dans le
+[modèle vérifiable du comportement vivant](docs/living-behavior-model.fr.md).
 
 - **Naissance — `stable`** : une commande génère un nouvel organisme avec une identité unique (*seed*, traits de personnalité, valeurs).
 - **Corps et starter-pack de skills — `stable`** : la naissance initialise des fonctions utilitaires et arithmétiques dans `skills/`.
@@ -425,6 +429,8 @@ le fichier hybride dans `child/`.
 ## 🧬 Cycle vital
 
 **Statut : `experimental`.** Les règles et artefacts du cycle peuvent évoluer.
+Pour relier chaque phase à ses modules, artefacts, dépendances, échecs et preuves,
+consultez le [modèle de comportement de bout en bout](docs/living-behavior-model.fr.md).
 
 1. **Naissance**
    ```bash
@@ -543,6 +549,11 @@ disponibles.
 
 **Statut : `optional`** — requiert l'extra `dashboard`; son interface peut évoluer
 indépendamment des points d'entrée CLI stables.
+
+Le dashboard expose des mesures internes et des traces opérateur : lisez les
+[règles de preuve et d'interprétation](docs/living-behavior-model.fr.md#périmètre-et-lecture-des-preuves)
+avant d'en tirer une conclusion sur l'autonomie, l'apprentissage ou le caractère
+« vivant » du système.
 
 Un petit serveur web permet de consulter les fichiers de `runs/` et l'état de `psyche.json`.
 
