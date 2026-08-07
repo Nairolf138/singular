@@ -173,6 +173,10 @@ Si vous débutez, suivez **exactement** ces étapes :
 
 À la naissance, Singular initialise un **starter-pack de skills utilitaires** dans `skills/` :
 
+Le profil `assistant`, sélectionné par défaut, fournit le pack complet décrit ci-dessous
+ainsi que les skills arithmétiques historiques. Utilisez `--starter-profile minimal`
+pour ne créer que ces trois skills arithmétiques.
+
 - `validation.py` : vérifications simples d’entrées (ex. texte non vide).
 - `summary.py` : résumé court par extraction des premiers mots.
 - `intent_classification.py` : classification heuristique (`question`, `request`, `statement`).

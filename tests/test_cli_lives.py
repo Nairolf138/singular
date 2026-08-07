@@ -266,8 +266,21 @@ def test_lives_create_prints_registry_root_used(
 
     main(["--root", str(root), "lives", "create", "--name", "Alpha"])
     out = capsys.readouterr().out
+    assert "Profil starter: assistant" in out
     assert "Registre de vies utilisé:" in out
     assert str(root.resolve()) in out
+
+
+def test_lives_create_help_shows_default_starter_profile(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        main(["lives", "create", "--help"])
+
+    assert excinfo.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--starter-profile" in help_text
+    assert "défaut: assistant" in " ".join(help_text.split())
 
 
 def test_lives_create_first_run_has_no_missing_registry_warning(

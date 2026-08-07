@@ -680,7 +680,7 @@ def bootstrap_life(
     seed: int | None = None,
     *,
     psyche_overrides: dict[str, float] | None = None,
-    starter_profile: str = "minimal",
+    starter_profile: str = "assistant",
     starter_skills: list[str] | None = None,
 ) -> LifeMetadata:
     metadata = create_life(name)

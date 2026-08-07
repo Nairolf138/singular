@@ -23,11 +23,22 @@ from ..resources import config_resource
 
 _PSYCHE_TRAITS = ("curiosity", "patience", "playfulness", "optimism", "resilience")
 _PSYCHE_DEFAULTS = {trait: 0.5 for trait in _PSYCHE_TRAITS}
-_DEFAULT_STARTER_PROFILE = "minimal"
+_DEFAULT_STARTER_PROFILE = "assistant"
 _BIRTH_SCHEMA_VERSION = 1
 _STARTER_CONFIG_PATH = config_resource("starter_skills.yaml")
 _DEFAULT_STARTER_PROFILES: dict[str, list[str]] = {
     "minimal": ["addition", "subtraction", "multiplication"],
+    "assistant": [
+        "addition",
+        "subtraction",
+        "multiplication",
+        "validation",
+        "summary",
+        "intent_classification",
+        "entity_extraction",
+        "planning",
+        "metrics",
+    ],
 }
 _SKILL_TEMPLATES: dict[str, str] = {
     "addition": (
