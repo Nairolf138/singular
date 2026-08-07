@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import random
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,7 @@ class _ScoredCandidate:
     path: Path
     metadata: dict[str, Any]
     score: float
+    signals: dict[str, Any]
 
 
 class SkillRuntime:
@@ -65,6 +67,8 @@ class SkillRuntime:
         strategy = (
             context.get("execution_strategy", {}) if isinstance(context, dict) else {}
         )
+        history = self._selection_history()
+        strategy = {**strategy, "_history": history, "_task": task_dict.get("name")}
         candidates = self._compatible_candidates(
             task_dict, skills_state, catalog, strategy=strategy
         )
@@ -82,13 +86,15 @@ class SkillRuntime:
             )
             return result
 
-        top = max(candidates, key=lambda item: item.score)
+        top, decision = self._select_candidate(candidates, task_dict, strategy)
+        self._record_selection(top, task_dict, decision)
         self.bus.publish(
             "skill.execution.started",
             {
                 "task": task_dict,
                 "skill": top.skill,
                 "score": top.score,
+                "selection": decision,
             },
         )
         try:
@@ -113,6 +119,7 @@ class SkillRuntime:
             )
             self._apply_world_effect("skill.execution.succeeded")
             self._record_living_stage(top, task_dict, output)
+            self._record_outcome(top, task_dict, "succeeded")
             return result
         except Exception as exc:
             result = SkillExecutionResult(
@@ -131,7 +138,123 @@ class SkillRuntime:
                 },
             )
             self._apply_world_effect("skill.execution.failed")
+            self._record_outcome(top, task_dict, "failed")
             return result
+
+    def _selection_history(self) -> list[dict[str, Any]]:
+        """Read the bounded, durable decision trail used by ranking signals."""
+
+        path = self.mem_dir / "skill_selection.jsonl"
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()[-200:]
+        except OSError:
+            return []
+        records: list[dict[str, Any]] = []
+        for line in lines:
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                records.append(value)
+        return records
+
+    def _record_selection(
+        self,
+        candidate: _ScoredCandidate,
+        task: dict[str, Any],
+        decision: dict[str, Any],
+    ) -> None:
+        payload = {
+            "event": "skill_selection",
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "skill": candidate.skill,
+            "task": task.get("name", "task"),
+            "score": candidate.score,
+            "signals": candidate.signals,
+            **decision,
+        }
+        append_jsonl_line_safe(self.mem_dir / "skill_selection.jsonl", payload)
+        self.bus.publish("skill.selection.decided", payload, payload_version=1)
+
+    def _record_outcome(
+        self, candidate: _ScoredCandidate, task: dict[str, Any], status: str
+    ) -> None:
+        append_jsonl_line_safe(
+            self.mem_dir / "skill_selection.jsonl",
+            {
+                "event": "skill_outcome",
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "skill": candidate.skill,
+                "task": task.get("name", "task"),
+                "status": status,
+            },
+        )
+
+    def _select_candidate(
+        self,
+        candidates: list[_ScoredCandidate],
+        task: dict[str, Any],
+        strategy: dict[str, Any],
+    ) -> tuple[_ScoredCandidate, dict[str, Any]]:
+        """Apply deterministic exploration without weakening compatibility gates."""
+
+        ranked = sorted(candidates, key=lambda item: (-item.score, item.skill))
+        best = ranked[0]
+        curiosity = self._unit(strategy.get("curiosity", 0.0))
+        energy = self._unit(strategy.get("energy", 1.0))
+        frustration = self._unit(strategy.get("frustration", 0.0))
+        risk_pressure = self._unit(strategy.get("risk", 0.0))
+        governance_allows = strategy.get("allow_exploration", True) is True
+        mode_factor = 1.0 if strategy.get("mode") == "exploratory" else 0.65
+        budget = curiosity * energy * (1.0 - frustration) * (1.0 - risk_pressure)
+        budget *= mode_factor if governance_allows else 0.0
+        safe_risk = min(
+            float(task.get("max_risk", 1.0)),
+            float(strategy.get("exploration_max_risk", task.get("max_risk", 1.0))),
+        )
+        alternatives = [
+            item
+            for item in ranked[1:]
+            if item.signals["risk"] <= safe_risk
+            and item.signals["failure_streak"] < 2.0
+        ]
+        seed = strategy.get("seed", 0)
+        decision_index = sum(
+            record.get("event") == "skill_selection"
+            for record in strategy.get("_history", [])
+        )
+        rng = random.Random(f"{seed}:{decision_index}:{task.get('name', 'task')}")
+        explore = bool(alternatives) and (budget >= 0.65 or rng.random() < budget)
+        selected = (
+            max(
+                alternatives,
+                key=lambda item: (
+                    item.signals["novelty"] + item.signals["diversity"],
+                    rng.random(),
+                ),
+            )
+            if explore
+            else best
+        )
+        reason = (
+            "exploration_bounded: curiosity/energy budget allowed a compatible, risk-bounded alternative"
+            if explore
+            else "exploitation: historical score retained under risk, energy, frustration and governance bounds"
+        )
+        return selected, {
+            "policy": "exploration" if explore else "exploitation",
+            "reason": reason,
+            "historical_best": best.skill,
+            "exploration_budget": round(budget, 6),
+            "bounds": {
+                "governance_allows": governance_allows,
+                "max_risk": safe_risk,
+                "energy": energy,
+                "frustration": frustration,
+                "curiosity": curiosity,
+            },
+        }
 
     def _context_with_persisted_state(self, context: dict[str, Any]) -> dict[str, Any]:
         """Expose canonical life state read-only to a sandboxed skill.
@@ -292,16 +415,19 @@ class SkillRuntime:
                 continue
 
             risk = self._estimated_risk(metadata, descriptor)
-            if risk > max_risk:
+            strategy_max_risk = float((strategy or {}).get("max_risk", max_risk))
+            if risk > min(max_risk, strategy_max_risk):
                 continue
+            signals = self._persisted_signals(skill, metadata, descriptor, strategy)
             candidates.append(
                 _ScoredCandidate(
                     skill=skill,
                     path=path,
                     metadata={"state": metadata, "catalog": descriptor},
                     score=self._score_candidate(
-                        metadata, descriptor, strategy=strategy
+                        metadata, descriptor, strategy=strategy, skill=skill
                     ),
+                    signals=signals,
                 )
             )
         return candidates
@@ -312,6 +438,7 @@ class SkillRuntime:
         descriptor: dict[str, Any],
         *,
         strategy: dict[str, Any] | None = None,
+        skill: str = "",
     ) -> float:
         metrics = (
             metadata.get("metrics") if isinstance(metadata.get("metrics"), dict) else {}
@@ -322,6 +449,7 @@ class SkillRuntime:
             metrics.get("average_cost", descriptor.get("estimated_cost", 0.5)) or 0.0
         )
         failure_count = max(int(metrics.get("failure_count", 0) or 0), 0)
+        signals = self._persisted_signals(skill, metadata, descriptor, strategy)
 
         success_rate = float(descriptor.get("reliability", 0.5) or 0.5)
         if usage_count > 0:
@@ -361,7 +489,81 @@ class SkillRuntime:
             + (success_rate * success_w)
             - (resource_cost * cost_w)
             - (risk * risk_w)
+            + (signals["recency"] * 0.04)
+            - (signals["repetition"] * 0.09)
+            + (signals["novelty"] * 0.06)
+            + (signals["context_success"] * 0.10)
+            + (signals["diversity"] * 0.05)
+            - (signals["failure_streak"] * 0.08)
         )
+
+    @staticmethod
+    def _unit(value: Any) -> float:
+        try:
+            return max(0.0, min(1.0, float(value or 0.0)))
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _persisted_signals(
+        self,
+        skill: str,
+        metadata: dict[str, Any],
+        descriptor: dict[str, Any],
+        strategy: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        metrics = metadata.get("metrics", {})
+        metrics = metrics if isinstance(metrics, dict) else {}
+        history = (strategy or {}).get("_history", [])
+        selections = [r for r in history if r.get("event") == "skill_selection"]
+        recent = selections[-8:]
+        skill_recent = [r for r in recent if r.get("skill") == skill]
+        repetition = len(skill_recent) / max(1, len(recent))
+        novelty = 1.0 / (
+            1.0 + max(0, int(metrics.get("usage_count", 0) or 0)) + len(skill_recent)
+        )
+        recency = (
+            1.0
+            if not skill_recent
+            else 1.0
+            / (
+                1.0
+                + len(recent)
+                - max(i for i, r in enumerate(recent) if r.get("skill") == skill)
+            )
+        )
+        task_name = (strategy or {}).get("_task")
+        outcomes = [
+            r
+            for r in history
+            if r.get("event") == "skill_outcome" and r.get("skill") == skill
+        ]
+        contextual = [r for r in outcomes if r.get("task") == task_name]
+        context_success = (
+            sum(r.get("status") == "succeeded" for r in contextual) / len(contextual)
+            if contextual
+            else self._unit(metrics.get("context_success", 0.0))
+        )
+        family = str(descriptor.get("strategy") or descriptor.get("family") or skill)
+        used_families = {
+            str(r.get("signals", {}).get("strategy", r.get("skill", "")))
+            for r in recent
+        }
+        diversity = 0.0 if family in used_families else 1.0
+        failure_streak = 0
+        for record in reversed(outcomes):
+            if record.get("status") != "failed":
+                break
+            failure_streak += 1
+        return {
+            "recency": recency,
+            "repetition": repetition,
+            "novelty": novelty,
+            "context_success": context_success,
+            "diversity": diversity,
+            "risk": self._estimated_risk(metadata, descriptor),
+            "failure_streak": float(failure_streak),
+            "strategy": family,
+        }
 
     def _estimated_risk(
         self, metadata: dict[str, Any], descriptor: dict[str, Any]
