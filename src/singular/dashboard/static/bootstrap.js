@@ -372,10 +372,17 @@ const markRealtimeUnavailable=error=>{
   console.warn('Dashboard WebSocket unavailable',error);
 };
 
+export const buildWebSocketUrl=(currentLocation=location,pathPrefix=window.SINGULAR_DASHBOARD_PATH_PREFIX||'')=>{
+  const protocol=currentLocation.protocol==='https:'?'wss:':'ws:';
+  const normalizedPrefix=String(pathPrefix).trim().replace(/^\/+|\/+$/g,'');
+  const path=normalizedPrefix?`/${normalizedPrefix}/ws`:'/ws';
+  return `${protocol}//${currentLocation.host}${path}`;
+};
+
 export const initWebSocket=()=>{
   let ws;
   try{
-    ws=new WebSocket(`ws://${location.host}/ws`);
+    ws=new WebSocket(buildWebSocketUrl());
   }catch(error){
     markRealtimeUnavailable(error);
     return null;
