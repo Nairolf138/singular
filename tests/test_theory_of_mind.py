@@ -72,3 +72,45 @@ def test_confidence_decays_and_sparse_evidence_is_cautious(tmp_path: Path) -> No
     graph.observe_mental_state("bob", "conversation", intention="help")
     decision = decide_social_actions("me", ["bob"], graph)[0]
     assert decision.reason == "insufficient_mental_state_evidence"
+
+
+def test_structured_evidence_survives_restart_and_never_promotes_an_allegation(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "theory_of_mind.json"
+    store = TheoryOfMindStore(path)
+    store.observe(
+        "alice",
+        "promise",
+        intention="share",
+        evidence_kind="other_statement",
+        source="alice",
+        confidence=0.7,
+    )
+    alleged = store.observe(
+        "bob",
+        "promise_broken",
+        intention="share",
+        outcome=False,
+        evidence_kind="inference",
+        source="alice",
+        confidence=0.6,
+    )
+    verified = store.observe(
+        "alice",
+        "promise_kept",
+        intention="share",
+        outcome=True,
+        evidence_kind="verified_outcome",
+        source="shared_world",
+    )
+
+    restarted = TheoryOfMindStore(path)
+    bob_evidence = restarted.get("bob")["evidence"][-1]
+    alice_evidence = restarted.get("alice")["evidence"][-1]
+    assert bob_evidence["asserted_fact"] is False
+    assert "outcome" not in bob_evidence
+    assert alice_evidence["asserted_fact"] is True
+    assert alice_evidence["outcome"] is True
+    assert verified["version"] == 2
+    assert alleged["version"] == 1

@@ -99,13 +99,15 @@ def _deliberate_life_action(
     consequences: Iterable[Mapping[str, object]] = (),
     uncertainty: float = 0.0,
     organism: str = "self",
+    affected_parties: Iterable[Mapping[str, object]] = (),
+    relational_context: Mapping[str, object] | None = None,
 ) -> MoralDecision:
     """Run and journal the moral gate independently of technical safety gates."""
 
     decision = MoralDecisionEngine(journal=add_episode).evaluate(
-        MoralAction(action_type),
+        MoralAction(action_type, parameters=dict(relational_context or {})),
         consequences,
-        ({"identifier": organism, "vulnerability": 0.0},),
+        ({"identifier": organism, "vulnerability": 0.0}, *affected_parties),
         (
             {"value": "non_maleficence", "weight": 1.0},
             {"value": "identity_coherence", "weight": 0.8},
@@ -919,6 +921,10 @@ def run(
     value_weights = load_value_weights()
     governance_policy = governance_policy or MutationGovernancePolicy(value_weights=value_weights)
     social_graph = social_graph or SocialGraph()
+    if multiagent_runtime is not None and multiagent_runtime.social_graph is None:
+        # The runtime and resource paths must contribute to the same durable
+        # evidence base for this life-loop execution.
+        multiagent_runtime.social_graph = social_graph
     register_memory_event_handlers(event_bus)
     start = time.time()
     learning_attempts = 0
@@ -1934,9 +1940,17 @@ def run(
                     )
                     if action_resolution.granted:
                         world.reputation.update(partner, "share")
-                    relation = social_graph.update_relation(
-                        org_name, partner, social_event
+                    interaction = social_graph.record_interaction(
+                        org_name,
+                        partner,
+                        "successful_cooperation" if action_resolution.granted else "cooperation_failure",
+                        evidence_kind="verified_outcome",
+                        outcome=action_resolution.granted,
+                        intention="cooperate",
+                        confidence=1.0,
+                        source="world_resources",
                     )
+                    relation = interaction["relation"]
                     social_relation_updates.append(
                         {
                             "peer": partner,
@@ -1963,9 +1977,16 @@ def run(
                 ):
                     conflict_peers.add(action_resolution.arbitration_winner)
                 for rival in sorted(conflict_peers):
-                    relation = social_graph.update_relation(
-                        org_name, rival, "resource_conflict"
+                    interaction = social_graph.record_interaction(
+                        org_name,
+                        rival,
+                        "conflict",
+                        evidence_kind="direct_observation",
+                        intention="compete",
+                        confidence=1.0,
+                        source="world_resources",
                     )
+                    relation = interaction["relation"]
                     social_relation_updates.append(
                         {
                             "peer": rival,
@@ -2022,6 +2043,32 @@ def run(
                 ),
                 uncertainty=persistent_world_state.risks,
                 organism=org_name,
+                affected_parties=tuple(
+                    {
+                        "identifier": decision.peer,
+                        "vulnerability": min(
+                            1.0,
+                            persistent_world_state.risks
+                            + (0.25 if decision.action in {"avoid", "compete"} else 0.0),
+                        ),
+                        "consent": True if decision.action == "help" else None,
+                    }
+                    for decision in social_decisions
+                ),
+                relational_context={
+                    "affected_peers": [decision.peer for decision in social_decisions],
+                    "relational_risk": max(
+                        (decision.rivalry for decision in social_decisions), default=0.0
+                    ),
+                    "mental_models_used": {
+                        decision.peer: {
+                            "version": decision.mental_model_version,
+                            "confidence": decision.mental_confidence,
+                            "uncertainty": decision.mental_uncertainty,
+                        }
+                        for decision in social_decisions
+                    },
+                },
             )
             logger.log_interaction(
                 "moral.deliberation", **action_moral_decision.to_dict(), alive=True

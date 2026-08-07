@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Literal
 
-from singular.events import HELP_COMPLETED, HELP_OFFERED, HELP_REQUESTED, EventBus
+from singular.events import HELP_COMPLETED, HELP_OFFERED, EventBus
 from singular.governance.policy import AUTH_BLOCKED, AUTH_REVIEW_REQUIRED, MutationGovernancePolicy
 from singular.multiagent.protocol import (
     AgentMessage,
@@ -14,6 +14,7 @@ from singular.multiagent.protocol import (
     TaskOffer,
     resolve_conflicts,
 )
+from singular.social.graph import SocialGraph
 
 
 @dataclass(slots=True)
@@ -50,6 +51,7 @@ class MultiAgentDecision:
     reasons: list[str] = field(default_factory=list)
     inbound: list[AgentMessage] = field(default_factory=list)
     emitted: list[AgentMessage] = field(default_factory=list)
+    mental_models_used: dict[str, dict[str, object]] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -80,12 +82,14 @@ class MultiAgentRuntime:
         governance_policy: MutationGovernancePolicy | None = None,
         bus: EventBus | None = None,
         memory: CollectiveMemory | None = None,
+        social_graph: SocialGraph | None = None,
     ) -> None:
         self.transport = transport
         self.policy = policy or MultiAgentPolicy()
         self.governance_policy = governance_policy
         self.bus = bus
         self.memory = memory
+        self.social_graph = social_graph
         self.inbox: list[AgentMessage] = []
         self.outbox: list[AgentMessage] = []
 
@@ -114,6 +118,23 @@ class MultiAgentRuntime:
         """
 
         inbound = [msg for msg in self.drain_inbox() if self._matches_context(msg, context)]
+        mental_models = {
+            msg.agent_id: self.social_graph.get_mental_state(msg.agent_id)
+            for msg in inbound
+            if self.social_graph is not None and msg.agent_id and msg.agent_id != context.life_id
+        }
+        for msg in inbound:
+            if self.social_graph is not None and msg.agent_id and msg.agent_id != context.life_id:
+                evidence_event = (
+                    "promise" if msg.intent == HELP_OFFERED
+                    else "conflict" if msg.intent in {"help.refused", "warning"}
+                    else "conversation"
+                )
+                self.social_graph.record_interaction(
+                    context.life_id, msg.agent_id, evidence_event,
+                    evidence_kind="other_statement", confidence=msg.confidence,
+                    intention=msg.intent, note=msg.task, source=msg.agent_id,
+                )
         winners = resolve_conflicts(inbound)
         conflict_winner = winners.get(context.task)
         emitted: list[AgentMessage] = []
@@ -132,10 +153,16 @@ class MultiAgentRuntime:
                 reasons=reasons,
                 inbound=inbound,
                 emitted=emitted,
+                mental_models_used=mental_models,
             )
 
         accepted_offer: TaskOffer | None = None
-        if conflict_winner and conflict_winner.intent == HELP_OFFERED:
+        winner_model = mental_models.get(conflict_winner.agent_id, {}) if conflict_winner else {}
+        winner_confidence = float(winner_model.get("confidence", 0.0))
+        winner_uncertainty = float(winner_model.get("uncertainty", 1.0))
+        winner_reliability = float(winner_model.get("reliability", 0.5))
+        credible_winner = not winner_model or winner_confidence * (1.0 - winner_uncertainty) < 0.25 or winner_reliability >= 0.35
+        if conflict_winner and conflict_winner.intent == HELP_OFFERED and credible_winner:
             accepted_offer = TaskOffer.from_message(conflict_winner)
             reasons.append("accepted_best_offer")
 
@@ -154,6 +181,7 @@ class MultiAgentRuntime:
             reasons=reasons,
             inbound=inbound,
             emitted=emitted,
+            mental_models_used=mental_models,
         )
 
     def complete_tick(
@@ -186,7 +214,17 @@ class MultiAgentRuntime:
             },
             version=2,
         )
-        return self.emit(message)
+        emitted = self.emit(message)
+        if self.social_graph is not None:
+            for peer in context.peers:
+                if peer != context.life_id:
+                    self.social_graph.record_interaction(
+                        context.life_id, peer,
+                        "successful_cooperation" if accepted else "cooperation_failure",
+                        evidence_kind="verified_outcome", outcome=accepted,
+                        intention="help", confidence=1.0, source="runtime",
+                    )
+        return emitted
 
     def gate_reproduction(
         self,
@@ -196,17 +234,6 @@ class MultiAgentRuntime:
         rivalry: float,
         task: str,
     ) -> MultiAgentDecision:
-        context = LifeTickContext(
-            life_id="ecosystem",
-            task=task,
-            skill_path=Path(task),
-            skills_dir=Path("."),
-            score=0.0,
-            confidence=0.0,
-            governance_allowed=governance_allowed,
-            rivalry=rivalry,
-            peers=tuple(parents),
-        )
         if governance_allowed and rivalry < self.policy.high_rivalry_threshold:
             return MultiAgentDecision(reasons=["reproduction_allowed"])
         reason = "governance_blocked" if not governance_allowed else "rivalry_high"
