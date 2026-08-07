@@ -10,7 +10,8 @@ from uuid import uuid4
 
 from ..io_utils import atomic_write_text
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+METACOGNITION_VERSION = 1
 
 
 def _now() -> str:
@@ -31,6 +32,20 @@ class SelfModelStore:
 
     _EVIDENCE_SECTIONS = ("autobiographical_facts", "traits", "preferences", "constraints")
     _REQUIRED_ROOT_KEYS = set(_EVIDENCE_SECTIONS)
+
+    @staticmethod
+    def _default_metacognition() -> dict[str, Any]:
+        return {
+            "version": METACOGNITION_VERSION,
+            "domains": {},
+            "recurring_errors": {},
+            "observed_biases": {},
+            "effective_strategies": {},
+            "failure_conditions": {},
+            "calibration_history": [],
+            "processed_evidence_refs": [],
+            "updated_at": None,
+        }
 
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
@@ -59,6 +74,7 @@ class SelfModelStore:
             "red_lines": [],
             "identity_wounds": [],
             "constraints": {},
+            "metacognition": self._default_metacognition(),
             "created_at": now,
             "updated_at": now,
         }
@@ -110,6 +126,16 @@ class SelfModelStore:
             if not isinstance(model.get(section), list):
                 model[section] = []
                 migrated = True
+        metacognition = model.get("metacognition")
+        if not isinstance(metacognition, dict):
+            metacognition = self._default_metacognition()
+            model["metacognition"] = metacognition
+            migrated = True
+        for key, value in self._default_metacognition().items():
+            if key not in metacognition:
+                metacognition[key] = value
+                migrated = True
+        metacognition["version"] = METACOGNITION_VERSION
         model["schema_version"] = SCHEMA_VERSION
         return model, migrated
 

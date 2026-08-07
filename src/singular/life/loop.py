@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Callable, Dict, Iterable, Mapping
 
 from singular.cognition.reflect import ActionHypothesis, ReflectionDecision, reflect_action
+from singular.cognition.self_observation import SelfObservationService
 from singular.beliefs.store import BeliefStore
 from singular.beliefs.meta_learning import (
     extract_run_features,
@@ -940,6 +941,9 @@ def run(
     quarantined_skill_keys: set[str] = set()
     sleep_ticks_remaining = 0
     intrinsic_goals = IntrinsicGoals(value_weights=value_weights)
+    self_observation = SelfObservationService(
+        Path(os.environ.get("SINGULAR_HOME", ".")) / "mem" / "self_model.json"
+    )
     coevolution_flow: CoevolutionFlow | None = None
     if coevolve_tests:
         if test_pool is None:
@@ -1369,6 +1373,7 @@ def run(
                     goal_weights.efficacite
                     + (psyche_axes.get("resource", 0.0) * 0.4)
                 ),
+                metacognition=self_observation.decision_context("mutation"),
             )
             score_by_index = {index: score for index, _, score in reflection.alternative_scores}
             belief_bias = belief_store.operator_preference_bias(eligible_operators.keys())
@@ -2298,8 +2303,7 @@ def run(
                 "skill_reputation": logger.skill_reputation().get(key, {}),
             }
             gain_loss = round(base_score - mutated_score, 6)
-            add_causal_trace(
-                {
+            causal_payload = {
                     "ts": datetime.now(timezone.utc).isoformat(),
                     "trace_id": hashlib.sha1(
                         f"{logger.run_id}:{state.iteration}:{key}:{op_name}".encode("utf-8")
@@ -2332,6 +2336,9 @@ def run(
                         },
                     },
                 }
+            add_causal_trace(causal_payload)
+            self_observation.observe_trace(
+                causal_payload, evidence_ref=causal_payload["trace_id"]
             )
             event_bus.publish(
                 "mutation.applied" if accepted else "mutation.rejected",

@@ -9,7 +9,8 @@ from typing import Any, Callable, Protocol
 
 from security.policy_engine import ActionPolicyEngine
 from uuid import uuid4
-from singular.memory import add_causal_trace, add_episode
+from singular.memory import add_causal_trace, add_episode, get_mem_dir
+from singular.cognition.self_observation import SelfObservationService
 from singular.embodiment import Acknowledgement, Command, EmergencyStop, Observation
 from singular.morals import MoralAction, MoralDecisionEngine
 
@@ -142,6 +143,7 @@ class AgentRuntime:
         moral_engine: MoralDecisionEngine | None = None,
         resource_gate: Callable[[ActionRequest], bool | tuple[bool, str]] | None = None,
         emergency_stop: EmergencyStop | None = None,
+        self_observation: SelfObservationService | None = None,
     ) -> None:
         self.perception = perception
         self.mind = mind
@@ -162,6 +164,9 @@ class AgentRuntime:
             maxlen=max(self.safety.watchdog_window_size, 1)
         )
         self._causal_traces: deque[CausalTrace] = deque(maxlen=200)
+        self.self_observation = self_observation or SelfObservationService(
+            get_mem_dir() / "self_model.json"
+        )
 
     @property
     def disabled(self) -> bool:
@@ -612,3 +617,8 @@ class AgentRuntime:
         }
         add_causal_trace(payload)
         add_episode({"event": "embodiment.action.result", **payload})
+        # The persisted trace id is the evidence anchor; never learn from an
+        # unreferenced interpretation of an action result.
+        self.self_observation.observe_trace(
+            payload, evidence_ref=f"causal:{trace.trace_id}"
+        )

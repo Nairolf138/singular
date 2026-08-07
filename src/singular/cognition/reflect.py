@@ -169,6 +169,7 @@ def reflect_action(
     resource_weight: float = 0.15,
     bus: EventBus | None = None,
     event_context: Mapping[str, Any] | None = None,
+    metacognition: Mapping[str, Any] | None = None,
 ) -> ReflectionDecision:
     """Select the best action from candidate hypotheses.
 
@@ -212,11 +213,26 @@ def reflect_action(
     ranked = [action for _, action, _ in ranked_scores]
     selected = ranked_scores[0][1]
     selected_assessment = assessments_by_action[selected]
+    meta = dict(metacognition or {})
+    samples = int(meta.get("sample_count", 0) or 0)
+    calibration = _clamp(float(meta.get("calibration_score", 0.5) or 0.5))
+    uncertainty = _clamp(float(meta.get("uncertainty", 1.0) or 1.0))
+    evidence_weight = min(1.0, samples / 3.0)
+    calibrated_confidence = _clamp(
+        selected_assessment.confidence * (1.0 - evidence_weight)
+        + calibration * evidence_weight
+    )
+    recommendation = selected_assessment.action_recommended
+    limitations = _metadata_list(meta, "limitations")
+    if samples >= 3 and (calibration < 0.55 or uncertainty > 0.65):
+        recommendation = (
+            "request_information" if uncertainty > 0.65 else "simulate_or_escalate"
+        )
     reason = (
         "selected highest weighted score "
         f"(long_term={long_term_weight:.2f}, sandbox={sandbox_weight:.2f}, "
         f"resources={resource_weight:.2f}); "
-        f"confidence={selected_assessment.confidence:.2f}"
+        f"confidence={calibrated_confidence:.2f}; calibration={calibration:.2f}"
     )
     decision = ReflectionDecision(
         action=selected,
@@ -224,10 +240,10 @@ def reflect_action(
         alternative_scores=ranked_scores,
         ranked_actions=ranked,
         hypotheses=selected_assessment.hypotheses,
-        risks=selected_assessment.risks,
+        risks=selected_assessment.risks + limitations,
         benefits=selected_assessment.benefits,
-        confidence=selected_assessment.confidence,
-        action_recommended=selected_assessment.action_recommended,
+        confidence=calibrated_confidence,
+        action_recommended=recommendation,
         assessments=[assessments_by_action[action] for action in ranked],
     )
     _publish_decision(decision, bus=bus, event_context=event_context)
