@@ -28,6 +28,16 @@
       "entity_extraction",
       "planning",
       "addition"
+    ],
+    "living": [
+      "observe_world",
+      "assess_needs",
+      "select_goal",
+      "plan_action",
+      "act_on_world",
+      "verify_outcome",
+      "interact",
+      "reflect"
     ]
   },
   "scoring_contract": {
