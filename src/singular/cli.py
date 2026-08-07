@@ -993,32 +993,12 @@ def _create_life_with_bootstrap(
     print(f"Registre de vies utilisé: {registry_root}")
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Run the singular command line interface."""
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the complete argparse command tree.
 
-    implicit_root_before_override = (
-        _implicit_registry_root_from_env_or_default().resolve()
-    )
-    argv_list = list(argv) if argv is not None else None
-    _preparse_environment(argv_list)
-
-    from .lives import (
-        ally_lives,
-        archive_life,
-        bootstrap_life,
-        clone_life,
-        delete_life,
-        get_registry_root,
-        list_relations,
-        load_registry,
-        memorialize_life,
-        reconcile_lives,
-        reproduce_lives,
-        resolve_life,
-        rival_lives,
-        set_proximity,
-        uninstall_singular,
-    )
+    Keeping parser construction isolated makes the public CLI and its reference
+    documentation mechanically comparable without executing a command.
+    """
 
     parser = argparse.ArgumentParser(prog="singular")
     parser.add_argument(
@@ -1579,6 +1559,38 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Allow purge even if root looks like a development repository",
     )
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the singular command line interface."""
+
+    implicit_root_before_override = (
+        _implicit_registry_root_from_env_or_default().resolve()
+    )
+    argv_list = list(argv) if argv is not None else None
+    _preparse_environment(argv_list)
+
+    from .lives import (
+        ally_lives,
+        archive_life,
+        bootstrap_life,
+        clone_life,
+        delete_life,
+        get_registry_root,
+        list_relations,
+        load_registry,
+        memorialize_life,
+        reconcile_lives,
+        reproduce_lives,
+        resolve_life,
+        rival_lives,
+        set_proximity,
+        uninstall_singular,
+    )
+
+    parser = _build_parser()
 
     try:
         args = parser.parse_args(argv_list)

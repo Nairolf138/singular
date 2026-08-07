@@ -44,6 +44,23 @@ singular dashboard
 
 ## 📚 Tutoriels et gouvernance
 
+### Parcours par objectif
+
+| Parcours | Point de départ | Commandes de référence |
+|---|---|---|
+| Découverte | [Quickstart](#-quickstart) | [`quickstart`, `lives create`, `status`](docs/cli-reference.fr.md#quickstart) |
+| Conversation | [Guide d’utilisation](#-guide-dutilisation-clair-pas-à-pas) | [`talk`](docs/cli-reference.fr.md#talk) |
+| Évolution | [CLI `loop`](#cli-loop-budget-en-secondes) | [`loop`, `quest`, `synthesize`](docs/cli-reference.fr.md#loop) |
+| Supervision permanente | [Exécution permanente](#-exécution-permanente-systemd-ou-docker) | [`watch`, `daemon`, `orchestrate run`](docs/cli-reference.fr.md#watch) |
+| Diagnostic | [Lecture du dashboard](#comment-lire-le-dashboard-rapidement) | [`status`, `report`, `diagnose`, `doctor`](docs/cli-reference.fr.md#diagnose) |
+| Gouvernance | [Sécurité](#-security) | [`policy`, `values`, `beliefs`](docs/cli-reference.fr.md#policy) |
+| Reproduction | [Reproduction](#-reproduction) | [`spawn`, `lives reproduce`](docs/cli-reference.fr.md#lives-reproduce) |
+| Écosystème | [Gérer plusieurs vies](#-gérer-plusieurs-vies) | [`ecosystem run`, relations entre vies](docs/cli-reference.fr.md#ecosystem-run) |
+| Sauvegarde | [Registre des générations et rollback](#registre-des-générations-et-rollback) | [`report --export`, `rollback`, `lives archive`](docs/cli-reference.fr.md#rollback) |
+| Suppression | [Désinstallation](#-désinstallation) | [`retention run`, `lives delete`, `uninstall`](docs/cli-reference.fr.md#uninstall) |
+
+La [référence CLI française](docs/cli-reference.fr.md) et sa [version anglaise](docs/cli-reference.en.md) détaillent, pour chaque sous-commande, la syntaxe, les défauts, les fichiers et les effets de bord.
+
 - [Tutoriel FR — créer une vie, ajouter une compétence, lancer un tick et lire les logs](docs/tutorial_create_life.fr.md)
 - [Tutorial EN — create a life, add a skill, run a tick and read logs](docs/tutorial_create_life.en.md)
 - [Guide de personnalisation de la gouvernance `policy.yaml`](docs/policy_customization.md)
