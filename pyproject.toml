@@ -22,6 +22,8 @@ dashboard = [
     "websockets>=12,<16",
 ]
 viz = ["matplotlib>=3.8,<4"]
+ros2 = ["rclpy>=3.3,<4"]
+gpio = ["gpiozero>=2.0,<3"]
 
 [project.scripts]
 singular = "singular.cli:main"

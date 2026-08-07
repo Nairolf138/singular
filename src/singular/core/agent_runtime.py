@@ -9,23 +9,11 @@ from typing import Any, Callable, Protocol
 
 from security.policy_engine import ActionPolicyEngine
 from uuid import uuid4
-from singular.memory import add_episode
+from singular.memory import add_causal_trace, add_episode
+from singular.embodiment import Acknowledgement, Command, EmergencyStop, Observation
 from singular.morals import MoralAction, MoralDecisionEngine
 
 DEFAULT_SCHEMA_VERSION = "1.0"
-
-
-@dataclass(frozen=True)
-class PerceptEvent:
-    """Structured perception signal captured by the runtime."""
-
-    event_type: str
-    payload: dict[str, Any]
-    source: str
-    schema_version: str = DEFAULT_SCHEMA_VERSION
-    observed_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
 
 
 @dataclass(frozen=True)
@@ -40,32 +28,10 @@ class Intent:
     schema_version: str = DEFAULT_SCHEMA_VERSION
 
 
-@dataclass(frozen=True)
-class ActionRequest:
-    """Action demanded by the runtime and sent to the action port."""
-
-    action_type: str
-    parameters: dict[str, Any] = field(default_factory=dict)
-    intent_goal: str = ""
-    schema_version: str = DEFAULT_SCHEMA_VERSION
-    requested_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
-
-
-@dataclass(frozen=True)
-class ActionResult:
-    """Execution result and audit metadata for an action."""
-
-    action_type: str
-    success: bool
-    message: str = ""
-    error: str | None = None
-    audit: dict[str, Any] = field(default_factory=dict)
-    schema_version: str = DEFAULT_SCHEMA_VERSION
-    completed_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+# Backwards-compatible names now point at the shared embodiment contracts.
+PerceptEvent = Observation
+ActionRequest = Command
+ActionResult = Acknowledgement
 
 
 @dataclass(frozen=True)
@@ -76,7 +42,9 @@ class RuntimeEvent:
     payload: Any
     schema_version: str = DEFAULT_SCHEMA_VERSION
     event_id: str = field(default_factory=lambda: uuid4().hex)
-    emitted_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    emitted_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 @dataclass(frozen=True)
@@ -89,7 +57,9 @@ class CausalTrace:
     action: dict[str, Any]
     result: dict[str, Any]
     schema_version: str = DEFAULT_SCHEMA_VERSION
-    recorded_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    recorded_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 @dataclass(frozen=True)
@@ -142,7 +112,9 @@ class MindPort(Protocol):
     def propose_intent(self, percept: PerceptEvent) -> Intent | None:
         """Propose a goal based on one percept."""
 
-    def propose_action(self, intent: Intent, percept: PerceptEvent) -> ActionRequest | None:
+    def propose_action(
+        self, intent: Intent, percept: PerceptEvent
+    ) -> ActionRequest | None:
         """Translate one intent into an executable action request."""
 
 
@@ -168,6 +140,8 @@ class AgentRuntime:
         safety: RuntimeSafetyConfig | None = None,
         stop_signal: Callable[[], bool] | None = None,
         moral_engine: MoralDecisionEngine | None = None,
+        resource_gate: Callable[[ActionRequest], bool | tuple[bool, str]] | None = None,
+        emergency_stop: EmergencyStop | None = None,
     ) -> None:
         self.perception = perception
         self.mind = mind
@@ -176,13 +150,17 @@ class AgentRuntime:
         self.event_bus = event_bus or RuntimeEventBus(schema_version=schema_version)
         self.policy_engine = policy_engine or ActionPolicyEngine()
         self.moral_engine = moral_engine or MoralDecisionEngine(journal=add_episode)
+        self.resource_gate = resource_gate
+        self.emergency_stop = emergency_stop or EmergencyStop()
         self.safety = safety or RuntimeSafetyConfig()
         self._stop_signal = stop_signal
         self._global_stop_requested = False
         self._disabled = False
         self._critical_error_count = 0
         self._action_timestamps: deque[float] = deque()
-        self._recent_actions: deque[str] = deque(maxlen=max(self.safety.watchdog_window_size, 1))
+        self._recent_actions: deque[str] = deque(
+            maxlen=max(self.safety.watchdog_window_size, 1)
+        )
         self._causal_traces: deque[CausalTrace] = deque(maxlen=200)
 
     @property
@@ -195,6 +173,10 @@ class AgentRuntime:
         """Request an immediate global stop (hotkey equivalent)."""
 
         self._global_stop_requested = True
+        self.emergency_stop.engage("runtime_global_stop")
+        stop = getattr(self.action, "emergency_stop", None)
+        if callable(stop):
+            stop("runtime_global_stop")
 
     def step(self) -> list[ActionResult]:
         """Run one full runtime step.
@@ -248,17 +230,6 @@ class AgentRuntime:
                 moral_context.get("uncertainty", 0.0),
             )
             self.event_bus.publish("action.moral.decision", moral_decision)
-            if moral_decision.veto:
-                result = ActionResult(
-                    action_type=request.action_type,
-                    success=False,
-                    message="blocked by moral veto",
-                    error=moral_decision.veto_reason,
-                    audit={"moral": moral_decision.to_dict()},
-                )
-                self.event_bus.publish("action.moral.vetoed", result)
-                results.append(result)
-                continue
 
             if self._stop_requested():
                 self.event_bus.publish(
@@ -327,6 +298,57 @@ class AgentRuntime:
                     },
                 )
                 self.event_bus.publish("action.blocked", result)
+                self._record_causal_trace(
+                    percept=percept,
+                    intent=intent,
+                    request=request,
+                    result=result,
+                    decision=decision,
+                )
+                results.append(result)
+                continue
+
+            if moral_decision.veto:
+                result = ActionResult(
+                    action_type=request.action_type,
+                    success=False,
+                    message="blocked by moral veto",
+                    error=moral_decision.veto_reason,
+                    audit={"moral": moral_decision.to_dict()},
+                    command_id=request.command_id,
+                    actual={"executed": False},
+                )
+                self.event_bus.publish("action.moral.vetoed", result)
+                self._record_causal_trace(
+                    percept=percept,
+                    intent=intent,
+                    request=request,
+                    result=result,
+                    decision=decision,
+                )
+                results.append(result)
+                continue
+
+            resource_allowed, resource_reason = self._resources_allow(request)
+            self.event_bus.publish(
+                "action.resource.decision",
+                {
+                    "request": request,
+                    "allowed": resource_allowed,
+                    "reason": resource_reason,
+                },
+            )
+            if not resource_allowed:
+                result = ActionResult(
+                    action_type=request.action_type,
+                    success=False,
+                    message="blocked by resource limits",
+                    error=resource_reason,
+                    audit={"resource": {"allowed": False, "reason": resource_reason}},
+                    command_id=request.command_id,
+                    actual={"executed": False},
+                )
+                self.event_bus.publish("action.resource.blocked", result)
                 self._record_causal_trace(
                     percept=percept,
                     intent=intent,
@@ -419,6 +441,8 @@ class AgentRuntime:
                 audit=enriched_audit,
                 schema_version=result.schema_version,
                 completed_at=result.completed_at,
+                command_id=result.command_id or request.command_id,
+                actual=dict(result.actual),
             )
             if self._is_critical_result(result):
                 self._record_critical_error("critical_action_result")
@@ -435,6 +459,14 @@ class AgentRuntime:
                 break
 
         return results
+
+    def _resources_allow(self, request: ActionRequest) -> tuple[bool, str]:
+        if self.resource_gate is None:
+            return True, "within_limits"
+        verdict = self.resource_gate(request)
+        if isinstance(verdict, tuple):
+            return bool(verdict[0]), str(verdict[1])
+        return bool(verdict), "within_limits" if verdict else "resource_limit_exceeded"
 
     def _ensure_schema_version(self, candidate: str) -> None:
         if candidate != self.schema_version:
@@ -479,7 +511,9 @@ class AgentRuntime:
         threshold = self.safety.watchdog_repeat_action_threshold
         if threshold <= 0 or len(self._recent_actions) < threshold - 1:
             return False
-        return list(self._recent_actions)[-(threshold - 1) :] == [action_type] * (threshold - 1)
+        return list(self._recent_actions)[-(threshold - 1) :] == [action_type] * (
+            threshold - 1
+        )
 
     def _is_critical_result(self, result: ActionResult) -> bool:
         if result.success:
@@ -489,7 +523,11 @@ class AgentRuntime:
             return True
         if isinstance(result.error, str) and "critical" in result.error.lower():
             return True
-        return bool(result.audit.get("critical_error", False)) if isinstance(result.audit, dict) else False
+        return (
+            bool(result.audit.get("critical_error", False))
+            if isinstance(result.audit, dict)
+            else False
+        )
 
     def _record_critical_error(self, reason: str) -> None:
         self._critical_error_count += 1
@@ -551,6 +589,8 @@ class AgentRuntime:
                 "success": result.success,
                 "message": result.message,
                 "error": result.error,
+                "command_id": result.command_id,
+                "actual": result.actual,
                 "gain_loss": gain_loss,
                 "objective_impact": {
                     "objective": intent.goal,
@@ -561,3 +601,14 @@ class AgentRuntime:
         )
         self._causal_traces.append(trace)
         self.event_bus.publish("causal.trace", trace)
+        payload = {
+            "ts": trace.recorded_at,
+            "trace_id": trace.trace_id,
+            "pipeline": "agent_runtime.embodiment",
+            "input": trace.input,
+            "decision": trace.decision,
+            "action": trace.action,
+            "result": trace.result,
+        }
+        add_causal_trace(payload)
+        add_episode({"event": "embodiment.action.result", **payload})

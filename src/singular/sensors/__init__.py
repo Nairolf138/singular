@@ -2,6 +2,7 @@
 
 from .config import HostSensorThresholds, load_host_sensor_thresholds
 from .host import collect_host_metrics
+from singular.embodiment import Observation
 from .host_metrics_store import (
     append_host_metrics_sample,
     compute_host_metrics_aggregates,
@@ -9,8 +10,21 @@ from .host_metrics_store import (
     summarize_environmental_impact,
 )
 
+
+class HostSensor:
+    """Adapt the legacy host-metrics function to the common sensor contract."""
+
+    def collect(self) -> list[Observation]:
+        metrics = collect_host_metrics()
+        return [Observation("host_metrics", metrics, "host.metrics")]
+
+    def close(self) -> None:
+        return None
+
+
 __all__ = [
     "HostSensorThresholds",
+    "HostSensor",
     "append_host_metrics_sample",
     "collect_host_metrics",
     "compute_host_metrics_aggregates",
