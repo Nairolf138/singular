@@ -40,6 +40,11 @@ def test_liveness_index_reaches_high_score_when_all_signals_present() -> None:
     assert payload["components"]["interactions"]["score"] == 1.0
     assert payload["components"]["validated_internal_modifications"]["score"] == 1.0
     assert len(payload["proofs"]) == 5
+    diagnostic = payload["indices"]["liveness"]
+    assert diagnostic["formula_version"] == "liveness-v1.0"
+    assert diagnostic["freshness"]["status"] == "fresh"
+    assert diagnostic["confidence"]["level"] == "high"
+    assert diagnostic["missing_data"] == []
 
 
 def test_liveness_index_avoids_false_positive_on_sparse_noise() -> None:
@@ -56,6 +61,8 @@ def test_liveness_index_avoids_false_positive_on_sparse_noise() -> None:
     assert payload["components"]["active_objectives_progress"]["score"] == 0.0
     assert payload["components"]["interactions"]["score"] == 0.0
     assert payload["components"]["validated_internal_modifications"]["score"] == 0.0
+    assert "interactions" in payload["indices"]["liveness"]["missing_data"]
+    assert any("aucune interaction observée depuis 7 jours" in item for item in payload["recommendations"])
 
 
 def test_liveness_index_partial_interaction_threshold() -> None:
@@ -117,6 +124,8 @@ def test_lives_comparison_exposes_liveness_fields() -> None:
     assert "recent_activity" in alpha["life_liveness_components"]
     assert isinstance(alpha["life_liveness_proofs"], list)
     assert len(alpha["life_liveness_proofs"]) <= 5
+    assert alpha["score_diagnostics"]["health"]["formula_version"] == "health-observation-v1.0"
+    assert alpha["score_diagnostics"]["liveness"]["components"]
 
 
 def test_autonomy_index_ignores_voluntary_budget_records() -> None:

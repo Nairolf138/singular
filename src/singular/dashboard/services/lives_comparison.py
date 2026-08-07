@@ -28,6 +28,33 @@ _SERIES_METRICS = (
     "interactions", "accepted_mutations", "failures",
 )
 
+_LIVENESS_FORMULA_VERSION = "liveness-v1.0"
+
+
+def _data_freshness(records: list[dict[str, object]], reference: datetime) -> dict[str, object]:
+    timestamps = [parsed for record in records if (parsed := parse_ts(record.get("ts"))) is not None]
+    if not timestamps:
+        return {"last_observation_at": None, "age_seconds": None, "status": "missing"}
+    latest = max(timestamps)
+    age_seconds = max(0, int((reference - latest).total_seconds()))
+    status = "fresh" if age_seconds <= 86_400 else "stale" if age_seconds <= 604_800 else "expired"
+    return {"last_observation_at": latest.isoformat(), "age_seconds": age_seconds, "status": status}
+
+
+def _component_recommendations(components: dict[str, dict[str, object]]) -> list[str]:
+    """Return actions tied to an observed deficient component, never generic alerts."""
+    recommendations: list[str] = []
+    if float(components["interactions"]["score"]) == 0.0:
+        recommendations.append("Initier un échange ciblé : aucune interaction observée depuis 7 jours.")
+    if float(components["recent_activity"]["score"]) == 0.0:
+        recommendations.append("Planifier une action concrète : aucune activité qualifiante observée depuis 24 h.")
+    if not components["perception_decision_action_loop"]["completed"]:
+        recommendations.append("Exécuter une boucle perception → décision → action : aucune boucle complète observée sur 48 h.")
+    objectives = components["active_objectives_progress"]
+    if int(objectives["active_objectives"]) > 0 and int(objectives["progress_events"]) == 0:
+        recommendations.append("Faire progresser un objectif actif : aucun événement de progression n'est observé.")
+    return recommendations
+
 
 def build_life_timeseries(
     records: list[dict[str, object]], *, life: str, time_window: str = "24h",
@@ -472,6 +499,26 @@ def compute_liveness_index(
         key=lambda item: parse_ts(item.get("ts")) or datetime.min.replace(tzinfo=timezone.utc),
         reverse=True,
     )
+    missing_data = [name for name, detail in component_details.items() if float(detail["score"]) == 0.0]
+    freshness = _data_freshness(sorted_records, reference)
+    observed_components = len(component_details) - len(missing_data)
+    confidence = round(observed_components / len(component_details), 2)
+    liveness_diagnostic = {
+        "formula_version": _LIVENESS_FORMULA_VERSION,
+        "formula": "100 × (activité + boucle PDA + objectifs/progrès + interactions + modifications validées) / 5",
+        "unit": "points sur 100", "window": {"recent_activity_hours": 24, "pda_loop_hours": 48, "interactions_days": 7, "objectives": "historique disponible", "modifications": "historique disponible"},
+        "components": component_details, "freshness": freshness,
+        "confidence": {"level": "high" if confidence >= .8 else "medium" if confidence >= .4 else "low", "score": confidence, "basis": f"{observed_components}/5 composantes étayées"},
+        "missing_data": missing_data, "proofs": sorted_proofs[:5], "recommendations": _component_recommendations(component_details),
+    }
+    autonomy_diagnostic = {**liveness_diagnostic, "formula_version": "autonomy-v1.0", "formula": "indice de vivacité recalculé après exclusion des arrêts volontaires de budget", "excluded_records": budgeted_periods_ignored}
+    mutation_missing = [] if mutation_viability["mutation_count"] else ["mutations décidées", "changements utiles validés"]
+    mutation_diagnostic = {
+        "formula_version": "mutation-viability-v1.0", "formula": "100 × clamp(0, 1, 0,5 × acceptation + 0,5 × utilité − 0,25 × échecs)", "unit": "points sur 100", "window": "historique disponible",
+        "components": mutation_viability, "freshness": freshness,
+        "confidence": {"level": "high" if mutation_viability["mutation_count"] >= 10 else "medium" if mutation_viability["mutation_count"] >= 3 else "low", "sample_size": mutation_viability["mutation_count"]},
+        "missing_data": mutation_missing, "proofs": [proof for proof in sorted_proofs if proof["component"] == "validated_internal_modifications"], "recommendations": [],
+    }
     return {
         "index": index,
         "autonomy_index": autonomy_index,
@@ -479,6 +526,8 @@ def compute_liveness_index(
         "mutation_viability": mutation_viability,
         "components": component_details,
         "proofs": sorted_proofs[:5],
+        "indices": {"liveness": liveness_diagnostic, "autonomy": autonomy_diagnostic, "mutation_viability": mutation_diagnostic},
+        "recommendations": liveness_diagnostic["recommendations"],
     }
 
 
@@ -584,6 +633,8 @@ def aggregate_lives(
                 },
             },
             "life_liveness_proofs": [],
+            "score_diagnostics": {},
+            "score_recommendations": [],
         }
 
     for life_name, all_records in by_life.items():
@@ -717,6 +768,13 @@ def aggregate_lives(
             "mutation_viability": liveness.get("mutation_viability", compute_mutation_viability(all_records)),
             "life_liveness_components": liveness["components"],
             "life_liveness_proofs": liveness["proofs"],
+            "score_diagnostics": {
+                **liveness["indices"],
+                "health": {"formula_version": "health-observation-v1.0", "formula": "dernière valeur health.score observée", "unit": "points sur 100", "window": time_window,
+                    "components": {"latest": current_health_score, "observations": len(health_score_points)}, "freshness": _data_freshness(all_records, datetime.now(timezone.utc)),
+                    "confidence": {"level": "high" if len(health_score_points) >= 5 else "medium" if len(health_score_points) >= 2 else "low", "sample_size": len(health_score_points)}, "missing_data": [] if health_score_points else ["health.score"], "proofs": [], "recommendations": [],
+                    "change_reason": f"variation de {health_score_points[-1] - health_score_points[0]:+.1f} points sur {len(health_score_points)} observations" if len(health_score_points) >= 2 else "variation indéterminable : moins de deux observations"}},
+            "score_recommendations": liveness["recommendations"],
         }
     unattached_summary = {
         "records_count": sum(unattached_runs.values()),

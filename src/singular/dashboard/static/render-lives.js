@@ -13,6 +13,14 @@ const badge=(label,tone)=>`<span class='badge ${tone}'>${escapeHtml(label)}</spa
 
 const clearChildren=element=>{if(element){element.replaceChildren();}return element;};
 const appendCell=(row,value,tag='td')=>{const cell=document.createElement(tag);cell.textContent=safeText(value);row.appendChild(cell);return cell;};
+const appendScoreCell=(row,value,label,onOpen)=>{
+  const cell=document.createElement('td');
+  const button=document.createElement('button');
+  button.type='button';button.className='score-disclosure';button.textContent=safeText(value);
+  button.setAttribute('aria-label',`Ouvrir la décomposition de ${label}`);
+  button.onclick=event=>{event.stopPropagation();onOpen();};
+  cell.appendChild(button);row.appendChild(cell);return cell;
+};
 const appendEmptyRow=(tbody,colspan,message)=>{
   const tr=document.createElement('tr');
   const td=document.createElement('td');
@@ -253,9 +261,9 @@ const renderLivesTable=(rows)=>{
     auditLink.textContent='audit code';
     auditLink.className='technical-only';
     lifeCell.appendChild(auditLink);
-    appendCell(tr,score);
+    appendScoreCell(tr,score,'santé',()=>showLifeDetails(row.life||''));
     appendCell(tr,lastActivity);
-    appendCell(tr,`${liveness} / auto ${autonomy}`);
+    appendScoreCell(tr,`${liveness} / auto ${autonomy}`,'vivacité et autonomie',()=>showLifeDetails(row.life||''));
     for(const summary of [state,risk,activity]){
       const cell=document.createElement('td');
       const pill=document.createElement('span');
@@ -322,7 +330,9 @@ const showLifeDetails=lifeName=>{
   ];
   const metadataRows=operatorMetadata.map(([key,value])=>`<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(value)}</td></tr>`).join('');
   const expertRows=expertMetadata.map(([key,value])=>`<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(value)}</td></tr>`).join('');
-  content.innerHTML=`<div class='detail-badges'>${summarizeBadges(row)||badge('Aucun badge',BADGE_TONE.info)}</div><table class='table-base life-meta-table'><tbody>${metadataRows}</tbody></table><section class='technical-only' aria-label='Métriques expertes de la vie'><h4>Métriques expertes</h4><table class='table-base life-meta-table'><tbody>${expertRows}</tbody></table><h4>Timeline vitale</h4><pre>${escapeHtml(JSON.stringify(row.vital_timeline||{},null,2))}</pre></section>`;
+  const diagnostics=Object.entries(row.score_diagnostics||{}).map(([name,diagnostic])=>`<details><summary>${escapeHtml(name)} · ${escapeHtml(diagnostic.formula_version||'version inconnue')}</summary><p><strong>Formule :</strong> ${escapeHtml(diagnostic.formula||na())}</p><p><strong>Fenêtre :</strong> ${escapeHtml(JSON.stringify(diagnostic.window??na()))} · <strong>fraîcheur :</strong> ${escapeHtml(diagnostic.freshness?.status||na())} · <strong>confiance :</strong> ${escapeHtml(diagnostic.confidence?.level||na())}</p><p><strong>Raison de la variation :</strong> ${escapeHtml(diagnostic.change_reason||`composantes contributrices : ${Object.keys(diagnostic.components||{}).join(', ')||na()}`)}</p><pre>${escapeHtml(JSON.stringify({composantes:diagnostic.components,données_manquantes:diagnostic.missing_data,preuves:diagnostic.proofs},null,2))}</pre></details>`).join('');
+  const recommendations=(row.score_recommendations||[]).map(item=>`<li>${escapeHtml(item)}</li>`).join('');
+  content.innerHTML=`<div class='detail-badges'>${summarizeBadges(row)||badge('Aucun badge',BADGE_TONE.info)}</div><table class='table-base life-meta-table'><tbody>${metadataRows}</tbody></table><h4>Décomposition des scores</h4>${diagnostics||'<p>Aucune décomposition disponible.</p>'}${recommendations?`<h4>Recommandations justifiées</h4><ul>${recommendations}</ul>`:''}<section class='technical-only' aria-label='Métriques expertes de la vie'><h4>Métriques expertes</h4><table class='table-base life-meta-table'><tbody>${expertRows}</tbody></table><h4>Timeline vitale</h4><pre>${escapeHtml(JSON.stringify(row.vital_timeline||{},null,2))}</pre></section>`;
   if(proofs){
     proofs.innerHTML='';
     const recentProofs=Array.isArray(row.life_liveness_proofs)?row.life_liveness_proofs:[];

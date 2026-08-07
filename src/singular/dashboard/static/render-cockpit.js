@@ -13,6 +13,16 @@ const clearElement=id=>{const el=byId(id);if(el){el.innerHTML='';}return el;};
 const setTone=(id,tone)=>{const el=byId(id);if(el){setStatusTone(el,tone);}return el;};
 const appendCell=(row,value)=>{const cell=document.createElement('td');cell.textContent=String(value??na());row.appendChild(cell);return cell;};
 const appendEmptyRow=(tbody,colspan,message)=>{const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=colspan;td.textContent=message;tr.appendChild(td);tbody.appendChild(tr);return tr;};
+const exposeScoreDetails=(id,name,diagnostic)=>{
+  const score=byId(id);if(!score||!diagnostic){return;}
+  let details=score.closest('details.score-diagnostic');
+  if(!details){
+    details=document.createElement('details');details.className='score-diagnostic';
+    const summary=document.createElement('summary');score.parentNode.insertBefore(details,score);summary.appendChild(score);details.appendChild(summary);
+    const body=document.createElement('div');body.className='score-diagnostic-body';details.appendChild(body);
+  }
+  details.querySelector('.score-diagnostic-body').textContent=`${name} · ${diagnostic.formula_version||'version inconnue'}\n${diagnostic.formula||na()}\nFenêtre : ${JSON.stringify(diagnostic.window??na())} · fraîcheur : ${diagnostic.freshness?.status||na()} · confiance : ${diagnostic.confidence?.level||na()}\nRaison : ${diagnostic.change_reason||`contribution de ${Object.keys(diagnostic.components||{}).join(', ')||na()}`}\n${JSON.stringify({composantes:diagnostic.components,données_manquantes:diagnostic.missing_data,preuves:diagnostic.proofs},null,2)}`;
+};
 
 const renderDailySkills=(dailySkills)=>{
   const frequency=dailySkills?.frequency_totals||{};
@@ -562,6 +572,11 @@ export const loadCockpit=()=>Promise.allSettled([
   setText('kpi-accepted',accepted);
   setText('kpi-alerts',String(alertsCount));
   setText('kpi-liveness-index',livenessIndex);
+  const comparisonRows=Array.isArray(lives.table)?lives.table:[];
+  const diagnosticRow=comparisonRows.find(row=>row.life===essentialPayload.selected_life)||comparisonRows.find(row=>row.selected_life===true);
+  const diagnostics={...(d.score_diagnostics||{}),...(diagnosticRow?.score_diagnostics||{})};
+  exposeScoreDetails('kpi-health','Santé',diagnostics.health);
+  exposeScoreDetails('kpi-liveness-index','Vivacité',diagnostics.liveness);
   setText('kpi-next-action',essentialPayload.next_action||d.next_action||na());
   const selectedLifeEl=document.getElementById('essential-selected-life');
   if(selectedLifeEl){selectedLifeEl.textContent=String(essentialPayload.selected_life||'Aucune');}
