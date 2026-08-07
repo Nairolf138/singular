@@ -223,3 +223,142 @@ def test_runtime_rejects_available_skill_after_source_mutation(tmp_path: Path) -
     )
 
     assert result.reason == "no_compatible_skill"
+
+
+def _exploration_runtime(root: Path, monkeypatch, *, failing: set[str] | None = None):
+    skills = root / "skills"
+    mem = root / "mem"
+    skills.mkdir(parents=True)
+    mem.mkdir(parents=True)
+    states = {}
+    for index, name in enumerate(("reliable", "novel_a", "novel_b")):
+        (skills / f"{name}.py").write_text(
+            f"def run(context=None):\n    return {{'skill': '{name}'}}\n",
+            encoding="utf-8",
+        )
+        states[name] = {
+            "capabilities": ["choose"],
+            "risk": 0.05 if name == "reliable" else 0.2,
+            "metrics": {
+                "usage_count": 20 if name == "reliable" else index,
+                "average_gain": 1.5 if name == "reliable" else 0.4,
+                "average_cost": 0.1,
+                "failure_count": 0,
+            },
+        }
+    (mem / "skills.json").write_text(json.dumps(states), encoding="utf-8")
+
+    def run(source: str):
+        selected = next(name for name in states if f"'skill': '{name}'" in source)
+        if selected in (failing or set()):
+            raise RuntimeError("deterministic failure")
+        return {"skill": selected}
+
+    monkeypatch.setattr("singular.skills.runtime.sandbox.run", run)
+    return SkillRuntime(skills_dir=skills, mem_dir=mem), mem
+
+
+def test_high_curiosity_diversifies_compatible_strategies(
+    monkeypatch, tmp_path: Path
+) -> None:
+    runtime, mem = _exploration_runtime(tmp_path, monkeypatch)
+    chosen = [
+        runtime.execute_best_skill(
+            {"name": "choose", "capabilities": ["choose"], "max_risk": 0.3},
+            {
+                "execution_strategy": {
+                    "mode": "exploratory",
+                    "curiosity": 1,
+                    "energy": 1,
+                    "seed": 7,
+                }
+            },
+        ).skill
+        for _ in range(3)
+    ]
+
+    assert len(set(chosen)) > 1
+    decisions = [
+        json.loads(line)
+        for line in (mem / "skill_selection.jsonl").read_text().splitlines()
+    ]
+    assert any(item.get("policy") == "exploration" for item in decisions)
+
+
+def test_high_risk_pressure_keeps_reliable_strategy(
+    monkeypatch, tmp_path: Path
+) -> None:
+    runtime, _ = _exploration_runtime(tmp_path, monkeypatch)
+    result = runtime.execute_best_skill(
+        {"name": "choose", "capabilities": ["choose"]},
+        {
+            "execution_strategy": {
+                "mode": "exploratory",
+                "curiosity": 1,
+                "risk": 1,
+                "seed": 2,
+            }
+        },
+    )
+    assert result.skill == "reliable"
+
+
+def test_repeated_exploration_failures_restore_reliable_strategy(
+    monkeypatch, tmp_path: Path
+) -> None:
+    runtime, _ = _exploration_runtime(
+        tmp_path, monkeypatch, failing={"novel_a", "novel_b"}
+    )
+    context = {
+        "execution_strategy": {
+            "mode": "exploratory",
+            "curiosity": 1,
+            "energy": 1,
+            "seed": 4,
+        }
+    }
+    first = runtime.execute_best_skill(
+        {"name": "choose", "capabilities": ["choose"]}, context
+    )
+    second = runtime.execute_best_skill(
+        {"name": "choose", "capabilities": ["choose"]}, context
+    )
+    cautious = runtime.execute_best_skill(
+        {"name": "choose", "capabilities": ["choose"]},
+        {
+            "execution_strategy": {
+                "mode": "cautious",
+                "curiosity": 1,
+                "frustration": 1,
+                "seed": 4,
+            }
+        },
+    )
+    assert first.status == second.status == "failed"
+    assert cautious.skill == "reliable"
+    assert cautious.status == "succeeded"
+
+
+def test_fixed_seed_reproduces_exploration_sequence(
+    monkeypatch, tmp_path: Path
+) -> None:
+    sequences = []
+    for name in ("one", "two"):
+        runtime, _ = _exploration_runtime(tmp_path / name, monkeypatch)
+        context = {
+            "execution_strategy": {
+                "mode": "exploratory",
+                "curiosity": 0.6,
+                "energy": 1,
+                "seed": 91,
+            }
+        }
+        sequences.append(
+            [
+                runtime.execute_best_skill(
+                    {"name": "choose", "capabilities": ["choose"]}, context
+                ).skill
+                for _ in range(5)
+            ]
+        )
+    assert sequences[0] == sequences[1]
