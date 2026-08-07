@@ -50,6 +50,10 @@ class PolicyGenerator(Protocol):
     def generate(self, demonstration: Demonstration) -> str: ...
 
 
+class ImitationDevelopmentGate(Protocol):
+    def gate(self, **kwargs: Any) -> Any: ...
+
+
 class SimilarityPolicyGenerator:
     """Generate a small nearest-feature policy rather than an exact lookup table."""
 
@@ -184,9 +188,18 @@ class ImitationEngine:
         trial_cost: float,
         high_cost_threshold: float = 0.7,
         ambiguity: bool = False,
+        developmental_model: ImitationDevelopmentGate | None = None,
     ) -> ActiveImitationRequest | None:
         if known or trial_cost < high_cost_threshold:
             return None
+        if developmental_model is not None:
+            decision = developmental_model.gate(
+                action="imitate_safe", difficulty=trial_cost, sensitive=False
+            )
+            if not decision.allowed:
+                self._event("rejections", {"type": "developmental_gate", "skill": skill,
+                                             "reason": decision.reason, "stage": decision.stage})
+                return None
         request = ActiveImitationRequest(
             skill,
             "clarification" if ambiguity else "demonstration",
