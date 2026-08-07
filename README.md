@@ -9,14 +9,32 @@ Chaque instance est **singulière** : deux personnes qui font naître un organis
 
 ## ✨ Concepts clés
 
-- **Naissance** : une commande génère un nouvel organisme avec une identité unique (*seed*, traits de personnalité, valeurs).  
-- **Corps** : ses *skills* (petites fonctions de code) représentent ses muscles et organes.  
-- **Starter-pack de skills** : dès la naissance, il reçoit un socle utilitaire (validation, résumé, intention, entités, planification, métriques) prêt à être muté.  
-- **Esprit** : mémoire, traits de caractère, humeur et valeurs éthiques évolutives.  
-- **Évolution** : il modifie son propre code par petites mutations, teste les résultats en sandbox, et conserve ce qui fonctionne mieux.  
-- **Apprentissage** : il peut acquérir de nouvelles compétences en relevant des *quêtes* (spécifications JSON).  
-- **Interaction** : vous pouvez lui parler. Il se souvient de vos échanges et exprime son état (fierté, frustration, fatigue, excitation…).  
-- **Cycle de vie** : il peut grandir, changer de philosophie de vie, et même “mourir” si certaines conditions sont réunies (échecs répétés, entropie, vieillissement).  
+La taxonomie canonique (`stable`, `experimental`, `optional`, `target-only`,
+`deprecated`) et le registre d'acceptation des fonctions stables sont dans
+[`docs/README.md`](docs/README.md#taxonomie-de-statut).
+
+- **Naissance — `stable`** : une commande génère un nouvel organisme avec une identité unique (*seed*, traits de personnalité, valeurs).
+- **Corps et starter-pack de skills — `stable`** : la naissance initialise des fonctions utilitaires et arithmétiques dans `skills/`.
+- **Esprit et mémoire — `experimental`** : traits, humeur, valeurs et couches de mémoire évoluent encore avec les schémas runtime.
+- **Évolution et mutation sandboxée — `experimental`** : la boucle propose, teste et sélectionne de petites mutations ; son résultat dépend du sandbox OCI.
+- **Quêtes et apprentissage — `experimental`** : les spécifications JSON pilotent l'acquisition de compétences sans garantie de généralisation.
+- **Interaction — `stable`** : `talk` fournit une conversation avec fallback provider et persistance locale.
+- **Cycle vital avancé — `experimental`** : croissance, sommeil, reproduction et mort restent des modèles évolutifs.
+
+### Capacités stables : accès et acceptation
+
+| Capacité | Entrée | Prérequis | Acceptation |
+| --- | --- | --- | --- |
+| Naissance / sélection | `singular lives create --name Lumen`, `singular lives use lumen` | Python 3.10+, installation éditable, root inscriptible | `pytest -q tests/test_cli_lives.py tests/test_lives.py` |
+| Starter-pack de skills | `singular lives create --name Lumen --starter-profile assistant` | Même prérequis ; profil `assistant` inclus | `pytest -q tests/test_birth_starter_profiles.py tests/test_living_starter_integration.py` |
+| Consultation des vies et état | `singular lives list`, `singular status --format table` | Root initialisé ; vie active pour `status` | `pytest -q tests/test_cli_lives.py tests/test_life_status.py` |
+| Conversation | `singular talk --prompt "Bonjour"` | Vie active ; fallback `dummy` disponible sans service | `pytest -q tests/test_end_to_end.py tests/providers/test_llm_fallback_chain.py` |
+| Rapport | `singular report --format plain` | Vie active et run pour un résultat non vide | `pytest -q tests/test_report.py` |
+| Diagnostic | `singular doctor` | Aucun service externe obligatoire | `pytest -q tests/test_cli_doctor.py tests/providers/test_provider_doctor.py` |
+| Rétention | `singular retention status`, `singular retention run --dry-run` | Root accessible ; revue avant suppression réelle | `pytest -q tests/test_cli_retention.py tests/test_retention.py` |
+
+Le [registre canonique](docs/README.md#registre-des-capacités-stable) doit être mis
+à jour avant toute nouvelle déclaration `stable`.
 
 ---
 
@@ -44,6 +62,8 @@ singular dashboard
 
 ## 📚 Tutoriels et gouvernance
 
+Index complet par type de document : [`docs/README.md`](docs/README.md).
+
 ### Parcours par objectif
 
 | Parcours | Point de départ | Commandes de référence |
@@ -66,6 +86,8 @@ La [référence CLI française](docs/cli-reference.fr.md) et sa [version anglais
 - [Guide de personnalisation de la gouvernance `policy.yaml`](docs/policy_customization.md)
 
 ## 🚀 Exécution permanente (systemd ou Docker)
+
+**Statut : `optional`** — requiert systemd ou un runtime Docker/Compose externe.
 
 Les deux déploiements utilisent un répertoire d'état durable et transmettent
 `SIGTERM` à l'orchestrateur afin qu'il puisse terminer proprement. Avant le
@@ -228,6 +250,8 @@ singular talk --prompt "Bonjour"
 
 ### Utiliser Ollama comme fournisseur LLM local
 
+**Statut : `optional`** — requiert un serveur Ollama accessible et un modèle local.
+
 Si Ollama tourne sur votre machine (API HTTP locale par défaut sur
 ``http://127.0.0.1:11434``), sélectionnez le provider ``ollama`` avec
 ``LLM_PROVIDER`` :
@@ -248,6 +272,9 @@ La chaîne de fallback intégrée essaie ``local``, ``ollama``, ``openai`` puis
 
 ### CLI `loop` (budget en secondes)
 
+**Statut : `experimental`.** L'ancienne option `--ticks` est `deprecated` et doit
+être remplacée par `--budget-seconds`.
+
 La syntaxe officielle utilise désormais un budget temporel explicite :
 
 ```bash
@@ -261,6 +288,9 @@ un message explicite avec la commande correcte (`--budget-seconds`). Règle de
 conversion de référence pour migrer vos scripts : `1 tick ≈ 1 seconde`.
 
 ## 🧿 Gérer plusieurs vies
+
+**Statut : `experimental`.** Le registre unitaire est stable, mais l'orchestration
+et les interactions entre plusieurs vies restent expérimentales.
 
 Les organismes peuvent désormais partager un même répertoire racine tout en
 vivant dans des dossiers distincts. L’option globale ``--root`` contrôle le
@@ -334,6 +364,8 @@ toute ambiguïté.
 
 ## 🧹 Désinstallation
 
+**Statut : `experimental`** — toujours prévisualiser la portée avant une purge.
+
 Singular propose une sous-commande pour nettoyer les données stockées dans
 ``SINGULAR_ROOT`` (ou via ``--root``). Deux modes explicites existent :
 
@@ -354,6 +386,8 @@ python -m singular uninstall --purge-lives --yes
 > ```
 
 ## 🧬 Reproduction
+
+**Statut : `experimental`.** La reproduction n'est pas une capacité stable.
 
 ```bash
 singular spawn parent_a parent_b --out-dir child/
@@ -389,6 +423,8 @@ le fichier hybride dans `child/`.
 ---
 
 ## 🧬 Cycle vital
+
+**Statut : `experimental`.** Les règles et artefacts du cycle peuvent évoluer.
 
 1. **Naissance**
    ```bash
@@ -488,6 +524,9 @@ Pour arrêter l’orchestrateur, utilisez `Ctrl+C` dans le terminal où il tourn
 ---
 
 ### 🚀 Roadmap
+
+**Statut : `target-only`.** Cette liste exprime des directions, pas des fonctions
+disponibles.
 - **V1 (organisme minimal)**
   - Naissance, exécution, mutations de base, interaction CLI, mémoire persistante.
 - **V1.1**
@@ -501,6 +540,9 @@ Pour arrêter l’orchestrateur, utilisez `Ctrl+C` dans le terminal où il tourn
   - “Écosystème” multi-organismes → possibilité de faire interagir plusieurs compagnons.
 
 ## 🖥️ Tableau de bord web
+
+**Statut : `optional`** — requiert l'extra `dashboard`; son interface peut évoluer
+indépendamment des points d'entrée CLI stables.
 
 Un petit serveur web permet de consulter les fichiers de `runs/` et l'état de `psyche.json`.
 
@@ -749,12 +791,16 @@ Ouvrez ensuite http://127.0.0.1:8000 dans votre navigateur.
 
 ### Fournisseur OpenAI
 
+**Statut : `optional`** — requiert des identifiants et un service externe.
+
 Pour permettre à l'organisme de parler en utilisant l'API d'OpenAI, installez
 la dépendance optionnelle ``openai>=1.0.0`` et définissez la variable
 d'environnement ``OPENAI_API_KEY``. Les versions plus anciennes du paquet
 ``openai`` ne sont pas compatibles avec le fournisseur actuel.
 
 ### Fournisseur local
+
+**Statut : `optional`** — dépend du runtime et du modèle installés localement.
 
 Installez ``transformers`` pour utiliser un petit modèle embarqué :
 
@@ -767,6 +813,8 @@ Le fournisseur local utilise le modèle ``sshleifer/tiny-gpt2`` de Hugging Face
 pour fonctionner hors-ligne.
 
 ### Fournisseurs externes
+
+**Statut : `optional`** — chaque provider dépend de son paquet ou service propre.
 
 Pour enregistrer un provider LLM personnalisé, ajoutez un entry point dans le
 ``pyproject.toml`` de votre paquet :

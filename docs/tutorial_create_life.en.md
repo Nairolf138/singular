@@ -1,5 +1,10 @@
 # Tutorial — creating a Singular life
 
+> **Statuses:** life creation, inspection, and reporting are `stable`; manual
+> skill creation and the evolution loop are `experimental`; reproduction and
+> ecosystem mode are `experimental`. Prerequisites and acceptance tests for the
+> stable paths live in the [canonical registry](README.md#registre-des-capacités-stable).
+
 This tutorial walks through a complete local path: create a life, add a skill, run an evolutionary tick, inspect memory and the checkpoint, then read the logs. The commands use an isolated lab root so experiments do not mix with your regular lives.
 
 ## Prerequisites
@@ -20,7 +25,7 @@ mkdir -p "$SINGULAR_ROOT"
 
 > On Windows PowerShell, use `$env:SINGULAR_ROOT = "$PWD/.singular-tutorial"` instead.
 
-## 1. Create a life
+## 1. Create a life — `stable`
 
 ```bash
 singular --root "$SINGULAR_ROOT" lives create --name Lumen --curiosity 0.75 --patience 0.55
@@ -39,7 +44,7 @@ Check the active life:
 singular --root "$SINGULAR_ROOT" status --format table
 ```
 
-## 2. Add a simple skill
+## 2. Add a simple skill — `experimental`
 
 Autonomous mutations normally write under `skills/`, but you can also add a starter skill manually. First resolve the life path:
 
@@ -73,7 +78,7 @@ Good practices for a first skill:
 - no writes outside the organism directory;
 - a `result` variable that is useful if the loop evaluates it in the sandbox.
 
-## 3. Run an evolutionary tick
+## 3. Run an evolutionary tick — `experimental`
 
 The modern loop interface is time-based: `--budget-seconds` replaces the older tick-count interface.
 
@@ -93,7 +98,7 @@ local only when `OLLAMA_HOST` really resolves to loopback. The restrictive defau
 calls. Independently, the sandbox enforces `SINGULAR_SANDBOX_NETWORK_POLICY=none`
 and refuses a less restrictive mode.
 
-## 4. Inspect memory and checkpoint
+## 4. Inspect memory and checkpoint — `experimental`
 
 The life memory lives in `mem/`:
 
@@ -119,7 +124,7 @@ python -m json.tool "$LIFE_DIR/life_checkpoint.json" | head -80
 
 It is used to resume loop state: current iteration, best known score, metadata, and persistent run state depending on the version.
 
-## 5. Interpret logs
+## 5. Interpret logs — `stable`
 
 Display a human-readable summary:
 
@@ -148,7 +153,7 @@ singular --root "$SINGULAR_ROOT" lives list
 singular --root "$SINGULAR_ROOT" --life lumen status --verbose
 ```
 
-## Reproduction tutorial — two parents and one child
+## Reproduction tutorial — two parents and one child (`experimental`)
 
 Reproduction crosses two organisms from their life directories. Create two parents:
 
@@ -210,7 +215,7 @@ find "$SINGULAR_ROOT/children/alpha-beta-child" -maxdepth 3 -type f | sort
 python -m json.tool "$SINGULAR_ROOT/children/alpha-beta-child/mem/psyche.json" | head -60
 ```
 
-## Multi-agent tutorial — help, response, and SocialGraph
+## Multi-agent tutorial — help, response, and SocialGraph (`experimental`)
 
 Ecosystem mode runs multiple lives in a shared loop. Lives can ask for help when their score is low, offer a skill when confidence is high, and update their relationships.
 
