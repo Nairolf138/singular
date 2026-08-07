@@ -80,6 +80,9 @@ class SQLiteStorage:
                         source_line INTEGER,
                         UNIQUE(source_path, source_line)
                     );
+                    CREATE INDEX IF NOT EXISTS idx_run_events_run ON run_events(run_id);
+                    CREATE INDEX IF NOT EXISTS idx_run_events_ts ON run_events(ts);
+                    CREATE INDEX IF NOT EXISTS idx_run_events_type ON run_events(event_type);
                     CREATE TABLE IF NOT EXISTS provider_events (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         ts TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -109,6 +112,16 @@ class SQLiteStorage:
                     "INSERT OR IGNORE INTO schema_migrations(version) VALUES (?)",
                     (SCHEMA_VERSION,),
                 )
+            # Existing version-1 databases predate the dashboard query indexes.
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_run_events_run ON run_events(run_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_run_events_ts ON run_events(ts)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_run_events_type ON run_events(event_type)"
+            )
 
 
 def _dump(payload: Mapping[str, Any]) -> str:
@@ -199,13 +212,36 @@ class RunsRepository:
                 ),
             )
 
-    def list_events(self, run_id: str | None = None) -> list[dict[str, Any]]:
+    def list_events(
+        self,
+        run_id: str | None = None,
+        *,
+        event_type: str | None = None,
+        limit: int = 10_000,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
         sql = (
             "SELECT payload_json, run_id FROM run_events"
-            + (" WHERE run_id=?" if run_id else "")
-            + " ORDER BY id"
+            + (
+                " WHERE "
+                + " AND ".join(
+                    filter(
+                        None,
+                        [
+                            "run_id=?" if run_id else "",
+                            "event_type=?" if event_type else "",
+                        ],
+                    )
+                )
+                if run_id or event_type
+                else ""
+            )
+            + " ORDER BY id LIMIT ? OFFSET ?"
         )
-        args = (run_id,) if run_id else ()
+        args = tuple(value for value in (run_id, event_type) if value is not None) + (
+            max(1, limit),
+            max(0, offset),
+        )
         with self.storage.connect() as conn:
             rows = conn.execute(sql, args).fetchall()
             out = []

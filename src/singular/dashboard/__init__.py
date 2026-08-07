@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import os
 import sys
+import threading
 from importlib.resources import files
 from pathlib import Path
 from urllib.parse import quote
@@ -26,6 +27,7 @@ from singular.dashboard.actions import DashboardActionService
 from singular.governance.policy import load_runtime_policy
 from singular.skills_daily import build_daily_skills_snapshot
 from fastapi.responses import HTMLResponse
+
 try:
     from starlette.requests import Request as StarletteRequest
 except Exception:  # pragma: no cover - fastapi test stub does not expose Starlette
@@ -120,7 +122,11 @@ def create_app(
             if candidate:
                 return candidate
         candidate = headers.get("x-singular-action-token")
-        return candidate.strip() if isinstance(candidate, str) and candidate.strip() else None
+        return (
+            candidate.strip()
+            if isinstance(candidate, str) and candidate.strip()
+            else None
+        )
 
     def _redact_secret(value: object) -> object:
         """Prevent the configured credential from reaching responses or captured logs."""
@@ -136,8 +142,11 @@ def create_app(
         return value
 
     if require_read_auth and hasattr(app, "middleware"):
+
         @app.middleware("http")
-        async def authenticate_remote_reads(request: object, call_next: object) -> object:
+        async def authenticate_remote_reads(
+            request: object, call_next: object
+        ) -> object:
             if getattr(request, "method", "") == "GET" and not str(
                 getattr(getattr(request, "url", None), "path", "")
             ).startswith("/static/"):
@@ -146,8 +155,11 @@ def create_app(
                 except PermissionError:
                     from starlette.responses import JSONResponse
 
-                    return JSONResponse({"detail": "dashboard authentication required"}, status_code=403)
+                    return JSONResponse(
+                        {"detail": "dashboard authentication required"}, status_code=403
+                    )
             return await call_next(request)
+
     dashboard_resources = files("singular.dashboard")
     templates_dir = dashboard_resources.joinpath("templates")
     static_dir = dashboard_resources.joinpath("static")
@@ -156,6 +168,17 @@ def create_app(
         base_dir=base_dir,
         runs_path=runs_path,
         registry_loader=load_registry,
+    )
+    ws_clients = 0
+    ws_clients_lock = threading.Lock()
+    ws_max_clients = max(
+        1, int(os.environ.get("SINGULAR_DASHBOARD_WS_MAX_CLIENTS", "32"))
+    )
+    ws_poll_interval = max(
+        0.1, float(os.environ.get("SINGULAR_DASHBOARD_WS_POLL_INTERVAL", "0.5"))
+    )
+    ws_send_timeout = max(
+        0.1, float(os.environ.get("SINGULAR_DASHBOARD_WS_SEND_TIMEOUT", "2"))
     )
 
     def _render_template(name: str, replacements: dict[str, str] | None = None) -> str:
@@ -208,7 +231,9 @@ def create_app(
         runs = life_dir / "runs"
         if not runs.exists():
             return []
-        return [str(path) for path in sorted(runs.glob("*/.active.lock")) if path.is_file()]
+        return [
+            str(path) for path in sorted(runs.glob("*/.active.lock")) if path.is_file()
+        ]
 
     def _chat_payload(
         *,
@@ -390,7 +415,9 @@ def create_app(
                     state = organisms.setdefault(name, {"status": "alive"})
                     state["score"] = record.get("score_new")
 
-        alive = sum(1 for state in organisms.values() if state.get("status") != "extinct")
+        alive = sum(
+            1 for state in organisms.values() if state.get("status") != "extinct"
+        )
         total_energy = sum(
             float(state.get("energy", 0.0))
             for state in organisms.values()
@@ -416,13 +443,22 @@ def create_app(
         }
 
     def _skill_lifecycle_summary() -> dict[str, int]:
-        payload = {"active": 0, "dormant": 0, "archived": 0, "temporarily_disabled": 0, "deleted": 0, "total": 0}
+        payload = {
+            "active": 0,
+            "dormant": 0,
+            "archived": 0,
+            "temporarily_disabled": 0,
+            "deleted": 0,
+            "total": 0,
+        }
         for raw_entry in read_skills().values():
             payload["total"] += 1
             state = "active"
             if isinstance(raw_entry, dict):
                 lifecycle = raw_entry.get("lifecycle")
-                if isinstance(lifecycle, dict) and isinstance(lifecycle.get("state"), str):
+                if isinstance(lifecycle, dict) and isinstance(
+                    lifecycle.get("state"), str
+                ):
                     state = lifecycle["state"]
             if state in payload:
                 payload[state] += 1
@@ -436,6 +472,9 @@ def create_app(
     def _read_jsonl_records(file: Path) -> list[dict[str, object]]:
         return run_repository.read_jsonl_records(file)
 
+    def _iter_jsonl_records(file: Path):
+        return run_repository.iter_jsonl_records(file)
+
     def _run_file_id(file: Path) -> str:
         return logical_run_file_stem(file)
 
@@ -443,10 +482,16 @@ def create_app(
         return run_repository.latest_run_file(current_life_only=current_life_only)
 
     def _resolve_run_file(run_id: str, current_life_only: bool = False) -> Path | None:
-        return run_repository.resolve_run_file(run_id, current_life_only=current_life_only)
+        return run_repository.resolve_run_file(
+            run_id, current_life_only=current_life_only
+        )
 
-    def _resolve_consciousness_path(run_id: str, current_life_only: bool = False) -> Path | None:
-        return run_repository.resolve_consciousness_path(run_id, current_life_only=current_life_only)
+    def _resolve_consciousness_path(
+        run_id: str, current_life_only: bool = False
+    ) -> Path | None:
+        return run_repository.resolve_consciousness_path(
+            run_id, current_life_only=current_life_only
+        )
 
     def _parse_ts(value: object) -> datetime | None:
         return parse_ts_service(value)
@@ -468,7 +513,9 @@ def create_app(
             return organism
         return _record_life(record)
 
-    def _timeline_entry(record: dict[str, object], run_id: str) -> dict[str, object] | None:
+    def _timeline_entry(
+        record: dict[str, object], run_id: str
+    ) -> dict[str, object] | None:
         event = _event_type(record)
         interaction_event = _record_event_name(record)
         visible_interaction_events = {"sandbox_violation", "mutation_halted"}
@@ -539,7 +586,9 @@ def create_app(
             ),
         }
 
-    def _mutation_detail(record: dict[str, object], run_id: str, index: int) -> dict[str, object]:
+    def _mutation_detail(
+        record: dict[str, object], run_id: str, index: int
+    ) -> dict[str, object]:
         metrics = _normalize_mutation_metrics(record)
         return {
             "run_id": run_id,
@@ -565,7 +614,6 @@ def create_app(
             },
         }
 
-
     def _record_event_name(record: dict[str, object]) -> str:
         event = record.get("event")
         interaction = record.get("interaction")
@@ -582,7 +630,9 @@ def create_app(
         if parsed is None:
             return 0
         reference = now or datetime.now(timezone.utc)
-        return max(0, int((parsed.astimezone(timezone.utc) - reference).total_seconds()))
+        return max(
+            0, int((parsed.astimezone(timezone.utc) - reference).total_seconds())
+        )
 
     def _governance_policy_diagnostics() -> dict[str, object]:
         policy = load_runtime_policy()
@@ -594,7 +644,9 @@ def create_app(
             "mutation_quota_per_window": policy.mutation_quota_per_window,
         }
 
-    def _summarize_sandbox_governance(records: list[dict[str, object]]) -> dict[str, object]:
+    def _summarize_sandbox_governance(
+        records: list[dict[str, object]],
+    ) -> dict[str, object]:
         target_events = {
             "sandbox_violation",
             "governance.circuit_breaker_opened",
@@ -628,7 +680,9 @@ def create_app(
 
             ts_value = record.get("ts") or record.get("timestamp")
             parsed_ts = _parse_iso8601(ts_value)
-            skill = record.get("skill") or record.get("skill_path") or record.get("target")
+            skill = (
+                record.get("skill") or record.get("skill_path") or record.get("target")
+            )
             event_item = {
                 "event": event_name or "sandbox_violation",
                 "timestamp": ts_value,
@@ -643,7 +697,9 @@ def create_app(
                 "corrective_action": record.get("corrective_action"),
             }
             events.append(event_item)
-            if is_sandbox_violation and (parsed_ts is None or parsed_ts >= recent_cutoff):
+            if is_sandbox_violation and (
+                parsed_ts is None or parsed_ts >= recent_cutoff
+            ):
                 sandbox_violations.append(event_item)
             if event_name == "governance.circuit_breaker_opened":
                 breaker_events.append(event_item)
@@ -668,11 +724,13 @@ def create_app(
         cooldown_remaining = 0
         if latest_breaker:
             cooldown_remaining = max(
-                cooldown_remaining, _seconds_until(latest_breaker.get("open_until"), now=now)
+                cooldown_remaining,
+                _seconds_until(latest_breaker.get("open_until"), now=now),
             )
         if latest_quarantine:
             cooldown_remaining = max(
-                cooldown_remaining, _seconds_until(latest_quarantine.get("disabled_until"), now=now)
+                cooldown_remaining,
+                _seconds_until(latest_quarantine.get("disabled_until"), now=now),
             )
 
         breaker_status = "fermé"
@@ -691,7 +749,9 @@ def create_app(
         elif sandbox_violations:
             corrective_action = "Auditer la sandbox, les chemins modifiables et les quotas avant reprise."
         elif latest_halted:
-            corrective_action = "Attendre la fin du verrou de mutation puis relancer une mutation sûre."
+            corrective_action = (
+                "Attendre la fin du verrou de mutation puis relancer une mutation sûre."
+            )
 
         return {
             "circuit_breaker_status": breaker_status,
@@ -699,7 +759,9 @@ def create_app(
             "last_faulty_skill": latest_fault.get("skill") if latest_fault else None,
             "cooldown_remaining_seconds": cooldown_remaining,
             "recommended_corrective_action": corrective_action,
-            "empty_state": "aucune violation sandbox récente" if not sandbox_violations else None,
+            "empty_state": (
+                "aucune violation sandbox récente" if not sandbox_violations else None
+            ),
             "events": events[-10:],
         }
 
@@ -739,15 +801,17 @@ def create_app(
         for episode in reversed(episodic_items):
             if episode.get("event") != "memory.used_for_decision":
                 continue
-            used_memories.append({
-                "timestamp": episode.get("ts"),
-                "source": episode.get("source"),
-                "decision": episode.get("decision"),
-                "summary": episode.get("summary"),
-                "memories": episode.get("memories", []),
-                "skill": episode.get("skill"),
-                "operator": episode.get("operator"),
-            })
+            used_memories.append(
+                {
+                    "timestamp": episode.get("ts"),
+                    "source": episode.get("source"),
+                    "decision": episode.get("decision"),
+                    "summary": episode.get("summary"),
+                    "memories": episode.get("memories", []),
+                    "skill": episode.get("skill"),
+                    "operator": episode.get("operator"),
+                }
+            )
             if len(used_memories) >= 10:
                 break
         return {
@@ -786,8 +850,12 @@ def create_app(
                         calls = int(_as_float(raw_stats.get("calls")) or 0)
                         phase_totals[name] = phase_totals.get(name, 0.0) + total_ms
                         phase_calls[name] = phase_calls.get(name, 0) + calls
-                        phase_cache_hits[name] = phase_cache_hits.get(name, 0) + int(_as_float(raw_stats.get("cache_hits")) or 0)
-                        phase_cache_misses[name] = phase_cache_misses.get(name, 0) + int(_as_float(raw_stats.get("cache_misses")) or 0)
+                        phase_cache_hits[name] = phase_cache_hits.get(name, 0) + int(
+                            _as_float(raw_stats.get("cache_hits")) or 0
+                        )
+                        phase_cache_misses[name] = phase_cache_misses.get(
+                            name, 0
+                        ) + int(_as_float(raw_stats.get("cache_misses")) or 0)
                 total_ms = _as_float(phase_metrics.get("total_ms"))
                 if total_ms is not None:
                     durations.append(total_ms / 1000.0)
@@ -818,21 +886,31 @@ def create_app(
         phase_summary = {
             name: {
                 "total_ms": round(total, 3),
-                "avg_ms": round(total / phase_calls[name], 3) if phase_calls.get(name) else 0.0,
+                "avg_ms": (
+                    round(total / phase_calls[name], 3)
+                    if phase_calls.get(name)
+                    else 0.0
+                ),
                 "calls": phase_calls.get(name, 0),
                 "cache_hits": phase_cache_hits.get(name, 0),
                 "cache_misses": phase_cache_misses.get(name, 0),
             }
-            for name, total in sorted(phase_totals.items(), key=lambda item: item[1], reverse=True)
+            for name, total in sorted(
+                phase_totals.items(), key=lambda item: item[1], reverse=True
+            )
         }
         slowest_phase = next(iter(phase_summary), None)
         cache_candidates = []
-        if isinstance(latest_phase_metrics, dict) and isinstance(latest_phase_metrics.get("cache_candidates"), list):
+        if isinstance(latest_phase_metrics, dict) and isinstance(
+            latest_phase_metrics.get("cache_candidates"), list
+        ):
             cache_candidates = latest_phase_metrics.get("cache_candidates", [])
 
         return {
             "records_count": len(records),
-            "mutation_count": sum(1 for record in records if _is_mutation_record(record)),
+            "mutation_count": sum(
+                1 for record in records if _is_mutation_record(record)
+            ),
             "accepted_count": accepted,
             "rejected_count": rejected,
             "avg_duration_seconds": _avg(durations),
@@ -849,7 +927,9 @@ def create_app(
             ),
         }
 
-    def _summarize_social_relations(records: list[dict[str, object]]) -> dict[str, object]:
+    def _summarize_social_relations(
+        records: list[dict[str, object]],
+    ) -> dict[str, object]:
         """Expose registry social links and recent social/resource interactions."""
         registry = load_registry()
         raw_lives = registry.get("lives")
@@ -872,7 +952,8 @@ def create_app(
         social_events = [
             record
             for record in records
-            if record.get("event") == "interaction" or record.get("interaction") is not None
+            if record.get("event") == "interaction"
+            or record.get("interaction") is not None
         ]
         resource_events = [
             record
@@ -895,7 +976,9 @@ def create_app(
             ],
         }
 
-    def _summarize_major_decisions(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    def _summarize_major_decisions(
+        records: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
         """Return recent high-level orchestration and mutation decisions."""
         decisions: list[dict[str, object]] = []
         for record in records:
@@ -903,7 +986,14 @@ def create_app(
             if not (
                 event.startswith("orchestrator")
                 or event
-                in {"mutation", "refuse", "delay", "death", "sandbox_violation", "mutation_halted"}
+                in {
+                    "mutation",
+                    "refuse",
+                    "delay",
+                    "death",
+                    "sandbox_violation",
+                    "mutation_halted",
+                }
             ):
                 continue
             accepted = record.get("accepted")
@@ -1065,9 +1155,13 @@ def create_app(
                 {
                     "life_status": life_status_payload.get("status", "not_alive_yet"),
                     "life_status_score": life_status_payload.get("score", 0.0),
-                    "life_status_explanation": life_status_payload.get("explanation", ""),
+                    "life_status_explanation": life_status_payload.get(
+                        "explanation", ""
+                    ),
                     "life_status_signals": life_status_payload.get("signals", {}),
-                    "life_status_missing_signals": life_status_payload.get("missing_signals", []),
+                    "life_status_missing_signals": life_status_payload.get(
+                        "missing_signals", []
+                    ),
                 }
             )
             return empty
@@ -1085,7 +1179,9 @@ def create_app(
 
         accepted_rate = None
         if accepted_values:
-            accepted_rate = sum(1 for value in accepted_values if value) / len(accepted_values)
+            accepted_rate = sum(1 for value in accepted_values if value) / len(
+                accepted_values
+            )
 
         health_scores: list[float] = []
         for record in records:
@@ -1137,13 +1233,21 @@ def create_app(
         suggested_actions: list[str] = []
         alert_kinds = {str(alert.get("kind", "")) for alert in critical_alerts}
         if "sandbox_failures_rising" in alert_kinds:
-            suggested_actions.append("Vérifier provider et sandbox (timeouts, quotas, erreurs IO)")
+            suggested_actions.append(
+                "Vérifier provider et sandbox (timeouts, quotas, erreurs IO)"
+            )
         if "prolonged_stagnation" in alert_kinds:
-            suggested_actions.append("Changer run-id et réduire l'exploration agressive")
+            suggested_actions.append(
+                "Changer run-id et réduire l'exploration agressive"
+            )
         if "health_decline" in alert_kinds:
-            suggested_actions.append("Ralentir l'exploration et privilégier les mutations sûres")
+            suggested_actions.append(
+                "Ralentir l'exploration et privilégier les mutations sûres"
+            )
         if not suggested_actions:
-            suggested_actions.append("Continuer avec les paramètres actuels et surveiller les alertes")
+            suggested_actions.append(
+                "Continuer avec les paramètres actuels et surveiller les alertes"
+            )
 
         next_action = suggested_actions[0]
         if critical_alerts:
@@ -1154,8 +1258,15 @@ def create_app(
             global_status = "stable"
 
         autonomy_metrics = compute_autonomy_metrics(records)
-        major_decisions = [e for e in records if str(e.get("event", "")).startswith("orchestrator") or str(e.get("event", ""))=="mutation"]
-        behavioral_metrics = compute_behavioral_regulation_metrics(records, decision_events=major_decisions)
+        major_decisions = [
+            e
+            for e in records
+            if str(e.get("event", "")).startswith("orchestrator")
+            or str(e.get("event", "")) == "mutation"
+        ]
+        behavioral_metrics = compute_behavioral_regulation_metrics(
+            records, decision_events=major_decisions
+        )
         memory_metrics = _summarize_memory(records)
         performance_metrics = _summarize_performance(records)
         social_relations = _summarize_social_relations(records)
@@ -1184,16 +1295,28 @@ def create_app(
             circadian_phase = "nuit"
 
         trajectory = _build_trajectory(records)
-        objectives = trajectory.get("objectives", {}) if isinstance(trajectory.get("objectives"), dict) else {}
-        in_progress_names = objectives.get("in_progress") if isinstance(objectives.get("in_progress"), list) else []
-        active_objectives = [{"name": name} for name in in_progress_names if isinstance(name, str)]
+        objectives = (
+            trajectory.get("objectives", {})
+            if isinstance(trajectory.get("objectives"), dict)
+            else {}
+        )
+        in_progress_names = (
+            objectives.get("in_progress")
+            if isinstance(objectives.get("in_progress"), list)
+            else []
+        )
+        active_objectives = [
+            {"name": name} for name in in_progress_names if isinstance(name, str)
+        ]
 
         accepted_count = sum(1 for value in accepted_values if value is True)
         rejected_count = sum(1 for value in accepted_values if value is False)
         code_risk = "faible"
         if critical_alerts:
             code_risk = "élevé"
-        elif trend == "dégradation" or (accepted_rate is not None and accepted_rate < 0.5):
+        elif trend == "dégradation" or (
+            accepted_rate is not None and accepted_rate < 0.5
+        ):
             code_risk = "modéré"
 
         failure_streak = 0
@@ -1233,9 +1356,13 @@ def create_app(
                 comparison_rows,
                 key=lambda row: float(row.get("life_liveness_index") or 0.0),
             )
-        selected_life = selected_row.get("life") if isinstance(selected_row, dict) else None
+        selected_life = (
+            selected_row.get("life") if isinstance(selected_row, dict) else None
+        )
         filtered_records = [
-            record for record in records if selected_life and _record_life(record) == selected_life
+            record
+            for record in records
+            if selected_life and _record_life(record) == selected_life
         ]
         liveness_payload = (
             compute_liveness_index_service(filtered_records or records)
@@ -1273,13 +1400,19 @@ def create_app(
                 },
                 "energy_resources": {
                     "total_energy": float(summary.get("total_energy", 0.0) or 0.0),
-                    "total_resources": float(summary.get("total_resources", 0.0) or 0.0),
+                    "total_resources": float(
+                        summary.get("total_resources", 0.0) or 0.0
+                    ),
                     "alive_organisms": int(
-                        life_counts.get("alive_lives", summary.get("alive_organisms", 0))
+                        life_counts.get(
+                            "alive_lives", summary.get("alive_organisms", 0)
+                        )
                         or 0
                     ),
                     "total_organisms": int(
-                        life_counts.get("total_lives", summary.get("total_organisms", 0))
+                        life_counts.get(
+                            "total_lives", summary.get("total_organisms", 0)
+                        )
                         or 0
                     ),
                 },
@@ -1307,13 +1440,21 @@ def create_app(
             "life_status_score": life_status_payload.get("score", 0.0),
             "life_status_explanation": life_status_payload.get("explanation", ""),
             "life_status_signals": life_status_payload.get("signals", {}),
-            "life_status_missing_signals": life_status_payload.get("missing_signals", []),
+            "life_status_missing_signals": life_status_payload.get(
+                "missing_signals", []
+            ),
         }
 
-    def _summarize_cockpit_essential(current_life_only: bool = False) -> dict[str, object]:
+    def _summarize_cockpit_essential(
+        current_life_only: bool = False,
+    ) -> dict[str, object]:
         cockpit = _summarize_cockpit(current_life_only=current_life_only)
         comparison, _ = _aggregate_lives(current_life_only=current_life_only)
-        rows = comparison.get("table", []) if isinstance(comparison.get("table"), list) else []
+        rows = (
+            comparison.get("table", [])
+            if isinstance(comparison.get("table"), list)
+            else []
+        )
         selected_life = "Aucune"
         for row in rows:
             if isinstance(row, dict) and row.get("selected_life") is True:
@@ -1337,7 +1478,6 @@ def create_app(
             "life_status_summary": cockpit.get("life_status_explanation", ""),
         }
 
-
     @app.get("/logs")
     def read_logs(current_life_only: bool = False) -> dict[str, str]:
         logs: dict[str, str] = {}
@@ -1347,7 +1487,11 @@ def create_app(
                 continue
             for file in directory.iterdir():
                 if file.is_file():
-                    key = f"{directory.parent.name}/{file.name}" if prefix_paths else file.name
+                    key = (
+                        f"{directory.parent.name}/{file.name}"
+                        if prefix_paths
+                        else file.name
+                    )
                     logs[key] = file.read_text()
         return logs
 
@@ -1356,7 +1500,6 @@ def create_app(
         if not psyche_path.exists():
             raise HTTPException(status_code=404, detail="psyche.json not found")
         return json.loads(psyche_path.read_text())
-
 
     @app.get("/quests")
     def read_quests() -> dict:
@@ -1369,7 +1512,9 @@ def create_app(
         if not isinstance(data, dict):
             return {"active": [], "completed": []}
         active = data.get("active") if isinstance(data.get("active"), list) else []
-        completed = data.get("completed") if isinstance(data.get("completed"), list) else []
+        completed = (
+            data.get("completed") if isinstance(data.get("completed"), list) else []
+        )
         return {"active": active, "completed": completed[-20:]}
 
     def _normalize_work_item(
@@ -1388,9 +1533,12 @@ def create_app(
         return {
             "title": _pick("title", "name", "objective") or fallback_title,
             "status": _pick("status", "result", "decision") or "unknown",
-            "last_update": _pick("last_update", "updated_at", "completed_at", "started_at", "ts")
+            "last_update": _pick(
+                "last_update", "updated_at", "completed_at", "started_at", "ts"
+            )
             or "Non disponible",
-            "next_step": _pick("next_step", "next_action", "objective", "action") or "Non disponible",
+            "next_step": _pick("next_step", "next_action", "objective", "action")
+            or "Non disponible",
             "priority": _pick("priority", "priority_level") or "normal",
             "owner": _pick("owner", "assignee", "life", "speaker") or default_owner,
             "blockage": _pick("blockage", "blocked_by", "blocker", "risk") or "aucun",
@@ -1401,7 +1549,9 @@ def create_app(
         quests = read_quests()
         active = quests.get("active") if isinstance(quests.get("active"), list) else []
         objectives_items = [
-            _normalize_work_item(item, fallback_title="objectif", default_owner="système")
+            _normalize_work_item(
+                item, fallback_title="objectif", default_owner="système"
+            )
             for item in active
             if isinstance(item, dict)
         ]
@@ -1424,9 +1574,13 @@ def create_app(
                         continue
                     enriched = dict(raw)
                     if "title" not in enriched:
-                        enriched["title"] = raw.get("objective") or raw.get("summary") or "conversation"
+                        enriched["title"] = (
+                            raw.get("objective") or raw.get("summary") or "conversation"
+                        )
                     if "status" not in enriched:
-                        enriched["status"] = "success" if raw.get("success") is True else "in_progress"
+                        enriched["status"] = (
+                            "success" if raw.get("success") is True else "in_progress"
+                        )
                     conversations_items.append(
                         _normalize_work_item(
                             enriched,
@@ -1438,7 +1592,10 @@ def create_app(
         return {
             "quests": quests,
             "objectives": {"items": objectives_items},
-            "conversations": {"run_id": _run_file_id(latest) if latest is not None else None, "items": conversations_items},
+            "conversations": {
+                "run_id": _run_file_id(latest) if latest is not None else None,
+                "items": conversations_items,
+            },
         }
 
     @app.get("/ecosystem")
@@ -1476,8 +1633,12 @@ def create_app(
         if run_file is None:
             raise HTTPException(status_code=404, detail=f"run '{run_id}' not found")
 
-        all_items: list[dict[str, object]] = []
-        for record in _read_jsonl_records(run_file):
+        page = max(page, 1)
+        page_size = min(max(page_size, 1), 200)
+        start_idx = (page - 1) * page_size
+        total = 0
+        items: list[dict[str, object]] = []
+        for record in _iter_jsonl_records(run_file):
             item = _timeline_entry(record, run_id)
             if item is None:
                 continue
@@ -1505,16 +1666,9 @@ def create_app(
                 if end is not None and ts > end:
                     continue
 
-            all_items.append(item)
-
-        all_items.sort(key=lambda entry: str(entry.get("timestamp", "")))
-
-        page = max(page, 1)
-        page_size = min(max(page_size, 1), 200)
-        total = len(all_items)
-        start_idx = (page - 1) * page_size
-        end_idx = start_idx + page_size
-        items = all_items[start_idx:end_idx]
+            if start_idx <= total < start_idx + page_size:
+                items.append(item)
+            total += 1
 
         return {
             "run_id": run_id,
@@ -1567,7 +1721,8 @@ def create_app(
         )
         if consciousness_file is None:
             raise HTTPException(
-                status_code=404, detail=f"consciousness timeline for run '{run_id}' not found"
+                status_code=404,
+                detail=f"consciousness timeline for run '{run_id}' not found",
             )
 
         success_filter: bool | None = None
@@ -1594,7 +1749,10 @@ def create_app(
             record_mood = emotional.get("mood") if isinstance(emotional, dict) else None
             if mood and record_mood != mood:
                 continue
-            if success_filter is not None and record.get("success") is not success_filter:
+            if (
+                success_filter is not None
+                and record.get("success") is not success_filter
+            ):
                 continue
             items.append(record)
 
@@ -1614,7 +1772,11 @@ def create_app(
         if run_file is None:
             raise HTTPException(status_code=404, detail=f"run '{run_id}' not found")
 
-        mutations = [record for record in _read_jsonl_records(run_file) if _is_mutation_record(record)]
+        mutations = [
+            record
+            for record in _read_jsonl_records(run_file)
+            if _is_mutation_record(record)
+        ]
         if index < 0 or index >= len(mutations):
             raise HTTPException(
                 status_code=404,
@@ -1628,13 +1790,14 @@ def create_app(
         if latest is None:
             return {"run": None, "summary": None}
 
-        records = _read_jsonl_records(latest)
         accepted = 0
         rejected = 0
         mutation_count = 0
         last_event: str | None = None
         last_timestamp: str | None = None
-        for record in records:
+        entries = 0
+        for record in _iter_jsonl_records(latest):
+            entries += 1
             if _is_mutation_record(record):
                 mutation_count += 1
             accepted_value = record.get("accepted")
@@ -1654,7 +1817,7 @@ def create_app(
         return {
             "run": _run_file_id(latest),
             "summary": {
-                "entries": len(records),
+                "entries": entries,
                 "mutations": mutation_count,
                 "accepted": accepted,
                 "rejected": rejected,
@@ -1752,7 +1915,9 @@ def create_app(
                 continue
             if operator and rec_operator != operator:
                 continue
-            if period and (not isinstance(rec_ts, str) or not rec_ts.startswith(period)):
+            if period and (
+                not isinstance(rec_ts, str) or not rec_ts.startswith(period)
+            ):
                 continue
             if decision == "accepted" and accepted is not True:
                 continue
@@ -1828,7 +1993,7 @@ def create_app(
         )
 
     def _build_metrics_contract(
-        comparison: dict[str, dict[str, object]]
+        comparison: dict[str, dict[str, object]],
     ) -> dict[str, object]:
         return build_metrics_contract_service(comparison)
 
@@ -1902,9 +2067,7 @@ def create_app(
         compare_set: set[str] | None = None
         if isinstance(compare_lives, str) and compare_lives.strip():
             compare_set = {
-                part.strip()
-                for part in compare_lives.split(",")
-                if part.strip()
+                part.strip() for part in compare_lives.split(",") if part.strip()
             }
         comparison, unattached = _aggregate_lives(
             current_life_only=current_life_only,
@@ -1943,7 +2106,9 @@ def create_app(
             }
         )
         if degrading_only:
-            lives_rows = [row for row in lives_rows if row.get("trend") == "dégradation"]
+            lives_rows = [
+                row for row in lives_rows if row.get("trend") == "dégradation"
+            ]
         filter_steps.append(
             {
                 "step": "degrading_only",
@@ -2036,7 +2201,6 @@ def create_app(
             },
         }
 
-
     @app.post("/api/lives/reconcile-status")
     async def reconcile_lives_status(request: StarletteRequest) -> dict[str, object]:
         comparison, _ = _aggregate_lives(current_life_only=False)
@@ -2045,7 +2209,9 @@ def create_app(
         for life_name, payload in sorted(comparison.items()):
             suggestion = payload.get("status_reconciliation_suggestion")
             if suggestion == "mark_extinct":
-                slug, _ = _registry_life_meta(life_name, load_registry().get("lives", {}))
+                slug, _ = _registry_life_meta(
+                    life_name, load_registry().get("lives", {})
+                )
                 if slug is None:
                     skipped.append(
                         {
@@ -2111,11 +2277,19 @@ def create_app(
                 elif event in {"rival", "reconcile"}:
                     relation_updates[(pair[0], pair[1], "rivalry")] = timestamp
 
-        def _relation_timestamp(source: str, target: str, relation_type: str) -> str | None:
+        def _relation_timestamp(
+            source: str, target: str, relation_type: str
+        ) -> str | None:
             pair = tuple(sorted((source, target)))
             return _iso_or_none(relation_updates.get((pair[0], pair[1], relation_type)))
 
-        def _relation_severity(*, relation_type: str, source_status: str, target_status: str, proximity: float) -> int:
+        def _relation_severity(
+            *,
+            relation_type: str,
+            source_status: str,
+            target_status: str,
+            proximity: float,
+        ) -> int:
             if relation_type == "rivalry":
                 base = 2
                 if source_status == "active" and target_status == "active":
@@ -2176,7 +2350,10 @@ def create_app(
                 "active_conflicts": active_conflicts,
                 "active_relations": [],
                 "filters": {"life": life},
-                "onboarding": {"required": active is None, "message": "Aucune vie, créez-en une." if active is None else None},
+                "onboarding": {
+                    "required": active is None,
+                    "message": "Aucune vie, créez-en une." if active is None else None,
+                },
             }
 
         statuses_by_slug: dict[str, str] = {}
@@ -2198,10 +2375,16 @@ def create_app(
                 allies = ()
             if not isinstance(rivals, (tuple, list)):
                 rivals = ()
-            normalized_status = str(status).strip().lower() if isinstance(status, str) else "unknown"
+            normalized_status = (
+                str(status).strip().lower() if isinstance(status, str) else "unknown"
+            )
             if normalized_status not in {"active", "extinct", "archived"}:
                 normalized_status = "unknown"
-            proximity_value = float(proximity_score) if isinstance(proximity_score, (int, float)) else 0.5
+            proximity_value = (
+                float(proximity_score)
+                if isinstance(proximity_score, (int, float))
+                else 0.5
+            )
             proximity_value = max(0.0, min(1.0, proximity_value))
             statuses_by_slug[slug] = normalized_status
             proximity_by_slug[slug] = proximity_value
@@ -2211,11 +2394,19 @@ def create_app(
                     "name": str(name),
                     "status": normalized_status,
                     "active": slug == active,
-                    "lineage_depth": int(lineage_depth) if isinstance(lineage_depth, int) else 0,
-                    "parents": [str(parent) for parent in parents if isinstance(parent, str)],
-                    "children": [str(child) for child in children if isinstance(child, str)],
+                    "lineage_depth": (
+                        int(lineage_depth) if isinstance(lineage_depth, int) else 0
+                    ),
+                    "parents": [
+                        str(parent) for parent in parents if isinstance(parent, str)
+                    ],
+                    "children": [
+                        str(child) for child in children if isinstance(child, str)
+                    ],
                     "allies": [str(ally) for ally in allies if isinstance(ally, str)],
-                    "rivals": [str(rival) for rival in rivals if isinstance(rival, str)],
+                    "rivals": [
+                        str(rival) for rival in rivals if isinstance(rival, str)
+                    ],
                     "proximity_score": proximity_value,
                 }
             )
@@ -2243,7 +2434,12 @@ def create_app(
                     )
 
             for ally in node.get("allies", []):
-                if not (isinstance(ally, str) and ally and ally in known_lives and ally != slug):
+                if not (
+                    isinstance(ally, str)
+                    and ally
+                    and ally in known_lives
+                    and ally != slug
+                ):
                     continue
                 edge_key = tuple(sorted((slug, ally)))
                 if edge_key in unique_alliance_edges:
@@ -2259,7 +2455,12 @@ def create_app(
                 )
 
             for rival in node.get("rivals", []):
-                if not (isinstance(rival, str) and rival and rival in known_lives and rival != slug):
+                if not (
+                    isinstance(rival, str)
+                    and rival
+                    and rival in known_lives
+                    and rival != slug
+                ):
                     continue
                 edge_key = tuple(sorted((slug, rival)))
                 if edge_key in unique_rival_edges:
@@ -2290,15 +2491,14 @@ def create_app(
             for relation in relationships
             if relation["status"] == "active"
             and (
-                life is None
-                or relation["source"] == life
-                or relation["target"] == life
+                life is None or relation["source"] == life or relation["target"] == life
             )
         ]
         filtered_relations.sort(
             key=lambda item: (
                 int(item.get("severity", 0)),
-                _parse_iso8601(item.get("updated_at")) or datetime.fromtimestamp(0, timezone.utc),
+                _parse_iso8601(item.get("updated_at"))
+                or datetime.fromtimestamp(0, timezone.utc),
                 str(item.get("type", "")),
                 str(item.get("source", "")),
                 str(item.get("target", "")),
@@ -2333,17 +2533,25 @@ def create_app(
                     "updated_at": updated_at,
                     "severity": severity,
                 }
-                for a, b, relation_type, status, updated_at, severity in sorted(unique_conflicts)
+                for a, b, relation_type, status, updated_at, severity in sorted(
+                    unique_conflicts
+                )
             ],
             "filters": {"life": life},
             "onboarding": {
                 "required": not nodes and active is None,
-                "message": "Aucune vie, créez-en une." if not nodes and active is None else None,
+                "message": (
+                    "Aucune vie, créez-en une."
+                    if not nodes and active is None
+                    else None
+                ),
             },
         }
 
     @app.get("/mutations/top")
-    def read_top_mutations(limit: int = 3, current_life_only: bool = False) -> dict[str, object]:
+    def read_top_mutations(
+        limit: int = 3, current_life_only: bool = False
+    ) -> dict[str, object]:
         mutations: list[dict[str, object]] = []
         operator_counts: Counter[str] = Counter()
         for record in _load_run_records(current_life_only=current_life_only):
@@ -2370,16 +2578,20 @@ def create_app(
 
         beneficial = sorted(
             mutations,
-            key=lambda item: item["impact_delta"]
-            if isinstance(item["impact_delta"], (int, float))
-            else float("-inf"),
+            key=lambda item: (
+                item["impact_delta"]
+                if isinstance(item["impact_delta"], (int, float))
+                else float("-inf")
+            ),
             reverse=True,
         )[:limit]
         risky = sorted(
             mutations,
-            key=lambda item: item["impact_delta"]
-            if isinstance(item["impact_delta"], (int, float))
-            else float("inf"),
+            key=lambda item: (
+                item["impact_delta"]
+                if isinstance(item["impact_delta"], (int, float))
+                else float("inf")
+            ),
         )[:limit]
         frequent = [
             {"operator": operator, "count": count}
@@ -2391,7 +2603,9 @@ def create_app(
             "most_frequent": frequent,
         }
 
-    def _run_life_chat(life: str, body: object, token: str | None = None) -> dict[str, object]:
+    def _run_life_chat(
+        life: str, body: object, token: str | None = None
+    ) -> dict[str, object]:
         timestamp = datetime.now(timezone.utc).isoformat()
         expected_token = os.environ.get("SINGULAR_DASHBOARD_ACTION_TOKEN")
         if isinstance(body, dict):
@@ -2473,19 +2687,28 @@ def create_app(
                 status="life_unavailable",
                 timestamp=timestamp,
             )
+
         def _run() -> dict[str, object]:
             response = talk(
-                provider=provider if isinstance(provider, str) and provider.strip() else None,
+                provider=(
+                    provider if isinstance(provider, str) and provider.strip() else None
+                ),
                 seed=seed if isinstance(seed, int) else None,
                 prompt=message,
                 life_home=resolved_life,
             )
-            return {"life": target, "path": str(resolved_life), "response": response or ""}
+            return {
+                "life": target,
+                "path": str(resolved_life),
+                "response": response or "",
+            }
 
         try:
             data, log = actions._capture(_run)
         except Exception as exc:  # pragma: no cover - defensive endpoint guard
-            error_status = "provider_error" if "provider" in str(exc).lower() else "error"
+            error_status = (
+                "provider_error" if "provider" in str(exc).lower() else "error"
+            )
             return _chat_payload(
                 life=target,
                 message=message,
@@ -2494,17 +2717,33 @@ def create_app(
                 timestamp=timestamp,
             )
         lines = [line.strip() for line in log.splitlines() if line.strip()]
-        provider_lines = [line for line in lines if line.lower().startswith("provider ") or "provider '" in line.lower()]
+        provider_lines = [
+            line
+            for line in lines
+            if line.lower().startswith("provider ") or "provider '" in line.lower()
+        ]
         explicit_response = data.get("response")
-        response = explicit_response if isinstance(explicit_response, str) and explicit_response else (lines[-1] if lines else "Conversation envoyée sans réponse textuelle.")
-        response_status = "provider_error" if any("provider '" in line.lower() for line in provider_lines) else "ok"
+        response = (
+            explicit_response
+            if isinstance(explicit_response, str) and explicit_response
+            else (
+                lines[-1] if lines else "Conversation envoyée sans réponse textuelle."
+            )
+        )
+        response_status = (
+            "provider_error"
+            if any("provider '" in line.lower() for line in provider_lines)
+            else "ok"
+        )
         return _chat_payload(
             life=target,
             message=message,
             response=response,
             status=response_status,
             timestamp=timestamp,
-            details=_redact_secret({"log": log, "data": data, "provider_events": provider_lines}),
+            details=_redact_secret(
+                {"log": log, "data": data, "provider_events": provider_lines}
+            ),
         )
 
     @app.get("/api/lives/{life}/chat")
@@ -2539,6 +2778,7 @@ def create_app(
         return payload_status
 
     if hasattr(app, "post"):
+
         async def chat_with_life_post(
             life: str, request: StarletteRequest
         ) -> dict[str, object]:
@@ -2600,6 +2840,7 @@ def create_app(
         )
 
     if hasattr(app, "post"):
+
         async def run_action_post(
             action: str, request: StarletteRequest
         ) -> dict[str, object]:
@@ -2636,39 +2877,70 @@ def create_app(
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket) -> None:
+        nonlocal ws_clients
         if require_read_auth:
             try:
                 actions.validate_token(_request_token(ws))
             except PermissionError:
                 await ws.close(code=1008)
                 return
+        with ws_clients_lock:
+            if ws_clients >= ws_max_clients:
+                await ws.close(code=1013)
+                return
+            ws_clients += 1
         await ws.accept()
         last_psyche_mtime_ns: int | None = None
         last_quests_mtime_ns: int | None = None
         log_cursors: dict[str, _LogCursor] = {}
 
-        def _read_new_entries(file: Path, cursor: _LogCursor | None) -> tuple[list[str], _LogCursor]:
+        async def _send(payload: dict[str, object]) -> None:
+            """Disconnect slow consumers instead of accumulating unbounded writes."""
+            await asyncio.wait_for(ws.send_json(payload), timeout=ws_send_timeout)
+
+        def _read_new_entries(
+            file: Path, cursor: _LogCursor | None
+        ) -> tuple[list[bytes], _LogCursor, bool]:
             stat = file.stat()
             inode = stat.st_ino
             next_cursor = cursor or _LogCursor(inode=inode, offset=0)
-            if next_cursor.inode != inode or stat.st_size < next_cursor.offset:
+            rotated = next_cursor.inode != inode or stat.st_size < next_cursor.offset
+            if rotated:
                 next_cursor = _LogCursor(inode=inode, offset=0)
 
             if stat.st_size <= next_cursor.offset:
-                return [], next_cursor
+                return [], next_cursor, rotated
 
-            with file.open("r", encoding="utf-8") as handle:
+            max_batch = run_repository._limit(
+                "SINGULAR_DASHBOARD_WS_MAX_BATCH_BYTES", 1024 * 1024
+            )
+            max_event = run_repository._limit(
+                "SINGULAR_DASHBOARD_MAX_EVENT_BYTES", 1024 * 1024
+            )
+            entries: list[bytes] = []
+            with file.open("rb") as handle:
                 handle.seek(next_cursor.offset)
-                chunk = handle.read()
+                remaining = max_batch
+                while remaining > 0:
+                    line = handle.readline(min(max_event + 1, remaining))
+                    if not line:
+                        break
+                    remaining -= len(line)
+                    if len(line) <= max_event and line.endswith(b"\n") and line.strip():
+                        entries.append(line)
                 next_cursor.offset = handle.tell()
-            entries = [line for line in chunk.splitlines() if line.strip()]
-            return entries, next_cursor
+            return entries, next_cursor, rotated
 
-        def _normalize_stream_event(file: Path, payload: dict[str, object]) -> dict[str, object] | None:
+        def _normalize_stream_event(
+            file: Path, payload: dict[str, object]
+        ) -> dict[str, object] | None:
             event = _event_type(payload)
             interaction_event = _record_event_name(payload)
             visible_interaction_events = {"sandbox_violation", "mutation_halted"}
-            if event == "interaction" and interaction_event in visible_interaction_events:
+            if (
+                event == "interaction"
+                and interaction_event in visible_interaction_events
+            ):
                 event = interaction_event
             if event is None:
                 return None
@@ -2686,15 +2958,43 @@ def create_app(
                     mtime_ns = psyche_path.stat().st_mtime_ns
                     if mtime_ns != last_psyche_mtime_ns:
                         last_psyche_mtime_ns = mtime_ns
-                        data = json.loads(psyche_path.read_text())
-                        await ws.send_json({"type": "psyche", "data": data})
+                        try:
+                            data = json.loads(psyche_path.read_text())
+                        except (
+                            OSError,
+                            UnicodeDecodeError,
+                            json.JSONDecodeError,
+                        ) as exc:
+                            await _send(
+                                {
+                                    "type": "stream_error",
+                                    "source": "psyche",
+                                    "error": type(exc).__name__,
+                                }
+                            )
+                        else:
+                            await _send({"type": "psyche", "data": data})
 
                 if quests_path.exists():
                     mtime_ns = quests_path.stat().st_mtime_ns
                     if mtime_ns != last_quests_mtime_ns:
                         last_quests_mtime_ns = mtime_ns
-                        data = json.loads(quests_path.read_text())
-                        await ws.send_json({"type": "quests", "data": data})
+                        try:
+                            data = json.loads(quests_path.read_text())
+                        except (
+                            OSError,
+                            UnicodeDecodeError,
+                            json.JSONDecodeError,
+                        ) as exc:
+                            await _send(
+                                {
+                                    "type": "stream_error",
+                                    "source": "quests",
+                                    "error": type(exc).__name__,
+                                }
+                            )
+                        else:
+                            await _send({"type": "quests", "data": data})
 
                 incremental_events: list[dict[str, object]] = []
                 run_files = _iter_run_files()
@@ -2703,14 +3003,29 @@ def create_app(
                     for file in run_files:
                         key = str(file)
                         current_files.add(key)
-                        entries, next_cursor = await asyncio.to_thread(
+                        entries, next_cursor, rotated = await asyncio.to_thread(
                             _read_new_entries, file, log_cursors.get(key)
                         )
                         log_cursors[key] = next_cursor
+                        if rotated:
+                            incremental_events.append(
+                                {
+                                    "type": "stream_status",
+                                    "status": "rotated",
+                                    "run_id": _run_file_id(file),
+                                }
+                            )
                         for line in entries:
                             try:
-                                payload = json.loads(line)
-                            except json.JSONDecodeError:
+                                payload = json.loads(line.decode("utf-8"))
+                            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                                incremental_events.append(
+                                    {
+                                        "type": "stream_error",
+                                        "run_id": _run_file_id(file),
+                                        "error": type(exc).__name__,
+                                    }
+                                )
                                 continue
                             if not isinstance(payload, dict):
                                 continue
@@ -2719,15 +3034,21 @@ def create_app(
                                 incremental_events.append(event)
 
                     for name in set(log_cursors) - current_files:
+                        incremental_events.append(
+                            {"type": "stream_status", "status": "deleted", "path": name}
+                        )
                         del log_cursors[name]
                 else:
                     log_cursors.clear()
 
                 for event in incremental_events:
-                    await ws.send_json(event)
-                await asyncio.sleep(0.1)
-        except WebSocketDisconnect:
+                    await _send(event)
+                await asyncio.sleep(ws_poll_interval)
+        except (WebSocketDisconnect, asyncio.TimeoutError):
             pass
+        finally:
+            with ws_clients_lock:
+                ws_clients -= 1
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
