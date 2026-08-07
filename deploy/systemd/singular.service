@@ -1,0 +1,23 @@
+[Unit]
+Description=Singular autonomous orchestrator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=singular
+Group=singular
+WorkingDirectory=/opt/singular
+Environment=SINGULAR_ROOT=/var/lib/singular
+ExecStart=/opt/singular/.venv/bin/singular orchestrate run
+Restart=on-failure
+RestartSec=10s
+StateDirectory=singular
+StateDirectoryMode=0750
+KillSignal=SIGTERM
+TimeoutStopSec=45s
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -48,6 +48,89 @@ singular dashboard
 - [Tutorial EN — create a life, add a skill, run a tick and read logs](docs/tutorial_create_life.en.md)
 - [Guide de personnalisation de la gouvernance `policy.yaml`](docs/policy_customization.md)
 
+## 🚀 Exécution permanente (systemd ou Docker)
+
+Les deux déploiements utilisent un répertoire d'état durable et transmettent
+`SIGTERM` à l'orchestrateur afin qu'il puisse terminer proprement. Avant le
+premier démarrage, créez et sélectionnez une vie dans le même root, par exemple
+`sudo -u singular SINGULAR_ROOT=/var/lib/singular singular lives create --name Lumen`.
+
+### Service systemd
+
+Le modèle [`deploy/systemd/singular.service`](deploy/systemd/singular.service)
+suppose que le dépôt et son environnement virtuel sont installés sous
+`/opt/singular`, et utilise le compte non privilégié `singular` :
+
+```bash
+sudo useradd --system --home /var/lib/singular --create-home singular
+sudo git clone <URL_DU_DEPOT> /opt/singular
+sudo python3 -m venv /opt/singular/.venv
+sudo /opt/singular/.venv/bin/pip install /opt/singular
+sudo chown -R singular:singular /opt/singular /var/lib/singular
+sudo install -m 0644 deploy/systemd/singular.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now singular.service
+```
+
+Consultez l'état et les journaux avec `systemctl status singular` et
+`journalctl -u singular -f`. Pour mettre à niveau : arrêtez le service, faites
+une sauvegarde, mettez le dépôt à jour, réinstallez le paquet dans le venv puis
+redémarrez :
+
+```bash
+sudo systemctl stop singular
+sudo tar -C /var/lib -czf "singular-$(date +%F-%H%M).tgz" singular
+sudo git -C /opt/singular pull --ff-only
+sudo /opt/singular/.venv/bin/pip install --upgrade /opt/singular
+sudo systemctl start singular
+```
+
+Après un crash, `Restart=on-failure` relance le processus après 10 secondes et
+celui-ci reprend l'identité et la progression présentes dans
+`/var/lib/singular`. Si l'état est endommagé, arrêtez le service, déplacez le
+répertoire concerné, restaurez l'archive dans `/var/lib`, corrigez ses droits
+(`chown -R singular:singular /var/lib/singular`) puis redémarrez.
+
+### Docker Compose
+
+Docker est supporté par le `Dockerfile` et `compose.yaml`. Les volumes nommés
+conservent `mem/`, `runs/`, les vies (donc leur identité) et la configuration;
+Compose applique aussi un healthcheck et des limites CPU/mémoire.
+
+```bash
+docker compose build
+docker compose run --rm singular singular lives create --name Lumen
+docker compose up -d
+docker compose logs -f singular
+```
+
+Mise à niveau et sauvegarde (ne supprimez jamais les volumes avec `down -v`) :
+
+```bash
+docker compose down
+docker run --rm -v singular_singular-lives:/data -v "$PWD":/backup \
+  alpine tar -czf /backup/singular-lives.tgz -C /data .
+docker compose build --pull
+docker compose up -d
+```
+
+Sauvegardez de la même façon les volumes `singular-mem`, `singular-runs` et
+`singular-config`. Pour récupérer après un crash, examinez d'abord
+`docker compose logs`, laissez `restart: unless-stopped` relancer le conteneur,
+ou faites `docker compose down`, restaurez chaque archive dans son volume puis
+`docker compose up -d`. L'état persistant n'est pas réinitialisé par la
+reconstruction de l'image.
+
+Validez statiquement les manifestes avec
+`python scripts/check_deployment_manifests.py`. Le test de reprise accepte une
+commande injectable (placeholder `{root}`), utile pour tester un wrapper ou un
+superviseur réel :
+
+```bash
+SINGULAR_INTEGRATION_COMMAND='mon-wrapper --root {root}' \
+  pytest -m integration tests/test_deployment.py
+```
+
 ## 🧭 Guide d’utilisation clair (pas à pas)
 
 Si vous débutez, suivez **exactement** ces étapes :
