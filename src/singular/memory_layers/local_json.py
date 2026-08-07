@@ -7,6 +7,7 @@ import math
 import os
 import re
 import tempfile
+from typing import Callable
 
 from .base import MemoryBackend, MemoryRecord
 
@@ -16,8 +17,11 @@ _TOKEN_RE = re.compile(r"[a-zA-Z0-9_]+")
 class LocalJsonMemoryBackend(MemoryBackend):
     """Simple local backend based on JSONL files and lexical similarity."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self, root: Path, *, embed: Callable[[str], list[float]] | None = None
+    ) -> None:
         self.root = Path(root)
+        self.embed = embed
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _layer_path(self, layer: str) -> Path:
@@ -78,10 +82,9 @@ class LocalJsonMemoryBackend(MemoryBackend):
         self._write_layer(layer, records)
 
     def search(self, layer: str, query: str, limit: int = 5) -> list[MemoryRecord]:
-        query_vec = _vectorize(query)
         scored: list[MemoryRecord] = []
         for rec in self._read_layer(layer):
-            rec.score = _cosine(query_vec, _vectorize(rec.text))
+            rec.score = self.similarity(query, rec.text)
             scored.append(rec)
         scored.sort(key=lambda item: item.score, reverse=True)
         return scored[: max(0, limit)]
@@ -91,6 +94,15 @@ class LocalJsonMemoryBackend(MemoryBackend):
         filtered = [rec for rec in records if rec.id != record_id]
         self._write_layer(layer, filtered)
         return len(filtered) != len(records)
+
+    def similarity(self, query: str, text: str) -> float:
+        """Use configured embeddings, falling back safely to local token vectors."""
+        if self.embed is not None:
+            try:
+                return _dense_cosine(self.embed(query), self.embed(text))
+            except (OSError, RuntimeError, TypeError, ValueError):
+                pass
+        return _cosine(_vectorize(query), _vectorize(text))
 
 
 def _vectorize(text: str) -> Counter[str]:
@@ -106,3 +118,13 @@ def _cosine(a: Counter[str], b: Counter[str]) -> float:
     if norm_a == 0.0 or norm_b == 0.0:
         return 0.0
     return dot / (norm_a * norm_b)
+
+
+def _dense_cosine(a: list[float], b: list[float]) -> float:
+    if not a or len(a) != len(b):
+        return 0.0
+    norm_a = math.sqrt(sum(value * value for value in a))
+    norm_b = math.sqrt(sum(value * value for value in b))
+    if not norm_a or not norm_b:
+        return 0.0
+    return sum(left * right for left, right in zip(a, b)) / (norm_a * norm_b)

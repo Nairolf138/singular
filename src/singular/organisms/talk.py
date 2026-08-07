@@ -15,8 +15,8 @@ from ..memory import (
     ensure_memory_structure,
     format_recalled_memories,
     read_episodes,
-    recall_relevant_episodes,
 )
+from ..memory_layers import MemoryRetrievalService, build_backend
 from ..perception import capture_signals
 from ..psyche import Mood, Psyche
 from ..self_narrative import load as load_self_narrative, summarize_short
@@ -205,9 +205,9 @@ def talk(
 
     psyche = Psyche.load_state()
 
-    def gather_context() -> tuple[
-        str | None, dict | None, dict | None, str | None, str | None
-    ]:
+    def gather_context() -> (
+        tuple[str | None, dict | None, dict | None, str | None, str | None]
+    ):
         signals = capture_signals()
         add_episode({"event": "perception", **signals})
         psyche.consume()
@@ -272,14 +272,25 @@ def talk(
     ) -> None:
         user_signals = _extract_structured_signals(user_input)
         theme = str(user_signals.get("theme", "general"))
-        recall_terms = [theme] if theme != "general" else []
-        recalled_memories = recall_relevant_episodes(
-            themes=recall_terms,
-            objectives=[f"user_dialogue:{theme}"] if theme != "general" else [],
-            limit=3,
+        life_root = os.environ.get("SINGULAR_HOME", ".")
+        retrieval = MemoryRetrievalService(
+            life_root, build_backend(root=os.path.join(life_root, "mem", "layers"))
         )
+        recalled_memories = retrieval.retrieve(
+            user_input,
+            active_objectives=[f"user_dialogue:{theme}"],
+            current_context={
+                "theme": theme,
+                "last_event": last_event,
+                "mood": mood_event,
+            },
+            limit=8,
+        )
+        recalled_memories = retrieval.within_budget(recalled_memories, 120)
         recall_summary = format_recalled_memories(recalled_memories)
-        if recalled_memories:
+        # General small-talk may reuse immediate context without creating two
+        # self-referential audit episodes on every turn.
+        if recalled_memories and theme != "general":
             add_episode(
                 {
                     "event": "memory.recalled",
