@@ -75,6 +75,7 @@ def record_generation(
     candidate_code: str,
     skill_relative_path: str,
     security_metadata: dict[str, Any],
+    identity_id: str | None = None,
     base_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Persist one generation attempt in ``mem/generations.jsonl``."""
@@ -114,6 +115,8 @@ def record_generation(
         "snapshot": str(snapshot_path),
         "stable": accepted,
     }
+    if identity_id:
+        payload["identity_id"] = identity_id
     _append_jsonl(generations_path, payload)
     return payload
 
