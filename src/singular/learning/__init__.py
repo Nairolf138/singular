@@ -11,6 +11,14 @@ from .imitation import (
     SimilarityPolicyGenerator,
 )
 
+from .orchestrator import (
+    FEEDBACK_SOURCES,
+    FeedbackEvent,
+    LearningOrchestrator,
+    LearningPolicy,
+    PromotionDecision,
+)
+
 __all__ = [
     "CuriosityEngine",
     "CuriosityWeights",
@@ -22,4 +30,9 @@ __all__ = [
     "DEMONSTRATION_SCHEMA_VERSION",
     "PolicyGenerator",
     "SimilarityPolicyGenerator",
+    "FEEDBACK_SOURCES",
+    "FeedbackEvent",
+    "LearningOrchestrator",
+    "LearningPolicy",
+    "PromotionDecision",
 ]
