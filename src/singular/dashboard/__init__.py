@@ -2421,7 +2421,6 @@ def create_app(
         from singular.lives import resolve_life
         from singular.organisms.talk import talk
 
-        previous_home = os.environ.get("SINGULAR_HOME")
         resolved_life = resolve_life(target)
         if resolved_life is None:
             return _chat_payload(
@@ -2431,23 +2430,18 @@ def create_app(
                 status="life_unavailable",
                 timestamp=timestamp,
             )
-        os.environ["SINGULAR_HOME"] = str(resolved_life)
-
         def _run() -> dict[str, object]:
-            talk(
+            response = talk(
                 provider=provider if isinstance(provider, str) and provider.strip() else None,
                 seed=seed if isinstance(seed, int) else None,
                 prompt=message,
+                life_home=resolved_life,
             )
-            return {"life": target, "path": str(resolved_life)}
+            return {"life": target, "path": str(resolved_life), "response": response or ""}
 
         try:
             data, log = actions._capture(_run)
         except Exception as exc:  # pragma: no cover - defensive endpoint guard
-            if previous_home is None:
-                os.environ.pop("SINGULAR_HOME", None)
-            else:
-                os.environ["SINGULAR_HOME"] = previous_home
             error_status = "provider_error" if "provider" in str(exc).lower() else "error"
             return _chat_payload(
                 life=target,
@@ -2456,15 +2450,10 @@ def create_app(
                 status=error_status,
                 timestamp=timestamp,
             )
-        finally:
-            if previous_home is None:
-                os.environ.pop("SINGULAR_HOME", None)
-            else:
-                os.environ["SINGULAR_HOME"] = previous_home
-
         lines = [line.strip() for line in log.splitlines() if line.strip()]
         provider_lines = [line for line in lines if line.lower().startswith("provider ") or "provider '" in line.lower()]
-        response = lines[-1] if lines else "Conversation envoyée sans réponse textuelle."
+        explicit_response = data.get("response")
+        response = explicit_response if isinstance(explicit_response, str) and explicit_response else (lines[-1] if lines else "Conversation envoyée sans réponse textuelle.")
         response_status = "provider_error" if any("provider '" in line.lower() for line in provider_lines) else "ok"
         return _chat_payload(
             life=target,

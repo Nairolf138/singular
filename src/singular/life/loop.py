@@ -289,10 +289,10 @@ def _load_ecosystem_rules_config_cached(
     return config
 
 
-def _resolve_current_life_slug() -> str | None:
+def _resolve_current_life_slug(life_home: Path | str | None = None) -> str | None:
     """Resolve current life slug from ``SINGULAR_HOME`` and the lives registry."""
 
-    life_home = Path(os.environ.get("SINGULAR_HOME", ".")).resolve()
+    life_home = Path(life_home or os.environ.get("SINGULAR_HOME", ".")).resolve()
     registry = load_registry()
     lives = registry.get("lives", {})
     if not isinstance(lives, dict):
@@ -871,6 +871,7 @@ def run(
     social_graph: SocialGraph | None = None,
     imitation_engine: ImitationEngine | None = None,
     learning_budget: int = 1,
+    life_home: Path | str | None = None,
 ) -> Checkpoint:
     """Run the evolutionary loop for at most ``budget_seconds`` seconds.
 
@@ -888,6 +889,7 @@ def run(
     """
 
     rng = rng or random.Random()
+    life_root = Path(life_home) if life_home is not None else Path(os.environ.get("SINGULAR_HOME", "."))
     state = load_checkpoint(checkpoint_path)
     state.health_history = _retain_health_history(state.health_history)
 
@@ -958,7 +960,7 @@ def run(
     sleep_ticks_remaining = 0
     intrinsic_goals = IntrinsicGoals(value_weights=value_weights)
     self_observation = SelfObservationService(
-        Path(os.environ.get("SINGULAR_HOME", ".")) / "mem" / "self_model.json"
+        life_root / "mem" / "self_model.json"
     )
     coevolution_flow: CoevolutionFlow | None = None
     if coevolve_tests:
@@ -1001,7 +1003,6 @@ def run(
         with current_tick_profiler.phase("test_runner"):
             return test_runner()
 
-    life_root = Path(os.environ.get("SINGULAR_HOME", "."))
     # Imitation is part of the normal composition. Injection remains available
     # for tests and alternative generators, but learning no longer depends on it.
     imitation_engine = imitation_engine or ImitationEngine(life_root)
@@ -1203,7 +1204,7 @@ def run(
                 health_counters=state.health_counters,
             )
             if trigger_genesis and not selected_org.degraded_mode:
-                mem_dir = Path(os.environ.get("SINGULAR_HOME", ".")) / "mem"
+                mem_dir = life_root / "mem"
                 genesis = create_skill(
                     skills_dir=world.organisms[org_name].skills_dir,
                     mem_dir=mem_dir,
@@ -2405,7 +2406,7 @@ def run(
                 mutation_payload,
                 payload_version=1,
             )
-            life_root = Path(os.environ.get("SINGULAR_HOME", ".")).resolve()
+            life_root = life_root.resolve()
             try:
                 skill_relative_path = str(skill_path.resolve().relative_to(life_root))
             except ValueError:
@@ -2457,8 +2458,8 @@ def run(
             if hasattr(psyche, "save_state"):
                 psyche.save_state()
 
-            world_state_path = Path(os.environ.get("SINGULAR_HOME", ".")) / "mem" / "world_state.json"
-            world_effects_path = Path(os.environ.get("SINGULAR_HOME", ".")) / "mem" / "world_effects.json"
+            world_state_path = life_root / "mem" / "world_state.json"
+            world_effects_path = life_root / "mem" / "world_effects.json"
             updated_world_state = sim_world.apply_action_effects(
                 world_effects,
                 state_path=world_state_path,
@@ -2513,7 +2514,7 @@ def run(
                     reason=death_reason,
                     alive=False,
                 )
-                mem_dir = Path(os.environ.get("SINGULAR_HOME", ".")) / "mem"
+                mem_dir = life_root / "mem"
                 identity_id = _persistent_identity_id(mem_dir.parent)
                 autopsy_payload = _build_autopsy_report(
                     reason=death_reason,
@@ -2543,7 +2544,7 @@ def run(
                 }
                 _write_json(mem_dir / "orchestrator.stop.json", stop_payload)
 
-                life_slug = _resolve_current_life_slug()
+                life_slug = _resolve_current_life_slug(life_root)
                 if life_slug:
                     set_life_status(life_slug, "extinct")
 
