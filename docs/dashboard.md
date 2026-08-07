@@ -60,6 +60,23 @@ Le dashboard écoute par défaut sur `http://127.0.0.1:8000/`.
 | `POST /api/actions/{action}` | Exécution contrôlée d'actions (`birth`, `talk`, `loop`, `report`, `archive`, `memorial`, `clone`, `emergency_stop`). |
 | `GET /api/retention/status` | Statut de rétention et diagnostics de stockage. |
 
+## Authentification et reverse proxy
+
+Les routes mutatives (`POST /api/actions/{action}` et le chat) acceptent le
+jeton **uniquement** dans `Authorization: Bearer <jeton>` ou dans
+`X-Singular-Action-Token: <jeton>`. Le jeton ne doit jamais être placé dans la
+query string ou le JSON. Toutes les actions via `GET` sont refusées avec 405,
+y compris `birth`, `loop`, `talk` et la sélection d'une vie.
+
+Une écoute sur une adresse autre que `127.0.0.1`, `localhost` ou `::1` active
+également cette authentification sur toutes les lectures (hors fichiers
+statiques) et sur `/ws`. Derrière un reverse proxy, conserver l'en-tête
+`Authorization` ou `X-Singular-Action-Token`, utiliser HTTPS, et configurer le
+proxy pour ne pas journaliser ces en-têtes. Les URLs peuvent être journalisées
+normalement puisqu'elles ne contiennent aucun secret. L'override de
+développement non authentifié ne doit jamais être employé sur une écoute
+publique.
+
 ## Données affichées
 
 Le cockpit agrège plusieurs familles de signaux :

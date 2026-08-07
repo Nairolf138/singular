@@ -39,7 +39,9 @@ class TestClient:
             status = exc.status_code
         return Response(status, data)
 
-    def post(self, path: str, json: Any = None) -> Response:
+    def post(
+        self, path: str, json: Any = None, headers: dict[str, str] | None = None
+    ) -> Response:
         parsed = urlsplit(path)
         handler = self.app._post_routes.get(parsed.path)
         params = {key: values[-1] for key, values in parse_qs(parsed.query).items()}
@@ -50,7 +52,13 @@ class TestClient:
             handler = self.app._post_routes["/api/lives/{life}/chat"]
             params["life"] = parsed.path.split("/")[3]
 
+        normalized_headers = {
+            key.lower(): value for key, value in (headers or {}).items()
+        }
+
         class Request:
+            headers = normalized_headers
+
             async def body(self) -> bytes:
                 import json as json_module
 

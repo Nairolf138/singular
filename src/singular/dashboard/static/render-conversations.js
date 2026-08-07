@@ -124,12 +124,12 @@ const bindSend=()=>{
     setFlowState('en réflexion');
     sendBtn.disabled=true;
     const token=document.getElementById('action-token')?.value||'';
-    const q=new URLSearchParams();
-    if(token){q.set('token',token);}
+    const headers={'Content-Type':'application/json'};
+    if(token){headers['X-Singular-Action-Token']=token;}
     try{
-      const response=await fetch(`/api/lives/${encodeURIComponent(life)}/chat?${q.toString()}`,{
+      const response=await fetch(`/api/lives/${encodeURIComponent(life)}/chat`,{
         method:'POST',
-        headers:{'Content-Type':'application/json'},
+        headers,
         body:JSON.stringify({message:text}),
       });
       const payload=await response.json();

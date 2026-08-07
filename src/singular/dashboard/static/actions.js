@@ -246,12 +246,11 @@ export const runAction=(action,payload,{onAfterAction}={})=>{
     writeActionResult(`Erreur action ${action}: payload invalide (${err.message}).`);
     return Promise.resolve(false);
   }
-  const q=new URLSearchParams();
-  if(token){q.set('token',token);}
-  const suffix=q.toString()?`?${q.toString()}`:'';
-  return fetch(`/api/actions/${encodeURIComponent(action)}${suffix}`,{
+  const headers={'Content-Type':'application/json'};
+  if(token){headers['X-Singular-Action-Token']=token;}
+  return fetch(`/api/actions/${encodeURIComponent(action)}`,{
     method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers,
     body,
   }).then(async r=>{
     if(!r.ok){throw new Error(await readActionError(r));}
