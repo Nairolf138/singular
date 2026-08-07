@@ -13,6 +13,7 @@ export const nm=()=>MISSING_TEXT.notMeasured;
 
 export const SELECTED_LIFE_CHANGED_EVENT='singular:selected-life-changed';
 export const selectedLifeState={name:null,source:null,metadata:{}};
+const SELECTED_LIFE_STORAGE_KEY='singular.dashboard.selectedLife';
 
 export const setSelectedLife=(name,{source='unknown',metadata={}}={})=>{
   const normalized=String(name||'').trim()||null;
@@ -21,6 +22,8 @@ export const setSelectedLife=(name,{source='unknown',metadata={}}={})=>{
   selectedLifeState.source=source;
   selectedLifeState.metadata=metadata&&typeof metadata==='object'?metadata:{};
   if(typeof window!=='undefined'){
+    if(normalized){window.sessionStorage?.setItem(SELECTED_LIFE_STORAGE_KEY,normalized);}
+    else{window.sessionStorage?.removeItem(SELECTED_LIFE_STORAGE_KEY);}
     window.dispatchEvent(new CustomEvent(SELECTED_LIFE_CHANGED_EVENT,{
       detail:{name:normalized,previous,source,metadata:selectedLifeState.metadata},
     }));
@@ -29,6 +32,7 @@ export const setSelectedLife=(name,{source='unknown',metadata={}}={})=>{
 };
 
 export const getSelectedLife=()=>selectedLifeState.name;
+export const getRememberedLife=()=>typeof window==='undefined'?null:(window.sessionStorage?.getItem(SELECTED_LIFE_STORAGE_KEY)||null);
 
 export const livesTableState={sortBy:'score',sortOrder:'desc'};
 export const liveState={paused:false,autoScroll:true,events:[]};

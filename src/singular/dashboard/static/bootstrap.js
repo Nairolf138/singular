@@ -2,6 +2,7 @@ import {bindActionHandlers} from './actions.js';
 import {loadCockpit,loadContext,loadEco,loadHostVitals,loadQuests,loadRetentionStatus} from './render-cockpit.js';
 import {bindLivesHandlers,bindLiveStreamHandlers,loadGenealogy,loadLivesBoard,renderLiveEvents,updateLiveStatus} from './render-lives.js';
 import {bindReflectionHandlers,loadReflections} from './render-reflections.js';
+import {bindLifeSnapshot} from './render-life-snapshot.js';
 import {loadTimeline} from './render-timeline.js';
 import {
   PROLONGED_TIMEOUT_THRESHOLD,
@@ -428,6 +429,7 @@ export const bootstrapDashboard=()=>{
   bindLivesHandlers(loadLivesBoard);
   bindLiveStreamHandlers();
   bindReflectionHandlers(loadReflections);
+  bindLifeSnapshot();
 
   Object.entries(taskDefinitions).forEach(([name,definition])=>registerTask(name,definition.loader,definition.intervalMs));
 

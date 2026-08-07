@@ -513,6 +513,11 @@ body.essential-mode #toggle-essential { border-color: var(--ok); color: var(--ok
 .conversation-composer { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
 .conversation-composer textarea { width:100%; }
 .conversation-meta { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+.snapshot-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; }
+.life-snapshot details { margin-top:12px; border-top:1px solid var(--table-border); padding-top:10px; }
+.life-snapshot summary { cursor:pointer; font-weight:700; color:#dbe6ff; }
+.snapshot-evidence { display:grid; gap:8px; margin-top:10px; }
+.snapshot-proof { border-left:3px solid var(--accent); padding:6px 10px; background:rgba(10,20,48,.65); }
 
 .life-verdict-card {
   grid-column: span 2;

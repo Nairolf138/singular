@@ -1709,6 +1709,138 @@ def create_app(
             "items": items,
         }
 
+    @app.get("/api/lives/{life}/snapshot")
+    def read_life_snapshot(life: str) -> dict[str, object]:
+        """Compose the selected life's progressive summary from domain services."""
+        life_dir = _resolve_life_dir(life)
+        if life_dir is None:
+            raise HTTPException(status_code=404, detail=f"life '{life}' not found")
+
+        records = [
+            record
+            for record in _load_run_records(current_life_only=False)
+            if _record_life(record) == life
+        ]
+        records.sort(key=lambda record: str(record.get("ts", "")))
+        comparison, _ = _aggregate_lives(current_life_only=False)
+        comparison_row = comparison.get(life, {})
+        trajectory = _build_trajectory(records)
+        objectives = trajectory.get("objectives", {})
+        active_objectives = (
+            objectives.get("in_progress", [])
+            if isinstance(objectives, dict)
+            else []
+        )
+        mutations = [record for record in records if _is_mutation_record(record)]
+        decisions = [
+            record
+            for record in records
+            if str(record.get("event", "")).startswith("orchestrator")
+            or record.get("decision") is not None
+            or _is_mutation_record(record)
+        ]
+        actions = [
+            record
+            for record in records
+            if record.get("action") is not None
+            or record.get("operator") is not None
+            or record.get("op") is not None
+        ]
+        causal_items = [
+            item
+            for item in read_causal_timeline(life_dir / "mem" / "causal_timeline.jsonl")
+            if isinstance(item, dict)
+        ]
+        causal_items.sort(key=lambda item: str(item.get("ts", item.get("recorded_at", ""))))
+
+        def _label(item: object, *keys: str, fallback: str = "Non disponible") -> str:
+            if not isinstance(item, dict):
+                return fallback
+            for key in keys:
+                value = item.get(key)
+                if value is not None and str(value).strip():
+                    return str(value)
+            return fallback
+
+        latest = records[-1] if records else {}
+        last_mutation = mutations[-1] if mutations else {}
+        last_causal = causal_items[-1] if causal_items else {}
+        alerts = alerts_from_records(records)
+        primary_alert = alerts[-1] if alerts else {}
+        trend = _label(comparison_row, "trend", fallback="plateau")
+        health = comparison_row.get("current_health_score") if isinstance(comparison_row, dict) else None
+        current_state = _label(latest, "status", "state", "event", fallback="Aucune observation")
+        if health is not None:
+            current_state = f"{current_state} · santé {health}"
+
+        need = _label(latest, "dominant_need", "need", "motivation", "drive")
+        decision = _label(decisions[-1] if decisions else None, "decision", "human_summary", "event")
+        action = _label(actions[-1] if actions else None, "action", "operator", "op")
+        consequence = _label(last_causal, "consequence", "effect", "outcome", "result")
+        remembered = _label(last_causal, "change", "memory", "summary", "event")
+        alert_label = _label(primary_alert, "message", "kind", "severity", fallback="Aucune alerte")
+
+        recommendations: list[str] = []
+        liveness = compute_liveness_index_service(records) if records else {}
+        raw_recommendations = liveness.get("recommendations", []) if isinstance(liveness, dict) else []
+        if isinstance(raw_recommendations, list):
+            recommendations.extend(str(item) for item in raw_recommendations if item)
+        if alerts:
+            recommendations.append("Examiner l’alerte principale et ses preuves avant la prochaine mutation.")
+
+        evidence: list[dict[str, object]] = []
+        for item in causal_items[-5:]:
+            evidence.append({
+                "kind": _label(item, "event", "cause", fallback="causalité"),
+                "at": _label(item, "ts", "recorded_at"),
+                "description": _label(item, "summary", "consequence", "effect", "outcome", fallback=json.dumps(item, ensure_ascii=False)),
+            })
+        if last_mutation:
+            evidence.append({
+                "kind": "mutation",
+                "at": _label(last_mutation, "ts"),
+                "description": _label(last_mutation, "human_summary", "operator", "op"),
+            })
+
+        conversation_items: list[dict[str, object]] = []
+        latest_run = _latest_run_file(current_life_only=False)
+        if latest_run is not None:
+            consciousness_path = _resolve_consciousness_path(_run_file_id(latest_run), current_life_only=False)
+            if consciousness_path is not None:
+                for line in consciousness_path.read_text(encoding="utf-8").splitlines()[-20:]:
+                    try:
+                        item = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(item, dict) and _label(item, "life", "owner", fallback=life) == life:
+                        conversation_items.append(item)
+
+        return {
+            "life": life,
+            "summary": {
+                "current_state": current_state,
+                "recent_evolution": trend,
+                "dominant_need": need,
+                "active_objective": str(active_objectives[0]) if active_objectives else "Aucun objectif actif",
+                "last_decision": decision,
+                "last_action": action,
+                "observed_consequence": consequence,
+                "memorized_change": remembered,
+                "primary_alert": alert_label,
+                "recommended_next_action": recommendations[0] if recommendations else "Poursuivre l’observation",
+            },
+            "evidence": evidence,
+            "technical": {
+                "comparison": comparison_row,
+                "trajectory": trajectory,
+                "latest_record": latest,
+                "latest_mutation": last_mutation,
+                "causal_timeline": causal_items[-20:],
+                "conversations": conversation_items,
+                "liveness": liveness,
+            },
+        }
+
     @app.get("/api/runs/{run_id}/consciousness")
     def read_run_consciousness(
         run_id: str,
