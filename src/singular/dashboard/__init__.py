@@ -44,6 +44,7 @@ from singular.dashboard.services.trajectory import (
 )
 from singular.dashboard.services.lives_comparison import (
     aggregate_lives as aggregate_lives_service,
+    build_life_timeseries,
     compute_liveness_index as compute_liveness_index_service,
     parse_ts as parse_ts_service,
     resolve_time_window_cutoff as resolve_time_window_cutoff_service,
@@ -2052,6 +2053,29 @@ def create_app(
                 "limit": limit,
             },
         }
+
+    @app.get("/api/lives/{life}/timeseries")
+    def read_life_timeseries(
+        life: str,
+        time_window: str = "24h",
+        resolution: str = "hour",
+        limit: int = 500,
+        mutation_index: int | None = None,
+    ) -> dict[str, object]:
+        """Return the bounded chronology used by the combined life detail view."""
+        slug, meta, _ = _resolve_life_entry(life)
+        if slug is None:
+            raise HTTPException(status_code=404, detail="life not found")
+        display_name = life_meta_get(meta, "name", slug)
+        aliases = {life, slug, str(display_name)}
+        records = [rec for rec in _load_run_records(False) if _record_life(rec) in aliases]
+        try:
+            return build_life_timeseries(
+                records, life=slug, time_window=time_window, resolution=resolution,
+                limit=limit, mutation_index=mutation_index, record_run_id=_record_run_id,
+            )
+        except (ValueError, IndexError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/lives/comparison")
     def read_lives_comparison(

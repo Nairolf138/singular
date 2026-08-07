@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Callable
+from urllib.parse import quote
 
 
 _RECENT_ACTIVITY_EVENTS = {
@@ -21,6 +22,106 @@ _ACTION_EVENTS = {"action", "mutation", "interaction", "act", "execute"}
 _INTERACTION_EVENTS = {"interaction", "conversation", "talk", "message"}
 _OBJECTIVE_EVENTS = {"quest", "quest_triggered", "objective", "goal"}
 _PROGRESS_EVENTS = {"quest_resolved", "objective_progress", "objective_completed", "goal_progress"}
+
+_SERIES_METRICS = (
+    "health", "energy", "mood", "autonomy", "liveliness", "objectives",
+    "interactions", "accepted_mutations", "failures",
+)
+
+
+def build_life_timeseries(
+    records: list[dict[str, object]], *, life: str, time_window: str = "24h",
+    resolution: str = "hour", limit: int = 500, mutation_index: int | None = None,
+    record_run_id: Callable[[dict[str, object]], str] = lambda _: "unknown",
+) -> dict[str, object]:
+    """Build a bounded, bucketed chronology while retaining source evidence links."""
+    windows = {"24h": timedelta(hours=24), "7d": timedelta(days=7), "30d": timedelta(days=30), "all": None}
+    resolutions = {"raw": None, "hour": timedelta(hours=1), "day": timedelta(days=1)}
+    if time_window not in windows:
+        raise ValueError("time_window must be one of: 24h, 7d, 30d, all")
+    if resolution not in resolutions:
+        raise ValueError("resolution must be one of: raw, hour, day")
+    if not 1 <= limit <= 1000:
+        raise ValueError("limit must be between 1 and 1000")
+
+    dated = [(ts, rec) for rec in records if (ts := parse_ts(rec.get("ts"))) is not None]
+    dated.sort(key=lambda item: item[0])
+    mutation_rows = [(ts, rec) for ts, rec in dated if any(k in rec for k in ("accepted", "ok", "score_base", "score_new", "operator", "op"))]
+    mutation_indexes = {id(rec): index for index, (_, rec) in enumerate(mutation_rows)}
+    pivot = None
+    if mutation_index is not None:
+        if mutation_index < 0 or mutation_index >= len(mutation_rows):
+            raise IndexError("mutation_index out of range")
+        pivot = mutation_rows[mutation_index][0]
+    end = dated[-1][0] if dated else datetime.now(timezone.utc)
+    cutoff = end - windows[time_window] if windows[time_window] is not None else None
+    dated = [(ts, rec) for ts, rec in dated if cutoff is None or ts >= cutoff]
+
+    def number(rec: dict[str, object], *names: str) -> float | None:
+        for name in names:
+            value: object = rec.get(name)
+            if name == "health" and isinstance(value, dict):
+                value = value.get("score")
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return float(value)
+        return None
+
+    buckets: dict[str, dict[str, object]] = {}
+    step = resolutions[resolution]
+    for ts, rec in dated:
+        bucket_ts = ts
+        if step == timedelta(hours=1):
+            bucket_ts = ts.replace(minute=0, second=0, microsecond=0)
+        elif step == timedelta(days=1):
+            bucket_ts = ts.replace(hour=0, minute=0, second=0, microsecond=0)
+        key = (bucket_ts.isoformat() if step else ts.isoformat())
+        bucket = buckets.setdefault(key, {"timestamp": key, "values": {metric: [] for metric in _SERIES_METRICS}, "events": [], "proofs": []})
+        values = bucket["values"]
+        assert isinstance(values, dict)
+        event = _normalized_event(rec)
+        accepted = rec.get("accepted") if isinstance(rec.get("accepted"), bool) else rec.get("ok")
+        samples = {
+            "health": number(rec, "health", "health_score"), "energy": number(rec, "energy"),
+            "mood": number(rec, "mood", "humeur"), "autonomy": number(rec, "autonomy", "autonomy_index"),
+            "liveliness": number(rec, "liveliness", "liveness", "vivacity"),
+            "objectives": number(rec, "objectives", "objectives_count"),
+            "interactions": 1.0 if event in _INTERACTION_EVENTS else None,
+            "accepted_mutations": 1.0 if accepted is True else None,
+            "failures": 1.0 if accepted is False or event in {"failure", "error", "mutation_failed"} else None,
+        }
+        for metric, value in samples.items():
+            if value is not None:
+                values[metric].append(value)
+        run_id = record_run_id(rec)
+        proof = {"timestamp": ts.isoformat(), "event": event or "observation", "run_id": run_id,
+                 "href": f"/api/runs/{quote(run_id, safe='')}/timeline?page=1&page_size=120"}
+        bucket["proofs"].append(proof)
+        notable = event in (_OBJECTIVE_EVENTS | _PROGRESS_EVENTS | _INTERACTION_EVENTS | {"mutation", "death", "birth", "skill_acquired", "skill_lost"})
+        if notable or any(key in rec for key in ("objective", "skill", "accepted", "ok")):
+            bucket["events"].append({**proof, "objective": rec.get("objective"), "skill": rec.get("skill"), "accepted": accepted,
+                                     "mutation_index": mutation_indexes.get(id(rec))})
+
+    points = list(buckets.values())[-limit:]
+    for point in points:
+        values = point["values"]
+        for metric, samples in values.items():
+            values[metric] = (round(sum(samples) / len(samples), 3) if samples and metric not in {"interactions", "accepted_mutations", "failures"} else sum(samples)) if samples else None
+    comparison = None
+    if pivot is not None:
+        before = [p for p in points if parse_ts(p["timestamp"]) < pivot]
+        after = [p for p in points if parse_ts(p["timestamp"]) >= pivot]
+        comparison = {"mutation_index": mutation_index, "pivot": pivot.isoformat(), "before": _series_averages(before), "after": _series_averages(after)}
+    return {"life": life, "window": time_window, "resolution": resolution, "limit": limit,
+            "count": len(points), "truncated": len(buckets) > limit, "metrics": list(_SERIES_METRICS),
+            "points": points, "mutation_comparison": comparison}
+
+
+def _series_averages(points: list[dict[str, object]]) -> dict[str, float | None]:
+    result: dict[str, float | None] = {}
+    for metric in _SERIES_METRICS:
+        values = [p["values"][metric] for p in points if p["values"].get(metric) is not None]
+        result[metric] = round(sum(values) / len(values), 3) if values else None
+    return result
 
 
 def parse_ts(value: object) -> datetime | None:

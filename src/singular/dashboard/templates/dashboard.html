@@ -378,6 +378,17 @@
         <h4>Preuves de vie</h4>
         <ul id='life-detail-liveness-proofs' class='list-tight-top'><li>Aucune vie sélectionnée.</li></ul>
         <div id='life-detail-content'>Aucune vie sélectionnée.</div>
+        <section id='life-chronology' class='life-chronology' aria-label='Chronologie combinée'>
+          <h4>Chronologie combinée</h4>
+          <div class='toolbar-wrap'>
+            <label>Fenêtre <select id='life-chronology-window'><option value='24h'>24 h</option><option value='7d'>7 j</option><option value='30d'>30 j</option><option value='all'>Vie entière</option></select></label>
+            <label>Résolution <select id='life-chronology-resolution'><option value='hour'>Heure</option><option value='day'>Jour</option><option value='raw'>Événement</option></select></label>
+            <label>Avant/après mutation <select id='life-chronology-mutation'><option value=''>Aucune</option></select></label>
+          </div>
+          <div id='life-chronology-chart' class='chronology-chart'>Sélectionnez une vie.</div>
+          <div id='life-mutation-comparison'></div>
+          <ol id='life-chronology-events' class='chronology-events'></ol>
+        </section>
       </aside>
     </div>
   </section>
