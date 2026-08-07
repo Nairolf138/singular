@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import re
 from pathlib import Path
 from typing import Any
-
 
 _CATALOG_FILENAME = "skill_catalog.json"
 
@@ -21,17 +21,40 @@ def catalog_path(mem_dir: Path) -> Path:
     return Path(mem_dir) / _CATALOG_FILENAME
 
 
-def refresh_skill_catalog(*, skills_dir: Path, mem_dir: Path) -> dict[str, dict[str, Any]]:
+def refresh_skill_catalog(
+    *, skills_dir: Path, mem_dir: Path
+) -> dict[str, dict[str, Any]]:
     """Scan ``skills_dir`` and persist a lightweight metadata catalog in ``mem_dir``."""
 
     catalog: dict[str, dict[str, Any]] = {}
+    skills_state = _read_skills_state(Path(mem_dir) / "skills.json")
     for skill_file in sorted(Path(skills_dir).glob("*.py")):
-        catalog[skill_file.stem] = _extract_skill_metadata(skill_file)
+        descriptor = _extract_skill_metadata(skill_file)
+        state = skills_state.get(skill_file.stem, {})
+        expected_hash = state.get("source_sha256") if isinstance(state, dict) else None
+        if isinstance(expected_hash, str):
+            observed_hash = hashlib.sha256(skill_file.read_bytes()).hexdigest()
+            descriptor["publication_state"] = (
+                "available" if observed_hash == expected_hash else "regressed"
+            )
+            descriptor["implementation_valid"] = observed_hash == expected_hash
+        else:
+            descriptor["publication_state"] = "available"
+            descriptor["implementation_valid"] = True
+        catalog[skill_file.stem] = descriptor
 
     path = catalog_path(mem_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
     return catalog
+
+
+def _read_skills_state(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def read_skill_catalog(mem_dir: Path) -> dict[str, dict[str, Any]]:
@@ -70,7 +93,9 @@ def _extract_skill_metadata(skill_file: Path) -> dict[str, Any]:
     )
 
     reliability = _parse_float(doc.get("reliability"), 0.5, parse_errors, "reliability")
-    estimated_cost = _parse_float(doc.get("estimated_cost"), 0.5, parse_errors, "estimated_cost")
+    estimated_cost = _parse_float(
+        doc.get("estimated_cost"), 0.5, parse_errors, "estimated_cost"
+    )
 
     capability_tags = _split_csv(doc.get("capability_tags"))
     if not capability_tags:
@@ -150,7 +175,9 @@ def _safe_float(raw: str | None) -> float | None:
         return None
 
 
-def _parse_float(raw: str | None, default: float, parse_errors: list[str], name: str) -> float:
+def _parse_float(
+    raw: str | None, default: float, parse_errors: list[str], name: str
+) -> float:
     parsed = _safe_float(raw)
     if parsed is None:
         if raw is not None:

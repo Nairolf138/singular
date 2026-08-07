@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -224,6 +225,17 @@ class SkillRuntime:
 
             raw_metadata = skills_state.get(skill)
             metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+            if metadata.get("publication_state") not in {None, "available"}:
+                continue
+            expected_hash = metadata.get("source_sha256")
+            if isinstance(expected_hash, str):
+                observed_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+                if observed_hash != expected_hash:
+                    continue
+            if descriptor.get("publication_state") not in {None, "available"}:
+                continue
+            if descriptor.get("implementation_valid") is False:
+                continue
             lifecycle = (
                 metadata.get("lifecycle")
                 if isinstance(metadata.get("lifecycle"), dict)
@@ -386,17 +398,23 @@ class SkillRuntime:
         )
         normalized = {
             "name": str(task.get("name") or "task"),
-            "signature": task.get("signature")
-            if isinstance(task.get("signature"), str)
-            else None,
+            "signature": (
+                task.get("signature")
+                if isinstance(task.get("signature"), str)
+                else None
+            ),
             "capabilities": [str(cap) for cap in capabilities],
             "preconditions": [str(pre) for pre in preconditions],
-            "input_format": task.get("input_format")
-            if isinstance(task.get("input_format"), str)
-            else None,
-            "output_format": task.get("output_format")
-            if isinstance(task.get("output_format"), str)
-            else None,
+            "input_format": (
+                task.get("input_format")
+                if isinstance(task.get("input_format"), str)
+                else None
+            ),
+            "output_format": (
+                task.get("output_format")
+                if isinstance(task.get("output_format"), str)
+                else None
+            ),
             "max_risk": float(task.get("max_risk", 1.0) or 1.0),
         }
         return normalized

@@ -6,7 +6,9 @@ from singular.skills.runtime import SkillRuntime
 
 
 def test_execute_best_skill_filters_and_scores(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr("singular.skills.runtime.sandbox.run", lambda code: {"ok": True})
+    monkeypatch.setattr(
+        "singular.skills.runtime.sandbox.run", lambda code: {"ok": True}
+    )
     life = tmp_path / "life"
     skills = life / "skills"
     mem = life / "mem"
@@ -89,8 +91,12 @@ def test_execute_best_skill_emits_failed_when_none(tmp_path: Path) -> None:
     assert failed_payloads[-1]["reason"] == "no_compatible_skill"
 
 
-def test_execute_best_skill_rejects_malformed_catalog_annotations(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr("singular.skills.runtime.sandbox.run", lambda code: {"ok": True})
+def test_execute_best_skill_rejects_malformed_catalog_annotations(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        "singular.skills.runtime.sandbox.run", lambda code: {"ok": True}
+    )
     life = tmp_path / "life"
     skills = life / "skills"
     mem = life / "mem"
@@ -115,16 +121,24 @@ def test_execute_best_skill_rejects_malformed_catalog_annotations(monkeypatch, t
     assert result.reason == "no_compatible_skill"
 
 
-def test_execute_best_skill_cautious_strategy_prefers_reliable_skill(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr("singular.skills.runtime.sandbox.run", lambda code: {"ok": True})
+def test_execute_best_skill_cautious_strategy_prefers_reliable_skill(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        "singular.skills.runtime.sandbox.run", lambda code: {"ok": True}
+    )
     life = tmp_path / "life"
     skills = life / "skills"
     mem = life / "mem"
     skills.mkdir(parents=True)
     mem.mkdir(parents=True)
 
-    (skills / "fast.py").write_text("def run(context=None):\n    return {'ok': True}\n", encoding="utf-8")
-    (skills / "safe.py").write_text("def run(context=None):\n    return {'ok': True}\n", encoding="utf-8")
+    (skills / "fast.py").write_text(
+        "def run(context=None):\n    return {'ok': True}\n", encoding="utf-8"
+    )
+    (skills / "safe.py").write_text(
+        "def run(context=None):\n    return {'ok': True}\n", encoding="utf-8"
+    )
     (mem / "skills.json").write_text(
         """
 {
@@ -153,14 +167,20 @@ def test_execute_best_skill_cautious_strategy_prefers_reliable_skill(monkeypatch
 
 
 def test_execute_best_skill_persists_world_effects(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr("singular.skills.runtime.sandbox.run", lambda code: {"ok": True})
+    monkeypatch.setattr(
+        "singular.skills.runtime.sandbox.run", lambda code: {"ok": True}
+    )
     life = tmp_path / "life"
     skills = life / "skills"
     mem = life / "mem"
     skills.mkdir(parents=True)
     mem.mkdir(parents=True)
-    (skills / "good.py").write_text("def run(context=None):\n    return {'ok': True}\n", encoding="utf-8")
-    (mem / "skills.json").write_text('{"good": {"capabilities": ["assist"], "risk": 0.1}}', encoding="utf-8")
+    (skills / "good.py").write_text(
+        "def run(context=None):\n    return {'ok': True}\n", encoding="utf-8"
+    )
+    (mem / "skills.json").write_text(
+        '{"good": {"capabilities": ["assist"], "risk": 0.1}}', encoding="utf-8"
+    )
 
     runtime = SkillRuntime(skills_dir=skills, mem_dir=mem)
     result = runtime.execute_best_skill(
@@ -172,3 +192,34 @@ def test_execute_best_skill_persists_world_effects(monkeypatch, tmp_path: Path) 
     effects = json.loads((mem / "world_effects.json").read_text(encoding="utf-8"))
     assert effects["last_effect_count"] == 1
     assert effects["cumulative_effect"]["health_delta"] > 0
+
+
+def test_runtime_rejects_available_skill_after_source_mutation(tmp_path: Path) -> None:
+    import hashlib
+
+    skills = tmp_path / "skills"
+    mem = tmp_path / "mem"
+    skills.mkdir()
+    mem.mkdir()
+    source = "def run(context=None):\n    return {'covered': True}\n"
+    path = skills / "gap.py"
+    path.write_text(source, encoding="utf-8")
+    (mem / "skills.json").write_text(
+        json.dumps(
+            {
+                "gap": {
+                    "capabilities": ["gap"],
+                    "publication_state": "available",
+                    "source_sha256": hashlib.sha256(source.encode()).hexdigest(),
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    path.write_text("def run(context=None):\n    return {'covered': False}\n")
+
+    result = SkillRuntime(skills_dir=skills, mem_dir=mem).execute_best_skill(
+        {"capabilities": ["gap"]}, {}
+    )
+
+    assert result.reason == "no_compatible_skill"

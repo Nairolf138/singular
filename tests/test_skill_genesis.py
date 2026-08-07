@@ -11,6 +11,12 @@ from singular.life.loop import run
 from singular.life.skill_genesis import create_skill
 
 
+def _local_sandbox(code: str, **_kwargs):
+    namespace = {}
+    exec(code, namespace, namespace)
+    return namespace.get("result")
+
+
 def _dec_operator(tree: ast.AST, rng=None) -> ast.AST:
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, int):
@@ -20,6 +26,7 @@ def _dec_operator(tree: ast.AST, rng=None) -> ast.AST:
 
 
 def test_skill_genesis_creation_allowed(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("singular.life.skill_validation.sandbox.run", _local_sandbox)
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
     monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
     skills_dir = tmp_path / "life" / "skills"
@@ -127,6 +134,7 @@ def test_coverage_gap_requires_spec_and_publishes_unresolved(
 def test_coverage_gap_skill_spec_and_diversity_limit(
     monkeypatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setattr("singular.life.skill_validation.sandbox.run", _local_sandbox)
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
     monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
     skills_dir = tmp_path / "life" / "skills"
@@ -167,6 +175,13 @@ def test_coverage_gap_skill_spec_and_diversity_limit(
 
     assert first.accepted is True
     assert "SPEC =" in first.target.read_text(encoding="utf-8")
+    published = json.loads((mem_dir / "skills.json").read_text())
+    assert published[first.skill_name]["publication_state"] == "available"
+    states = [
+        json.loads(line).get("state")
+        for line in (mem_dir / "skill_genesis.jsonl").read_text().splitlines()
+    ]
+    assert states[:3] == ["scaffolded", "validated", "available"]
     assert second.accepted is False
     assert second.policy_level == "diversity_limit"
     assert not second.target.exists()
@@ -211,6 +226,7 @@ def test_skill_genesis_rolls_back_on_invalid_generation(
 
 
 def test_skill_genesis_traceability_in_run_logs(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("singular.life.skill_validation.sandbox.run", _local_sandbox)
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
     monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
     skills_dir = tmp_path / "life" / "skills"
@@ -245,7 +261,7 @@ def test_skill_genesis_traceability_in_run_logs(monkeypatch, tmp_path: Path) -> 
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.05,
+        budget_seconds=0.5,
         rng=random.Random(0),
         operators={"dec": _dec_operator},
         governance_policy=policy,
@@ -303,6 +319,59 @@ def test_skill_genesis_rejects_empty_scaffold_without_publication(
         .splitlines()
     ]
     assert journal[-1]["event"] == "autogen.validation_failed"
+
+
+def test_coverage_gap_false_resolution_remains_unresolved(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    monkeypatch.setattr("singular.life.skill_validation.sandbox.run", _local_sandbox)
+    from singular.life import skill_genesis as genesis_mod
+
+    monkeypatch.setattr(
+        genesis_mod,
+        "_render_skill_implementation",
+        lambda _name, _spec: "def run(context=None):\n    return {'covered': False}\n",
+    )
+    events = []
+    bus = EventBus()
+    bus.subscribe("coverage_gap.unresolved", events.append)
+    monkeypatch.setattr(genesis_mod, "get_global_event_bus", lambda: bus)
+    skills_dir = tmp_path / "skills"
+    mem_dir = tmp_path / "mem"
+    skills_dir.mkdir()
+    policy = MutationGovernancePolicy(modifiable_paths=("skills",))
+
+    result = create_skill(
+        skills_dir=skills_dir,
+        mem_dir=mem_dir,
+        governance_policy=policy,
+        trigger="coverage_gap",
+        signal_snapshot={
+            "examples": [{"input": {"case": "gap"}, "output": {"covered": True}}],
+            "success_criteria": "the documented gap is covered",
+        },
+    )
+
+    assert result.accepted is False
+    assert events
+    assert not result.target.exists()
+    assert not (
+        mem_dir / "skills.json"
+    ).exists() or result.skill_name not in json.loads(
+        (mem_dir / "skills.json").read_text(encoding="utf-8")
+    )
+    states = [
+        json.loads(line).get("state")
+        for line in (mem_dir / "skill_genesis.jsonl").read_text().splitlines()
+    ]
+    assert states == ["scaffolded", "scaffolded", "scaffolded"]
+    assert (
+        json.loads((mem_dir / "skill_genesis.jsonl").read_text().splitlines()[-1])[
+            "event"
+        ]
+        == "coverage_gap.unresolved"
+    )
 
 
 def test_skill_genesis_rejects_missing_function_without_publication(
