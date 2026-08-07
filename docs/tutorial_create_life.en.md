@@ -83,6 +83,8 @@ singular --root "$SINGULAR_ROOT" --life lumen loop --budget-seconds 5 --run-id t
 
 During this tick, Singular may select a skill, propose a mutation, evaluate it in the sandbox, score the result, apply write governance, and journal the verdict. A rejected mutation is normal: the log explains whether the rejection came from the sandbox, score, governance, or a quota.
 
+> **Security prerequisite:** evaluating untrusted code requires Linux, `resource` limits, and Docker or Podman with active seccomp and the `python:3.11-alpine` image already available (override with `SINGULAR_SANDBOX_IMAGE`). The container runs without networking or capabilities, as an unprivileged user, with a read-only root, isolated `/tmp`, and CPU/memory/process limits. AST filtering is only complementary functional validation. Singular explicitly refuses evaluation when it cannot establish the system-isolation guarantees.
+
 ## 4. Inspect memory and checkpoint
 
 The life memory lives in `mem/`:

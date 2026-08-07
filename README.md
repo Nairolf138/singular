@@ -26,7 +26,7 @@ Contrairement aux chatbots classiques (qui ne changent pas leur cœur) ou aux si
 
 - **Vie artificielle** : un organisme qui modifie réellement son code et s’optimise par sélection naturelle.  
 - **Compagnon interactif** : une entité qui parle, garde une mémoire et exprime des émotions.  
-- **Open-source et local** : chacun peut “faire naître” son compagnon, qui vivra et évoluera à sa manière, en toute sécurité (sandbox, pas de réseau).
+- **Open-source et local** : chacun peut “faire naître” son compagnon, qui vivra et évoluera à sa manière. Le code non fiable n'est exécuté que si un runtime OCI compatible fournit l'isolation décrite ci-dessous.
 
 ---
 
@@ -433,6 +433,7 @@ Pour arrêter l’orchestrateur, utilisez `Ctrl+C` dans le terminal où il tourn
   - Tests fonctionnels (résultats corrects).
   - Performance (temps d’exécution).
   - Complexité (taille AST).
+- Le filtre AST est une validation fonctionnelle et une défense complémentaire, **pas une frontière de sécurité**. L'exécution repose sur Docker ou Podman sous Linux : conteneur sans réseau, utilisateur non privilégié, racine en lecture seule et `/tmp` isolé, aucune capability, limites de processus/CPU/mémoire, `no-new-privileges` et seccomp actif. Si ces garanties (y compris les limites `resource`) ne peuvent pas être vérifiées, Singular refuse l'exécution au lieu de revenir à un processus local moins isolé. L'image, déjà présente localement (aucun pull automatique), est configurable avec `SINGULAR_SANDBOX_IMAGE`.
 - Si la mutation est meilleure → elle remplace l’ancienne.
 
 **Esprit**

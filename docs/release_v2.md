@@ -53,10 +53,11 @@ Les parcours suivants sont bloquants avant release:
 
 Avant release, vérifier systématiquement:
 
-- [ ] Exécution de code utilisateur dans un environnement sandboxé (pas d'exécution arbitraire hors cadre).
-- [ ] Restrictions réseau appliquées côté sandbox quand requis.
-- [ ] Limites CPU / temps d'exécution configurées pour éviter les boucles non bornées.
-- [ ] Écritures disque bornées aux répertoires autorisés.
+- [ ] Exécution de code utilisateur dans un conteneur OCI dédié sous Linux ; le filtre AST reste une validation fonctionnelle, pas la frontière de sécurité.
+- [ ] Réseau désactivé, utilisateur non privilégié, capabilities supprimées, `no-new-privileges` et profil seccomp actif.
+- [ ] Limites CPU / temps / mémoire / nombre de processus configurées pour éviter les abus de ressources.
+- [ ] Racine en lecture seule et seul `/tmp` isolé accessible en écriture.
+- [ ] Refus explicite si Docker/Podman, seccomp ou les limites `resource` ne sont pas disponibles ; aucun repli vers une exécution locale.
 - [ ] Aucune clé/API secret en clair dans logs, erreurs, ou artefacts de test.
 - [ ] Messages d'erreur explicites en cas de violation sandbox (pas de stacktrace sensible exposée).
 
