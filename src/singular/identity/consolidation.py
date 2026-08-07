@@ -45,8 +45,17 @@ class ConsolidationPipeline:
         self.semantic = SemanticMemoryStore(root / "semantic_memory.json")
         self.self_model = SelfModelStore(root / "self_model.json")
 
-    def run(self) -> ConsolidationResult:
-        episodes = self.episodic.read_all()
+    def run(
+        self, *, episodes: list[dict[str, Any]] | None = None
+    ) -> ConsolidationResult:
+        """Consolidate the supplied unprocessed episodes, then compact the journal.
+
+        When ``episodes`` is omitted the complete journal is consolidated, preserving
+        the public API used by standalone callers.  Orchestrators can pass only rows
+        after their durable cursor to avoid inflating fact mention counts.
+        """
+
+        episodes = self.episodic.read_all() if episodes is None else episodes
         facts = self.semantic.consolidate_from_episodes(episodes)
         self.self_model.apply_facts(facts)
         self.self_model.compact(self.policy.keep_top_self_model_entries)

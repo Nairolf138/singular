@@ -49,8 +49,8 @@ class LifecycleClockConfig:
         default_factory=lambda: {
             "veille": PhaseBehavior(30.0, 1.1, ("perception", "resource_scan")),
             "action": PhaseBehavior(75.0, 1.5, ("mutation", "evaluation", "checkpoint")),
-            "introspection": PhaseBehavior(40.0, 1.2, ("self_review", "memory_consolidation")),
-            "sommeil": PhaseBehavior(15.0, 1.0, ("recovery", "cooldown")),
+            "introspection": PhaseBehavior(40.0, 1.2, ("self_review",)),
+            "sommeil": PhaseBehavior(15.0, 1.0, ("recovery", "cooldown", "memory_consolidation")),
         }
     )
 
