@@ -22,7 +22,7 @@ from singular.events import (
 )
 from singular.goals import IntrinsicGoals
 from singular.cognition.self_observation import SelfObservationService
-from singular.identity import ConsolidationPipeline
+from singular.identity import ConsolidationCoordinator, ConsolidationPipeline
 from singular.governance.policy import MutationGovernancePolicy
 from singular.life.coevolution_flow import LivingTestPool
 from singular.life.loop import WorldState, run_tick
@@ -164,6 +164,7 @@ class OrchestratorService:
         )
         self.goals = IntrinsicGoals(path=self.mem_dir / "goals.json")
         self.consolidation_pipeline = ConsolidationPipeline(mem_dir=self.mem_dir)
+        self.consolidation_coordinator = ConsolidationCoordinator(self.mem_dir)
         self.self_observation = SelfObservationService(self.mem_dir / "self_model.json")
         self._running = False
         self._wake_requested = False
@@ -300,6 +301,11 @@ class OrchestratorService:
             if episodes:
                 self.state.last_consolidated_episode_id = self._episode_id(episodes[-1])
             self.bus.publish("memory.consolidated", details, payload_version=1)
+            sleep_result = self.consolidation_coordinator.run(pending)
+            details["sleep_consolidation"] = sleep_result
+            self.bus.publish(
+                "sleep.consolidation.completed", sleep_result, payload_version=1
+            )
         except Exception as exc:  # cycle errors must be durable and retryable
             details["event_type"] = "memory.consolidation_failed"
             details["errors"] = [f"{type(exc).__name__}: {exc}"]
