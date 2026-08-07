@@ -4,6 +4,18 @@ Cette matrice est le registre canonique de maturité des capacités montrées da
 captures. Elle décrit **ce qui est démontré dans le dépôt**, et non une intention de
 produit. La date d'observation est le 7 août 2026.
 
+## Évaluation hors réseau multi-vies
+
+`python scripts/run_offline_multi_life_eval.py` rejoue exactement la même trace de
+perceptions et contraintes dans cinq vies à seeds distinctes. L'artefact versionné
+`artifacts/evaluations/offline_multi_life_v1.json` mesure diversité inter-vies,
+cohérence intra-vie, adaptation après échec, poursuite d'objectif, chaîne causale,
+réutilisation de mémoire, acquisition de capacités, coût, stabilité et mutations
+utiles. Les ablations sans mémoire, objectifs intrinsèques, mutation, ainsi que la
+politique aléatoire, isolent un effet comportemental minimal défini dans la
+configuration KPI. Ce scénario ne satisfait pas les exigences de campagne pour V
+et **ne constitue en aucun cas une preuve de conscience**.
+
 > **Statut du document : `experimental`.** Les statuts de disponibilité emploient
 > exclusivement la [taxonomie canonique](README.md#taxonomie-de-statut). Aucune
 > capacité de cette matrice n'est déclarée `stable`; il n'existe donc pas ici de

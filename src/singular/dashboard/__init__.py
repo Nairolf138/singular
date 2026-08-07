@@ -1967,6 +1967,26 @@ def create_app(
     def read_cockpit_essential(current_life_only: bool = False) -> dict[str, object]:
         return _summarize_cockpit_essential(current_life_only=current_life_only)
 
+    @app.get("/api/evaluations/offline-multi-life")
+    def read_offline_multi_life_evaluation() -> dict[str, object]:
+        """Expose the compact, dashboard-safe part of the versioned artifact."""
+        artifact = base_dir / "artifacts" / "evaluations" / "offline_multi_life_v1.json"
+        if not artifact.is_file():
+            return {"available": False, "summary": None}
+        try:
+            payload = json.loads(artifact.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {"available": False, "summary": None, "error": "invalid artifact"}
+        summary = payload.get("dashboard_summary")
+        if not isinstance(summary, dict):
+            return {"available": False, "summary": None, "error": "missing summary"}
+        return {
+            "available": True,
+            "schema_version": payload.get("schema_version"),
+            "generated_at": payload.get("generated_at"),
+            "summary": summary,
+        }
+
     @app.get("/dashboard/context")
     def read_dashboard_context() -> dict[str, object]:
         policy = load_runtime_policy()

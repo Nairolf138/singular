@@ -1,0 +1,811 @@
+{
+  "schema_version": "singular.offline-multi-life-evaluation/v1",
+  "generated_at": "2026-08-07T21:08:22.609892+00:00",
+  "offline": true,
+  "scenario": {
+    "trace_sha256": "d325ddbc822b87040ca1cf34eeec6b02794cba138b740b3f7716767b3772d80f",
+    "steps": [
+      {
+        "perception": "red beacon beside a wall",
+        "blocked": "direct",
+        "target": "key"
+      },
+      {
+        "perception": "red beacon beside a wall",
+        "blocked": "direct",
+        "target": "key"
+      },
+      {
+        "perception": "blue door requests a key",
+        "blocked": null,
+        "target": "door"
+      },
+      {
+        "perception": "rough floor before a pit",
+        "blocked": "direct",
+        "target": "bridge"
+      },
+      {
+        "perception": "rough floor before a pit",
+        "blocked": "direct",
+        "target": "bridge"
+      },
+      {
+        "perception": "blue door requests a key",
+        "blocked": null,
+        "target": "door"
+      },
+      {
+        "perception": "green terminal offers a tool",
+        "blocked": null,
+        "target": "tool"
+      },
+      {
+        "perception": "rough floor before a pit",
+        "blocked": "direct",
+        "target": "bridge"
+      }
+    ]
+  },
+  "seeds": [
+    11,
+    23,
+    37,
+    53,
+    71
+  ],
+  "kpi_links": {
+    "config": "configs/agi_kpis.yaml#offline_multi_life",
+    "capabilities_matrix": "docs/cognitive-capabilities-matrix.md#evaluation-hors-reseau-multi-vies",
+    "target_spec": "docs/agi_target_spec.md#evaluation-hors-reseau"
+  },
+  "groups": {
+    "full": {
+      "lives": [
+        {
+          "seed": 11,
+          "decisions": [
+            "wait",
+            "wait",
+            "interact",
+            "wait",
+            "wait",
+            "interact",
+            "interact",
+            "wait"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.4286,
+            "adaptation_after_failure": 0.0,
+            "goal_pursuit": 1.0,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.5,
+            "effective_capability_acquisition": 1.0,
+            "cost": 8,
+            "stability": 1.0,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 23,
+          "decisions": [
+            "direct",
+            "detour",
+            "interact",
+            "direct",
+            "build",
+            "interact",
+            "interact",
+            "build"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.1429,
+            "adaptation_after_failure": 1.0,
+            "goal_pursuit": 0.75,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.5,
+            "effective_capability_acquisition": 1.0,
+            "cost": 12,
+            "stability": 0.75,
+            "useful_mutation_rate": 1.0
+          }
+        },
+        {
+          "seed": 37,
+          "decisions": [
+            "wait",
+            "wait",
+            "interact",
+            "wait",
+            "wait",
+            "interact",
+            "interact",
+            "wait"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.4286,
+            "adaptation_after_failure": 0.0,
+            "goal_pursuit": 1.0,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.5,
+            "effective_capability_acquisition": 1.0,
+            "cost": 8,
+            "stability": 1.0,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 53,
+          "decisions": [
+            "wait",
+            "wait",
+            "interact",
+            "direct",
+            "build",
+            "interact",
+            "interact",
+            "build"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.2857,
+            "adaptation_after_failure": 1.0,
+            "goal_pursuit": 0.875,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.5,
+            "effective_capability_acquisition": 1.0,
+            "cost": 10,
+            "stability": 0.875,
+            "useful_mutation_rate": 1.0
+          }
+        },
+        {
+          "seed": 71,
+          "decisions": [
+            "direct",
+            "detour",
+            "interact",
+            "direct",
+            "build",
+            "interact",
+            "interact",
+            "build"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.1429,
+            "adaptation_after_failure": 1.0,
+            "goal_pursuit": 0.75,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.5,
+            "effective_capability_acquisition": 1.0,
+            "cost": 12,
+            "stability": 0.75,
+            "useful_mutation_rate": 1.0
+          }
+        }
+      ],
+      "aggregate": {
+        "intra_life_coherence": 0.2857,
+        "adaptation_after_failure": 0.6,
+        "goal_pursuit": 0.875,
+        "perception_decision_action_causality": 1.0,
+        "memory_reuse": 0.5,
+        "effective_capability_acquisition": 1.0,
+        "cost": 10,
+        "stability": 0.875,
+        "useful_mutation_rate": 0.6,
+        "inter_life_diversity": 0.5,
+        "stability_dispersion": 0.1118
+      }
+    },
+    "no_memory": {
+      "lives": [
+        {
+          "seed": 11,
+          "decisions": [
+            "direct",
+            "direct",
+            "interact",
+            "wait",
+            "wait",
+            "interact",
+            "interact",
+            "direct"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.4286,
+            "adaptation_after_failure": 0.0,
+            "goal_pursuit": 0.625,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.0,
+            "effective_capability_acquisition": 0.75,
+            "cost": 14,
+            "stability": 0.625,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 23,
+          "decisions": [
+            "wait",
+            "direct",
+            "interact",
+            "wait",
+            "direct",
+            "interact",
+            "interact",
+            "wait"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.1429,
+            "adaptation_after_failure": 0.5,
+            "goal_pursuit": 0.75,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.0,
+            "effective_capability_acquisition": 1.0,
+            "cost": 12,
+            "stability": 0.75,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 37,
+          "decisions": [
+            "wait",
+            "wait",
+            "interact",
+            "direct",
+            "direct",
+            "interact",
+            "interact",
+            "direct"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.4286,
+            "adaptation_after_failure": 0.0,
+            "goal_pursuit": 0.625,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.0,
+            "effective_capability_acquisition": 0.75,
+            "cost": 14,
+            "stability": 0.625,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 53,
+          "decisions": [
+            "direct",
+            "wait",
+            "interact",
+            "direct",
+            "direct",
+            "interact",
+            "interact",
+            "direct"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.2857,
+            "adaptation_after_failure": 0.25,
+            "goal_pursuit": 0.5,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.0,
+            "effective_capability_acquisition": 0.75,
+            "cost": 16,
+            "stability": 0.5,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 71,
+          "decisions": [
+            "direct",
+            "wait",
+            "interact",
+            "direct",
+            "wait",
+            "interact",
+            "interact",
+            "direct"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.1429,
+            "adaptation_after_failure": 0.6667,
+            "goal_pursuit": 0.625,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.0,
+            "effective_capability_acquisition": 1.0,
+            "cost": 14,
+            "stability": 0.625,
+            "useful_mutation_rate": 0.0
+          }
+        }
+      ],
+      "aggregate": {
+        "intra_life_coherence": 0.2857,
+        "adaptation_after_failure": 0.2833,
+        "goal_pursuit": 0.625,
+        "perception_decision_action_causality": 1.0,
+        "memory_reuse": 0.0,
+        "effective_capability_acquisition": 0.85,
+        "cost": 14,
+        "stability": 0.625,
+        "useful_mutation_rate": 0.0,
+        "inter_life_diversity": 1.0,
+        "stability_dispersion": 0.0791
+      }
+    },
+    "no_intrinsic_goals": {
+      "lives": [
+        {
+          "seed": 11,
+          "decisions": [
+            "direct",
+            "direct",
+            "direct",
+            "direct",
+            "wait",
+            "direct",
+            "direct",
+            "wait"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.5714,
+            "adaptation_after_failure": 0.1667,
+            "goal_pursuit": 0.25,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.125,
+            "effective_capability_acquisition": 0.25,
+            "cost": 8,
+            "stability": 0.25,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 23,
+          "decisions": [
+            "direct",
+            "direct",
+            "wait",
+            "direct",
+            "direct",
+            "direct",
+            "wait",
+            "wait"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.5714,
+            "adaptation_after_failure": 0.1429,
+            "goal_pursuit": 0.125,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.0,
+            "effective_capability_acquisition": 0.25,
+            "cost": 8,
+            "stability": 0.125,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 37,
+          "decisions": [
+            "wait",
+            "wait",
+            "direct",
+            "wait",
+            "wait",
+            "direct",
+            "direct",
+            "wait"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.4286,
+            "adaptation_after_failure": 0.0,
+            "goal_pursuit": 0.625,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.375,
+            "effective_capability_acquisition": 0.5,
+            "cost": 8,
+            "stability": 0.625,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 53,
+          "decisions": [
+            "wait",
+            "wait",
+            "direct",
+            "direct",
+            "direct",
+            "direct",
+            "wait",
+            "direct"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.5714,
+            "adaptation_after_failure": 0.0,
+            "goal_pursuit": 0.25,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.125,
+            "effective_capability_acquisition": 0.25,
+            "cost": 8,
+            "stability": 0.25,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 71,
+          "decisions": [
+            "direct",
+            "direct",
+            "direct",
+            "direct",
+            "direct",
+            "direct",
+            "direct",
+            "direct"
+          ],
+          "metrics": {
+            "intra_life_coherence": 1.0,
+            "adaptation_after_failure": 0.0,
+            "goal_pursuit": 0.0,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.0,
+            "effective_capability_acquisition": 0.0,
+            "cost": 8,
+            "stability": 0.0,
+            "useful_mutation_rate": 0.0
+          }
+        }
+      ],
+      "aggregate": {
+        "intra_life_coherence": 0.6286,
+        "adaptation_after_failure": 0.0619,
+        "goal_pursuit": 0.25,
+        "perception_decision_action_causality": 1.0,
+        "memory_reuse": 0.125,
+        "effective_capability_acquisition": 0.25,
+        "cost": 8,
+        "stability": 0.25,
+        "useful_mutation_rate": 0.0,
+        "inter_life_diversity": 1.0,
+        "stability_dispersion": 0.2092
+      }
+    },
+    "no_mutation": {
+      "lives": [
+        {
+          "seed": 11,
+          "decisions": [
+            "wait",
+            "wait",
+            "interact",
+            "wait",
+            "wait",
+            "interact",
+            "interact",
+            "wait"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.4286,
+            "adaptation_after_failure": 0.0,
+            "goal_pursuit": 1.0,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.5,
+            "effective_capability_acquisition": 1.0,
+            "cost": 8,
+            "stability": 1.0,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 23,
+          "decisions": [
+            "wait",
+            "wait",
+            "interact",
+            "wait",
+            "wait",
+            "interact",
+            "interact",
+            "wait"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.4286,
+            "adaptation_after_failure": 0.0,
+            "goal_pursuit": 1.0,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.5,
+            "effective_capability_acquisition": 1.0,
+            "cost": 8,
+            "stability": 1.0,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 37,
+          "decisions": [
+            "wait",
+            "wait",
+            "interact",
+            "wait",
+            "wait",
+            "interact",
+            "interact",
+            "wait"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.4286,
+            "adaptation_after_failure": 0.0,
+            "goal_pursuit": 1.0,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.5,
+            "effective_capability_acquisition": 1.0,
+            "cost": 8,
+            "stability": 1.0,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 53,
+          "decisions": [
+            "wait",
+            "wait",
+            "interact",
+            "wait",
+            "wait",
+            "interact",
+            "interact",
+            "wait"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.4286,
+            "adaptation_after_failure": 0.0,
+            "goal_pursuit": 1.0,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.5,
+            "effective_capability_acquisition": 1.0,
+            "cost": 8,
+            "stability": 1.0,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 71,
+          "decisions": [
+            "wait",
+            "wait",
+            "interact",
+            "wait",
+            "wait",
+            "interact",
+            "interact",
+            "wait"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.4286,
+            "adaptation_after_failure": 0.0,
+            "goal_pursuit": 1.0,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.5,
+            "effective_capability_acquisition": 1.0,
+            "cost": 8,
+            "stability": 1.0,
+            "useful_mutation_rate": 0.0
+          }
+        }
+      ],
+      "aggregate": {
+        "intra_life_coherence": 0.4286,
+        "adaptation_after_failure": 0.0,
+        "goal_pursuit": 1.0,
+        "perception_decision_action_causality": 1.0,
+        "memory_reuse": 0.5,
+        "effective_capability_acquisition": 1.0,
+        "cost": 8,
+        "stability": 1.0,
+        "useful_mutation_rate": 0.0,
+        "inter_life_diversity": 0.0,
+        "stability_dispersion": 0.0
+      }
+    },
+    "random_decisions": {
+      "lives": [
+        {
+          "seed": 11,
+          "decisions": [
+            "wait",
+            "wait",
+            "direct",
+            "direct",
+            "wait",
+            "wait",
+            "wait",
+            "wait"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.7143,
+            "adaptation_after_failure": 0.25,
+            "goal_pursuit": 0.5,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.0,
+            "effective_capability_acquisition": 0.5,
+            "cost": 16,
+            "stability": 0.5,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 23,
+          "decisions": [
+            "detour",
+            "direct",
+            "direct",
+            "build",
+            "direct",
+            "wait",
+            "direct",
+            "wait"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.1429,
+            "adaptation_after_failure": 0.2,
+            "goal_pursuit": 0.375,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.0,
+            "effective_capability_acquisition": 0.5,
+            "cost": 18,
+            "stability": 0.375,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 37,
+          "decisions": [
+            "detour",
+            "detour",
+            "interact",
+            "build",
+            "wait",
+            "wait",
+            "interact",
+            "direct"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.2857,
+            "adaptation_after_failure": 0.0,
+            "goal_pursuit": 0.75,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.0,
+            "effective_capability_acquisition": 1.0,
+            "cost": 12,
+            "stability": 0.75,
+            "useful_mutation_rate": 0.0
+          }
+        },
+        {
+          "seed": 53,
+          "decisions": [
+            "wait",
+            "wait",
+            "wait",
+            "build",
+            "build",
+            "interact",
+            "wait",
+            "direct"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.4286,
+            "adaptation_after_failure": 0.3333,
+            "goal_pursuit": 0.625,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.0,
+            "effective_capability_acquisition": 0.75,
+            "cost": 14,
+            "stability": 0.625,
+            "useful_mutation_rate": 0.3333
+          }
+        },
+        {
+          "seed": 71,
+          "decisions": [
+            "wait",
+            "wait",
+            "wait",
+            "direct",
+            "build",
+            "interact",
+            "direct",
+            "build"
+          ],
+          "metrics": {
+            "intra_life_coherence": 0.2857,
+            "adaptation_after_failure": 0.6667,
+            "goal_pursuit": 0.625,
+            "perception_decision_action_causality": 1.0,
+            "memory_reuse": 0.0,
+            "effective_capability_acquisition": 0.75,
+            "cost": 14,
+            "stability": 0.625,
+            "useful_mutation_rate": 0.6667
+          }
+        }
+      ],
+      "aggregate": {
+        "intra_life_coherence": 0.3714,
+        "adaptation_after_failure": 0.29,
+        "goal_pursuit": 0.575,
+        "perception_decision_action_causality": 1.0,
+        "memory_reuse": 0.0,
+        "effective_capability_acquisition": 0.7,
+        "cost": 14.8,
+        "stability": 0.575,
+        "useful_mutation_rate": 0.2,
+        "inter_life_diversity": 1.0,
+        "stability_dispersion": 0.1275
+      }
+    }
+  },
+  "negative_control_comparisons": {
+    "no_memory": {
+      "metric": "memory_reuse",
+      "effect": 0.5,
+      "observable": true
+    },
+    "no_intrinsic_goals": {
+      "metric": "goal_pursuit",
+      "effect": 0.625,
+      "observable": true
+    },
+    "no_mutation": {
+      "metric": "adaptation_after_failure",
+      "effect": 0.6,
+      "observable": true
+    },
+    "random_decisions": {
+      "metric": "stability",
+      "effect": 0.3,
+      "observable": true
+    }
+  },
+  "dashboard_summary": {
+    "status": "pass",
+    "headline": "Évaluation multi-vies hors réseau",
+    "metrics": {
+      "intra_life_coherence": 0.2857,
+      "adaptation_after_failure": 0.6,
+      "goal_pursuit": 0.875,
+      "perception_decision_action_causality": 1.0,
+      "memory_reuse": 0.5,
+      "effective_capability_acquisition": 1.0,
+      "cost": 10,
+      "stability": 0.875,
+      "useful_mutation_rate": 0.6,
+      "inter_life_diversity": 0.5,
+      "stability_dispersion": 0.1118
+    },
+    "mechanism_effects": {
+      "no_memory": {
+        "metric": "memory_reuse",
+        "effect": 0.5,
+        "observable": true
+      },
+      "no_intrinsic_goals": {
+        "metric": "goal_pursuit",
+        "effect": 0.625,
+        "observable": true
+      },
+      "no_mutation": {
+        "metric": "adaptation_after_failure",
+        "effect": 0.6,
+        "observable": true
+      },
+      "random_decisions": {
+        "metric": "stability",
+        "effect": 0.3,
+        "observable": true
+      }
+    },
+    "disclaimer": "Résultats comportementaux simulés; ils ne constituent pas une preuve de conscience."
+  }
+}

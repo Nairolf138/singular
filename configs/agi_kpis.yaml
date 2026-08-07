@@ -79,6 +79,13 @@ measurement:
     - language
     - task_difficulty
 
+# Seuil local du scénario synthétique; il ne remplace pas la campagne à 200
+# échantillons, les IC à 95 % ni les deux fenêtres exigées ci-dessus.
+offline_multi_life:
+  artifact_schema: "singular.offline-multi-life-evaluation/v1"
+  minimum_lives: 5
+  minimum_observable_effect: 0.05
+
 notes:
   - "Les valeurs sont des seuils minimaux (ou maximaux pour les métriques suffixées _max)."
   - "Le passage de niveau exige que tous les KPI critiques du niveau soient satisfaits sur 2 fenêtres consécutives."
