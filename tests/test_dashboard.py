@@ -1946,6 +1946,29 @@ def test_websocket_stream_incremental_events_and_growth_stability(tmp_path: Path
         ]
 
 
+def test_websocket_multiple_clients_receive_the_same_bounded_stream(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "shared.jsonl").write_text(
+        json.dumps({"ts": "2026-04-12T10:00:00", "event": "interaction"})
+        + "\n",
+        encoding="utf-8",
+    )
+    client = TestClient(
+        create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    )
+
+    with client.websocket_connect("/ws") as first, client.websocket_connect(
+        "/ws"
+    ) as second:
+        first_event = _receive_with_timeout(first)
+        second_event = _receive_with_timeout(second)
+
+    assert first_event == second_event
+    assert first_event["type"] == "run_event"
+    assert first_event["run_id"] == "shared"
+
+
 
 def test_run_requires_uvicorn(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

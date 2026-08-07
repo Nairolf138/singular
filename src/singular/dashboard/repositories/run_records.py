@@ -10,7 +10,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterator
 
 from ...storage import RunsRepository, SQLiteStorage, StorageConfig
 
@@ -85,6 +85,56 @@ class RunRecordsRepository:
     runs_path: Path | None
     registry_loader: Callable[[], dict[str, object]]
 
+    @staticmethod
+    def _limit(name: str, default: int) -> int:
+        try:
+            return max(1, int(os.environ.get(name, default)))
+        except ValueError:
+            return default
+
+    def iter_jsonl_records(
+        self,
+        file: Path,
+        *,
+        max_lines: int | None = None,
+        max_bytes: int | None = None,
+        max_event_bytes: int | None = None,
+    ) -> Iterator[dict[str, object]]:
+        """Yield JSON objects without ever materializing a whole log or huge line."""
+        lines_left = max_lines or self._limit("SINGULAR_DASHBOARD_MAX_LINES", 10_000)
+        bytes_left = max_bytes or self._limit(
+            "SINGULAR_DASHBOARD_MAX_BYTES", 16 * 1024 * 1024
+        )
+        event_limit = max_event_bytes or self._limit(
+            "SINGULAR_DASHBOARD_MAX_EVENT_BYTES", 1024 * 1024
+        )
+        with file.open("rb") as handle:
+            while lines_left > 0 and bytes_left > 0:
+                raw = handle.readline(min(event_limit + 1, bytes_left + 1))
+                if not raw:
+                    break
+                consumed = len(raw)
+                bytes_left -= consumed
+                lines_left -= 1
+                oversized = len(raw) > event_limit or (
+                    not raw.endswith(b"\n") and consumed > bytes_left
+                )
+                if len(raw) > event_limit and not raw.endswith(b"\n"):
+                    # Drain the physical line in bounded chunks; never parse fragments.
+                    while bytes_left > 0:
+                        chunk = handle.readline(min(event_limit + 1, bytes_left))
+                        bytes_left -= len(chunk)
+                        if not chunk or chunk.endswith(b"\n"):
+                            break
+                if oversized:
+                    continue
+                try:
+                    payload = json.loads(raw.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    continue
+                if isinstance(payload, dict):
+                    yield payload
+
     def _registry_lives_paths(self) -> list[Path]:
         """Return life home directories declared in the registry."""
         registry = self.registry_loader()
@@ -145,16 +195,7 @@ class RunRecordsRepository:
             for file in directory.iterdir():
                 if not file.is_file() or not is_run_jsonl_file(file):
                     continue
-                for line in file.read_text(encoding="utf-8").splitlines():
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        payload = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if not isinstance(payload, dict):
-                        continue
+                for payload in self.iter_jsonl_records(file):
                     if "_run_file" not in payload:
                         payload["_run_file"] = logical_run_file_stem(file)
                     records.append(payload)
@@ -177,16 +218,7 @@ class RunRecordsRepository:
     def read_jsonl_records(self, file: Path) -> list[dict[str, object]]:
         """Read JSON objects from one JSONL file while ignoring malformed lines."""
         records: list[dict[str, object]] = []
-        for line in file.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict):
-                records.append(payload)
+        records.extend(self.iter_jsonl_records(file))
         return records
 
     def latest_run_file(self, current_life_only: bool = False) -> Path | None:

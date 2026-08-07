@@ -10,6 +10,7 @@ import io
 import json
 import os
 import secrets
+from collections import deque
 from contextlib import redirect_stdout
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -19,7 +20,10 @@ from typing import Any, Callable
 from singular.lives import get_registry_root, load_registry
 from singular.sensors import load_host_sensor_thresholds
 from singular.skills_daily import build_daily_skills_snapshot
-from singular.dashboard.repositories.run_records import resolve_current_life_home
+from singular.dashboard.repositories.run_records import (
+    RunRecordsRepository,
+    resolve_current_life_home,
+)
 
 
 @dataclass(slots=True)
@@ -63,7 +67,9 @@ class DashboardActionService:
         runs_dir = current_home / "runs"
         vital_metrics = self._consolidated_vital_metrics(runs_dir=runs_dir)
         host_metrics = self._consolidated_host_metrics(runs_dir=runs_dir)
-        daily_skills = build_daily_skills_snapshot(self._read_run_records(runs_dir=runs_dir))
+        daily_skills = build_daily_skills_snapshot(
+            self._read_run_records(runs_dir=runs_dir)
+        )
         return {
             "registry_root": str(self.root),
             "current_life_home": str(current_home),
@@ -74,23 +80,20 @@ class DashboardActionService:
 
     def _read_run_records(self, *, runs_dir: Path) -> list[dict[str, Any]]:
         """Read valid JSON objects from run logs, skipping corrupt lines."""
-        records: list[dict[str, Any]] = []
+        max_records = max(
+            1, int(os.environ.get("SINGULAR_DASHBOARD_MAX_LINES", "10000"))
+        )
+        records: deque[dict[str, Any]] = deque(maxlen=max_records)
         if not runs_dir.exists():
-            return records
+            return []
         for file in runs_dir.iterdir():
             if not file.is_file() or file.suffix != ".jsonl":
                 continue
-            for line in file.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    payload = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(payload, dict):
-                    records.append(payload)
-        return records
+            repository = RunRecordsRepository(
+                base_dir=self.home, runs_path=runs_dir, registry_loader=lambda: {}
+            )
+            records.extend(repository.iter_jsonl_records(file))
+        return list(records)
 
     def _consolidated_vital_metrics(self, *, runs_dir: Path) -> dict[str, Any]:
         """Summarize health, mutation acceptance, circadian phase, and risk."""
@@ -117,20 +120,12 @@ class DashboardActionService:
                 "circadian_phase": "indéterminée",
                 "risk_level": "n/a",
             }
-        records: list[dict[str, Any]] = []
-        for line in latest_file.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict):
-                records.append(payload)
+        repository = RunRecordsRepository(
+            base_dir=self.home, runs_path=runs_dir, registry_loader=lambda: {}
+        )
         accepted_values: list[bool] = []
         health_scores: list[float] = []
-        for record in records:
+        for record in repository.iter_jsonl_records(latest_file):
             accepted = record.get("accepted")
             if not isinstance(accepted, bool):
                 accepted = record.get("ok")
@@ -220,9 +215,24 @@ class DashboardActionService:
         thresholds = load_host_sensor_thresholds()
         records = self._read_run_records(runs_dir=runs_dir)
         recent = records[-120:]
-        history_map: dict[str, list[dict[str, Any]]] = {"cpu": [], "ram": [], "temperature": [], "disk": []}
-        latest_values: dict[str, float | None] = {"cpu": None, "ram": None, "temperature": None, "disk": None}
-        latest_statuses: dict[str, dict[str, Any] | None] = {"cpu": None, "ram": None, "temperature": None, "disk": None}
+        history_map: dict[str, list[dict[str, Any]]] = {
+            "cpu": [],
+            "ram": [],
+            "temperature": [],
+            "disk": [],
+        }
+        latest_values: dict[str, float | None] = {
+            "cpu": None,
+            "ram": None,
+            "temperature": None,
+            "disk": None,
+        }
+        latest_statuses: dict[str, dict[str, Any] | None] = {
+            "cpu": None,
+            "ram": None,
+            "temperature": None,
+            "disk": None,
+        }
         latest_adaptation: dict[str, Any] | None = None
         for record in recent:
             ts = record.get("ts")
@@ -235,7 +245,9 @@ class DashboardActionService:
                     "disk": host_metrics.get("disk_used_percent"),
                 }
                 metric_status_map = (
-                    host_metrics.get("metric_status") if isinstance(host_metrics.get("metric_status"), dict) else {}
+                    host_metrics.get("metric_status")
+                    if isinstance(host_metrics.get("metric_status"), dict)
+                    else {}
                 )
                 metric_status_aliases = {
                     "cpu": "cpu_percent",
@@ -244,7 +256,9 @@ class DashboardActionService:
                     "disk": "disk_used_percent",
                 }
                 for metric_name, raw_value in metric_map.items():
-                    status_payload = metric_status_map.get(metric_status_aliases[metric_name], {})
+                    status_payload = metric_status_map.get(
+                        metric_status_aliases[metric_name], {}
+                    )
                     if isinstance(status_payload, dict):
                         latest_statuses[metric_name] = status_payload
                         raw_value = status_payload.get("value", raw_value)
@@ -255,12 +269,16 @@ class DashboardActionService:
                             {
                                 "ts": ts if isinstance(ts, str) else None,
                                 "value": value,
-                                "risk": self._host_metric_risk(metric_name, value, thresholds),
+                                "risk": self._host_metric_risk(
+                                    metric_name, value, thresholds
+                                ),
                             }
                         )
             event = record.get("event")
             adaptation_payload: dict[str, Any] | None = None
-            if event == "orchestrator.adaptation" and isinstance(record.get("payload"), dict):
+            if event == "orchestrator.adaptation" and isinstance(
+                record.get("payload"), dict
+            ):
                 adaptation_payload = record["payload"]
             elif isinstance(record.get("adaptation"), dict):
                 adaptation_payload = record["adaptation"]
@@ -269,7 +287,9 @@ class DashboardActionService:
                     "ts": ts if isinstance(ts, str) else None,
                     "triggered_rules": adaptation_payload.get("triggered_rules", []),
                     "cpu_budget_percent": adaptation_payload.get("cpu_budget_percent"),
-                    "skip_action_tick": bool(adaptation_payload.get("skip_action_tick", False)),
+                    "skip_action_tick": bool(
+                        adaptation_payload.get("skip_action_tick", False)
+                    ),
                     "safe_mode": adaptation_payload.get("safe_mode"),
                 }
 
@@ -278,12 +298,23 @@ class DashboardActionService:
         global_status = "ok"
         for metric_name in ("cpu", "ram", "temperature", "disk"):
             value = latest_values[metric_name]
-            status_payload = latest_statuses.get(metric_name) if isinstance(latest_statuses.get(metric_name), dict) else {}
-            status = str((status_payload or {}).get("status") or ("available" if value is not None else "unsupported"))
+            status_payload = (
+                latest_statuses.get(metric_name)
+                if isinstance(latest_statuses.get(metric_name), dict)
+                else {}
+            )
+            status = str(
+                (status_payload or {}).get("status")
+                or ("available" if value is not None else "unsupported")
+            )
             reason = (status_payload or {}).get("reason")
             last_seen_at = (status_payload or {}).get("last_seen_at")
             unit = (status_payload or {}).get("unit")
-            risk = self._host_metric_risk(metric_name, value, thresholds) if status != "unsupported" else "unsupported"
+            risk = (
+                self._host_metric_risk(metric_name, value, thresholds)
+                if status != "unsupported"
+                else "unsupported"
+            )
             trend_history = history_map[metric_name][-8:]
             metrics_payload[metric_name] = {
                 "value": value,
@@ -296,7 +327,9 @@ class DashboardActionService:
             }
             if risk_priority.get(risk, -1) > risk_priority.get(global_status, 0):
                 global_status = risk
-        if all(metrics_payload[name]["status"] == "unsupported" for name in metrics_payload):
+        if all(
+            metrics_payload[name]["status"] == "unsupported" for name in metrics_payload
+        ):
             global_status = "unsupported"
 
         return {
@@ -390,7 +423,9 @@ class DashboardActionService:
         return normalized
 
     @staticmethod
-    def _require_float(value: Any, *, field: str, min_value: float, max_value: float) -> float:
+    def _require_float(
+        value: Any, *, field: str, min_value: float, max_value: float
+    ) -> float:
         if not isinstance(value, (int, float)):
             raise ValueError(f"{field} must be a number")
         float_value = float(value)
@@ -399,7 +434,9 @@ class DashboardActionService:
         return float_value
 
     def _birth(self, params: dict[str, Any]) -> ActionResult:
-        name = self._require_non_empty_text(params.get("name", "New life"), field="name", max_len=80)
+        name = self._require_non_empty_text(
+            params.get("name", "New life"), field="name", max_len=80
+        )
         seed = params.get("seed")
         if seed is not None and not isinstance(seed, int):
             raise ValueError("seed must be an integer")
@@ -418,13 +455,17 @@ class DashboardActionService:
         return ActionResult(ok=True, action="birth", data=data, log=log)
 
     def _talk(self, params: dict[str, Any]) -> ActionResult:
-        prompt = self._require_non_empty_text(params.get("prompt"), field="prompt", max_len=400)
+        prompt = self._require_non_empty_text(
+            params.get("prompt"), field="prompt", max_len=400
+        )
         name = params.get("name")
         if name is not None:
             name = self._require_non_empty_text(name, field="name", max_len=80)
         provider = params.get("provider")
         if provider is not None:
-            provider = self._require_non_empty_text(provider, field="provider", max_len=40)
+            provider = self._require_non_empty_text(
+                provider, field="provider", max_len=40
+            )
         seed = params.get("seed")
         if seed is not None and not isinstance(seed, int):
             raise ValueError("seed must be an integer")
@@ -435,18 +476,29 @@ class DashboardActionService:
         life = resolve_life(name)
         if life is None:
             raise ValueError(f"unknown life: {name}" if name else "no active life")
+
         def _run() -> dict[str, Any]:
             response = talk(provider=provider, seed=seed, prompt=prompt, life_home=life)
-            return {"life": str(life), "name": name, "prompt": prompt, "response": response}
+            return {
+                "life": str(life),
+                "name": name,
+                "prompt": prompt,
+                "response": response,
+            }
 
         data, log = self._capture(_run)
         return ActionResult(ok=True, action="talk", data=data, log=log)
 
     def _loop(self, params: dict[str, Any]) -> ActionResult:
         budget = self._require_float(
-            params.get("budget_seconds"), field="budget_seconds", min_value=0.1, max_value=3600.0
+            params.get("budget_seconds"),
+            field="budget_seconds",
+            min_value=0.1,
+            max_value=3600.0,
         )
-        run_id = self._require_non_empty_text(params.get("run_id", "loop"), field="run_id", max_len=64)
+        run_id = self._require_non_empty_text(
+            params.get("run_id", "loop"), field="run_id", max_len=64
+        )
         seed = params.get("seed")
         if seed is not None and not isinstance(seed, int):
             raise ValueError("seed must be an integer")
@@ -489,6 +541,7 @@ class DashboardActionService:
         if name is not None:
             name = self._require_non_empty_text(name, field="name", max_len=80)
         from singular.lives import resolve_life
+
         life = resolve_life(name)
         if life is None:
             raise ValueError(f"unknown life: {name}" if name else "no active life")
@@ -539,7 +592,9 @@ class DashboardActionService:
         return ActionResult(ok=True, action="lives_list", data=data, log=log)
 
     def _lives_use(self, params: dict[str, Any]) -> ActionResult:
-        name = self._require_non_empty_text(params.get("name"), field="name", max_len=80)
+        name = self._require_non_empty_text(
+            params.get("name"), field="name", max_len=80
+        )
         from singular.lives import resolve_life
 
         def _run() -> dict[str, Any]:
@@ -552,7 +607,9 @@ class DashboardActionService:
         return ActionResult(ok=True, action="lives_use", data=data, log=log)
 
     def _archive(self, params: dict[str, Any]) -> ActionResult:
-        name = self._require_non_empty_text(params.get("name"), field="name", max_len=80)
+        name = self._require_non_empty_text(
+            params.get("name"), field="name", max_len=80
+        )
         from singular.lives import archive_life
 
         def _run() -> dict[str, Any]:
@@ -612,7 +669,9 @@ class DashboardActionService:
         return ActionResult(ok=True, action="emergency_stop", data=data, log=log)
 
     def _memorial(self, params: dict[str, Any]) -> ActionResult:
-        name = self._require_non_empty_text(params.get("name"), field="name", max_len=80)
+        name = self._require_non_empty_text(
+            params.get("name"), field="name", max_len=80
+        )
         message = self._require_non_empty_text(
             params.get("message", "Merci pour ce cycle de vie."),
             field="message",
@@ -632,10 +691,14 @@ class DashboardActionService:
         return ActionResult(ok=True, action="memorial", data=data, log=log)
 
     def _clone(self, params: dict[str, Any]) -> ActionResult:
-        name = self._require_non_empty_text(params.get("name"), field="name", max_len=80)
+        name = self._require_non_empty_text(
+            params.get("name"), field="name", max_len=80
+        )
         new_name = params.get("new_name")
         if new_name is not None:
-            new_name = self._require_non_empty_text(new_name, field="new_name", max_len=80)
+            new_name = self._require_non_empty_text(
+                new_name, field="new_name", max_len=80
+            )
         from singular.lives import clone_life
 
         def _run() -> dict[str, Any]:
