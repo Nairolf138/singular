@@ -93,7 +93,10 @@ class _LogCursor:
 
 
 def create_app(
-    runs_dir: Path | str | None = None, psyche_file: Path | str | None = None
+    runs_dir: Path | str | None = None,
+    psyche_file: Path | str | None = None,
+    *,
+    require_read_auth: bool = False,
 ) -> FastAPI:
     """Create the dashboard FastAPI application."""
     registry_root = get_registry_root()
@@ -107,6 +110,44 @@ def create_app(
     quests_path = base_dir / "mem" / "quests_state.json"
     app = FastAPI()
     actions = DashboardActionService(home=base_dir)
+
+    def _request_token(request: object) -> str | None:
+        """Read credentials exclusively from request headers."""
+        headers = getattr(request, "headers", {})
+        authorization = headers.get("authorization", "")
+        if isinstance(authorization, str) and authorization.startswith("Bearer "):
+            candidate = authorization[len("Bearer ") :].strip()
+            if candidate:
+                return candidate
+        candidate = headers.get("x-singular-action-token")
+        return candidate.strip() if isinstance(candidate, str) and candidate.strip() else None
+
+    def _redact_secret(value: object) -> object:
+        """Prevent the configured credential from reaching responses or captured logs."""
+        secret = os.environ.get("SINGULAR_DASHBOARD_ACTION_TOKEN")
+        if not secret:
+            return value
+        if isinstance(value, str):
+            return value.replace(secret, "[REDACTED]")
+        if isinstance(value, dict):
+            return {key: _redact_secret(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [_redact_secret(item) for item in value]
+        return value
+
+    if require_read_auth and hasattr(app, "middleware"):
+        @app.middleware("http")
+        async def authenticate_remote_reads(request: object, call_next: object) -> object:
+            if getattr(request, "method", "") == "GET" and not str(
+                getattr(getattr(request, "url", None), "path", "")
+            ).startswith("/static/"):
+                try:
+                    actions.validate_token(_request_token(request))
+                except PermissionError:
+                    from starlette.responses import JSONResponse
+
+                    return JSONResponse({"detail": "dashboard authentication required"}, status_code=403)
+            return await call_next(request)
     dashboard_resources = files("singular.dashboard")
     templates_dir = dashboard_resources.joinpath("templates")
     static_dir = dashboard_resources.joinpath("static")
@@ -2384,7 +2425,7 @@ def create_app(
             return _chat_payload(
                 life=life,
                 message=message,
-                response=str(exc),
+                response=str(_redact_secret(str(exc))),
                 status="token_invalid",
                 timestamp=timestamp,
             )
@@ -2448,7 +2489,7 @@ def create_app(
             return _chat_payload(
                 life=target,
                 message=message,
-                response=str(exc),
+                response=str(_redact_secret(str(exc))),
                 status=error_status,
                 timestamp=timestamp,
             )
@@ -2463,14 +2504,11 @@ def create_app(
             response=response,
             status=response_status,
             timestamp=timestamp,
-            details={"log": log, "data": data, "provider_events": provider_lines},
+            details=_redact_secret({"log": log, "data": data, "provider_events": provider_lines}),
         )
 
     @app.get("/api/lives/{life}/chat")
-    def chat_with_life_get(
-        life: str, token: str | None = None, payload: str | None = None
-    ) -> dict[str, object]:
-        _ = (token, payload)
+    def chat_with_life_get(life: str) -> dict[str, object]:
         slug, meta, life_dir = _resolve_life_entry(life)
         target = slug or life
         life_status = _life_status(meta)
@@ -2502,17 +2540,15 @@ def create_app(
 
     if hasattr(app, "post"):
         async def chat_with_life_post(
-            life: str, request: StarletteRequest, token: str | None = None
+            life: str, request: StarletteRequest
         ) -> dict[str, object]:
             try:
                 body = await request.json()
             except Exception:
                 body = {}
-            return _run_life_chat(life, body, token=token)
+            return _run_life_chat(life, body, token=_request_token(request))
 
         app.post("/api/lives/{life}/chat")(chat_with_life_post)
-
-    DESTRUCTIVE_GET_ACTIONS = {"archive", "emergency_stop", "clone"}
 
     def _validate_action_token(token: str | None) -> None:
         try:
@@ -2552,30 +2588,22 @@ def create_app(
         _validate_action_token(token)
         result = actions.execute(action, params)
         if not result.get("ok"):
-            raise HTTPException(status_code=400, detail=str(result.get("error") or "action failed"))
-        return result
+            detail = _redact_secret(str(result.get("error") or "action failed"))
+            raise HTTPException(status_code=400, detail=str(detail))
+        return _redact_secret(result)
 
     @app.get("/api/actions/{action}")
-    def run_action_get(
-        action: str, token: str | None = None, payload: str | None = None
-    ) -> dict[str, object]:
-        if action in DESTRUCTIVE_GET_ACTIONS:
-            raise HTTPException(
-                status_code=405,
-                detail=(
-                    "Méthode GET dépréciée et bloquée pour cette action destructive; "
-                    "utilisez POST avec un corps JSON."
-                ),
-            )
-        params = _parse_action_payload(payload)
-        result = _execute_dashboard_action(action, params, token=token)
-        result["deprecated"] = "GET /api/actions/{action} is deprecated; use POST with a JSON body."
-        return result
+    def run_action_get(action: str) -> dict[str, object]:
+        raise HTTPException(
+            status_code=405,
+            detail="Les actions dashboard ne sont jamais exécutées via GET; utilisez POST.",
+        )
 
     if hasattr(app, "post"):
         async def run_action_post(
-            action: str, request: StarletteRequest, token: str | None = None
+            action: str, request: StarletteRequest
         ) -> dict[str, object]:
+            token = _request_token(request)
             try:
                 body = await request.body()
             except AttributeError:
@@ -2608,6 +2636,12 @@ def create_app(
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket) -> None:
+        if require_read_auth:
+            try:
+                actions.validate_token(_request_token(ws))
+            except PermissionError:
+                await ws.close(code=1008)
+                return
         await ws.accept()
         last_psyche_mtime_ns: int | None = None
         last_quests_mtime_ns: int | None = None
@@ -2724,5 +2758,6 @@ def run(host: str = "127.0.0.1", port: int = 8000) -> None:
         )
         raise SystemExit(1) from exc
 
-    app = create_app()
+    loopback_hosts = {"127.0.0.1", "localhost", "::1"}
+    app = create_app(require_read_auth=host not in loopback_hosts)
     uvicorn.run(app, host=host, port=port)

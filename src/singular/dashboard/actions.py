@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import secrets
 from contextlib import redirect_stdout
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -311,7 +312,7 @@ class DashboardActionService:
             os.environ.get("SINGULAR_DASHBOARD_ALLOW_UNAUTHENTICATED_ACTIONS") == "1"
         )
         if expected:
-            if token != expected:
+            if token is None or not secrets.compare_digest(token, expected):
                 raise PermissionError("invalid action token")
             return
         if allow_unauthenticated:

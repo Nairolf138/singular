@@ -1991,7 +1991,11 @@ def test_dashboard_actions_endpoint_and_ui_panel(tmp_path: Path, monkeypatch: py
     assert "Mémorial" in body
     assert "Cloner" in body
 
-    ok = client.post("/api/actions/lives_list?token=secret", json={}).json()
+    ok = client.post(
+        "/api/actions/lives_list",
+        json={},
+        headers={"Authorization": "Bearer secret"},
+    ).json()
     assert ok["ok"] is True
     assert ok["action"] == "lives_list"
     assert "context" in ok
@@ -1999,7 +2003,52 @@ def test_dashboard_actions_endpoint_and_ui_panel(tmp_path: Path, monkeypatch: py
     assert "current_life_home" in ok["context"]
 
     with pytest.raises(Exception):
-        app._routes["/api/actions/{action}"]("lives_list", token="wrong", payload="{}")
+        app._routes["/api/actions/{action}"]("lives_list")
+
+
+def test_dashboard_secrets_stay_out_of_urls_errors_and_logs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    secret = "never-leak-this-dashboard-secret"
+    monkeypatch.setenv("SINGULAR_DASHBOARD_ACTION_TOKEN", secret)
+    app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/actions/lives_list",
+        json={},
+        headers={"X-Singular-Action-Token": secret},
+    )
+    serialized = json.dumps(response.json())
+
+    assert response.status_code == 200
+    assert secret not in serialized
+    assert "token=" not in serialized
+
+    missing = client.post("/api/actions/lives_list", json={})
+    assert missing.status_code == 403
+    assert secret not in json.dumps(missing.json())
+
+    actions_js = Path("src/singular/dashboard/static/actions.js").read_text()
+    conversations_js = Path(
+        "src/singular/dashboard/static/render-conversations.js"
+    ).read_text()
+    assert "q.set('token'" not in actions_js + conversations_js
+    assert "X-Singular-Action-Token" in actions_js
+    assert "X-Singular-Action-Token" in conversations_js
+
+
+def test_dashboard_get_never_executes_any_action(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SINGULAR_DASHBOARD_ALLOW_UNAUTHENTICATED_ACTIONS", "1")
+    app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
+    route = app._routes["/api/actions/{action}"]
+
+    for action in ("lives_list", "birth", "loop", "talk", "select"):
+        with pytest.raises(Exception) as exc_info:
+            route(action)
+        assert getattr(exc_info.value, "status_code", None) == 405
 
 
 def test_dashboard_actions_require_token_unless_local_dev_override(
@@ -2338,10 +2387,7 @@ def test_chat_get_reports_status_without_running_chat(
     monkeypatch.setenv("SINGULAR_DASHBOARD_ACTION_TOKEN", "secret")
 
     app = create_app(psyche_file=tmp_path / "psyche.json")
-    response = app._routes["/api/lives/{life}/chat"](
-        life="alpha",
-        payload=json.dumps({"message": "ne doit pas etre envoye"}),
-    )
+    response = app._routes["/api/lives/{life}/chat"](life="alpha")
 
     assert response["life"] == "alpha"
     assert response["available"] is True
