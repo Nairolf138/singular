@@ -203,7 +203,12 @@ def _event_text(row: Mapping[str, Any]) -> str:
 REQUIRED_CYCLE_PHASES = ("veille", "action", "introspection", "sommeil")
 TERMINAL_PHASE_TOKENS = ("extinct", "extinction", "death", "terminal", "dying", "stop")
 BUDGET_EXHAUSTED_EVENTS = {"loop.budget_exhausted", "daemon.budget_exhausted"}
-MUTATION_PAUSED_TOKENS = ("mutation_paused", "mutation.paused", "safe_mode", "quota_exhausted")
+MUTATION_PAUSED_TOKENS = (
+    "mutation_paused",
+    "mutation.paused",
+    "safe_mode",
+    "quota_exhausted",
+)
 
 
 def _row_phase(row: Mapping[str, Any]) -> str | None:
@@ -405,8 +410,73 @@ def _extract_identity_signal(self_narrative: dict) -> dict:
 
 
 def _extract_narrative_continuity_signal(
-    self_narrative: dict, threshold_days: int
+    self_narrative: dict,
+    threshold_days: int,
+    *,
+    snapshots: Sequence[Mapping[str, Any]] = (),
+    now: datetime | None = None,
+    minimum_events_per_day: float = 1.0,
 ) -> dict:
+    current_time = now or datetime.now(UTC)
+    valid_snapshots = [
+        (timestamp, item)
+        for item in snapshots
+        if (timestamp := _parse_dt(item.get("recorded_at"))) is not None
+        and timestamp <= current_time
+    ]
+    if valid_snapshots:
+        valid_snapshots.sort(key=lambda pair: pair[0])
+        distinct_days = sorted({timestamp.date() for timestamp, _ in valid_snapshots})
+        recent_days = set(distinct_days[-max(0, threshold_days) :])
+        recent = [pair for pair in valid_snapshots if pair[0].date() in recent_days]
+        event_count = sum(
+            max(0, int(item.get("metadata", {}).get("event_count", 0) or 0))
+            for _, item in recent
+            if isinstance(item.get("metadata"), Mapping)
+        )
+        density = event_count / max(1, len(recent_days))
+        ruptures: list[dict[str, Any]] = []
+        previous_name = ""
+        for timestamp, item in recent:
+            narrative = item.get("narrative", {})
+            identity = (
+                narrative.get("identity", {}) if isinstance(narrative, Mapping) else {}
+            )
+            name = (
+                str(identity.get("name", "")).strip()
+                if isinstance(identity, Mapping)
+                else ""
+            )
+            metadata = item.get("metadata", {})
+            explained = bool(
+                isinstance(metadata, Mapping) and metadata.get("identity_transition")
+            )
+            if previous_name and name and name != previous_name and not explained:
+                ruptures.append(
+                    {"at": timestamp.isoformat(), "from": previous_name, "to": name}
+                )
+            if name:
+                previous_name = name
+        enough_days = len(recent_days) >= threshold_days
+        ok = enough_days and density >= minimum_events_per_day and not ruptures
+        return _signal(
+            ok,
+            1.0 if ok else 0.0,
+            (
+                "versioned narrative trajectory is continuous"
+                if ok
+                else "versioned narrative trajectory is insufficient or incoherent"
+            ),
+            {
+                "distinct_days": len(recent_days),
+                "threshold_days": threshold_days,
+                "event_count": event_count,
+                "events_per_day": density,
+                "minimum_events_per_day": minimum_events_per_day,
+                "unexplained_identity_ruptures": ruptures,
+            },
+        )
+
     period_dates: list[Any] = []
     identity = (
         self_narrative.get("identity")
@@ -424,7 +494,7 @@ def _extract_narrative_continuity_signal(
         if isinstance(period, Mapping):
             period_dates.extend([period.get("start_at"), period.get("end_at")])
     first_seen = _first_timestamp(period_dates)
-    age_days = (datetime.now(UTC) - first_seen).days if first_seen else 0
+    age_days = (current_time - first_seen).days if first_seen else 0
     has_content = bool(
         self_narrative.get("current_heading")
         or _list_count(self_narrative.get("life_periods"))
@@ -626,6 +696,7 @@ def compute_life_status(
     registry_entry: object | None = None,
     runs: list[dict[str, Any]] | None = None,
     config: "LifeDefinitionConfig | None" = None,
+    now: datetime | None = None,
 ) -> LifeStatusResult:
     """Compute the philosophical-operational life status for one life home.
 
@@ -644,12 +715,14 @@ def compute_life_status(
         "world_state": mem / "world_state.json",
         "autopsy": mem / "autopsy.json",
         "self_narrative": mem / "self_narrative.json",
+        "self_narrative_timeline": mem / "self_narrative.timeline.jsonl",
         "goals": mem / "goals.json",
         "quests_state": mem / "quests_state.json",
         "generations": mem / "generations.jsonl",
     }
     autopsy = _read_json(paths["autopsy"])
     narrative = _read_json(paths["self_narrative"])
+    narrative_snapshots = _read_jsonl(paths["self_narrative_timeline"])
     goals = _read_json(paths["goals"])
     quests = _read_json(paths["quests_state"])
     generation_rows = _read_jsonl(paths["generations"])
@@ -660,7 +733,7 @@ def compute_life_status(
         else _find_registry_entry(life_home)
     )
 
-    optional_files = {"goals", "generations"}
+    optional_files = {"goals", "generations", "self_narrative_timeline"}
     missing = [
         name
         for name, path in paths.items()
@@ -758,18 +831,18 @@ def compute_life_status(
         row.get("ts") or row.get("time") or row.get("timestamp") for row in run_rows
     )
     first_seen = _first_timestamp(period_dates)
-    age_days = (datetime.now(UTC) - first_seen).days if first_seen else 0
+    current_time = now or datetime.now(UTC)
+    age_days = (current_time - first_seen).days if first_seen else 0
     narrative_has_content = bool(
         narrative.get("current_heading") or _list_count(narrative.get("life_periods"))
     )
     narrative_continuity_signal = _extract_narrative_continuity_signal(
         narrative_with_registry_identity,
         cfg.thresholds.minimum_narrative_trajectory_days,
+        snapshots=narrative_snapshots,
+        now=current_time,
     )
-    narrative_continuity = bool(
-        narrative_has_content
-        and age_days >= cfg.thresholds.minimum_narrative_trajectory_days
-    ) or bool(narrative_continuity_signal["ok"])
+    narrative_continuity = bool(narrative_continuity_signal["ok"])
 
     registry_status = str(registry.get("status", "")).lower()
     extinction_signal = _extract_extinction_signal(
@@ -797,9 +870,15 @@ def compute_life_status(
         registry_status=registry_status or None,
     )
     vital_state = str(vital_timeline.get("state", ""))
-    latest_event = str(run_rows[-1].get("event", "")).strip().lower() if run_rows else ""
+    latest_event = (
+        str(run_rows[-1].get("event", "")).strip().lower() if run_rows else ""
+    )
     budget_exhausted = latest_event in BUDGET_EXHAUSTED_EVENTS
-    mutation_paused = any(token in _event_text(row) for row in run_rows[-10:] for token in MUTATION_PAUSED_TOKENS)
+    mutation_paused = any(
+        token in _event_text(row)
+        for row in run_rows[-10:]
+        for token in MUTATION_PAUSED_TOKENS
+    )
     terminal = vital_state in {"terminal", "extinct"}
     reproduction_eligible = vital_timeline.get("reproduction_eligible") is True
     reproduction_capability = bool(
