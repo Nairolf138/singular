@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from perception.vision.extractors import UIStateChangeExtractor
-from perception.vision.pipeline import VisionPerceptionPipeline
-from perception.vision.preprocess import FrameSamplingStrategy
+from singular.perception.vision.extractors import UIStateChangeExtractor
+from singular.perception.vision.pipeline import VisionPerceptionPipeline
+from singular.perception.vision.preprocess import FrameSamplingStrategy
 
 
 class DummyFrame:

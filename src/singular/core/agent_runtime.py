@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
 
-from security.policy_engine import ActionPolicyEngine
+from singular.security.policy_engine import ActionPolicyEngine
 from uuid import uuid4
 from singular.memory import add_causal_trace, add_episode, get_mem_dir
 from singular.cognition.self_observation import SelfObservationService

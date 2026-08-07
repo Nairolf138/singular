@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from perception.os.capture import (
+from singular.perception.os.capture import (
     ActiveWindowState,
     HostState,
     InputState,
@@ -10,7 +10,7 @@ from perception.os.capture import (
     OSSnapshot,
     OSSnapshotProvider,
 )
-from perception.os.pipeline import OSPerceptionPipeline
+from singular.perception.os.pipeline import OSPerceptionPipeline
 
 
 @dataclass

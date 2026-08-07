@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from observability.audit_log import AuditLogStore, read_audit_events
+from singular.observability.audit_log import AuditLogStore, read_audit_events
 
 
 def test_audit_log_persists_correlated_records_and_redacts_sensitive_data(tmp_path: Path) -> None:

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from perception.audio.capture import AudioBlock, AudioBlockProvider
-from perception.audio.pipeline import AudioPerceptionPipeline
-from perception.audio.transcribe import WhisperRuntime
+from singular.perception.audio.capture import AudioBlock, AudioBlockProvider
+from singular.perception.audio.pipeline import AudioPerceptionPipeline
+from singular.perception.audio.transcribe import WhisperRuntime
 
 
 @dataclass

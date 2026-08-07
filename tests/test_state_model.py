@@ -1,4 +1,4 @@
-from mind.state_model import PerceivedEvent, StateModel, UserFeedback
+from singular.mind.state_model import PerceivedEvent, StateModel, UserFeedback
 
 
 def test_state_model_event_updates_are_bounded() -> None:

@@ -10,7 +10,7 @@ import argparse
 import json
 import sys
 
-from observability.audit_log import filter_session, read_audit_events
+from singular.observability.audit_log import filter_session, read_audit_events
 
 
 def _load(path: Path, session_id: str) -> list[dict[str, Any]]:
