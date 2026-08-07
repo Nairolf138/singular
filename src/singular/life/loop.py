@@ -32,6 +32,7 @@ from singular.memory import (
     temporarily_disable_skill,
     update_score,
     add_episode,
+    get_mem_dir,
     format_recalled_memories,
     recall_relevant_episodes,
 )
@@ -69,7 +70,8 @@ from singular.governance.policy import (
     classify_sandbox_error_type,
 )
 from singular.governance.values import load_value_weights
-from singular.morals import MoralAction, MoralDecision, MoralDecisionEngine
+from singular.morals import MoralAction, MoralContextBuilder, MoralDecision, MoralDecisionEngine
+from singular.identity.core import IdentityCoreService
 
 from .checkpointing import Checkpoint, load_checkpoint, save_checkpoint
 from .sandbox_scoring import SandboxScore, score_code_with_error, score_code, _sandbox_failure_category
@@ -104,15 +106,23 @@ def _deliberate_life_action(
 ) -> MoralDecision:
     """Run and journal the moral gate independently of technical safety gates."""
 
-    decision = MoralDecisionEngine(journal=add_episode).evaluate(
-        MoralAction(action_type, parameters=dict(relational_context or {})),
-        consequences,
-        ({"identifier": organism, "vulnerability": 0.0}, *affected_parties),
-        (
+    action = MoralAction(action_type, parameters=dict(relational_context or {}))
+    supplied = {
+        "consequences": consequences,
+        "affected_parties": ({"identifier": organism, "vulnerability": 0.0}, *affected_parties),
+        "identity_commitments": (
             {"value": "non_maleficence", "weight": 1.0},
             {"value": "identity_coherence", "weight": 0.8},
         ),
-        uncertainty,
+        "uncertainty": uncertainty,
+        "social_model": dict(relational_context or {}),
+    }
+    context = MoralContextBuilder(
+        IdentityCoreService(get_mem_dir()), journal=add_episode
+    ).build(action, supplied)
+    decision = MoralDecisionEngine(journal=add_episode).evaluate(
+        action, context.consequences, context.affected_parties,
+        context.identity_commitments, context.uncertainty,
     )
     return decision
 

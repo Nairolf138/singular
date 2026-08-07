@@ -116,10 +116,15 @@ def test_agent_runtime_rejects_schema_version_mismatch() -> None:
 
 def test_agent_runtime_blocks_action_not_allowlisted() -> None:
     decisions: list[dict[str, object]] = []
+    gate_topics: list[str] = []
+    bus = RuntimeEventBus()
+    bus.subscribe("action.moral.decision", lambda event: gate_topics.append(event.topic))
+    bus.subscribe("action.policy.decision", lambda event: gate_topics.append(event.topic))
     runtime = AgentRuntime(
         perception=_PerceptionStub(),
         mind=_MindStub(),
         action=_ActionStub(),
+        event_bus=bus,
         policy_engine=ActionPolicyEngine(
             rules=[
                 PolicyRule(
@@ -141,6 +146,8 @@ def test_agent_runtime_blocks_action_not_allowlisted() -> None:
     assert results[0].error == "action_not_allowlisted"
     assert decisions[-1]["blocked"] is True
     assert decisions[-1]["reason"] == "action_not_allowlisted"
+    # Technical safety remains an independently observable guard after moral review.
+    assert gate_topics == ["action.moral.decision", "action.policy.decision"]
 
 
 

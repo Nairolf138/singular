@@ -13,6 +13,8 @@ from singular.memory import add_causal_trace, add_episode, get_mem_dir
 from singular.cognition.self_observation import SelfObservationService
 from singular.embodiment import Acknowledgement, Command, EmergencyStop, Observation
 from singular.morals import MoralAction, MoralDecisionEngine
+from singular.morals import MoralContextBuilder
+from singular.identity.core import IdentityCoreService
 
 DEFAULT_SCHEMA_VERSION = "1.0"
 
@@ -152,6 +154,9 @@ class AgentRuntime:
         self.event_bus = event_bus or RuntimeEventBus(schema_version=schema_version)
         self.policy_engine = policy_engine or ActionPolicyEngine()
         self.moral_engine = moral_engine or MoralDecisionEngine(journal=add_episode)
+        self.moral_context_builder = MoralContextBuilder(
+            IdentityCoreService(get_mem_dir()), journal=add_episode
+        )
         self.resource_gate = resource_gate
         self.emergency_stop = emergency_stop or EmergencyStop()
         self.safety = safety or RuntimeSafetyConfig()
@@ -224,15 +229,16 @@ class AgentRuntime:
             self._ensure_schema_version(request.schema_version)
             self.event_bus.publish("action.requested", request)
 
-            moral_context = request.parameters.get("moral_context", {})
-            if not isinstance(moral_context, dict):
-                moral_context = {}
+            action = MoralAction(request.action_type, request.parameters, intent.rationale)
+            moral_context = self.moral_context_builder.build(
+                action, request.parameters.get("moral_context", {})
+            )
             moral_decision = self.moral_engine.evaluate(
-                MoralAction(request.action_type, request.parameters, intent.rationale),
-                moral_context.get("consequences", ()),
-                moral_context.get("affected_parties", ()),
-                moral_context.get("identity_commitments", ()),
-                moral_context.get("uncertainty", 0.0),
+                action,
+                moral_context.consequences,
+                moral_context.affected_parties,
+                moral_context.identity_commitments,
+                moral_context.uncertainty,
             )
             self.event_bus.publish("action.moral.decision", moral_decision)
 
