@@ -951,8 +951,11 @@ def _add_life_creation_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--starter-profile",
-        default="minimal",
-        help="Profil de starter skills à appliquer (ex: minimal, assistant, ops, creative)",
+        default="assistant",
+        help=(
+            "Profil de starter skills à appliquer "
+            "(défaut: assistant; disponibles: minimal, assistant, ops, creative)"
+        ),
     )
     parser.add_argument(
         "--starter-skill",
@@ -986,6 +989,7 @@ def _create_life_with_bootstrap(
     registry_root = get_registry_root()
     os.environ["SINGULAR_HOME"] = str(metadata.path)
     print(f"Vie créée: {metadata.name} ({metadata.slug}) → {metadata.path}")
+    print(f"Profil starter: {args.starter_profile}")
     print(f"Registre de vies utilisé: {registry_root}")
 
 

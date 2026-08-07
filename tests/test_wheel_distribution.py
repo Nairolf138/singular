@@ -62,7 +62,9 @@ from singular.sensors.config import load_host_sensor_thresholds
 home = Path("life")
 birth(seed=1, home=home, name="Wheel Life")
 assert (home / "mem" / "identity.json").is_file()
-assert _load_starter_profiles()["minimal"]
+assert _load_starter_profiles()["assistant"]
+assert (home / "skills" / "validation.py").is_file()
+assert (home / "skills" / "metrics.py").is_file()
 assert load_host_sensor_thresholds().cpu_warning_percent == 85.0
 assert load_lifecycle_clock_config().cycle.veille_seconds == 2.0
 assert load_life_definition_config().schema_version == "1.0"

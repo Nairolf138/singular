@@ -73,7 +73,7 @@ def test_birth_alias_and_lives_create_reject_out_of_range_psyche_override(
     "creation_command",
     [["birth"], ["lives", "create"]],
 )
-def test_birth_alias_and_lives_create_use_minimal_starter_profile_by_default(
+def test_birth_alias_and_lives_create_use_assistant_starter_profile_by_default(
     creation_command: list[str],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -82,13 +82,23 @@ def test_birth_alias_and_lives_create_use_minimal_starter_profile_by_default(
     monkeypatch.delenv("SINGULAR_ROOT", raising=False)
     monkeypatch.delenv("SINGULAR_HOME", raising=False)
 
-    main(["--root", str(root), *creation_command, "--name", "Minimal"])
+    main(["--root", str(root), *creation_command, "--name", "Assistant"])
 
     registry = load_registry()
     slug = registry["active"]
     life_home = Path(registry["lives"][slug].path)
     skills = sorted(path.name for path in (life_home / "skills").glob("*.py"))
-    assert skills == ["addition.py", "multiplication.py", "subtraction.py"]
+    assert skills == [
+        "addition.py",
+        "entity_extraction.py",
+        "intent_classification.py",
+        "metrics.py",
+        "multiplication.py",
+        "planning.py",
+        "subtraction.py",
+        "summary.py",
+        "validation.py",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -133,7 +143,7 @@ def test_birth_alias_and_lives_create_apply_explicit_starter_profile(
     "creation_command",
     [["birth"], ["lives", "create"]],
 )
-def test_birth_alias_and_lives_create_unknown_profile_falls_back_to_minimal_and_adds_explicit_skills(
+def test_birth_alias_and_lives_create_unknown_profile_falls_back_to_assistant(
     creation_command: list[str],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -160,7 +170,17 @@ def test_birth_alias_and_lives_create_unknown_profile_falls_back_to_minimal_and_
     slug = registry["active"]
     life_home = Path(registry["lives"][slug].path)
     skills = sorted(path.name for path in (life_home / "skills").glob("*.py"))
-    assert skills == ["addition.py", "multiplication.py", "subtraction.py", "summary.py"]
+    assert skills == [
+        "addition.py",
+        "entity_extraction.py",
+        "intent_classification.py",
+        "metrics.py",
+        "multiplication.py",
+        "planning.py",
+        "subtraction.py",
+        "summary.py",
+        "validation.py",
+    ]
 
 
 def test_birth_prints_deprecation_warning(
