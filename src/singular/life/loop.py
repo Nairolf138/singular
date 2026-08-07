@@ -68,6 +68,7 @@ from singular.governance.policy import (
     classify_sandbox_error_type,
 )
 from singular.governance.values import load_value_weights
+from singular.morals import MoralAction, MoralDecision, MoralDecisionEngine
 
 from .checkpointing import Checkpoint, load_checkpoint, save_checkpoint
 from .sandbox_scoring import SandboxScore, score_code_with_error, score_code, _sandbox_failure_category
@@ -88,6 +89,28 @@ from .profiling import LifeLoopProfiler
 # mypy: ignore-errors
 
 log = logging.getLogger(__name__)
+
+
+def _deliberate_life_action(
+    action_type: str,
+    *,
+    consequences: Iterable[Mapping[str, object]] = (),
+    uncertainty: float = 0.0,
+    organism: str = "self",
+) -> MoralDecision:
+    """Run and journal the moral gate independently of technical safety gates."""
+
+    decision = MoralDecisionEngine(journal=add_episode).evaluate(
+        MoralAction(action_type),
+        consequences,
+        ({"identifier": organism, "vulnerability": 0.0},),
+        (
+            {"value": "non_maleficence", "weight": 1.0},
+            {"value": "identity_coherence", "weight": 0.8},
+        ),
+        uncertainty,
+    )
+    return decision
 
 _DEFAULT_RUN_LOGGER = RunLogger
 
@@ -1379,6 +1402,33 @@ def run(
                 )
             # Graine constrains the operator family. Singular still materializes
             # the concrete source mutation, then sends it to sandbox/governance.
+            mutation_moral_decision = _deliberate_life_action(
+                f"mutation:{op_name}",
+                consequences=(
+                    {
+                        "description": "risque de régression du comportement",
+                        "affected_party": org_name,
+                        "harm": baseline_failure_risk,
+                        "probability": baseline_failure_risk,
+                        "values": ("identity_coherence",),
+                    },
+                ),
+                uncertainty=baseline_failure_risk,
+                organism=org_name,
+            )
+            logger.log_interaction(
+                "moral.deliberation",
+                **mutation_moral_decision.to_dict(),
+                alive=True,
+            )
+            if mutation_moral_decision.veto:
+                logger.log_interaction(
+                    "mutation.moral_veto",
+                    operator=op_name,
+                    reason=mutation_moral_decision.veto_reason,
+                    alive=True,
+                )
+                continue
             with tick_profiler.phase("mutation"):
                 mutated = apply_mutation(original, eligible_operators[op_name], rng)
             org = world.organisms[org_name]
@@ -1922,6 +1972,32 @@ def run(
                     for name, score in sorted(psyche_decision.scores.items())
                 },
             )
+            action_moral_decision = _deliberate_life_action(
+                action_name,
+                consequences=(
+                    {
+                        "description": "exposition au risque du monde",
+                        "affected_party": org_name,
+                        "harm": persistent_world_state.risks,
+                        "probability": persistent_world_state.risks,
+                        "values": ("non_maleficence",),
+                    },
+                ),
+                uncertainty=persistent_world_state.risks,
+                organism=org_name,
+            )
+            logger.log_interaction(
+                "moral.deliberation", **action_moral_decision.to_dict(), alive=True
+            )
+            if action_moral_decision.veto:
+                action_name = "rest"
+                logger.log_interaction(
+                    "action.moral_alternative",
+                    rejected_action=psyche_decision.action,
+                    selected_action=action_name,
+                    conditions=action_moral_decision.acceptable_alternative_conditions,
+                    alive=True,
+                )
             effect_result = perform_action(
                 action_name,
                 {

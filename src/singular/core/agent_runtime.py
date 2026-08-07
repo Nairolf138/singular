@@ -9,6 +9,8 @@ from typing import Any, Callable, Protocol
 
 from security.policy_engine import ActionPolicyEngine
 from uuid import uuid4
+from singular.memory import add_episode
+from singular.morals import MoralAction, MoralDecisionEngine
 
 DEFAULT_SCHEMA_VERSION = "1.0"
 
@@ -165,6 +167,7 @@ class AgentRuntime:
         schema_version: str = DEFAULT_SCHEMA_VERSION,
         safety: RuntimeSafetyConfig | None = None,
         stop_signal: Callable[[], bool] | None = None,
+        moral_engine: MoralDecisionEngine | None = None,
     ) -> None:
         self.perception = perception
         self.mind = mind
@@ -172,6 +175,7 @@ class AgentRuntime:
         self.schema_version = schema_version
         self.event_bus = event_bus or RuntimeEventBus(schema_version=schema_version)
         self.policy_engine = policy_engine or ActionPolicyEngine()
+        self.moral_engine = moral_engine or MoralDecisionEngine(journal=add_episode)
         self.safety = safety or RuntimeSafetyConfig()
         self._stop_signal = stop_signal
         self._global_stop_requested = False
@@ -232,6 +236,29 @@ class AgentRuntime:
                 continue
             self._ensure_schema_version(request.schema_version)
             self.event_bus.publish("action.requested", request)
+
+            moral_context = request.parameters.get("moral_context", {})
+            if not isinstance(moral_context, dict):
+                moral_context = {}
+            moral_decision = self.moral_engine.evaluate(
+                MoralAction(request.action_type, request.parameters, intent.rationale),
+                moral_context.get("consequences", ()),
+                moral_context.get("affected_parties", ()),
+                moral_context.get("identity_commitments", ()),
+                moral_context.get("uncertainty", 0.0),
+            )
+            self.event_bus.publish("action.moral.decision", moral_decision)
+            if moral_decision.veto:
+                result = ActionResult(
+                    action_type=request.action_type,
+                    success=False,
+                    message="blocked by moral veto",
+                    error=moral_decision.veto_reason,
+                    audit={"moral": moral_decision.to_dict()},
+                )
+                self.event_bus.publish("action.moral.vetoed", result)
+                results.append(result)
+                continue
 
             if self._stop_requested():
                 self.event_bus.publish(
@@ -375,6 +402,7 @@ class AgentRuntime:
             self._ensure_schema_version(result.schema_version)
             self._register_action(request.action_type)
             enriched_audit = dict(result.audit)
+            enriched_audit["moral"] = moral_decision.to_dict()
             enriched_audit["policy"] = {
                 "allowed": decision.allowed,
                 "blocked": decision.blocked,
