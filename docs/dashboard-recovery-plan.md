@@ -1,11 +1,16 @@
 # Plan de delivery — Dashboard Recovery
 
+> **Statut : `target-only`.** Toutes les phases, tous les livrables et tous les
+> critères ci-dessous décrivent du travail planifié. Les fonctions réellement
+> accessibles sont documentées séparément dans le [guide dashboard](dashboard.md)
+> et suivent la [taxonomie canonique](README.md#taxonomie-de-statut).
+
 ## Objectif
 Rétablir rapidement la lisibilité opérationnelle du dashboard, puis renforcer l’observabilité et la fiabilité produit sur trois horizons temporels.
 
 ---
 
-## Phase 48h — Stabilisation
+## Phase 48h — Stabilisation (`target-only`)
 
 ### Périmètre
 - Corriger l’affichage des vies dans le registre lorsqu’aucun run n’est présent.
@@ -29,7 +34,7 @@ Rétablir rapidement la lisibilité opérationnelle du dashboard, puis renforcer
 
 ---
 
-## Phase 7 jours — Observabilité
+## Phase 7 jours — Observabilité (`target-only`)
 
 ### Périmètre
 - Mettre en place un journal d’évolution du code par vie.
@@ -51,7 +56,7 @@ Rétablir rapidement la lisibilité opérationnelle du dashboard, puis renforcer
 
 ---
 
-## Phase 30 jours — Fiabilité produit
+## Phase 30 jours — Fiabilité produit (`target-only`)
 
 ### Périmètre
 - Harmoniser le contrat KPI global.

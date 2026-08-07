@@ -1,5 +1,10 @@
 # Spécification cible AGI (critères mesurables)
 
+> **Statut : `target-only`.** Les capacités et seuils de ce document sont des
+> objectifs de mesure, pas des fonctionnalités disponibles. Ils n'ont donc pas
+> de point d'entrée CLI ou dashboard. Voir la
+> [taxonomie canonique](README.md#taxonomie-de-statut).
+
 Ce document transforme l’objectif « AGI » en capacités observables, KPI quantifiables et seuils de maturité.
 
 ## Niveaux de maturité

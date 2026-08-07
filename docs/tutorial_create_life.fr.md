@@ -1,5 +1,10 @@
 # Tutoriel — créer une vie Singular
 
+> **Statuts :** création, consultation et rapport `stable` ; ajout manuel de
+> skill et boucle d'évolution `experimental` ; reproduction et écosystème
+> `experimental`. Les prérequis et tests des parcours stables sont recensés dans
+> le [registre canonique](README.md#registre-des-capacités-stable).
+
 Ce tutoriel montre un parcours local complet : créer une vie, ajouter une compétence, lancer un tick d'évolution, inspecter la mémoire et le checkpoint, puis interpréter les logs. Les commandes utilisent un root de laboratoire isolé pour éviter de mélanger vos essais avec vos vies habituelles.
 
 ## Pré-requis
@@ -20,7 +25,7 @@ mkdir -p "$SINGULAR_ROOT"
 
 > Sous Windows PowerShell, utilisez plutôt `$env:SINGULAR_ROOT = "$PWD/.singular-tutorial"`.
 
-## 1. Créer une vie
+## 1. Créer une vie — `stable`
 
 ```bash
 singular --root "$SINGULAR_ROOT" lives create --name Lumen --curiosity 0.75 --patience 0.55
@@ -39,7 +44,7 @@ Vérifiez la vie active :
 singular --root "$SINGULAR_ROOT" status --format table
 ```
 
-## 2. Ajouter une compétence simple
+## 2. Ajouter une compétence simple — `experimental`
 
 Les mutations autonomes écrivent normalement dans `skills/`, mais vous pouvez aussi ajouter manuellement une compétence de départ. Identifiez d'abord le chemin de la vie :
 
@@ -73,7 +78,7 @@ Bonnes pratiques pour une skill débutante :
 - pas d'écriture hors du dossier de l'organisme ;
 - une variable `result` utile aux tests/sandbox si la boucle l'évalue.
 
-## 3. Lancer un tick d'évolution
+## 3. Lancer un tick d'évolution — `experimental`
 
 L'interface moderne de la boucle est temporelle : `--budget-seconds` remplace l'ancien pilotage par nombre de ticks.
 
@@ -94,7 +99,7 @@ une adresse loopback. La politique restrictive par défaut
 pour couper les appels. Le sandbox impose séparément
 `SINGULAR_SANDBOX_NETWORK_POLICY=none` et refuse tout mode moins restrictif.
 
-## 4. Inspecter mémoire et checkpoint
+## 4. Inspecter mémoire et checkpoint — `experimental`
 
 La mémoire de la vie est située dans `mem/` :
 
@@ -120,7 +125,7 @@ python -m json.tool "$LIFE_DIR/life_checkpoint.json" | head -80
 
 Il sert à reprendre l'état de boucle : itération courante, meilleur score connu, méta-informations et état persistant du run selon la version.
 
-## 5. Interpréter les logs
+## 5. Interpréter les logs — `stable`
 
 Affichez un résumé humain :
 
@@ -149,7 +154,7 @@ singular --root "$SINGULAR_ROOT" lives list
 singular --root "$SINGULAR_ROOT" --life lumen status --verbose
 ```
 
-## Tutoriel reproduction — deux parents et un enfant
+## Tutoriel reproduction — deux parents et un enfant (`experimental`)
 
 La reproduction croise deux organismes à partir de leurs dossiers de vie. Créez deux parents :
 
@@ -211,7 +216,7 @@ find "$SINGULAR_ROOT/children/alpha-beta-child" -maxdepth 3 -type f | sort
 python -m json.tool "$SINGULAR_ROOT/children/alpha-beta-child/mem/psyche.json" | head -60
 ```
 
-## Tutoriel multi-agent — aide, réponse et SocialGraph
+## Tutoriel multi-agent — aide, réponse et SocialGraph (`experimental`)
 
 Le mode écosystème fait tourner plusieurs vies dans une boucle partagée. Les vies peuvent demander de l'aide si leur score est bas, offrir une compétence si leur confiance est haute, puis mettre à jour leurs relations.
 

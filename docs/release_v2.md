@@ -1,5 +1,9 @@
 # Critères de sortie — Release v2
 
+> **Statut : `target-only`.** Ce document est une porte de release et un plan de
+> livraison ; il ne prouve pas que les phases ou capacités sont disponibles. Les
+> statuts produit suivent la [taxonomie canonique](README.md#taxonomie-de-statut).
+
 Ce document définit les garde-fous de sortie pour publier **v2** en réduisant les régressions produit et les risques de sécurité.
 
 ## 1) Qualité automatique (CI)
@@ -84,7 +88,7 @@ Le delivery v2 est découpé en 4 phases incrémentales. Chaque phase est **bloq
 - couverture fichiers critiques CLI `>= 90%`,
 - checklist sécurité sandbox validée.
 
-### Phase 1 — Fondations (bus événements + mémoire couches + journal conscience)
+### Phase 1 — Fondations (bus événements + mémoire couches + journal conscience) — `target-only`
 
 **Objectif**
 - Stabiliser les primitives système: publication/souscription d'événements, service mémoire multi-couches, journal de conscience traçable.
@@ -112,7 +116,7 @@ Le delivery v2 est découpé en 4 phases incrémentales. Chaque phase est **bloq
 - Script de downgrade qui restaure snapshot + convertit les enregistrements N+1 vers N si possible.
 - Si conversion impossible: rollback binaire + restauration snapshot complète.
 
-### Phase 2 — Proactivité (watch mode + objectifs intrinsèques)
+### Phase 2 — Proactivité (watch mode + objectifs intrinsèques) — `target-only`
 
 **Objectif**
 - Activer une boucle proactive pilotée par `watch` et les objectifs intrinsèques, sans dérive des coûts/ressources.
@@ -140,7 +144,7 @@ Le delivery v2 est découpé en 4 phases incrémentales. Chaque phase est **bloq
 - Feature flag pour désactiver la proactivité et revenir au mode réactif.
 - Rejouer les runs en mode compatibilité pour valider l'absence d'écarts critiques.
 
-### Phase 3 — Cognition avancée (réflexion hypothèses + croyances)
+### Phase 3 — Cognition avancée (réflexion hypothèses + croyances) — `target-only`
 
 **Objectif**
 - Introduire la réflexion sur hypothèses d'action et la persistance de croyances pour améliorer la cohérence décisionnelle.
@@ -168,7 +172,7 @@ Le delivery v2 est découpé en 4 phases incrémentales. Chaque phase est **bloq
 - Basculer vers un store de croyances en lecture seule (mode safe) puis restaurer snapshot antérieur.
 - Désactiver les écritures cognitives via config pour limiter l'impact en production.
 
-### Phase 4 — Écosystème (multi-agent + gouvernance renforcée)
+### Phase 4 — Écosystème (multi-agent + gouvernance renforcée) — `target-only`
 
 **Objectif**
 - Généraliser l'exécution en mode écosystème multi-agent avec contraintes de gouvernance explicites.
