@@ -19,6 +19,7 @@ def loop(
     run_id: str = "loop",
     seed: int | None = None,
     safe_mode: bool = False,
+    life_home: Path | str | None = None,
 ) -> None:
     """Wrapper around :func:`life.loop.run` used by the CLI.
 
@@ -42,4 +43,5 @@ def loop(
         rng=rng,
         run_id=run_id,
         governance_policy=governance_policy,
+        life_home=life_home,
     )

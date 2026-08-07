@@ -75,6 +75,7 @@ def log_provider_event(
     error_category: str | None,
     llm_real: bool,
     active_provider: str | None = None,
+    life_root: Path | str | None = None,
 ) -> None:
     """Emit a structured provider log entry."""
 
@@ -89,7 +90,7 @@ def log_provider_event(
     }
     _provider_logger.info("provider_call", extra={"payload": payload})
     try:
-        root = Path(os.environ.get("SINGULAR_HOME", "."))
+        root = Path(life_root) if life_root is not None else Path(os.environ.get("SINGULAR_HOME", "."))
         ProviderEventsRepository(SQLiteStorage(StorageConfig(root=root))).add(payload)
     except Exception:
         _provider_logger.debug("provider_event_sqlite_persist_failed", exc_info=True)

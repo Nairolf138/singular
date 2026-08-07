@@ -115,11 +115,11 @@ def ensure_memory_structure(mem_dir: Path | str | None = None) -> None:
     (mem_dir / "layers").mkdir(parents=True, exist_ok=True)
 
 
-def get_memory_layer_service() -> MemoryLayerService:
+def get_memory_layer_service(root: Path | str | None = None) -> MemoryLayerService:
     """Return the memory layer service for the current memory root."""
 
     global _MEMORY_LAYER_SERVICE, _MEMORY_LAYER_SERVICE_ROOT
-    root = get_memory_layers_dir().resolve()
+    root = (Path(root) if root is not None else get_memory_layers_dir()).resolve()
     if _MEMORY_LAYER_SERVICE is None or _MEMORY_LAYER_SERVICE_ROOT != root:
         _MEMORY_LAYER_SERVICE = MemoryLayerService(
             build_backend(root=root)
@@ -334,7 +334,8 @@ def add_episode(
     path = Path(path)
     append_jsonl_line(path, episode)
     try:
-        get_memory_layer_service().ingest_episode(episode)
+        layers_root = path.parent / "layers"
+        get_memory_layer_service(layers_root).ingest_episode(episode)
     except Exception:
         # Layered memory is best effort to preserve compatibility.
         pass

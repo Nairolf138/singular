@@ -407,7 +407,6 @@ class DashboardActionService:
 
         def _run() -> dict[str, Any]:
             meta = bootstrap_life(name, seed=seed)
-            os.environ["SINGULAR_HOME"] = str(meta.path)
             return {
                 "name": meta.name,
                 "slug": meta.slug,
@@ -435,11 +434,9 @@ class DashboardActionService:
         life = resolve_life(name)
         if life is None:
             raise ValueError(f"unknown life: {name}" if name else "no active life")
-        os.environ["SINGULAR_HOME"] = str(life)
-
         def _run() -> dict[str, Any]:
-            talk(provider=provider, seed=seed, prompt=prompt)
-            return {"life": str(life), "name": name, "prompt": prompt}
+            response = talk(provider=provider, seed=seed, prompt=prompt, life_home=life)
+            return {"life": str(life), "name": name, "prompt": prompt, "response": response}
 
         data, log = self._capture(_run)
         return ActionResult(ok=True, action="talk", data=data, log=log)
@@ -456,10 +453,12 @@ class DashboardActionService:
         from singular.lives import resolve_life
         from singular.runs.loop import loop
 
-        life = resolve_life(None)
+        name = params.get("name")
+        if name is not None:
+            name = self._require_non_empty_text(name, field="name", max_len=80)
+        life = resolve_life(name)
         if life is None:
             raise ValueError("no active life")
-        os.environ["SINGULAR_HOME"] = str(life)
         checkpoint = Path(life) / "life_checkpoint.json"
         skills_dir = Path(life) / "skills"
 
@@ -470,6 +469,7 @@ class DashboardActionService:
                 budget_seconds=budget,
                 run_id=run_id,
                 seed=seed,
+                life_home=life,
             )
             return {"run_id": run_id, "budget_seconds": budget}
 
@@ -484,13 +484,22 @@ class DashboardActionService:
         from singular.cli import _resolve_latest_run_id
         from singular.runs.report import report
 
+        name = params.get("name")
+        if name is not None:
+            name = self._require_non_empty_text(name, field="name", max_len=80)
+        from singular.lives import resolve_life
+        life = resolve_life(name)
+        if life is None:
+            raise ValueError(f"unknown life: {name}" if name else "no active life")
+        runs_dir = Path(life) / "runs"
+
         if run_id is None:
-            run_id = _resolve_latest_run_id()
+            run_id = _resolve_latest_run_id(runs_dir)
         if run_id is None:
             raise ValueError("no run available")
 
         def _run() -> dict[str, Any]:
-            report(run_id=run_id, output_format="json")
+            report(run_id=run_id, runs_dir=runs_dir, output_format="json")
             return {"run_id": run_id}
 
         data, log = self._capture(_run)
@@ -536,7 +545,6 @@ class DashboardActionService:
             life = resolve_life(name)
             if life is None:
                 raise ValueError(f"unknown life: {name}")
-            os.environ["SINGULAR_HOME"] = str(life)
             return {"name": name, "path": str(life)}
 
         data, log = self._capture(_run)
@@ -631,7 +639,6 @@ class DashboardActionService:
 
         def _run() -> dict[str, Any]:
             meta = clone_life(name, new_name=new_name)
-            os.environ["SINGULAR_HOME"] = str(meta.path)
             return {
                 "source": name,
                 "name": meta.name,

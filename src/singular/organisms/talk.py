@@ -178,17 +178,24 @@ def talk(
     prompt: str | None = None,
     demonstration: Mapping[str, Any] | None = None,
     imitation_engine: ImitationEngine | None = None,
-) -> None:
+    life_home: Path | str | None = None,
+) -> str | None:
     """Handle the ``talk`` subcommand."""
 
-    ensure_memory_structure()
+    life_root = Path(life_home) if life_home is not None else Path(os.environ.get("SINGULAR_HOME", "."))
+    mem_dir = life_root / "mem"
+    episodic_file = mem_dir / "episodic.jsonl"
+    causal_file = mem_dir / "causal_timeline.jsonl"
+    psyche_file = mem_dir / "psyche.json"
+    narrative_file = mem_dir / "self_narrative.json"
+    ensure_memory_structure(mem_dir)
 
     # Human dialogue is eligible for teaching only through a separate,
     # structured and explicitly consented demonstration payload.
     if demonstration is not None:
         (
             imitation_engine
-            or ImitationEngine(Path(os.environ.get("SINGULAR_HOME", ".")))
+            or ImitationEngine(life_root)
         ).ingest_interaction(demonstration, source="human:talk")
 
     rng = random.Random(seed)
@@ -216,15 +223,15 @@ def talk(
                 "Automatic provider selection found no available backend. Using local fallback replies."
             )
 
-    psyche = Psyche.load_state()
+    psyche = Psyche.load_state(psyche_file)
 
     def gather_context() -> tuple[
         str | None, dict | None, dict | None, str | None, str | None
     ]:
         signals = capture_signals()
-        add_episode({"event": "perception", **signals})
+        add_episode({"event": "perception", **signals}, path=episodic_file)
         psyche.consume()
-        episodes = read_episodes()
+        episodes = read_episodes(episodic_file)
         episodes_by_role = {
             "user": [e for e in episodes if e.get("role") == "user"],
             "assistant": [e for e in episodes if e.get("role") == "assistant"],
@@ -282,12 +289,11 @@ def talk(
         perf_msg: str | None,
         self_narrative_summary: str,
         self_narrative_version: int,
-    ) -> None:
+    ) -> str:
         user_signals = _extract_structured_signals(user_input)
         theme = str(user_signals.get("theme", "general"))
-        life_root = os.environ.get("SINGULAR_HOME", ".")
         retrieval = MemoryRetrievalService(
-            life_root, build_backend(root=os.path.join(life_root, "mem", "layers"))
+            life_root, build_backend(root=mem_dir / "layers")
         )
         recalled_memories = retrieval.retrieve(
             user_input,
@@ -311,7 +317,7 @@ def talk(
                     "query": user_input,
                     "memories": recalled_memories,
                     "summary": recall_summary,
-                }
+                }, path=episodic_file
             )
             add_episode(
                 {
@@ -320,11 +326,9 @@ def talk(
                     "decision": "assistant_reply",
                     "memories": recalled_memories,
                     "summary": recall_summary,
-                }
+                }, path=episodic_file
             )
-        add_episode(
-            {"role": "user", "text": user_input, "structured_signals": user_signals}
-        )
+        add_episode({"role": "user", "text": user_input, "structured_signals": user_signals}, path=episodic_file)
         mood = psyche.feel(Mood.NEUTRAL)
         mood_report = mood_event or mood.value
         system_preamble = _build_system_preamble(
@@ -389,6 +393,7 @@ def talk(
             error_category=error_category,
             llm_real=llm_real,
             active_provider=active_provider,
+            life_root=life_root,
         )
 
         parts = [reply]
@@ -426,7 +431,7 @@ def talk(
                     "recalled_memories": recalled_memories,
                     "recalled_memory_summary": recall_summary,
                 },
-            }
+            }, path=episodic_file
         )
         gain_estimate = round(
             float(user_signals.get("satisfaction", 0.0))
@@ -471,15 +476,16 @@ def talk(
                         "impact": cognitive_gain,
                     },
                 },
-            }
+            }, path=causal_file
         )
         psyche.gain()
-        psyche.save_state()
+        psyche.save_state(psyche_file)
+        return response
 
     if prompt is not None:
         context = gather_context()
-        self_narrative = load_self_narrative()
-        respond(
+        self_narrative = load_self_narrative(narrative_file)
+        return respond(
             prompt,
             *context,
             summarize_short(self_narrative),
@@ -489,7 +495,7 @@ def talk(
 
     while True:
         context = gather_context()
-        self_narrative = load_self_narrative()
+        self_narrative = load_self_narrative(narrative_file)
         try:
             user_input = input("you: ")
         except EOFError:
