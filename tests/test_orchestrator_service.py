@@ -94,7 +94,7 @@ def test_orchestrator_sleep_consolidates_identity_memory(
         (life / "mem" / "self_model.json").read_text(encoding="utf-8")
     )
     assert {fact["value"] for fact in semantic} == {"user_name:Alice", "likes:tea"}
-    assert "user_name:Alice" in self_model["traits"]
+    assert "user_name:Alice" in self_model["autobiographical_facts"]
     assert "likes:tea" in self_model["preferences"]
     event = next(
         item
