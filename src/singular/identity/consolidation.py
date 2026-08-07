@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .episodic_store import EpisodicStore
+from .core import IdentityCoreService
 from .semantic_memory import SemanticMemoryStore
 from .self_model import SelfModelStore
 
@@ -40,6 +41,7 @@ class ConsolidationPipeline:
         policy: ConsolidationPolicy | None = None,
     ) -> None:
         root = Path(mem_dir)
+        self.mem_dir = root
         self.policy = policy or ConsolidationPolicy()
         self.episodic = EpisodicStore(root / "episodic.jsonl")
         self.semantic = SemanticMemoryStore(root / "semantic_memory.json")
@@ -59,6 +61,9 @@ class ConsolidationPipeline:
         facts = self.semantic.consolidate_from_episodes(episodes)
         self.self_model.apply_facts(facts)
         self.self_model.compact(self.policy.keep_top_self_model_entries)
+        # Reconcile projections after every consolidation so narrative, psyche,
+        # birth artifacts and coherence do not drift into competing identities.
+        IdentityCoreService(self.mem_dir).synchronize()
         compaction = self.episodic.compact(
             keep_last=self.policy.keep_last_episodes,
             preserve_identity_events=True,
