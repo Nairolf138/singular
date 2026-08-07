@@ -1,188 +1,159 @@
+import ast
+import json
+import subprocess
+
 import pytest
 
-from singular.life.sandbox import run, SandboxError
+import singular.life.sandbox as sandbox
+from singular.life.sandbox import SandboxConfig, SandboxError, run
 
 
-def test_basic_execution():
+@pytest.fixture
+def isolated_runtime(monkeypatch):
+    """Model a runtime without requiring a container daemon in unit tests."""
+    monkeypatch.setattr(sandbox.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    def fake_run(command, **kwargs):
+        if command[1] == "info":
+            return subprocess.CompletedProcess(command, 0, '["name=seccomp"]', "")
+        code = kwargs["input"]
+        if "while True" in code:
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        if "300 * 1024" in code:
+            payload = {"status": "error", "type": "MemoryError", "message": ""}
+        else:
+            env = {"__builtins__": sandbox.__dict__["__builtins__"]}
+            # These snippets have already passed validation; this emulates only
+            # the container protocol, not its security boundary.
+            try:
+                exec(compile(code, "<test-container>", "exec"), env, env)
+                if "result" not in env:
+                    raise RuntimeError("sandbox code did not set a result")
+                payload = {"status": "result", "payload": env["result"]}
+            except Exception as exc:
+                payload = {
+                    "status": "error",
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                }
+        return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+
+    monkeypatch.setattr(sandbox.subprocess, "run", fake_run)
+
+
+def test_basic_execution(isolated_runtime):
     assert run("result = max(1, 2)") == 2
 
 
-def test_spawn_context_simple_execution():
-    assert run("result = 1") == 1
-
-
-def test_missing_result_raises_sandbox_error():
+def test_missing_result_raises_sandbox_error(isolated_runtime):
     with pytest.raises(SandboxError, match="result"):
         run("value = 1")
 
 
-def test_forbidden_import():
+@pytest.mark.parametrize(
+    "code", ["import os", 'open("foo")', "import socket", "import subprocess"]
+)
+def test_forbidden_names_and_imports(code):
     with pytest.raises(SandboxError):
-        run("import os")
-
-
-def test_forbidden_name():
-    with pytest.raises(SandboxError):
-        run('open("foo")')
-
-
-def test_timeout():
-    with pytest.raises(TimeoutError):
-        run("while True: pass", timeout=0.5)
-
-
-def test_memory_limit():
-    with pytest.raises(MemoryError):
-        run("'x' * (300 * 1024 * 1024)")
-
-
-def test_forbidden_network_access():
-    with pytest.raises(SandboxError):
-        run("import socket\nsocket.socket()")
-
-
-def test_forbidden_subprocess_access():
-    with pytest.raises(SandboxError):
-        run("import subprocess\nsubprocess.run(['echo', 'hi'])")
-
-def test_run_windows_cleanup_guard(monkeypatch, caplog):
-    import singular.life.sandbox as sandbox_module
-
-    class InlineProcess:
-        def __init__(self, target, args):
-            self._target = target
-            self._args = args
-            self._alive = False
-
-        def start(self):
-            self._alive = True
-            self._target(*self._args)
-            self._alive = False
-
-        def join(self, _timeout=None):
-            return None
-
-        def is_alive(self):
-            return self._alive
-
-        def terminate(self):
-            self._alive = False
-
-    class InlineQueue:
-        def __init__(self):
-            self._items = []
-
-        def put(self, value):
-            self._items.append(value)
-
-        def get(self, timeout=None):
-            return self._items.pop(0)
-
-        def empty(self):
-            return not self._items
-
-    class InlineContext:
-        def Queue(self):
-            return InlineQueue()
-
-        def Process(self, target, args):
-            return InlineProcess(target, args)
-
-    monkeypatch.setattr(sandbox_module.multiprocessing, "get_context", lambda _name: InlineContext())
-
-    real_chdir = sandbox_module.os.chdir
-    chdir_calls = []
-
-    def fake_chdir(path):
-        chdir_calls.append(path)
-        if len(chdir_calls) == 2:
-            real_chdir(path)
-            raise OSError("simulated windows cleanup lock")
-        return real_chdir(path)
-
-    monkeypatch.setattr(sandbox_module.os, "chdir", fake_chdir)
-
-    caplog.set_level("WARNING", logger=sandbox_module.__name__)
-    assert sandbox_module.run("result = 1") == 1
-    assert len(chdir_calls) == 2
-    assert "failed to restore cwd during sandbox cleanup" in caplog.text
-
-
-def test_run_consecutive_calls_do_not_return_none_with_unreliable_empty_check(monkeypatch):
-    import singular.life.sandbox as sandbox_module
-
-    class InlineProcess:
-        def __init__(self, target, args):
-            self._target = target
-            self._args = args
-            self._alive = False
-            self.exitcode = None
-
-        def start(self):
-            self._alive = True
-            self._target(*self._args)
-            self._alive = False
-            self.exitcode = 0
-
-        def join(self, _timeout=None):
-            return None
-
-        def is_alive(self):
-            return self._alive
-
-        def terminate(self):
-            self._alive = False
-            self.exitcode = -15
-
-    class FlakyEmptyQueue:
-        def __init__(self):
-            self._items = []
-            self._empty_checks = 0
-
-        def put(self, value):
-            self._items.append(value)
-
-        def get(self, timeout=None):
-            assert timeout is not None
-            return self._items.pop(0)
-
-        def empty(self):
-            self._empty_checks += 1
-            if self._empty_checks == 1:
-                return True
-            return not self._items
-
-    class InlineContext:
-        def Queue(self):
-            return FlakyEmptyQueue()
-
-        def Process(self, target, args):
-            return InlineProcess(target, args)
-
-    monkeypatch.setattr(sandbox_module.multiprocessing, "get_context", lambda _name: InlineContext())
-
-    for _ in range(20):
-        assert sandbox_module.run("result = 42") == 42
+        run(code)
 
 
 @pytest.mark.parametrize(
-    ("code", "expected"),
+    "attribute",
     [
-        ("result = 1", 1),
-        ("result = 5 - 2", 3),
-        (
-            "total = 0\n"
-            "for value in range(1000):\n"
-            "    total = total + value\n"
-            "result = total",
-            499500,
-        ),
+        "__class__",
+        "__mro__",
+        "__base__",
+        "__subclasses__",
+        "__globals__",
+        "__builtins__",
+        "__getattribute__",
+        "__dict__",
+        "_private",
     ],
 )
-def test_simple_snippets_do_not_timeout_on_standard_budget(code, expected):
-    assert run(code) == expected
+def test_object_introspection_attributes_are_rejected(attribute):
+    with pytest.raises(SandboxError, match="private attribute"):
+        sandbox._validate_ast(ast.parse(f"result = value.{attribute}"))
 
 
-def test_timeout_can_be_configured_from_environment(monkeypatch):
-    monkeypatch.setenv("SINGULAR_SANDBOX_TIMEOUT", "4.0")
-    assert run("result = 5 - 2") == 3
+def test_builtin_recovery_chain_is_rejected():
+    code = "result = ().__class__.__base__.__subclasses__()"
+    with pytest.raises(SandboxError):
+        run(code)
+
+
+def test_timeout(isolated_runtime):
+    with pytest.raises(TimeoutError):
+        run("while True: pass", timeout=0.1)
+
+
+def test_memory_limit(isolated_runtime):
+    with pytest.raises(MemoryError):
+        run("result = 'x' * (300 * 1024 * 1024)")
+
+
+def test_container_has_all_required_system_isolation(isolated_runtime, monkeypatch):
+    commands = []
+    original = sandbox.subprocess.run
+
+    def record(command, **kwargs):
+        commands.append(command)
+        return original(command, **kwargs)
+
+    monkeypatch.setattr(sandbox.subprocess, "run", record)
+    assert run("result = 1") == 1
+    command = commands[-1]
+    for expected in (
+        "--network=none",
+        "--read-only",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--pids-limit=32",
+        "--user=65534:65534",
+        "--cpus=1",
+    ):
+        assert expected in command
+    assert any(value.startswith("--memory=") for value in command)
+    assert any(value.startswith("--ulimit=cpu=") for value in command)
+    assert any(
+        value.startswith("--tmpfs=/tmp:rw,noexec,nosuid,nodev") for value in command
+    )
+
+
+@pytest.mark.parametrize(
+    "attack",
+    [
+        'result = open("/etc/passwd").read()',  # host files
+        "import socket\nresult = socket.socket()",  # network
+        "import subprocess\nresult = subprocess.run(['id'])",  # processes
+    ],
+)
+def test_adversarial_io_is_rejected_before_execution(attack):
+    with pytest.raises(SandboxError):
+        run(attack)
+
+
+def test_refuses_platform_without_resource_limits(monkeypatch):
+    monkeypatch.setattr(sandbox, "resource_module", None)
+    with pytest.raises(SandboxError, match="resource limits"):
+        run("result = 1")
+
+
+def test_refuses_runtime_without_seccomp(monkeypatch):
+    monkeypatch.setattr(sandbox.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        sandbox.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, '["apparmor"]', ""
+        ),
+    )
+    with pytest.raises(SandboxError, match="seccomp"):
+        run("result = 1")
+
+
+def test_refuses_missing_container_runtime(monkeypatch):
+    monkeypatch.setattr(sandbox.shutil, "which", lambda _name: None)
+    with pytest.raises(SandboxError, match="podman or docker"):
+        run("result = 1")
