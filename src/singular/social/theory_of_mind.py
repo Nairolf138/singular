@@ -12,12 +12,14 @@ from datetime import datetime, timezone
 import json
 import math
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import Callable, Literal, Mapping
 
 from singular.memory import _atomic_write_text, get_mem_dir
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 _EVIDENCE_LIMIT = 50
+EvidenceKind = Literal["direct_observation", "other_statement", "inference", "verified_outcome"]
+_EVIDENCE_KINDS = {"direct_observation", "other_statement", "inference", "verified_outcome"}
 
 
 def _utcnow() -> datetime:
@@ -126,9 +128,18 @@ class TheoryOfMindStore:
         belief: str | None = None,
         outcome: bool | None = None,
         note: str | None = None,
+        evidence_kind: EvidenceKind = "inference",
+        confidence: float = 1.0,
+        source: str | None = None,
     ) -> dict[str, object]:
         """Revise a hypothesis from a conversation, act, promise, or outcome."""
 
+        if evidence_kind not in _EVIDENCE_KINDS:
+            raise ValueError(f"Unsupported evidence kind: {evidence_kind}")
+        if outcome is not None and evidence_kind != "verified_outcome":
+            # An alleged or inferred result remains a hypothesis.  Only a
+            # verified outcome is allowed to revise the model as an outcome.
+            outcome = None
         key = str(individual_id)
         model = self._models.get(key, MentalStateModel(key))
         event_key = str(event).lower()
@@ -151,15 +162,30 @@ class TheoryOfMindStore:
         elif negative:
             model.reliability = _clamp(model.reliability - 0.18)
             model.reciprocity = max(-1.0, model.reciprocity - 0.2)
-        evidence_strength = 0.14 if outcome is not None or "promise" in event_key else 0.08
+        kind_weight = {
+            "verified_outcome": 1.0,
+            "direct_observation": 0.75,
+            "other_statement": 0.45,
+            "inference": 0.25,
+        }[evidence_kind]
+        evidence_strength = (0.14 if outcome is not None or "promise" in event_key else 0.08)
+        evidence_strength *= kind_weight * _clamp(confidence)
         model.confidence = _clamp(model.confidence + evidence_strength)
         model.uncertainty = _clamp(1.0 - model.confidence)
         model.version += 1
         model.updated_at = self.clock().isoformat()
-        item: dict[str, object] = {"event": event, "at": model.updated_at}
+        item: dict[str, object] = {
+            "event": event,
+            "at": model.updated_at,
+            "evidence_kind": evidence_kind,
+            "confidence": _clamp(confidence),
+            "asserted_fact": evidence_kind == "verified_outcome",
+        }
         for name, value in (("intention", intention), ("goal", goal), ("belief", belief), ("outcome", outcome), ("note", note)):
             if value is not None:
                 item[name] = value
+        if source is not None:
+            item["source"] = source
         model.evidence = (model.evidence + [item])[-_EVIDENCE_LIMIT:]
         self._models[key] = model
         self._save()

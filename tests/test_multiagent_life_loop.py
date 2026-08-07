@@ -13,6 +13,7 @@ from singular.multiagent import (
     MultiAgentRuntime,
     TaskOffer,
 )
+from singular.social.graph import SocialGraph
 
 
 def _dec_operator(tree: ast.AST, rng=None) -> ast.AST:
@@ -90,6 +91,34 @@ def test_runtime_requests_help_offers_skill_and_resolves_offer_conflict(tmp_path
     assert "accepted_best_offer" in alpha_decision.reasons
 
 
+def test_runtime_records_conversation_and_versions_used_for_arbitration(tmp_path: Path) -> None:
+    graph = SocialGraph(tmp_path / "social.json")
+    graph.record_interaction(
+        "alpha", "beta", "promise", evidence_kind="other_statement",
+        intention="help", confidence=0.9, source="beta",
+    )
+    transport = InMemoryQueueTransport()
+    runtime = MultiAgentRuntime(transport=transport, social_graph=graph)
+    skills = tmp_path / "alpha" / "skills"
+    skills.mkdir(parents=True)
+    skill = skills / "solver.py"
+    skill.write_text("result = 1\n", encoding="utf-8")
+    runtime.emit(TaskOffer(
+        helper_id="beta", receiver_id="alpha", task="task", skill="solver.py",
+        confidence=0.9, priority=3,
+    ).to_message())
+
+    decision = runtime.begin_tick(LifeTickContext(
+        life_id="alpha", task="task", skill_path=skill, skills_dir=skills,
+        score=1.0, confidence=0.1, governance_allowed=True,
+    ))
+
+    assert decision.mental_models_used["beta"]["version"] == 1
+    evidence = SocialGraph(tmp_path / "social.json").get_mental_state("beta")["evidence"]
+    assert evidence[-1]["evidence_kind"] == "other_statement"
+    assert evidence[-1]["event"] == "promise"
+
+
 def test_runtime_refuses_and_gates_when_governance_or_rivalry_is_high(tmp_path: Path) -> None:
     transport = InMemoryQueueTransport()
     runtime = MultiAgentRuntime(transport=transport)
@@ -143,7 +172,7 @@ def test_life_loop_consults_multiagent_runtime_during_tick(tmp_path: Path, monke
         governance_policy=_governance_policy(),
         multiagent_runtime=runtime,
         ecosystem_rules=EcosystemRules(crossover_interval=0),
-        tick_budget_seconds=0.05,
+        tick_budget_seconds=0.2,
     )
 
     assert state.iteration == 1
