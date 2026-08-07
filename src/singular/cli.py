@@ -1055,6 +1055,16 @@ def main(argv: list[str] | None = None) -> int:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    embodiment_parser = subparsers.add_parser(
+        "embodiment", help="Démarrer la boucle perception-action configurée"
+    )
+    embodiment_parser.add_argument("--config", type=Path, required=True)
+    embodiment_parser.add_argument(
+        "--mode", choices=("simulation", "dry-run", "hardware"), default="simulation"
+    )
+    embodiment_parser.add_argument("--steps", type=int, default=None)
+    embodiment_parser.add_argument("--audit", type=Path, default=None)
+
     if _birth_alias_enabled():
         birth_parser = subparsers.add_parser(
             "birth",
@@ -1620,7 +1630,56 @@ def main(argv: list[str] | None = None) -> int:
     if args.safe_mode:
         os.environ["SINGULAR_SAFE_MODE"] = "1"
 
-    if args.command == "birth":
+    if args.command == "embodiment":
+        from .embodiment import (
+            EmbodimentRuntime,
+            build_bridge_ports,
+            build_simulated_runtime,
+            jsonl_audit_sink,
+            load_bridge_config,
+            run_configured_loop,
+        )
+
+        config = load_bridge_config(args.config)
+        audit_path = args.audit or args.config.with_suffix(".audit.jsonl")
+        sink = jsonl_audit_sink(audit_path)
+        if args.mode == "hardware":
+            ports = build_bridge_ports(config)
+            runtime = EmbodimentRuntime(
+                {
+                    f"sensor.{i}": sensor
+                    for i, sensor in enumerate(ports.perception.sensors)
+                },
+                ports.action.actuators,
+                emergency_stop=ports.action.stop,
+                audit_sink=sink,
+            )
+        else:
+            runtime = build_simulated_runtime(
+                config, dry_run=args.mode == "dry-run", audit_sink=sink
+            )
+        steps = args.steps if args.steps is not None else int(config.get("steps", 1))
+        try:
+            actions = run_configured_loop(runtime, config, steps=steps)
+        except KeyboardInterrupt:
+            runtime.request_emergency_stop("keyboard_interrupt")
+            actions = 0
+        finally:
+            runtime.close()
+        payload = {
+            "mode": args.mode,
+            "steps": steps,
+            "actions": actions,
+            "audit": str(audit_path),
+        }
+        if args.output_format == "json":
+            print(json.dumps(payload, ensure_ascii=False))
+        else:
+            print(
+                f"Boucle embodiment terminée: {actions} commande(s), audit={audit_path}"
+            )
+
+    elif args.command == "birth":
         sys.stderr.write(
             "⚠️ `singular birth` est déprécié et sera supprimé après la période "
             "de transition. Migrez vers `singular lives create --name ...`.\n"

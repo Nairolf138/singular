@@ -130,3 +130,6 @@ class ActuatorSimulator:
 
     def emergency_stop(self, reason: str = "operator_request") -> None:
         self.stop.engage(reason)
+
+    def close(self) -> None:
+        return None
