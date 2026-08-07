@@ -71,6 +71,27 @@ def _render_skill_template(skill_name: str, spec: SkillSpec | None = None) -> st
     )
 
 
+def _render_skill_implementation(skill_name: str, spec: SkillSpec) -> str:
+    """Render a deterministic implementation of the examples in ``spec``.
+
+    A coverage-gap skill is deliberately narrow: it only claims the behaviour
+    demonstrated by its contract.  Unknown inputs are rejected instead of being
+    reported as a successful placeholder capability.
+    """
+
+    cases = [(example["input"], example["output"]) for example in spec.examples]
+    return (
+        '"""Auto-generated, example-backed skill implementation."""\n\n'
+        f"SPEC = {asdict(spec)!r}\n"
+        f"_CASES = {cases!r}\n\n"
+        "def run(context: dict | None = None) -> object:\n"
+        "    for example_input, expected_output in _CASES:\n"
+        "        if context == example_input:\n"
+        "            return expected_output\n"
+        "    raise ValueError('input is outside the validated SkillSpec examples')\n"
+    )
+
+
 def _publish_unresolved(payload: dict[str, object]) -> None:
     """Publish and journal a coverage-gap unresolved event."""
 
@@ -167,6 +188,10 @@ def _journal_has_duplicate(mem_dir: Path, *, trigger: str, fingerprint: str) -> 
         if (
             payload.get("trigger") == trigger
             and payload.get("spec_fingerprint") == fingerprint
+            and (
+                payload.get("state") == "available"
+                or payload.get("event") == "skill_genesis_created"
+            )
         ):
             return True
     return False
@@ -258,7 +283,7 @@ def create_skill(
         )
 
     source = (
-        _render_skill_template(skill_name, spec)
+        _render_skill_implementation(skill_name, spec)
         if spec is not None
         else _render_skill_template(skill_name)
     )
@@ -269,9 +294,49 @@ def create_skill(
     try:
         staging_dir.mkdir(parents=True, exist_ok=True)
         staged_path.write_text(source, encoding="utf-8")
-        validation = validate_generated_skill(source, expected_symbol="run")
+        _append_journal(
+            mem_dir,
+            {
+                "ts": _utc_iso(),
+                "event": "skill_genesis_scaffolded",
+                "state": "scaffolded",
+                "skill": skill_name,
+                "target": str(staged_path),
+                "trigger": trigger,
+                "spec_fingerprint": fingerprint,
+            },
+        )
+        examples = (
+            [((example["input"],), example["output"]) for example in spec.examples]
+            if spec is not None
+            else []
+        )
+        validation = validate_generated_skill(
+            source, expected_symbol="run", examples=examples
+        )
         if not validation.ok:
             raise RuntimeError(validation.reason)
+        criteria_satisfied = spec is None or (
+            bool(spec.success_criteria.strip()) and validation.ok
+        )
+        if not criteria_satisfied:
+            raise RuntimeError("success criteria were not satisfied")
+        source_sha256 = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        _append_journal(
+            mem_dir,
+            {
+                "ts": _utc_iso(),
+                "event": "skill_genesis_validated",
+                "state": "validated",
+                "skill": skill_name,
+                "target": str(staged_path),
+                "trigger": trigger,
+                "examples_passed": len(examples),
+                "success_criteria": spec.success_criteria if spec else None,
+                "success_criteria_satisfied": criteria_satisfied,
+                "spec_fingerprint": fingerprint,
+            },
+        )
         os.replace(staged_path, target)
         decision = proposal
         target_created = True
@@ -282,6 +347,8 @@ def create_skill(
             "created_at": _utc_iso(),
             "trigger": trigger,
             "spec": asdict(spec) if spec is not None else None,
+            "publication_state": "available",
+            "source_sha256": source_sha256,
         }
         write_skills(skills_after, mem_dir / "skills.json")
         refresh_skill_catalog(skills_dir=skills_dir, mem_dir=mem_dir)
@@ -290,6 +357,7 @@ def create_skill(
             {
                 "ts": _utc_iso(),
                 "event": "skill_genesis_created",
+                "state": "available",
                 "skill": skill_name,
                 "target": str(target),
                 "policy_level": decision.level,
@@ -298,6 +366,7 @@ def create_skill(
                 "signals": signal_snapshot,
                 "spec": asdict(spec) if spec is not None else None,
                 "spec_fingerprint": fingerprint,
+                "source_sha256": source_sha256,
             },
         )
         return SkillGenesisResult(
@@ -318,12 +387,26 @@ def create_skill(
             {
                 "ts": _utc_iso(),
                 "event": "autogen.validation_failed",
+                "state": "scaffolded",
                 "skill": skill_name,
                 "target": str(target),
                 "trigger": trigger,
                 "error": str(exc),
             },
         )
+        if trigger == "coverage_gap":
+            unresolved = {
+                "ts": _utc_iso(),
+                "event": "coverage_gap.unresolved",
+                "state": "scaffolded",
+                "skill": skill_name,
+                "target": str(target),
+                "trigger": trigger,
+                "reason": str(exc),
+                "spec_fingerprint": fingerprint,
+            }
+            _append_journal(mem_dir, unresolved)
+            _publish_unresolved(unresolved)
         return SkillGenesisResult(
             accepted=False,
             skill_name=skill_name,

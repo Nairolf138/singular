@@ -1,4 +1,6 @@
 from pathlib import Path
+import hashlib
+import json
 
 from singular.life.skill_catalog import read_skill_catalog, refresh_skill_catalog
 
@@ -36,3 +38,31 @@ def test_refresh_skill_catalog_extracts_docstring_annotations(tmp_path: Path) ->
 
     reloaded = read_skill_catalog(mem_dir)
     assert reloaded["math_skill"]["capability_tags"] == ["math", "arithmetic"]
+
+
+def test_catalog_marks_mutated_validated_skill_as_regressed(tmp_path: Path) -> None:
+    skills_dir = tmp_path / "skills"
+    mem_dir = tmp_path / "mem"
+    skills_dir.mkdir()
+    mem_dir.mkdir()
+    original = "def run(context=None):\n    return {'ok': True}\n"
+    path = skills_dir / "generated.py"
+    path.write_text(original)
+    (mem_dir / "skills.json").write_text(
+        json.dumps(
+            {
+                "generated": {
+                    "publication_state": "available",
+                    "source_sha256": hashlib.sha256(original.encode()).hexdigest(),
+                }
+            }
+        )
+    )
+    path.write_text("def run(context=None):\n    return {'ok': False}\n")
+
+    descriptor = refresh_skill_catalog(skills_dir=skills_dir, mem_dir=mem_dir)[
+        "generated"
+    ]
+
+    assert descriptor["publication_state"] == "regressed"
+    assert descriptor["implementation_valid"] is False
