@@ -124,6 +124,15 @@ def compute_reproduction_compatibility(
     trust = _clamp01(float(relation.get("trust", 0.5)))
     rivalry = _clamp01(float(relation.get("rivalry", 0.0)))
     social_score = _clamp01((0.5 * affinity) + (0.4 * trust) + (0.1 * (1.0 - rivalry)))
+    mental = graph.get_mental_state(parent_b)
+    mental_confidence = _clamp01(float(mental.get("confidence", 0.0)))
+    if int(mental.get("version", 0)):
+        # Sparse evidence makes irreversible choices conservative; stronger
+        # evidence progressively incorporates predicted reliability/reciprocity.
+        reliability = _clamp01(float(mental.get("reliability", 0.5)))
+        reciprocity = _clamp01((float(mental.get("reciprocity", 0.0)) + 1.0) / 2.0)
+        predicted = (0.7 * reliability) + (0.3 * reciprocity)
+        social_score = _clamp01((social_score * mental_confidence) + (predicted * mental_confidence)) / 2.0
     skills_score = _clamp01(_skills_complementarity(parent_a_skills, parent_b_skills))
     viability_score = _clamp01((float(parent_a_health) + float(parent_b_health)) / 2.0)
     governance_score = 1.0 if governance_allowed else 0.0
@@ -136,6 +145,7 @@ def compute_reproduction_compatibility(
     )
     components = {
         "social_affinity": round(social_score, 4),
+        "mental_state_confidence": round(mental_confidence, 4),
         "skills_complementarity": round(skills_score, 4),
         "viability": round(viability_score, 4),
         "governance": round(governance_score, 4),

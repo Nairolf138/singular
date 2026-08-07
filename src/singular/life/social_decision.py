@@ -18,6 +18,7 @@ class SocialDecision:
     trust: float
     rivalry: float
     reason: str
+    mental_confidence: float = 0.0
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -42,8 +43,19 @@ def decide_social_actions(
         affinity = _metric(relation, "affinity", 0.5)
         trust = _metric(relation, "trust", 0.5)
         rivalry = _metric(relation, "rivalry", 0.0)
+        mental = social_graph.get_mental_state(peer)
+        model_version = int(mental.get("version", 0))
+        mental_confidence = _metric(mental, "confidence", 0.0)
+        reliability = _metric(mental, "reliability", 0.5)
+        reciprocity = max(-1.0, min(1.0, float(mental.get("reciprocity", 0.0))))
 
-        if trust >= 0.7 and affinity >= 0.7 and rivalry < 0.65:
+        if model_version and mental_confidence < 0.25:
+            action = "neutral"
+            reason = "insufficient_mental_state_evidence"
+        elif model_version and mental_confidence >= 0.25 and (reliability < 0.35 or reciprocity < -0.4):
+            action = "avoid"
+            reason = "predicted_unreliable_or_nonreciprocal"
+        elif trust >= 0.7 and affinity >= 0.7 and rivalry < 0.65:
             action = "help"
             reason = "trust_and_affinity_high"
         elif rivalry >= 0.75 and trust < 0.4:
@@ -64,6 +76,7 @@ def decide_social_actions(
                 trust=trust,
                 rivalry=rivalry,
                 reason=reason,
+                mental_confidence=mental_confidence,
             )
         )
     return decisions

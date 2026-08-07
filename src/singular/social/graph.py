@@ -8,6 +8,7 @@ from pathlib import Path
 import json
 
 from singular.memory import _atomic_write_text, get_mem_dir
+from singular.social.theory_of_mind import TheoryOfMindStore
 
 _HISTORY_LIMIT = 20
 
@@ -39,6 +40,7 @@ class SocialGraph:
 
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or (get_mem_dir() / "social_graph.json")
+        self.theory_of_mind = TheoryOfMindStore(self.path.with_name("theory_of_mind.json"))
         self._relations: dict[str, PairRelation] = {}
         self._load()
 
@@ -112,6 +114,43 @@ class SocialGraph:
         self._relations[pair_key] = relation
         self._save()
         return relation.to_dict()
+
+    def observe_mental_state(self, individual_id: str, event: str, **details: object) -> dict[str, object]:
+        """Update a peer hypothesis without changing the affective relation."""
+
+        return self.theory_of_mind.observe(individual_id, event, **details)  # type: ignore[arg-type]
+
+    def get_mental_state(self, individual_id: str) -> dict[str, object]:
+        return self.theory_of_mind.get(individual_id)
+
+    def record_interaction(
+        self,
+        observer: str,
+        individual_id: str,
+        event: str,
+        **details: object,
+    ) -> dict[str, object]:
+        """Record evidence from an interaction and, when applicable, its relation.
+
+        ``observer`` identifies whose point of view produced the hypothesis.  A
+        graph instance belongs to one life, so only the observed individual's
+        mental model is indexed; the affective pair remains independently
+        indexed by both participants.
+        """
+
+        mental = self.observe_mental_state(individual_id, event, **details)
+        relation_event = {
+            "cooperation": "successful_assistance",
+            "successful_cooperation": "successful_assistance",
+            "conflict": "resource_conflict",
+            "cooperation_failure": "cooperation_failure",
+        }.get(event.lower())
+        relation = (
+            self.update_relation(observer, individual_id, relation_event)
+            if relation_event is not None
+            else self.get_relation(observer, individual_id)
+        )
+        return {"mental_state": mental, "relation": relation}
 
 
 def _normalize_history(raw: object) -> list[dict[str, str]]:
