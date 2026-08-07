@@ -39,6 +39,16 @@ _DEFAULT_STARTER_PROFILES: dict[str, list[str]] = {
         "planning",
         "metrics",
     ],
+    "living": [
+        "observe_world",
+        "assess_needs",
+        "select_goal",
+        "plan_action",
+        "act_on_world",
+        "verify_outcome",
+        "interact",
+        "reflect",
+    ],
 }
 _SKILL_TEMPLATES: dict[str, str] = {
     "addition": (
@@ -128,6 +138,60 @@ _SKILL_TEMPLATES: dict[str, str] = {
         "    return max(0.0, min(1.0, ratio))\n\n"
         "result = completion_ratio(1, 2)\n"
     ),
+    "observe_world": (
+        '"""Observe the persisted world supplied by the runtime.\n\n'
+        "Capabilities: living.observation, perception\nInput: dict\nOutput: float\n"
+        'Estimated_cost: 0.05\nReliability: 1.0\n"""\n\n'
+        "def run(context):\n"
+        "    world = context.get('singular_state', {}).get('world', {})\n"
+        "    return 1.0 if world else 0.0\n\nresult = 0.0\n"
+    ),
+    "assess_needs": (
+        '"""Assess needs from world resources and psyche.\n\n'
+        "Capabilities: living.needs_assessment\nInput: dict\nOutput: float\n"
+        'Estimated_cost: 0.05\nReliability: 1.0\n"""\n\n'
+        "def run(context):\n"
+        "    state = context.get('singular_state', {})\n"
+        "    return 1.0 if state.get('world') and state.get('psyche') else 0.0\n\nresult = 0.0\n"
+    ),
+    "select_goal": (
+        '"""Select among existing intrinsic goals.\n\n'
+        "Capabilities: living.goal_selection, intrinsic_goals\nInput: dict\nOutput: float\n"
+        'Estimated_cost: 0.05\nReliability: 1.0\n"""\n\n'
+        "def run(context):\n"
+        "    goals = context.get('singular_state', {}).get('goals', {})\n"
+        "    return 1.0 if goals.get('weights') else 0.0\n\nresult = 0.0\n"
+    ),
+    "plan_action": (
+        '"""Build a bounded action plan from the selected goal.\n\n'
+        "Capabilities: living.planning, planning\nInput: dict\nOutput: float\n"
+        'Estimated_cost: 0.08\nReliability: 1.0\n"""\n\n'
+        "def run(context):\n    return 1.0 if context.get('goal') else 0.0\n\nresult = 0.0\n"
+    ),
+    "act_on_world": (
+        '"""Request an action through the existing skill runtime.\n\n'
+        "Capabilities: living.action\nInput: dict\nOutput: float\n"
+        'Estimated_cost: 0.1\nReliability: 1.0\n"""\n\n'
+        "def run(context):\n    return 1.0 if context.get('action') else 0.0\n\nresult = 0.0\n"
+    ),
+    "verify_outcome": (
+        '"""Verify an action consequence already represented by the runtime.\n\n'
+        "Capabilities: living.outcome_verification\nInput: dict\nOutput: float\n"
+        'Estimated_cost: 0.05\nReliability: 1.0\n"""\n\n'
+        "def run(context):\n    return 1.0 if context.get('consequence') else 0.0\n\nresult = 0.0\n"
+    ),
+    "interact": (
+        '"""Represent a social interaction for the event bus and psyche.\n\n'
+        "Capabilities: living.interaction, social\nInput: dict\nOutput: float\n"
+        'Estimated_cost: 0.08\nReliability: 1.0\n"""\n\n'
+        "def run(context):\n    return 1.0 if context.get('interaction') else 0.0\n\nresult = 0.0\n"
+    ),
+    "reflect": (
+        '"""Reflect on an episodic outcome without inventing a second loop.\n\n'
+        "Capabilities: living.reflection, episodic_memory\nInput: dict\nOutput: float\n"
+        'Estimated_cost: 0.08\nReliability: 1.0\n"""\n\n'
+        "def run(context):\n    return 1.0 if context.get('episode') else 0.0\n\nresult = 0.0\n"
+    ),
 }
 
 
@@ -155,7 +219,9 @@ def _resolve_psyche_overrides(
     return normalized
 
 
-def _load_starter_profiles(config_path: Any = _STARTER_CONFIG_PATH) -> dict[str, list[str]]:
+def _load_starter_profiles(
+    config_path: Any = _STARTER_CONFIG_PATH,
+) -> dict[str, list[str]]:
     """Load starter skill profiles from configuration with a safe default fallback."""
 
     if not config_path.exists():
@@ -335,6 +401,7 @@ def birth(
     mem_dir = home / "mem"
     values_defaults = ValueWeights().to_dict()
     goals_init = GoalState().to_dict()
+    _atomic_write_json(mem_dir / "goals.json", {"schema_version": 1, **goals_init})
     world_init = default_world_state()
     save_world_state(world_init, path=mem_dir / "world_state.json")
     _atomic_write_json(

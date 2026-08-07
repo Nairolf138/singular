@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+import json
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +12,7 @@ from singular.environment import sim_world
 from singular.events import EventBus, get_global_event_bus
 from singular.life import sandbox
 from singular.life.skill_catalog import read_skill_catalog, refresh_skill_catalog
-from singular.memory import read_skills
+from singular.memory import append_jsonl_line_safe, read_skills
 
 
 @dataclass(frozen=True)
@@ -46,19 +48,29 @@ class SkillRuntime:
         self.mem_dir = Path(mem_dir)
         self.bus = bus or get_global_event_bus()
 
-    def execute_best_skill(self, task: str | dict[str, Any], context: dict[str, Any]) -> SkillExecutionResult:
+    def execute_best_skill(
+        self, task: str | dict[str, Any], context: dict[str, Any]
+    ) -> SkillExecutionResult:
         """Execute the best compatible skill for ``task`` and ``context``."""
 
         task_dict = self._normalize_task(task)
         skills_state = read_skills(self.mem_dir / "skills.json")
         catalog = read_skill_catalog(self.mem_dir)
         if not catalog:
-            catalog = refresh_skill_catalog(skills_dir=self.skills_dir, mem_dir=self.mem_dir)
+            catalog = refresh_skill_catalog(
+                skills_dir=self.skills_dir, mem_dir=self.mem_dir
+            )
 
-        strategy = context.get("execution_strategy", {}) if isinstance(context, dict) else {}
-        candidates = self._compatible_candidates(task_dict, skills_state, catalog, strategy=strategy)
+        strategy = (
+            context.get("execution_strategy", {}) if isinstance(context, dict) else {}
+        )
+        candidates = self._compatible_candidates(
+            task_dict, skills_state, catalog, strategy=strategy
+        )
         if not candidates:
-            result = SkillExecutionResult(skill=None, status="failed", reason="no_compatible_skill")
+            result = SkillExecutionResult(
+                skill=None, status="failed", reason="no_compatible_skill"
+            )
             self._apply_world_effect("skill.execution.no_compatible")
             self.bus.publish(
                 "skill.execution.failed",
@@ -80,7 +92,8 @@ class SkillRuntime:
         )
         try:
             code = top.path.read_text(encoding="utf-8")
-            wrapped = self._wrap_for_sandbox(code, context)
+            runtime_context = self._context_with_persisted_state(context)
+            wrapped = self._wrap_for_sandbox(code, runtime_context)
             output = sandbox.run(wrapped)
             result = SkillExecutionResult(
                 skill=top.skill,
@@ -98,6 +111,7 @@ class SkillRuntime:
                 },
             )
             self._apply_world_effect("skill.execution.succeeded")
+            self._record_living_stage(top, task_dict, output)
             return result
         except Exception as exc:
             result = SkillExecutionResult(
@@ -117,6 +131,53 @@ class SkillRuntime:
             )
             self._apply_world_effect("skill.execution.failed")
             return result
+
+    def _context_with_persisted_state(self, context: dict[str, Any]) -> dict[str, Any]:
+        """Expose canonical life state read-only to a sandboxed skill.
+
+        Skills receive JSON values, never paths or persistence APIs.  Consequently
+        all changes still pass through the existing runtime, event bus and world
+        effect machinery rather than establishing another life loop.
+        """
+
+        enriched = dict(context)
+        state: dict[str, Any] = {}
+        for name in ("world", "goals", "psyche"):
+            path = (
+                self.mem_dir / f"{name}_state.json"
+                if name == "world"
+                else self.mem_dir / f"{name}.json"
+            )
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                payload = {}
+            state[name] = payload if isinstance(payload, dict) else {}
+        enriched["singular_state"] = state
+        return enriched
+
+    def _record_living_stage(
+        self,
+        candidate: _ScoredCandidate,
+        task: dict[str, Any],
+        output: Any,
+    ) -> None:
+        """Project living capabilities onto the normal bus and episodic memory."""
+
+        tags = candidate.metadata.get("catalog", {}).get("capability_tags", [])
+        living_tags = [str(tag) for tag in tags if str(tag).startswith("living.")]
+        if not living_tags:
+            return
+        payload = {
+            "event": "living_skill_completed",
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "skill": candidate.skill,
+            "capabilities": living_tags,
+            "task": task.get("name", "task"),
+            "outcome": output,
+        }
+        self.bus.publish("living.stage.completed", dict(payload), payload_version=1)
+        append_jsonl_line_safe(self.mem_dir / "episodic.jsonl", payload)
 
     def _apply_world_effect(self, action_type: str) -> None:
         effect = sim_world.map_action_type_to_effect(action_type)
@@ -163,27 +224,59 @@ class SkillRuntime:
 
             raw_metadata = skills_state.get(skill)
             metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
-            lifecycle = metadata.get("lifecycle") if isinstance(metadata.get("lifecycle"), dict) else {}
-            if lifecycle.get("state") in {"archived", "deleted", "temporarily_disabled"}:
+            lifecycle = (
+                metadata.get("lifecycle")
+                if isinstance(metadata.get("lifecycle"), dict)
+                else {}
+            )
+            if lifecycle.get("state") in {
+                "archived",
+                "deleted",
+                "temporarily_disabled",
+            }:
                 continue
 
-            signature = metadata.get("signature") if isinstance(metadata.get("signature"), str) else None
-            if isinstance(required_signature, str) and isinstance(signature, str) and signature != required_signature:
+            signature = (
+                metadata.get("signature")
+                if isinstance(metadata.get("signature"), str)
+                else None
+            )
+            if (
+                isinstance(required_signature, str)
+                and isinstance(signature, str)
+                and signature != required_signature
+            ):
                 continue
 
-            descriptor_caps = descriptor.get("capability_tags") if isinstance(descriptor.get("capability_tags"), list) else []
-            metadata_caps = metadata.get("capabilities") if isinstance(metadata.get("capabilities"), list) else []
+            descriptor_caps = (
+                descriptor.get("capability_tags")
+                if isinstance(descriptor.get("capability_tags"), list)
+                else []
+            )
+            metadata_caps = (
+                metadata.get("capabilities")
+                if isinstance(metadata.get("capabilities"), list)
+                else []
+            )
             capability_tags = {str(cap) for cap in [*descriptor_caps, *metadata_caps]}
-            if required_capabilities and not required_capabilities.issubset(capability_tags):
+            if required_capabilities and not required_capabilities.issubset(
+                capability_tags
+            ):
                 continue
 
             preconditions = set(descriptor.get("preconditions", []))
-            if required_preconditions and not required_preconditions.issubset(preconditions):
+            if required_preconditions and not required_preconditions.issubset(
+                preconditions
+            ):
                 continue
 
-            if isinstance(required_input, str) and descriptor.get("input_format") not in {required_input, "unknown"}:
+            if isinstance(required_input, str) and descriptor.get(
+                "input_format"
+            ) not in {required_input, "unknown"}:
                 continue
-            if isinstance(required_output, str) and descriptor.get("output_format") not in {required_output, "unknown"}:
+            if isinstance(required_output, str) and descriptor.get(
+                "output_format"
+            ) not in {required_output, "unknown"}:
                 continue
 
             risk = self._estimated_risk(metadata, descriptor)
@@ -194,7 +287,9 @@ class SkillRuntime:
                     skill=skill,
                     path=path,
                     metadata={"state": metadata, "catalog": descriptor},
-                    score=self._score_candidate(metadata, descriptor, strategy=strategy),
+                    score=self._score_candidate(
+                        metadata, descriptor, strategy=strategy
+                    ),
                 )
             )
         return candidates
@@ -206,10 +301,14 @@ class SkillRuntime:
         *,
         strategy: dict[str, Any] | None = None,
     ) -> float:
-        metrics = metadata.get("metrics") if isinstance(metadata.get("metrics"), dict) else {}
+        metrics = (
+            metadata.get("metrics") if isinstance(metadata.get("metrics"), dict) else {}
+        )
         usage_count = max(int(metrics.get("usage_count", 0) or 0), 0)
         average_gain = float(metrics.get("average_gain", 0.0) or 0.0)
-        average_cost = float(metrics.get("average_cost", descriptor.get("estimated_cost", 0.5)) or 0.0)
+        average_cost = float(
+            metrics.get("average_cost", descriptor.get("estimated_cost", 0.5)) or 0.0
+        )
         failure_count = max(int(metrics.get("failure_count", 0) or 0), 0)
 
         success_rate = float(descriptor.get("reliability", 0.5) or 0.5)
@@ -221,7 +320,8 @@ class SkillRuntime:
         resource_cost = max(0.0, average_cost)
         risk = self._estimated_risk(metadata, descriptor)
         mode = str((strategy or {}).get("mode", "balanced"))
-        frustration = max(0.0, min(1.0, float((strategy or {}).get("frustration", 0.0) or 0.0))
+        frustration = max(
+            0.0, min(1.0, float((strategy or {}).get("frustration", 0.0) or 0.0))
         )
         urgency = max(0.0, min(1.0, float((strategy or {}).get("urgency", 0.0) or 0.0)))
 
@@ -244,28 +344,59 @@ class SkillRuntime:
             expected_utility += novelty_bonus * 0.15
             risk_w -= 0.03
 
-        return (expected_utility * utility_w) + (success_rate * success_w) - (resource_cost * cost_w) - (risk * risk_w)
+        return (
+            (expected_utility * utility_w)
+            + (success_rate * success_w)
+            - (resource_cost * cost_w)
+            - (risk * risk_w)
+        )
 
-    def _estimated_risk(self, metadata: dict[str, Any], descriptor: dict[str, Any]) -> float:
-        metrics = metadata.get("metrics") if isinstance(metadata.get("metrics"), dict) else {}
+    def _estimated_risk(
+        self, metadata: dict[str, Any], descriptor: dict[str, Any]
+    ) -> float:
+        metrics = (
+            metadata.get("metrics") if isinstance(metadata.get("metrics"), dict) else {}
+        )
         usage_count = max(int(metrics.get("usage_count", 0) or 0), 0)
         failure_count = max(int(metrics.get("failure_count", 0) or 0), 0)
         historical_risk = (failure_count / usage_count) if usage_count else 0.5
-        declared_risk = float(metadata.get("risk", 1.0 - float(descriptor.get("reliability", 0.5))) or historical_risk)
+        declared_risk = float(
+            metadata.get("risk", 1.0 - float(descriptor.get("reliability", 0.5)))
+            or historical_risk
+        )
         return max(0.0, min(1.0, declared_risk))
 
     def _normalize_task(self, task: str | dict[str, Any]) -> dict[str, Any]:
         if isinstance(task, str):
-            return {"name": task, "capabilities": [], "preconditions": [], "max_risk": 1.0}
-        capabilities = task.get("capabilities") if isinstance(task.get("capabilities"), list) else []
-        preconditions = task.get("preconditions") if isinstance(task.get("preconditions"), list) else []
+            return {
+                "name": task,
+                "capabilities": [],
+                "preconditions": [],
+                "max_risk": 1.0,
+            }
+        capabilities = (
+            task.get("capabilities")
+            if isinstance(task.get("capabilities"), list)
+            else []
+        )
+        preconditions = (
+            task.get("preconditions")
+            if isinstance(task.get("preconditions"), list)
+            else []
+        )
         normalized = {
             "name": str(task.get("name") or "task"),
-            "signature": task.get("signature") if isinstance(task.get("signature"), str) else None,
+            "signature": task.get("signature")
+            if isinstance(task.get("signature"), str)
+            else None,
             "capabilities": [str(cap) for cap in capabilities],
             "preconditions": [str(pre) for pre in preconditions],
-            "input_format": task.get("input_format") if isinstance(task.get("input_format"), str) else None,
-            "output_format": task.get("output_format") if isinstance(task.get("output_format"), str) else None,
+            "input_format": task.get("input_format")
+            if isinstance(task.get("input_format"), str)
+            else None,
+            "output_format": task.get("output_format")
+            if isinstance(task.get("output_format"), str)
+            else None,
             "max_risk": float(task.get("max_risk", 1.0) or 1.0),
         }
         return normalized
@@ -282,7 +413,9 @@ class SkillRuntime:
         )
 
 
-def execute_best_skill(task: str | dict[str, Any], context: dict[str, Any]) -> SkillExecutionResult:
+def execute_best_skill(
+    task: str | dict[str, Any], context: dict[str, Any]
+) -> SkillExecutionResult:
     """Convenience API using default paths and global event bus."""
 
     from singular.memory import get_base_dir, get_mem_dir
