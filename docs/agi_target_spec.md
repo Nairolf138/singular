@@ -75,6 +75,11 @@ Résumé attendu :
 
 ## Non-objectifs (court terme)
 
+Le scénario hors réseau multi-vies de la matrice cognitive relie ses mesures aux
+familles autonomie, apprentissage long terme et robustesse. Ses contrôles négatifs
+démontrent seulement un effet dans le monde simulé : ils ne remplacent pas les
+seuils de campagne et ne sont pas une preuve de conscience.
+
 Les éléments suivants ne sont **pas** requis à court terme :
 
 - Intelligence surhumaine universelle dans tous les domaines.
