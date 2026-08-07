@@ -1,0 +1,11 @@
+services:
+  singular-ros2:
+    image: singular-ros2:operator-built
+    command: ["singular", "orchestrate", "run"]
+    environment:
+      ROS_DOMAIN_ID: "0"
+      SINGULAR_ROS2_BRIDGE: /etc/singular/ros2_bridge.yaml
+    volumes:
+      - ../../configs/ros2_bridge.example.yaml:/etc/singular/ros2_bridge.yaml:ro
+    # Example only: add devices/network privileges only after a safety review.
+    restart: unless-stopped

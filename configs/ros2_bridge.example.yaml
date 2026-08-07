@@ -1,0 +1,37 @@
+version: 1
+defaults:
+  timeout_s: 2.0
+  qos:
+    depth: 10
+    reliability: reliable
+sensors:
+  - name: odometry
+    topic: /robot/odom
+    message_type: nav_msgs.msg.Odometry
+    reconnect: true
+    transform:
+      fields:
+        position: pose.pose.position
+        velocity: twist.twist.linear
+effectors:
+  - command: robot.velocity
+    kind: publisher
+    topic: /robot/cmd_vel
+    message_type: geometry_msgs.msg.Twist
+    acknowledgement_topic: /robot/cmd_vel_ack
+    acknowledgement_type: singular_interfaces.msg.CommandAcknowledgement
+    transform:
+      fields:
+        linear: linear
+        angular: angular
+  - command: robot.reset_odometry
+    kind: service
+    service: /robot/reset_odometry
+    message_type: std_srvs.srv.Trigger
+  - command: robot.navigate
+    kind: action
+    action: /navigate_to_pose
+    message_type: nav2_msgs.action.NavigateToPose
+    transform:
+      fields:
+        pose: pose
