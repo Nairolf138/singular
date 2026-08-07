@@ -21,6 +21,7 @@ from singular.events import (
     get_global_event_bus,
 )
 from singular.goals import IntrinsicGoals
+from singular.cognition.self_observation import SelfObservationService
 from singular.identity import ConsolidationPipeline
 from singular.governance.policy import MutationGovernancePolicy
 from singular.life.coevolution_flow import LivingTestPool
@@ -163,6 +164,7 @@ class OrchestratorService:
         )
         self.goals = IntrinsicGoals(path=self.mem_dir / "goals.json")
         self.consolidation_pipeline = ConsolidationPipeline(mem_dir=self.mem_dir)
+        self.self_observation = SelfObservationService(self.mem_dir / "self_model.json")
         self._running = False
         self._wake_requested = False
         self._pending_events: list[dict[str, Any]] = []
@@ -713,6 +715,10 @@ class OrchestratorService:
             mood = self.psyche.update_from_resource_manager(self.resource_manager)
             self.psyche.save_state()
             narrative_update = self._refresh_self_narrative()
+            metacognitive_model = self.self_observation.observe_episodes(
+                read_episodes()
+            )
+            metacognition = metacognitive_model["metacognition"]
             self._push_event(
                 phase,
                 {
@@ -720,6 +726,8 @@ class OrchestratorService:
                     "energy": self.psyche.energy,
                     "self_narrative_event": narrative_update["event_type"],
                     "self_narrative_short": narrative_update["short_summary"],
+                    "metacognition_updated_at": metacognition["updated_at"],
+                    "calibrated_domains": len(metacognition["domains"]),
                 },
             )
             return
