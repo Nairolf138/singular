@@ -234,6 +234,12 @@ button:hover {
 .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-top:8px; }
 .lives-grid { display:grid; grid-template-columns: minmax(0, 2.2fr) minmax(280px, 1fr); gap: 12px; align-items:start; }
 .life-detail-panel { position: sticky; top: 10px; }
+.life-chronology { margin-top:16px; border-top:1px solid var(--table-border); padding-top:8px; }
+.chronology-chart { min-height:180px; overflow-x:auto; }
+.chronology-chart svg { width:100%; min-width:520px; height:190px; background:rgba(15,23,42,.35); border-radius:6px; }
+.chronology-legend { display:flex; flex-wrap:wrap; gap:8px; font-size:.75rem; }
+.chronology-events { max-height:260px; overflow:auto; padding-left:22px; }
+.chronology-events li { margin:5px 0; white-space:normal; }
 .life-meta-table th { width: 42%; color: var(--text-secondary); text-align: left; }
 .detail-badges { margin-bottom: 8px; }
 .summary-pill { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid rgba(255,255,255,0.2); }

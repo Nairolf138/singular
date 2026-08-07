@@ -92,6 +92,41 @@ const livesUiState={
   rowsByLife:new Map(),
 };
 
+const chronologyColors={health:'#22c55e',energy:'#eab308',mood:'#ec4899',autonomy:'#38bdf8',liveliness:'#a78bfa'};
+const loadLifeChronology=life=>{
+  const host=byId('life-chronology-chart');
+  if(!host||!life){return Promise.resolve();}
+  const windowKey=byId('life-chronology-window')?.value||'24h';
+  const resolution=byId('life-chronology-resolution')?.value||'hour';
+  const mutation=byId('life-chronology-mutation')?.value||'';
+  const query=new URLSearchParams({time_window:windowKey,resolution,limit:'500'});
+  if(mutation!==''){query.set('mutation_index',mutation);}
+  host.textContent='Chargement de la chronologie…';
+  return fetchJson(`/api/lives/${encodeURIComponent(life)}/timeseries?${query}`).then(payload=>{
+    const points=payload.points||[];
+    const width=700,height=170,pad=18;
+    const paths=Object.entries(chronologyColors).map(([metric,color])=>{
+      const samples=points.map((point,index)=>({index,value:point.values?.[metric]})).filter(item=>Number.isFinite(item.value));
+      if(!samples.length){return '';}
+      const vals=samples.map(item=>item.value),min=Math.min(...vals),max=Math.max(...vals),span=max-min||1;
+      const coords=samples.map(item=>`${pad+(item.index/Math.max(1,points.length-1))*(width-pad*2)},${height-pad-((item.value-min)/span)*(height-pad*2)}`);
+      return `<polyline fill='none' stroke='${color}' stroke-width='2' points='${coords.join(' ')}'><title>${escapeHtml(metric)}</title></polyline>`;
+    }).join('');
+    host.innerHTML=`<div class='chronology-legend'>${Object.entries(chronologyColors).map(([key,color])=>`<span style='color:${color}'>● ${escapeHtml(key)}</span>`).join('')}<span>· ${points.length} points${payload.truncated?' (limités)':''}</span></div><svg viewBox='0 0 ${width} ${height}' role='img' aria-label='Courbes santé, énergie, humeur, autonomie et vivacité'>${paths}</svg>`;
+    const events=points.flatMap(point=>(point.events||[]).map(event=>({...event,bucket:point.timestamp})));
+    const list=byId('life-chronology-events');
+    if(list){list.innerHTML=events.length?events.map(event=>`<li><a href='${escapeHtml(event.href)}'>${escapeHtml(event.timestamp||event.bucket)}</a> · ${escapeHtml(event.event)}${event.objective?` · objectif: ${escapeHtml(event.objective)}`:''}${event.skill?` · skill: ${escapeHtml(event.skill)}`:''}${typeof event.accepted==='boolean'?` · mutation ${event.accepted?'acceptée':'échouée/refusée'}`:''}</li>`).join(''):'<li>Aucun événement marquant dans cette fenêtre.</li>';}
+    const mutationSelect=byId('life-chronology-mutation');
+    if(mutationSelect&&mutationSelect.options.length===1){
+      const mutations=events.filter(event=>typeof event.accepted==='boolean');
+      mutations.forEach(event=>mutationSelect.insertAdjacentHTML('beforeend',`<option value='${event.mutation_index}'>#${event.mutation_index} · ${escapeHtml(event.timestamp)}</option>`));
+    }
+    const comparison=payload.mutation_comparison;
+    const comparisonHost=byId('life-mutation-comparison');
+    if(comparisonHost){comparisonHost.innerHTML=comparison?`<details open><summary>Comparaison autour de ${escapeHtml(comparison.pivot)}</summary><pre>${escapeHtml(JSON.stringify({avant:comparison.before,apres:comparison.after},null,2))}</pre></details>`:'';}
+  }).catch(error=>{host.textContent=`Chronologie indisponible: ${error.message}`;});
+};
+
 const formatFilterLabel=(key,value)=>{
   if(key==='quickFilter'){return `quickFilter=${value}`;}
   if(key==='focus'){return `focus=${value}`;}
@@ -305,6 +340,13 @@ const showLifeDetails=lifeName=>{
   document.querySelectorAll('#lives-table-body tr.lives-row').forEach(node=>{
     node.classList.toggle('selected',node.dataset.life===lifeName);
   });
+  ['life-chronology-window','life-chronology-resolution','life-chronology-mutation'].forEach(id=>{
+    const control=byId(id);
+    if(control&&!control.dataset.bound){control.dataset.bound='true';control.addEventListener('change',()=>loadLifeChronology(livesUiState.selectedLife));}
+  });
+  const mutationSelect=byId('life-chronology-mutation');
+  if(mutationSelect){mutationSelect.innerHTML='<option value="">Aucune</option>';}
+  loadLifeChronology(lifeName);
 };
 
 const renderUnattachedRuns=(payload)=>{

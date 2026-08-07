@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from singular.dashboard.services.lives_comparison import aggregate_lives
+from singular.dashboard.services.lives_comparison import aggregate_lives, build_life_timeseries
 from singular.dashboard.services.code_evolution import aggregate_code_evolution
 from singular.dashboard.services.trajectory import build_trajectory
 
@@ -70,6 +70,38 @@ def test_lives_comparison_service_aggregates_metrics() -> None:
     assert comparison["alpha"]["failure_rate"] == 0.5
     assert comparison["alpha"]["mutations"] == 2
     assert comparison["alpha"]["trend"] in {"plateau", "dégradation", "amélioration"}
+
+
+def test_life_timeseries_buckets_metrics_and_keeps_evidence() -> None:
+    records = [
+        {"ts": "2026-01-01T00:10:00Z", "health": {"score": 60}, "energy": 40,
+         "event": "mutation", "accepted": True, "run_id": "run 1"},
+        {"ts": "2026-01-01T00:50:00Z", "health": {"score": 80}, "mood": 75,
+         "event": "interaction", "run_id": "run 1"},
+        {"ts": "2026-01-01T02:00:00Z", "event": "skill_acquired", "skill": "alpha:vision",
+         "accepted": False, "run_id": "run-2"},
+    ]
+
+    payload = build_life_timeseries(
+        records, life="alpha", time_window="all", resolution="hour", limit=10,
+        mutation_index=0, record_run_id=lambda rec: str(rec["run_id"]),
+    )
+
+    assert payload["count"] == 2
+    assert payload["points"][0]["values"]["health"] == 70.0
+    assert payload["points"][0]["values"]["interactions"] == 1.0
+    assert payload["points"][0]["proofs"][0]["href"].startswith("/api/runs/run%201/")
+    assert payload["mutation_comparison"]["pivot"] == "2026-01-01T00:10:00+00:00"
+    assert payload["points"][1]["events"][0]["skill"] == "alpha:vision"
+
+
+def test_life_timeseries_rejects_unbounded_contract_values() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="limit"):
+        build_life_timeseries([], life="alpha", limit=1001)
+    with pytest.raises(ValueError, match="time_window"):
+        build_life_timeseries([], life="alpha", time_window="year")
 
 
 def test_lives_comparison_includes_registry_life_without_records_in_table() -> None:
