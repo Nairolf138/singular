@@ -25,3 +25,6 @@ class MemoryBackend(Protocol):
 
     def delete(self, layer: str, record_id: str) -> bool:
         """Delete one record by id and return whether it existed."""
+
+    def similarity(self, query: str, text: str) -> float:
+        """Return lexical or embedding similarity without requiring a remote service."""
