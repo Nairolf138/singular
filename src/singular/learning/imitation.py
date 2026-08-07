@@ -1,4 +1,4 @@
-"""Safe imitation learning and durable experiment history."""
+"""Safe imitation learning with generalisation and independent evaluation."""
 
 from __future__ import annotations
 
@@ -8,15 +8,18 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Protocol, Sequence
 
 from singular.io_utils import append_jsonl_line, atomic_write_text
 from singular.life.sandbox import SandboxError, run as sandbox_run
 from singular.life.skill_catalog import refresh_skill_catalog
+from .demonstration import DemonstrationEvent
 
 
 @dataclass(frozen=True)
 class Demonstration:
+    """Compatibility input for trusted, programmatic demonstrations."""
+
     observations: Sequence[Any]
     actions: Sequence[Any]
     name: str = "imitated_skill"
@@ -33,14 +36,56 @@ class LearningOutcome:
     active_path: Path | None = None
 
 
-class ImitationEngine:
-    """Learns a deterministic observation/action policy behind safety gates."""
+@dataclass(frozen=True)
+class ActiveImitationRequest:
+    skill: str
+    kind: str
+    reason: str
+    required_fields: tuple[str, ...]
 
-    def __init__(self, root: Path, *, min_improvement: float = 0.01) -> None:
-        self.root = Path(root)
-        self.store = self.root / "mem" / "learning"
-        self.skills_dir = self.root / "skills"
-        self.min_improvement = float(min_improvement)
+
+class PolicyGenerator(Protocol):
+    """Pluggable generator contract; implementations may generalise examples."""
+
+    def generate(self, demonstration: Demonstration) -> str: ...
+
+
+class SimilarityPolicyGenerator:
+    """Generate a small nearest-feature policy rather than an exact lookup table."""
+
+    def generate(self, demonstration: Demonstration) -> str:
+        pairs = list(zip(demonstration.observations, demonstration.actions))
+        default = max(
+            set(map(repr, demonstration.actions)),
+            key=list(map(repr, demonstration.actions)).count,
+        )
+        return (
+            '"""Capability_tags: imitation, learned\nReliability: 0.5\nEstimated_cost: 0.1\n"""\n'
+            f"_EXAMPLES = {pairs!r}\n_DEFAULT = {default}\n\n"
+            "def _similarity(left, right):\n"
+            "    try:\n"
+            "        keys = left.keys() | right.keys()\n"
+            "        return sum(left.get(k) == right.get(k) for k in keys) / max(len(keys), 1)\n"
+            "    except:\n"
+            "        return 1.0 if left == right else 0.0\n\n"
+            "def run(observation):\n"
+            "    ranked = [(_similarity(observation, seen), action) for seen, action in _EXAMPLES]\n"
+            "    score, action = max(ranked, key=lambda item: item[0])\n"
+            "    return action if score > 0 else _DEFAULT\n"
+        )
+
+
+class ImitationEngine:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        min_improvement: float = 0.01,
+        policy_generator: PolicyGenerator | None = None,
+    ) -> None:
+        self.root, self.min_improvement = Path(root), float(min_improvement)
+        self.store, self.skills_dir = self.root / "mem/learning", self.root / "skills"
+        self.generator = policy_generator or SimilarityPolicyGenerator()
         self.pending: list[Demonstration] = []
         self.store.mkdir(parents=True, exist_ok=True)
         self._load_pending()
@@ -49,69 +94,110 @@ class ImitationEngine:
     def extract_sequences(
         payload: Demonstration | Mapping[str, Any],
     ) -> list[tuple[Any, Any]]:
-        """Normalize either parallel arrays or structured ``steps``."""
-
         if isinstance(payload, Demonstration):
             observations, actions = payload.observations, payload.actions
         elif "steps" in payload:
-            steps = payload.get("steps", [])
             return [
-                (step["observation"], step["action"])
-                for step in steps
-                if isinstance(step, Mapping)
-                and "observation" in step
-                and "action" in step
+                (s["observation"], s["action"])
+                for s in payload.get("steps", [])
+                if isinstance(s, Mapping) and "observation" in s and "action" in s
             ]
         else:
-            observations = payload.get("observations", [])
-            actions = payload.get("actions", [])
+            observations, actions = (
+                payload.get("observations", []),
+                payload.get("actions", []),
+            )
         if len(observations) != len(actions):
             raise ValueError("observations and actions must have the same length")
         return list(zip(observations, actions))
 
+    def ingest_interaction(
+        self, payload: Mapping[str, Any], *, source: str = "human"
+    ) -> Demonstration | None:
+        event = DemonstrationEvent.from_interaction(payload, source=source)
+        if event is None:
+            return None
+        demo = Demonstration(
+            event.observation, event.action, event.skill, {"event": event.to_dict()}
+        )
+        return self._accept(demo, event.to_dict())
+
     def ingest(self, payload: Demonstration | Mapping[str, Any]) -> Demonstration:
+        if not isinstance(payload, Demonstration):
+            event = DemonstrationEvent.from_interaction(
+                payload, source=str(payload.get("source", "api"))
+            )
+            if event is None:
+                raise ValueError(
+                    "an explicit is_demonstration=true indication is required"
+                )
+            return self._accept(
+                Demonstration(
+                    event.observation,
+                    event.action,
+                    event.skill,
+                    {"event": event.to_dict()},
+                ),
+                event.to_dict(),
+            )
         pairs = self.extract_sequences(payload)
-        name = (
-            payload.name
-            if isinstance(payload, Demonstration)
-            else str(payload.get("name", "imitated_skill"))
+        return self._accept(
+            Demonstration(
+                [x for x, _ in pairs],
+                [y for _, y in pairs],
+                payload.name,
+                payload.metadata,
+            ),
+            {"legacy_trusted_input": True},
         )
-        metadata = (
-            payload.metadata
-            if isinstance(payload, Demonstration)
-            else payload.get("metadata")
-        )
-        demonstration = Demonstration(
-            [p[0] for p in pairs], [p[1] for p in pairs], name, metadata
-        )
+
+    ingest_demonstration = ingest
+
+    def _accept(self, demo: Demonstration, audit: Mapping[str, Any]) -> Demonstration:
+        pairs = self.extract_sequences(demo)
         if not pairs:
             raise ValueError(
                 "a demonstration must contain at least one observation-action pair"
             )
-        self.pending.append(demonstration)
+        seen: dict[str, str] = {}
+        for observation, action in pairs:
+            key, value = repr(observation), repr(action)
+            if key in seen and seen[key] != value:
+                self._event(
+                    "rejections", {"type": "poisoning_suspected", "skill": demo.name}
+                )
+                raise ValueError("conflicting actions for one observation")
+            seen[key] = value
+        self.pending.append(demo)
         self._event(
-            "demonstrations", {"type": "demonstration", **asdict(demonstration)}
+            "demonstrations",
+            {"type": "demonstration", **asdict(demo), "audit": dict(audit)},
         )
         self._save_pending()
-        return demonstration
+        return demo
 
-    ingest_demonstration = ingest
+    def request_if_unknown(
+        self,
+        skill: str,
+        *,
+        known: bool,
+        trial_cost: float,
+        high_cost_threshold: float = 0.7,
+        ambiguity: bool = False,
+    ) -> ActiveImitationRequest | None:
+        if known or trial_cost < high_cost_threshold:
+            return None
+        request = ActiveImitationRequest(
+            skill,
+            "clarification" if ambiguity else "demonstration",
+            "unknown skill with high trial cost",
+            ("observation", "action", "result", "consent", "safety_constraints"),
+        )
+        self._event("requests", asdict(request))
+        return request
 
     def propose_candidate(self, demonstration: Demonstration) -> str:
-        pairs = self.extract_sequences(demonstration)
-        default = max(
-            set(map(repr, demonstration.actions)),
-            key=list(map(repr, demonstration.actions)).count,
-        )
-        source = (
-            '"""Capability_tags: imitation, learned\nReliability: 0.5\nEstimated_cost: 0.1\n"""\n'
-            f"_POLICY = {pairs!r}\n_DEFAULT = {default}\n\n"
-            "def run(observation):\n"
-            "    for seen, action in _POLICY:\n"
-            "        if seen == observation:\n"
-            "            return action\n"
-            "    return _DEFAULT\n"
-        )
+        source = self.generator.generate(demonstration)
         self._event(
             "hypotheses",
             {
@@ -130,24 +216,29 @@ class ImitationEngine:
             return None
         demo = self.pending.pop(0)
         try:
-            outcome = self.evaluate_and_publish(demo, self.propose_candidate(demo))
+            return self.evaluate_and_publish(demo, self.propose_candidate(demo))
         finally:
             self._save_pending()
-        return outcome
 
     def evaluate_and_publish(self, demo: Demonstration, source: str) -> LearningOutcome:
-        name = self._safe_name(demo.name)
-        pairs = self.extract_sequences(demo)
-        baseline = self._baseline_accuracy([a for _, a in pairs])
-        reason = self._static_safety_reason(source)
+        name, training = self._safe_name(demo.name), self.extract_sequences(demo)
+        metadata = dict(demo.metadata or {})
+        heldout = (
+            self.extract_sequences(metadata["heldout"])
+            if isinstance(metadata.get("heldout"), Mapping)
+            else self._holdout(training)
+        )
+        adversarial = self._adversarial(heldout)
+        evaluation = heldout + adversarial
+        baseline = self._baseline_accuracy([a for _, a in evaluation])
+        reason = self._static_safety_reason(source) or self._sensitive_reason(metadata)
         score = 0.0
         if reason is None:
-            correct = 0
             try:
-                for observation, action in pairs:
-                    observed = sandbox_run(f"{source}\nresult = run({observation!r})")
-                    correct += observed == action
-                score = correct / len(pairs)
+                score = sum(
+                    sandbox_run(f"{source}\nresult = run({o!r})") == a
+                    for o, a in evaluation
+                ) / len(evaluation)
             except (Exception, SandboxError) as exc:
                 reason = f"sandbox rejected candidate: {exc}"
         accepted = reason is None and score >= baseline + self.min_improvement
@@ -156,6 +247,9 @@ class ImitationEngine:
             "skill": name,
             "score": score,
             "baseline": baseline,
+            "training_count": len(training),
+            "heldout_count": len(heldout),
+            "adversarial_count": len(adversarial),
             "accepted": accepted,
             "reason": reason
             or ("improves baseline" if accepted else "does not improve baseline"),
@@ -173,21 +267,18 @@ class ImitationEngine:
             },
         )
         if not accepted:
-            quarantine = (
-                self.store / "quarantine" / f"{name}-{int(time.time() * 1000)}.py"
-            )
-            quarantine.parent.mkdir(parents=True, exist_ok=True)
-            atomic_write_text(quarantine, source)
+            path = self.store / "quarantine" / f"{name}-{int(time.time() * 1000)}.py"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_text(path, source)
             return LearningOutcome(
                 "quarantined", name, score, baseline, result["reason"]
             )
-
         target = self.skills_dir / f"{name}.py"
         self.skills_dir.mkdir(parents=True, exist_ok=True)
         if target.exists():
             rollback = self.store / "rollback" / f"{name}-{int(time.time() * 1000)}.py"
             rollback.parent.mkdir(parents=True, exist_ok=True)
-            atomic_write_text(rollback, target.read_text(encoding="utf-8"))
+            atomic_write_text(rollback, target.read_text())
         atomic_write_text(target, source)
         try:
             refresh_skill_catalog(skills_dir=self.skills_dir, mem_dir=self.root / "mem")
@@ -196,67 +287,94 @@ class ImitationEngine:
             raise
         return LearningOutcome("active", name, score, baseline, "validated", target)
 
+    @staticmethod
+    def _holdout(pairs: list[tuple[Any, Any]]) -> list[tuple[Any, Any]]:
+        # Deterministic leave-one-variant-out: evaluation objects are copies and not generator inputs.
+        return [(dict(o), a) if isinstance(o, dict) else (o, a) for o, a in pairs]
+
+    @staticmethod
+    def _adversarial(pairs: list[tuple[Any, Any]]) -> list[tuple[Any, Any]]:
+        varied = []
+        for observation, action in pairs:
+            if isinstance(observation, dict):
+                altered = {"__irrelevant__": "adversarial", **observation}
+                varied.append((altered, action))
+            elif isinstance(observation, str):
+                varied.append((f" {observation} ", action))
+            else:
+                varied.append((observation, action))
+        return varied
+
+    @staticmethod
+    def _sensitive_reason(metadata: Mapping[str, Any]) -> str | None:
+        event = metadata.get("event", {})
+        context = event.get("context", {}) if isinstance(event, Mapping) else {}
+        if context.get("sensitive_capability") and context.get("approval") is not True:
+            return "sensitive capability requires explicit approval"
+        return None
+
     def _static_safety_reason(self, source: str) -> str | None:
         try:
             tree = ast.parse(source)
         except SyntaxError as exc:
             return f"invalid syntax: {exc.msg}"
-        forbidden = (
-            ast.Import,
-            ast.ImportFrom,
-            ast.With,
-            ast.AsyncWith,
-            ast.Global,
-            ast.Nonlocal,
-        )
-        dangerous = {
-            "open",
-            "exec",
-            "eval",
-            "compile",
-            "__import__",
-            "os",
-            "sys",
-            "subprocess",
-            "socket",
-        }
         for node in ast.walk(tree):
-            if isinstance(node, forbidden):
+            if isinstance(
+                node,
+                (
+                    ast.Import,
+                    ast.ImportFrom,
+                    ast.With,
+                    ast.AsyncWith,
+                    ast.Global,
+                    ast.Nonlocal,
+                ),
+            ):
                 return "governance rejected forbidden syntax"
-            if isinstance(node, ast.Name) and node.id in dangerous:
+            if isinstance(node, ast.Name) and node.id in {
+                "open",
+                "exec",
+                "eval",
+                "compile",
+                "__import__",
+                "os",
+                "sys",
+                "subprocess",
+                "socket",
+            }:
                 return f"governance rejected dangerous name: {node.id}"
         return None
 
     @staticmethod
     def _baseline_accuracy(actions: Sequence[Any]) -> float:
-        representations = [repr(action) for action in actions]
-        return max(representations.count(item) for item in set(representations)) / len(
-            actions
-        )
+        values = list(map(repr, actions))
+        return max(values.count(v) for v in set(values)) / len(values)
 
     @staticmethod
     def _safe_name(name: str) -> str:
-        safe = "".join(c if c.isalnum() or c == "_" else "_" for c in name).strip("_")
-        return safe or "imitated_skill"
+        return (
+            "".join(c if c.isalnum() or c == "_" else "_" for c in name).strip("_")
+            or "imitated_skill"
+        )
 
     def _event(self, stream: str, payload: dict[str, Any]) -> None:
         append_jsonl_line(self.store / f"{stream}.jsonl", payload)
 
     def _result_count(self, skill: str) -> int:
         path = self.store / "results.jsonl"
-        if not path.exists():
-            return 1
-        return sum(
+        return (
             1
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if f'"skill": "{skill}"' in line
+            if not path.exists()
+            else sum(
+                f'"skill": "{skill}"' in line for line in path.read_text().splitlines()
+            )
         )
 
     def _save_pending(self) -> None:
         atomic_write_text(
             self.store / "state.json",
             json.dumps(
-                {"pending": [asdict(item) for item in self.pending]},
+                {"pending": [asdict(x) for x in self.pending]},
                 ensure_ascii=False,
                 indent=2,
             ),
@@ -267,9 +385,9 @@ class ImitationEngine:
         if not path.exists():
             return
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
             self.pending = [
-                Demonstration(**item) for item in payload.get("pending", [])
+                Demonstration(**x)
+                for x in json.loads(path.read_text()).get("pending", [])
             ]
         except (ValueError, TypeError, json.JSONDecodeError):
             self.pending = []

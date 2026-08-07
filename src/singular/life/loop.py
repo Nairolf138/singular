@@ -1002,6 +1002,9 @@ def run(
             return test_runner()
 
     life_root = Path(os.environ.get("SINGULAR_HOME", "."))
+    # Imitation is part of the normal composition. Injection remains available
+    # for tests and alternative generators, but learning no longer depends on it.
+    imitation_engine = imitation_engine or ImitationEngine(life_root)
     logger_kwargs: dict[str, object] = {"psyche": psyche}
     # Keep the injection point used by tests and downstream integrations while
     # making the production logger's active-life destination explicit.
