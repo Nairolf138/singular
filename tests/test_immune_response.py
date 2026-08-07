@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from security.immune_response import AdaptiveImmunityEngine, IncidentRecord
+from singular.security.immune_response import AdaptiveImmunityEngine, IncidentRecord
 from singular.governance.policy import MutationGovernancePolicy
 
 

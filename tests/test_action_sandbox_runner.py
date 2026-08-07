@@ -2,7 +2,7 @@ import time
 
 import pytest
 
-from action.sandbox_runner import (
+from singular.action.sandbox_runner import (
     ActionError,
     ActionRateLimitError,
     ActionTimeoutError,

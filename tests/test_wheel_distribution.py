@@ -41,7 +41,17 @@ def test_installed_wheel_contains_all_runtime_resources(tmp_path: Path) -> None:
 from importlib.resources import as_file, files
 from pathlib import Path
 
+from singular.action.sandbox_runner import SandboxedActionRunner
+from singular.core.agent_runtime import AgentRuntime
 from singular.dashboard import create_app
+from singular.interaction.tts_engine import TTSEngine
+from singular.mind.state_model import StateModel
+from singular.observability.audit_log import AuditLogStore
+from singular.perception.audio.pipeline import AudioPerceptionPipeline
+from singular.perception.os.pipeline import OSPerceptionPipeline
+from singular.perception.vision.pipeline import VisionPerceptionPipeline
+from singular.security.immune_response import AdaptiveImmunityEngine
+from singular.security.policy_engine import ActionPolicyEngine
 from singular.life.ecosystem import EcosystemRulesConfig
 from singular.life.life_definition import load_life_definition_config
 from singular.orchestrator.lifecycle_clock import load_lifecycle_clock_config

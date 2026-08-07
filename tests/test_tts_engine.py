@@ -1,4 +1,4 @@
-from interaction.tts_engine import ProsodyBounds, TTSEngine, VoiceProfile
+from singular.interaction.tts_engine import ProsodyBounds, TTSEngine, VoiceProfile
 
 
 def test_prosody_is_strictly_bounded():
