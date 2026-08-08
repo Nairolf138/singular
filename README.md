@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/branding/singular-logo.svg" alt="Singular" width="760">
+</p>
+
 # 🌱 Singular — Un organisme numérique vivant interactif
 
 **Singular** n’est pas seulement un programme informatique.  
@@ -247,7 +251,6 @@ singular lives create --name "Explorateur" \
 
 Par défaut, ``talk`` ouvre une session interactive. Pour obtenir une réponse
 unique et quitter immédiatement :
-
 ```bash
 singular talk --prompt "Bonjour"
 ```
@@ -497,7 +500,6 @@ singular orchestrate run --lifecycle-config configs/lifecycle.yaml --dry-run
 ```
 
 Pour arrêter l’orchestrateur, utilisez `Ctrl+C` dans le terminal où il tourne.
-
 ### ⚙️ Fonctionnement interne
 
 **Corps**

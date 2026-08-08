@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 900">
+<defs>
+  <linearGradient id="singularGradient" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#0A1BFF"/><stop offset=".48" stop-color="#2D6BFF"/>
+    <stop offset=".72" stop-color="#00A7FF"/><stop offset="1" stop-color="#00E0D1"/>
+  </linearGradient>
+</defs>
+<g transform="translate(144,20)">
+  <path d="M112 210V137L256 54l144 83v82l-44-25v-31l-100-58-100 58v22l100 58 144 83v75l-144 83-144-83v-82l44 25v31l100 58 100-58v-23l-100-58-144-83z" fill="url(#singularGradient)"/>
+  <circle cx="256" cy="256" r="38" fill="#0B1124" stroke="url(#singularGradient)" stroke-width="18"/>
+  <g fill="none" stroke="url(#singularGradient)" stroke-width="14" stroke-linecap="round">
+    <path d="M256 218V172"/><path d="M238 286l-48 39"/><path d="M274 286l48 39"/><path d="M256 294v53"/>
+  </g>
+  <g fill="url(#singularGradient)"><circle cx="256" cy="157" r="15"/><circle cx="176" cy="337" r="15"/><circle cx="336" cy="337" r="15"/><circle cx="256" cy="364" r="15"/></g>
+</g>
+<text x="400" y="650" text-anchor="middle" font-family="Inter, Montserrat, Arial, sans-serif" font-size="82" font-weight="700" letter-spacing="13" fill="#0B1124">SINGULAR</text>
+<text x="400" y="730" text-anchor="middle" font-family="Inter, Montserrat, Arial, sans-serif" font-size="28" font-weight="600" letter-spacing="12" fill="#167BEF">DIGITAL LIFE</text>
+</svg>
