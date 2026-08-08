@@ -686,12 +686,17 @@ def _doctor_providers() -> int:
         ok = bool(result.get("ok"))
         if not ok:
             exit_code = 1
-        status = "✅ ok" if ok else "⚠️ indisponible"
+        provider_state = str(result.get("state") or ("ready" if ok else "unavailable"))
+        status = {
+            "ready": "✅ ready",
+            "degraded_dummy": "⚠️ degraded_dummy (réponse déterministe/factice)",
+            "unavailable": "⚠️ unavailable",
+        }.get(provider_state, f"⚠️ {provider_state}")
         provider = result.get("provider", "inconnu")
         llm_real = str(bool(result.get("llm_real"))).lower()
         error_category = result.get("error_category") or "none"
         details = []
-        for key in ("model", "host", "error"):
+        for key in ("model", "host", "cause", "error"):
             value = result.get(key)
             if value:
                 details.append(f"{key}={value}")
@@ -699,6 +704,9 @@ def _doctor_providers() -> int:
         print(
             f"- {provider}: {status} | llm_real={llm_real} | error_category={error_category}{suffix}"
         )
+        command = result.get("configuration_command")
+        if command:
+            print(f"  Configuration: `{command}`")
     return exit_code
 
 

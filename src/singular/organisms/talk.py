@@ -30,6 +30,7 @@ from ..providers import (
     ProviderRetryExhaustedError,
     ProviderTimeoutError,
     ProviderUnavailableError,
+    PROVIDER_CONFIGURATION_COMMANDS,
     describe_client,
     load_llm_client,
     provider_is_real,
@@ -49,7 +50,7 @@ def _default_reply(prompt: str, rng: random.Random) -> str:
         "You said",
         "Echoing",
     ]
-    return f"{rng.choice(options)}: {prompt}"
+    return f"[RÉPONSE DÉTERMINISTE/FACTICE — aucun LLM réel] {rng.choice(options)}: {prompt}"
 
 
 def _user_message_for_error(provider: str, err: LLMProviderError) -> str:
@@ -182,7 +183,11 @@ def talk(
 ) -> str | None:
     """Handle the ``talk`` subcommand."""
 
-    life_root = Path(life_home) if life_home is not None else Path(os.environ.get("SINGULAR_HOME", "."))
+    life_root = (
+        Path(life_home)
+        if life_home is not None
+        else Path(os.environ.get("SINGULAR_HOME", "."))
+    )
     mem_dir = life_root / "mem"
     episodic_file = mem_dir / "episodic.jsonl"
     causal_file = mem_dir / "causal_timeline.jsonl"
@@ -193,10 +198,9 @@ def talk(
     # Human dialogue is eligible for teaching only through a separate,
     # structured and explicitly consented demonstration payload.
     if demonstration is not None:
-        (
-            imitation_engine
-            or ImitationEngine(life_root)
-        ).ingest_interaction(demonstration, source="human:talk")
+        (imitation_engine or ImitationEngine(life_root)).ingest_interaction(
+            demonstration, source="human:talk"
+        )
 
     rng = random.Random(seed)
 
@@ -225,9 +229,9 @@ def talk(
 
     psyche = Psyche.load_state(psyche_file)
 
-    def gather_context() -> tuple[
-        str | None, dict | None, dict | None, str | None, str | None
-    ]:
+    def gather_context() -> (
+        tuple[str | None, dict | None, dict | None, str | None, str | None]
+    ):
         signals = capture_signals()
         add_episode({"event": "perception", **signals}, path=episodic_file)
         psyche.consume()
@@ -317,7 +321,8 @@ def talk(
                     "query": user_input,
                     "memories": recalled_memories,
                     "summary": recall_summary,
-                }, path=episodic_file
+                },
+                path=episodic_file,
             )
             add_episode(
                 {
@@ -326,9 +331,13 @@ def talk(
                     "decision": "assistant_reply",
                     "memories": recalled_memories,
                     "summary": recall_summary,
-                }, path=episodic_file
+                },
+                path=episodic_file,
             )
-        add_episode({"role": "user", "text": user_input, "structured_signals": user_signals}, path=episodic_file)
+        add_episode(
+            {"role": "user", "text": user_input, "structured_signals": user_signals},
+            path=episodic_file,
+        )
         mood = psyche.feel(Mood.NEUTRAL)
         mood_report = mood_event or mood.value
         system_preamble = _build_system_preamble(
@@ -344,6 +353,7 @@ def talk(
         error_category: str | None = "provider_missing" if client is None else None
         active_provider = str(provider_status["active_provider"])
         llm_real = bool(provider_status["llm_real"]) and not fallback_used
+        provider_state = "unavailable" if client is None else "ready"
 
         if client is None:
             print(
@@ -358,6 +368,7 @@ def talk(
                 fallback_used = True
                 llm_real = False
                 error_category = getattr(err, "category", "provider_error")
+                provider_state = "unavailable"
                 print(_user_message_for_error(provider_selection, err))
                 print(
                     f"LLM status: active={active_provider} fallback=true "
@@ -378,6 +389,24 @@ def talk(
                     fallback_used = False
                     error_category = None
                 llm_real = provider_is_real(active_provider)
+                if not llm_real:
+                    provider_state = "degraded_dummy"
+                    reply = f"[RÉPONSE DÉTERMINISTE/FACTICE — provider dummy] {reply}"
+                    fallback_used = True
+                    print(
+                        "Aucun fournisseur LLM réel n'est disponible; le provider "
+                        "dummy produit uniquement un écho factice."
+                    )
+                if isinstance(client, FallbackLLMClient):
+                    for failure in client.last_errors:
+                        command = PROVIDER_CONFIGURATION_COMMANDS.get(
+                            failure["provider"]
+                        )
+                        print(
+                            f"Cause {failure['provider']}: {failure['category']} — "
+                            f"{failure['error']}"
+                            + (f" | Configuration: `{command}`" if command else "")
+                        )
                 print(
                     f"LLM status: active={active_provider} "
                     f"fallback={str(fallback_used).lower()} "
@@ -422,6 +451,7 @@ def talk(
                 "active_provider": active_provider,
                 "fallback_used": fallback_used,
                 "error_category": error_category,
+                "provider_state": provider_state,
                 "structured_signals": user_signals,
                 "context": {
                     "self_narrative_version": self_narrative_version,
@@ -431,14 +461,17 @@ def talk(
                     "recalled_memories": recalled_memories,
                     "recalled_memory_summary": recall_summary,
                 },
-            }, path=episodic_file
+            },
+            path=episodic_file,
         )
         gain_estimate = round(
             float(user_signals.get("satisfaction", 0.0))
             - float(user_signals.get("frustration", 0.0)),
             3,
         )
-        cognitive_success = llm_real and not fallback_used
+        # A real provider reached through the fallback chain is still real;
+        # dummy/echo output, however, must never improve cognitive metrics.
+        cognitive_success = llm_real
         cognitive_gain = gain_estimate if cognitive_success else 0.0
         add_causal_trace(
             {
@@ -459,6 +492,7 @@ def talk(
                     "fallback_used": fallback_used,
                     "error_category": error_category,
                     "llm_real": llm_real,
+                    "provider_state": provider_state,
                     "mood": mood_report,
                     "recalled_memory_summary": recall_summary,
                     "recalled_memories": recalled_memories,
@@ -476,7 +510,8 @@ def talk(
                         "impact": cognitive_gain,
                     },
                 },
-            }, path=causal_file
+            },
+            path=causal_file,
         )
         psyche.gain()
         psyche.save_state(psyche_file)

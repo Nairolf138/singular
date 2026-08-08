@@ -424,6 +424,20 @@ export const loadContext=()=>Promise.all([
   setText('ctx-root',ctx.singular_root||na());
   setText('ctx-home',ctx.singular_home||na());
   setText('ctx-lives-count',String(ctx.registry_lives_count||0));
+  const providerDiagnostic=ctx.llm_providers||{};
+  const providerAlert=byId('llm-provider-alert');
+  if(providerAlert){
+    const state=String(providerDiagnostic.state||'unavailable');
+    if(state==='ready'){
+      providerAlert.classList.add('panel-hidden');providerAlert.textContent='';
+    }else{
+      const details=(providerDiagnostic.providers||[]).map(item=>`${item.provider}: ${item.cause||item.state}${item.configuration_command?` — ${item.configuration_command}`:''}`).join(' · ');
+      providerAlert.textContent=state==='degraded_dummy'
+        ? `LLM degraded_dummy : les réponses sont déterministes/factices. ${details}`
+        : `LLM unavailable : aucun fournisseur de langage n'est disponible. ${details}`;
+      providerAlert.classList.remove('panel-hidden');
+    }
+  }
   const policy=ctx.policy||{};
   const autonomy=policy.autonomy||{};
   const permissions=policy.permissions||{};

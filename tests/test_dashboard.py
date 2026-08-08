@@ -2540,3 +2540,23 @@ def test_dashboard_cockpit_exposes_used_memories(tmp_path: Path, monkeypatch: py
 
     assert payload["memory_metrics"]["has_memory_signal"] is True
     assert payload["memory_metrics"]["used_memories"][0]["summary"] == "bug prioritaire rappelé"
+
+
+
+def test_dashboard_context_exposes_degraded_dummy_diagnostic(tmp_path, monkeypatch):
+    diagnostic = {
+        "state": "degraded_dummy",
+        "llm_real": False,
+        "deterministic_fake": True,
+        "providers": [{
+            "provider": "openai",
+            "state": "unavailable",
+            "cause": "missing OPENAI_API_KEY",
+            "configuration_command": "singular config openai",
+        }],
+    }
+    monkeypatch.setattr(dashboard_module, "provider_diagnostics", lambda: diagnostic)
+
+    context = create_app(psyche_file=tmp_path / "psyche.json")._routes["/dashboard/context"]()
+
+    assert context["llm_providers"] == diagnostic
