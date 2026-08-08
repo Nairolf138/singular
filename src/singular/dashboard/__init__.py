@@ -3074,6 +3074,37 @@ def create_app(
             """Disconnect slow consumers instead of accumulating unbounded writes."""
             await asyncio.wait_for(ws.send_json(payload), timeout=ws_send_timeout)
 
+        def _read_changed_json(
+            path: Path, previous_mtime_ns: int | None
+        ) -> tuple[int | None, object | None, Exception | None]:
+            """Read one changed snapshot without doing unbounded work on the event loop."""
+            max_bytes = run_repository._limit(
+                "SINGULAR_DASHBOARD_MAX_EVENT_BYTES", 1024 * 1024
+            )
+            try:
+                initial_stat = path.stat()
+                if initial_stat.st_mtime_ns == previous_mtime_ns:
+                    return previous_mtime_ns, None, None
+                with path.open("rb") as handle:
+                    opened_stat = os.fstat(handle.fileno())
+                    raw = handle.read(max_bytes + 1)
+            except FileNotFoundError:
+                return None, None, None
+            except OSError as exc:
+                return previous_mtime_ns, None, exc
+            if len(raw) > max_bytes:
+                return opened_stat.st_mtime_ns, None, ValueError("snapshot too large")
+            try:
+                return opened_stat.st_mtime_ns, json.loads(raw.decode("utf-8")), None
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                return opened_stat.st_mtime_ns, None, exc
+
+        def _list_run_files() -> tuple[list[Path], Exception | None]:
+            try:
+                return _iter_run_files(), None
+            except OSError as exc:
+                return [], exc
+
         def _read_new_entries(
             file: Path, cursor: _LogCursor | None
         ) -> tuple[list[bytes], _LogCursor, bool]:
@@ -3130,58 +3161,39 @@ def create_app(
 
         try:
             while True:
-                if psyche_path.exists():
-                    mtime_ns = psyche_path.stat().st_mtime_ns
-                    if mtime_ns != last_psyche_mtime_ns:
+                for source, path, previous_mtime in (
+                    ("psyche", psyche_path, last_psyche_mtime_ns),
+                    ("quests", quests_path, last_quests_mtime_ns),
+                ):
+                    mtime_ns, data, error = await asyncio.to_thread(
+                        _read_changed_json, path, previous_mtime
+                    )
+                    if source == "psyche":
                         last_psyche_mtime_ns = mtime_ns
-                        try:
-                            data = json.loads(psyche_path.read_text())
-                        except (
-                            OSError,
-                            UnicodeDecodeError,
-                            json.JSONDecodeError,
-                        ) as exc:
-                            await _send(
-                                {
-                                    "type": "stream_error",
-                                    "source": "psyche",
-                                    "error": type(exc).__name__,
-                                }
-                            )
-                        else:
-                            await _send({"type": "psyche", "data": data})
-
-                if quests_path.exists():
-                    mtime_ns = quests_path.stat().st_mtime_ns
-                    if mtime_ns != last_quests_mtime_ns:
+                    else:
                         last_quests_mtime_ns = mtime_ns
-                        try:
-                            data = json.loads(quests_path.read_text())
-                        except (
-                            OSError,
-                            UnicodeDecodeError,
-                            json.JSONDecodeError,
-                        ) as exc:
-                            await _send(
-                                {
-                                    "type": "stream_error",
-                                    "source": "quests",
-                                    "error": type(exc).__name__,
-                                }
-                            )
-                        else:
-                            await _send({"type": "quests", "data": data})
+                    if error is not None:
+                        await _send({"type": "stream_error", "source": source, "error": type(error).__name__})
+                    elif data is not None:
+                        await _send({"type": source, "data": data})
 
                 incremental_events: list[dict[str, object]] = []
-                run_files = _iter_run_files()
+                run_files, discovery_error = await asyncio.to_thread(_list_run_files)
+                if discovery_error is not None:
+                    incremental_events.append({"type": "stream_error", "source": "runs", "error": type(discovery_error).__name__})
+                    run_files = [Path(name) for name in log_cursors]
                 if run_files:
                     current_files: set[str] = set()
                     for file in run_files:
                         key = str(file)
                         current_files.add(key)
-                        entries, next_cursor, rotated = await asyncio.to_thread(
-                            _read_new_entries, file, log_cursors.get(key)
-                        )
+                        try:
+                            entries, next_cursor, rotated = await asyncio.to_thread(
+                                _read_new_entries, file, log_cursors.get(key)
+                            )
+                        except (FileNotFoundError, OSError):
+                            log_cursors.pop(key, None)
+                            continue
                         log_cursors[key] = next_cursor
                         if rotated:
                             incremental_events.append(
@@ -3220,7 +3232,7 @@ def create_app(
                 for event in incremental_events:
                     await _send(event)
                 await asyncio.sleep(ws_poll_interval)
-        except (WebSocketDisconnect, asyncio.TimeoutError):
+        except (WebSocketDisconnect, asyncio.TimeoutError, asyncio.CancelledError):
             pass
         finally:
             with ws_clients_lock:
