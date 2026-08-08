@@ -13,7 +13,8 @@ Dégradé principal : `#0A1BFF → #2D6BFF → #00A7FF → #00E0D1`.
 
 ## Fichiers
 
-- `singular-logo.svg` : logo horizontal principal, recommandé pour le README et la documentation.
+- `singular-logo.svg` : source vectorielle canonique du logo horizontal, recommandée pour la documentation et le dashboard.
+- `singular-logo-github.png` : export horizontal à placer dans ce dossier, en 1 400 × 430 px (affiché à 700 × 215 px, soit 2×), sur fond blanc explicite pour préserver la lisibilité dans les thèmes clair et sombre ; variante recommandée pour les README rendus par GitHub.
 - `singular-logo-stacked.svg` : version verticale.
 - `singular-icon.svg` : symbole seul, recommandé pour favicon, app icon et espaces compacts.
 
