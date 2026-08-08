@@ -15,6 +15,15 @@ dependencies = [
 # Optional dependency policy mirrors runtime constraints:
 # - pin minimum known-compatible versions
 # - keep major-version upper caps for safer updates
+# The mandatory unit-test/quality suite deliberately has no optional runtime
+# integration dependencies.  Install it with ``.[test]``.
+test = [
+    "pytest>=8.2,<9",
+    "pytest-cov>=5,<7",
+    "ruff>=0.4,<1",
+    "black>=24.4,<26",
+    "mypy>=1.10,<2",
+]
 yaml = ["pyyaml>=6.0,<7"]
 dashboard = [
     "fastapi>=0.110,<1",
@@ -22,8 +31,17 @@ dashboard = [
     "websockets>=12,<16",
 ]
 viz = ["matplotlib>=3.8,<4"]
+# LLM clients are isolated from the mandatory test extra because they can pull
+# large model stacks or require external credentials/services.
+llm-openai = ["openai>=1.30,<3"]
+llm-local = ["transformers>=4.41,<6"]
+# rclpy is supplied by a sourced ROS2 distribution rather than by the standard
+# Python test environment.  The version range documents the supported API.
 ros2 = ["rclpy>=3.3,<4"]
 gpio = ["gpiozero>=2.0,<3"]
+# The secure sandbox has no Python dependency: it requires a compatible
+# Podman or Docker executable on the host.
+sandbox = []
 
 [project.scripts]
 singular = "singular.cli:main"

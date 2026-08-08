@@ -567,11 +567,29 @@ pip install -e .
 
 #### Dépendances optionnelles
 
+- `pip install -e '.[test]'` est la commande canonique pour installer
+  l'environnement de contribution et la suite obligatoire (pytest, couverture,
+  lint, formatage et typage), sans installer d'intégration facultative.
 - `pip install -e .[dashboard]` pour activer le tableau de bord web.
 - `pip install -e .[viz]` pour générer des graphiques via `viz.py`.
 - `pip install -e .[yaml]` pour ajouter **PyYAML** et gérer `values.yaml`.
-- `pip install openai>=1.0.0` pour permettre à l'organisme de parler via l'API OpenAI.
-- `pip install transformers` pour activer un modèle local via Hugging Face.
+- `pip install -e '.[llm-openai]'` pour permettre à l'organisme de parler via l'API OpenAI.
+- `pip install -e '.[llm-local]'` pour activer un modèle local via Hugging Face.
+- `pip install -e '.[ros2]'` dans un environnement ROS2 préalablement sourcé
+  pour activer le bridge ROS2.
+- `pip install -e '.[sandbox]'` documente le sandbox conteneurisé ; un exécutable
+  Podman ou Docker compatible reste requis sur l'hôte.
+
+La suite obligatoire exacte, identique à celle de la CI, s'exécute avec :
+
+```bash
+pytest -m "not integration" --cov=src/singular --cov-fail-under=85 --cov-report=term-missing --cov-report=xml:coverage.xml
+```
+
+Les extras `dashboard`, `llm-openai`, `llm-local`, `ros2` et `sandbox` restent
+volontairement séparés de `test` : leurs tests de contrat sont facultatifs et
+peuvent nécessiter un service, des identifiants, une distribution ROS2 ou un
+runtime de conteneurs.
 
 Après installation, la commande CLI `singular` est disponible :
 
@@ -805,7 +823,7 @@ Ouvrez ensuite http://127.0.0.1:8000 dans votre navigateur.
 **Statut : `optional`** — requiert des identifiants et un service externe.
 
 Pour permettre à l'organisme de parler en utilisant l'API d'OpenAI, installez
-la dépendance optionnelle ``openai>=1.0.0`` et définissez la variable
+la dépendance optionnelle avec ``pip install -e '.[llm-openai]'`` et définissez la variable
 d'environnement ``OPENAI_API_KEY``. Les versions plus anciennes du paquet
 ``openai`` ne sont pas compatibles avec le fournisseur actuel.
 
@@ -813,10 +831,10 @@ d'environnement ``OPENAI_API_KEY``. Les versions plus anciennes du paquet
 
 **Statut : `optional`** — dépend du runtime et du modèle installés localement.
 
-Installez ``transformers`` pour utiliser un petit modèle embarqué :
+Installez l'extra dédié pour utiliser un petit modèle embarqué :
 
 ```bash
-pip install transformers
+pip install -e '.[llm-local]'
 singular talk --provider local --prompt "Bonjour"
 ```
 
