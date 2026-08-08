@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 430" role="img" aria-labelledby="title desc">
-<title id="title">Logo Singular horizontal — variante pour fonds sombres</title>
+<title id="title">Logo Singular horizontal</title>
 <desc id="desc">Symbole Singular en dégradé, nom Singular et signature Digital Life vectorisés.</desc>
 <defs>
   <linearGradient id="singularGradient" x1="0" y1="0" x2="1" y2="1">
@@ -15,7 +15,7 @@
   </g>
   <g fill="url(#singularGradient)"><circle cx="256" cy="157" r="15"/><circle cx="176" cy="337" r="15"/><circle cx="336" cy="337" r="15"/><circle cx="256" cy="364" r="15"/></g>
 </g>
-  <g fill="#FFFFFF" fill-rule="evenodd" aria-label="SINGULAR">
+  <g fill="#0B1124" fill-rule="evenodd" aria-label="SINGULAR">
     <path d="M70 0H15C7 0 0 7 0 15V43C0 51 7 58 15 58H50V78H0V100H55C63 100 70 93 70 85V57C70 49 63 42 55 42H20V22H70Z" transform="translate(485 230) scale(0.92 -0.92)"/>
     <path d="M0 0H24V100H0Z" transform="translate(567.4 230) scale(0.92 -0.92)"/>
     <path d="M0 100V0H22L52 61V0H75V100H53L23 39V100Z" transform="translate(607.48 230) scale(0.92 -0.92)"/>
@@ -26,7 +26,7 @@
     <path d="M0 100V0H58C66 0 73 7 73 15V48C73 56 67 62 60 63L78 100H52L35 64H23V100ZM23 22V43H50V22Z" transform="translate(1037.88 230) scale(0.92 -0.92)"/>
   </g>
   <path d="M540 304H670M1115 304H1245" fill="none" stroke="#2D6BFF" stroke-width="5"/>
-  <g fill="#66C7FF" fill-rule="evenodd" aria-label="DIGITAL LIFE">
+  <g fill="#167BEF" fill-rule="evenodd" aria-label="DIGITAL LIFE">
     <path d="M0 100V0H55C66 0 75 9 75 20V80C75 91 66 100 55 100ZM23 22V78H50V22Z" transform="translate(705 317) scale(0.25 -0.25)"/>
     <path d="M0 0H24V100H0Z" transform="translate(736.75 317) scale(0.25 -0.25)"/>
     <path d="M70 22V0H15C7 0 0 7 0 15V85C0 93 7 100 15 100H70V48H40V68H48V78H23V22Z" transform="translate(755.75 317) scale(0.25 -0.25)"/>

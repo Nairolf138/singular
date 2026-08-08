@@ -1,5 +1,20 @@
 # Singular — identité visuelle v2
 
+Le répertoire `docs/assets/branding/` est la source canonique de toutes les
+ressources de marque. Les fichiers présents dans l'application, notamment dans
+le dashboard, sont des copies générées et ne doivent pas être modifiés
+directement.
+
+Après toute modification de `singular-icon.svg` ou `singular-logo.svg`,
+synchroniser les copies applicatives depuis la racine du dépôt :
+
+```console
+python scripts/sync_dashboard_branding.py
+```
+
+Le contrôle statique du dashboard compare les fichiers octet par octet et
+échoue si une copie diverge de sa source canonique.
+
 ## Palette
 
 - Indigo profond : `#0A1BFF`
@@ -31,7 +46,10 @@ Les SVG restent transparents afin de pouvoir être composés librement. Le choix
 - sur un fond transparent ou inconnu, placer explicitement le logo dans un conteneur blanc et utiliser la variante standard, ou dans un conteneur navy et utiliser la variante claire ; ne pas choisir une variante au moyen de CSS appliqué à l'intérieur du SVG ;
 - conserver une zone de respiration au moins égale à la hauteur du « I » autour du logo et ne pas poser les libellés sur une zone d'image chargée.
 
-Le dashboard, dont le fond est navy sombre, embarque et sert la variante horizontale claire sous le nom historique `src/singular/dashboard/static/singular-logo.svg`. Une copie explicite `singular-logo-light.svg` est également fournie pour les nouveaux usages. Les deux fichiers sont autonomes et identiques afin que les anciennes URLs restent lisibles.
+Le dashboard embarque des copies synchronisées de l'icône et du logo canonique
+sous `src/singular/dashboard/static/`. La variante horizontale claire reste
+disponible séparément sous le nom `singular-logo-light.svg` pour les usages sur
+fond sombre.
 
 ## Tailles et contrôle visuel
 
