@@ -4,41 +4,37 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path, PosixPath
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 
 _CONFIG_DIRNAME = ".singular"
 _CONFIG_FILENAME = "config.json"
 _REGISTRY_ROOT_KEY = "registry_root"
+_HOST_PATH_CLS = type(Path())
 
 
 def _safe_path(raw: str) -> Path:
-    try:
-        return Path(raw)
-    except NotImplementedError:
-        # Handles tests that monkeypatch os.name to "nt" on non-Windows hosts.
-        return PosixPath(str(raw).replace("\\", "/"))
+    """Build a path with the native class selected when this module loaded."""
+
+    # pathlib selects Path's concrete class from os.name at call time.  Tests
+    # and embedders may simulate a platform, but that policy change must not
+    # cause construction of a path class unsupported by the actual host.
+    normalized = str(raw).replace("\\", "/") if os.name == "nt" else str(raw)
+    return _HOST_PATH_CLS(normalized)
 
 
 def default_registry_root() -> Path:
     """Return the documented fallback registry root."""
 
-    try:
-        home = Path.home()
-    except NotImplementedError:
-        home = _safe_path(os.path.expanduser("~"))
+    home = _HOST_PATH_CLS.home()
     return home / _CONFIG_DIRNAME
 
 
 def global_config_path() -> Path:
     """Return the global config file path."""
 
-    root = default_registry_root()
-    try:
-        return root / _CONFIG_FILENAME
-    except NotImplementedError:
-        return _safe_path(f"{root}/{_CONFIG_FILENAME}")
+    return default_registry_root() / _CONFIG_FILENAME
 
 
 def project_config_path(cwd: Path | None = None) -> Path:
@@ -47,14 +43,8 @@ def project_config_path(cwd: Path | None = None) -> Path:
     if cwd is not None:
         base = cwd
     else:
-        try:
-            base = Path.cwd()
-        except NotImplementedError:
-            base = _safe_path(os.getcwd())
-    try:
-        return base / _CONFIG_DIRNAME / _CONFIG_FILENAME
-    except NotImplementedError:
-        return _safe_path(f"{base}/{_CONFIG_DIRNAME}/{_CONFIG_FILENAME}")
+        base = _HOST_PATH_CLS.cwd()
+    return base / _CONFIG_DIRNAME / _CONFIG_FILENAME
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -68,8 +58,13 @@ def _load_json(path: Path) -> dict[str, Any]:
 def _decode_registry_root(raw: Any, *, base_dir: Path) -> Path | None:
     if not isinstance(raw, str) or not raw.strip():
         return None
-    configured = Path(raw).expanduser()
-    if not configured.is_absolute():
+    configured = _safe_path(raw).expanduser()
+    # When ``os.name`` is simulated as ``nt`` on a POSIX host, ``_safe_path``
+    # deliberately returns a host-native path.  Preserve the meaning of an
+    # absolute Windows value even though PosixPath does not recognise its
+    # drive/root syntax.
+    is_absolute = configured.is_absolute() or PureWindowsPath(raw).is_absolute()
+    if not is_absolute:
         configured = (base_dir / configured).resolve()
     return configured
 
