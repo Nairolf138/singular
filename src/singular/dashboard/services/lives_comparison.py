@@ -4,6 +4,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable
 from urllib.parse import quote
 
+from singular.life.life_status import (
+    legacy_life_status,
+    normalize_registry_status,
+    operator_action_capabilities,
+)
+
 
 _RECENT_ACTIVITY_EVENTS = {
     "mutation",
@@ -199,12 +205,8 @@ def life_trend_rank(trend: str) -> int:
 
 
 def normalize_life_status(value: object) -> str:
-    if not isinstance(value, str):
-        return "unknown"
-    normalized = value.strip().lower()
-    if normalized in {"active", "archived", "extinct", "dead", "stopped", "unknown"}:
-        return normalized
-    return "unknown"
+    """Deprecated compatibility name; registry values are administrative."""
+    return normalize_registry_status(value)
 
 
 def _status_is_dead(status: str) -> bool:
@@ -600,7 +602,13 @@ def aggregate_lives(
             "alerts_count": 0,
             "iterations": 0,
             "selected_life": is_selected,
-            "life_status": registry_status,
+            "registry_status": registry_status,
+            "life_status": legacy_life_status(
+                raw_meta.get("status")
+                if isinstance(raw_meta, dict)
+                else getattr(raw_meta, "status", None)
+            ),
+            "operator_actions": operator_action_capabilities(registry_status),
             "is_registry_active_life": registry_status == "active",
             "has_recent_activity": False,
             "extinction_seen_in_runs": is_extinct,
@@ -711,7 +719,7 @@ def aggregate_lives(
             registry_meta = registry_lives.get(slug)
             registry_status = normalize_life_status(getattr(registry_meta, "status", "active"))
         if registry_status == "unknown" and life_name in comparison:
-            registry_status = str(comparison[life_name].get("life_status", "unknown"))
+            registry_status = str(comparison[life_name].get("registry_status", "unknown"))
         extinction_seen = extinction_seen or _status_is_dead(registry_status)
         run_terminated = run_terminated or _status_is_terminated(registry_status)
         registry_run_status_inconsistency = (
@@ -748,7 +756,17 @@ def aggregate_lives(
             "alerts_count": len(alerts),
             "iterations": len(mutation_records),
             "selected_life": is_selected,
-            "life_status": registry_status,
+            "registry_status": registry_status,
+            "life_status": (
+                "dead"
+                if extinction_seen
+                else legacy_life_status(
+                    raw_meta.get("status")
+                    if isinstance(raw_meta, dict)
+                    else getattr(raw_meta, "status", None)
+                )
+            ),
+            "operator_actions": operator_action_capabilities(registry_status),
             "is_registry_active_life": registry_status == "active",
             "has_recent_activity": last_timestamp is not None,
             "extinction_seen_in_runs": extinction_seen,

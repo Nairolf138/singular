@@ -322,11 +322,12 @@ def test_smoke_dashboard_e2e_capacites_critiques(
     assert str(cockpit_payload["run"]).startswith(run_id)
     assert "accepted_mutation_rate" in cockpit_payload
     assert cockpit_payload["life_status"] in {
-        "not_alive_yet",
-        "fragile",
-        "alive",
-        "dying",
-        "extinct",
+        "running",
+        "budget_exhausted",
+        "degraded",
+        "mutation_paused",
+        "terminal",
+        "dead",
     }
     assert isinstance(cockpit_payload["life_status_score"], float)
     assert isinstance(cockpit_payload["life_status_explanation"], str)
@@ -565,11 +566,12 @@ def test_active_tmp_run_feeds_dashboard_endpoints(
     assert cockpit["vital_metrics"]["energy_resources"]["total_energy"] > 0
     assert cockpit["life_metrics_contract"]["counts"]["total_lives"] >= 2
     assert cockpit["life_status"] in {
-        "not_alive_yet",
-        "fragile",
-        "alive",
-        "dying",
-        "extinct",
+        "running",
+        "budget_exhausted",
+        "degraded",
+        "mutation_paused",
+        "terminal",
+        "dead",
     }
     assert isinstance(cockpit["life_status_score"], float)
     assert isinstance(cockpit["life_status_explanation"], str)

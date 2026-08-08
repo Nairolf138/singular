@@ -6,9 +6,11 @@ import pytest
 from singular.life.life_definition import LifeDefinitionConfig, LifeThresholds
 from singular.life.life_status import (
     AUTHORIZED_LIFE_STATUSES,
+    LEGACY_STATUS_CONVERSIONS,
     LifeStatus,
     LifeStatusResult,
     _failure_streak,
+    operator_action_capabilities,
 )
 
 
@@ -37,6 +39,18 @@ def test_authorized_life_statuses_are_stable_contract() -> None:
         "terminal",
         "dead",
     )
+
+
+def test_legacy_status_conversion_keeps_registry_and_biology_separate() -> None:
+    assert LEGACY_STATUS_CONVERSIONS == {
+        "degraded": {"registry_status": "active", "life_status": "degraded"},
+        "dead": {"registry_status": "extinct", "life_status": "dead"},
+        "archived": {"registry_status": "archived", "life_status": None},
+        "stopped": {"registry_status": "stopped", "life_status": None},
+    }
+    assert operator_action_capabilities("active")["talk"] is True
+    assert operator_action_capabilities("archived")["talk"] is False
+    assert operator_action_capabilities("archived")["memorial"] is True
 
 
 def test_life_status_result_to_payload_serializes_portable_contract() -> None:

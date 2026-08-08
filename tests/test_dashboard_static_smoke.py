@@ -720,7 +720,7 @@ for (const [label, button] of [['archive', archive], ['talk', talk], ['emergency
 }}
 
 // A context failure must not hide a life supplied by comparison.
-updateOperatorLifeOptions(mergeLifeRows({{}}, {{table: [{{life: 'comparison-life', life_status: 'active'}}]}}, {{}}), {{registryState: 'partial'}});
+updateOperatorLifeOptions(mergeLifeRows({{}}, {{table: [{{life: 'comparison-life', registry_status: 'active', operator_actions: {{archive: true, talk: true, emergency_stop: true, lives_use: true}}}}]}}, {{}}), {{registryState: 'partial'}});
 if (![...elements.get('operator-action-life-select').options].some(option => option.value === 'comparison-life')) {{
   throw new Error('comparison life missing after isolated /dashboard/context failure');
 }}
@@ -822,7 +822,7 @@ globalThis.CustomEvent = class CustomEvent {{ constructor(type, init) {{ this.ty
 
 const {{ updateOperatorLifeOptions }} = await import('{module_path}');
 for (const [life, status, expectedLabel] of [['beta', 'archived', 'vie archivée'], ['gamma', 'dead', 'vie morte'], ['omega', 'extinct', 'vie morte'], ['delta', 'stopped', 'vie arrêtée']]) {{
-  updateOperatorLifeOptions([{{ life, life_status: status, selected_life: true }}]);
+  updateOperatorLifeOptions([{{ life, registry_status: status === 'dead' ? 'extinct' : status, life_status: status === 'dead' ? 'dead' : null, selected_life: true, operator_actions: {{archive: false, talk: false, emergency_stop: false, lives_use: true, memorial: true, clone: true}} }}]);
   for (const [label, button] of [['critical archive', criticalArchive], ['critical talk', criticalTalk], ['critical emergency', criticalEmergency], ['archive', archive], ['talk', talk]]) {{
     if (!button.disabled) {{ throw new Error(`${{label}} should be disabled for ${{status}} life`); }}
     if (button.getAttribute('aria-disabled') !== 'true') {{ throw new Error(`${{label}} aria-disabled missing`); }}

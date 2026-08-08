@@ -2,14 +2,35 @@
 
 Ce document définit la sémantique officielle du statut d'une **vie** dans Singular.
 
-## Source de vérité
+## Vocabulaire canonique et champs indépendants
 
-La source de vérité est le champ `status` de chaque entrée dans `lives/registry.json`.
+Deux sources de vérité indépendantes sont exposées; un endpoint ne change jamais
+la signification d'un champ:
 
-Valeurs supportées:
+- `registry_status` est l'état administratif du registre: `active`, `archived`,
+  `extinct`, `stopped` ou `unknown`;
+- `life_status` est le verdict biologique: `running`, `budget_exhausted`,
+  `degraded`, `mutation_paused`, `terminal`, `dead`, ou `null` lorsqu'aucun
+  verdict biologique n'a été calculé.
 
-- `active`: la vie est considérée active dans le registre.
-- `extinct`: la vie est marquée comme éteinte dans le registre.
+La table de lecture des anciennes valeurs est explicite:
+
+| ancienne valeur | `registry_status` | `life_status` |
+|---|---|---|
+| `degraded` | `active` | `degraded` |
+| `dead` | `extinct` | `dead` |
+| `archived` | `archived` | `null` |
+| `stopped` | `stopped` | `null` |
+
+`archived` et `stopped` ne constituent donc jamais une preuve de mort. Le code
+canonique et cette table résident dans `singular.life.life_status`.
+
+Chaque ligne de comparaison expose également `operator_actions`, une table de
+booléens calculée côté serveur. Pour un registre `active`, `archive`, `talk` et
+`emergency_stop` sont permis. Ils sont interdits pour tout autre état; les
+actions non exécutantes `lives_use`, `memorial` et `clone` restent permises. Le
+JavaScript consomme cette capacité et ne reconstruit pas ces règles depuis les
+libellés de statut.
 
 Ce statut est porté par `LifeMetadata.status` dans `src/singular/lives.py`, persisté via `save_registry()`, et modifié via `set_life_status()`.
 
@@ -26,7 +47,7 @@ Barème:
 - **Reproduction possible**: 10 points.
 - **Narration cohérente sur N jours**: 15 points, avec `N = thresholds.minimum_narrative_trajectory_days`.
 
-Les critères fondamentaux pour atteindre `alive` sont:
+Les critères fondamentaux pour atteindre `running` sont:
 
 - identité persistante,
 - registre de générations,
@@ -34,56 +55,31 @@ Les critères fondamentaux pour atteindre `alive` sont:
 - objectifs intrinsèques continus,
 - narration cohérente sur la durée minimale configurée.
 
-La reproduction possible contribue au score, mais n'est pas un critère bloquant pour `alive`.
+La reproduction possible contribue au score, mais n'est pas un critère bloquant pour `running`.
 
-## Statuts qualifiés par score
+## Statuts biologiques qualifiés
 
-Les statuts métier exposés par `configs/life_definition.yaml` sont:
-
-- `not_alive_yet`: score insuffisant ou au moins un signal fondamental absent.
-- `fragile`: score intermédiaire mais continuité incomplète.
-- `alive`: score supérieur ou égal au seuil `alive_minimum_score`, critères fondamentaux présents et aucun signal terminal.
-- `dying`: signal terminal présumé ou dégradation forte, mais extinction non confirmée.
-- `extinct`: autopsy présente, registre `extinct` ou événement `death` confirmé.
-
-Ordre de priorité recommandé:
-
-1. `extinct` si une extinction est confirmée (`autopsy.json` présent, registre `extinct`, ou événement `death` confirmé).
-2. `dying` si une dégradation forte est détectée sans confirmation d'extinction.
-3. `alive` si le score atteint le seuil `alive_minimum_score`, les critères fondamentaux sont présents et aucun signal terminal n'est observé.
-4. `fragile` si le score atteint le seuil `fragile_minimum_score`, mais que la continuité reste incomplète.
-5. `not_alive_yet` sinon.
-
-Les signaux terminaux dominent toujours le score: un score élevé ne peut pas produire `alive` si un signal terminal confirmé existe.
+Le calcul émet exclusivement les valeurs canoniques définies ci-dessus.
+L’ordre de priorité est: `dead` pour une extinction confirmée, `terminal` pour
+une terminalité sans preuve de mort, `budget_exhausted` ou `mutation_paused`
+pour ces suspensions explicites, `running` lorsque la checklist contractuelle
+est satisfaite, et `degraded` sinon. Un score élevé ne peut jamais masquer une
+preuve terminale.
 
 ## Distinction des notions
 
-Trois champs décrivent des niveaux différents et ne doivent pas être confondus:
+- `registry_status` décrit uniquement l’administration de la vie.
+- `vital_timeline.state` décrit la dynamique technique observée.
+- `life_status` décrit uniquement le verdict biologique contractuel.
+- `extinction_seen_in_runs` et `run_terminated` restent des observations de run.
 
-- **`registry.status`**: état administratif de la vie dans `lives/registry.json`. Les seules valeurs normatives du registre sont `active` et `extinct`. Ce champ indique si la vie reste administrativement active ou si son extinction a été confirmée et persistée.
-- **`vital_timeline.state`**: état vital déterministe calculé à partir des signaux techniques observables. Les valeurs exposées sont `mature`, `declining`, `terminal` et `extinct`. Ce champ décrit la dynamique vitale courante, sans remplacer la décision contractuelle.
-- **`life_status.status`**: verdict contractuel portable exposé aux interfaces CLI, dashboard et rapports. Les valeurs autorisées sont `not_alive_yet`, `fragile`, `alive`, `dying` et `extinct`. Ce verdict agrège le registre, la timeline vitale et la checklist contractuelle.
-
-Le dashboard distingue également:
-
-- **Vie sélectionnée**: correspond à la clé racine `active` du registre (`registry["active"]`).
-- **Vie active dans le registre**: correspond à `life.status == "active"`.
-- **Run terminé**: information de run-level (ex: dernier événement `death`).
-- **Extinction détectée**: information observée dans les événements de run (présence d'au moins un `event == "death"`).
-
-## Ordre de priorité du verdict contractuel
-
-Le calcul de `life_status.status` applique l'ordre de priorité suivant:
-
-1. **Extinction confirmée domine tout**: si une extinction est confirmée (`autopsy.json` présent, `registry.status == "extinct"` ou événement `death` confirmé), le verdict est `extinct`, quel que soit le score ou l'état vital intermédiaire.
-2. **Terminalité vitale produit `dying`**: si `vital_timeline.state == "terminal"` ou si un signal terminal fort est observé sans extinction confirmée, le verdict est `dying`.
-3. **Checklist contractuelle produit `not_alive_yet`, `fragile` ou `alive`**: en l'absence d'extinction confirmée et de terminalité vitale, les signaux contractuels configurés dans `configs/life_definition.yaml` déterminent le verdict selon les seuils et critères fondamentaux.
+Aucun de ces champs ne prend une autre signification selon l’endpoint.
 
 Exemple complet de payload `life_status`:
 
 ```json
 {
-  "status": "alive",
+  "status": "running",
   "score": 0.91,
   "explanation": "Identité persistante, cycle stable, objectifs intrinsèques et continuité narrative observés. Vital: état mature, risque low.",
   "signals": {

@@ -207,7 +207,7 @@ const extractEnergy=(row,eco)=>{
 };
 
 const hasAnyRun=rows=>(rows||[]).some(row=>row.last_activity||Number(row.iterations||0)>0||row.run_id||row.latest_run_id);
-const isArchived=row=>String(row?.life_status||row?.registry_status||row?.status||'').toLowerCase().includes('archiv');
+const isArchived=row=>String(row?.registry_status||row?.status||'').toLowerCase().includes('archiv');
 const isStaleSummary=()=>staleTimeoutTasks.has('cockpit')||staleTimeoutTasks.has('lives')||staleTimeoutTasks.has('context')||staleTimeoutTasks.has('ecosystem');
 const extractLastMessage=row=>firstDefined(row?.last_message,row?.latest_message,row?.conversation?.last_message,row?.chat?.last_message);
 const activeObjectivesCount=(cockpit,workItems)=>{
@@ -293,7 +293,7 @@ const renderOperatorSummary=()=>{
   const energyLabel=energy===null||energy===undefined?na():formatOneDecimal(energy);
   const trend=focus?.trend||cockpit.trend||na();
   const liveness=firstDefined(focus?.life_liveness_index,cockpit.life_liveness_index,cockpit.liveness_index);
-  const status=isArchived(focus)?'vie archivée':(focus?.life_status||focus?.registry_status||focus?.status||(total>0?'vie créée':'aucune vie créée'));
+  const status=isArchived(focus)?'vie archivée':(focus?.registry_status||focus?.status||(total>0?'vie créée':'aucune vie créée'));
   const health=firstDefined(focus?.current_health_score,cockpit.health_score);
   const objectivesCount=activeObjectivesCount(cockpit,workItems);
   const lastMessage=extractLastMessage(focus)||workItems?.conversations?.items?.[0]?.title||'aucun message';

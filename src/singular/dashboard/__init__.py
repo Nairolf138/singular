@@ -17,7 +17,7 @@ from urllib.parse import quote
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from singular.lives import get_registry_root, load_registry, set_life_status
-from singular.life.life_status import compute_life_status
+from singular.life.life_status import compute_life_status, normalize_registry_status
 from singular.life.vital import compute_vital_timeline
 from singular.metrics.autonomy import compute_autonomy_metrics
 from singular.metrics.behavioral_regulation import compute_behavioral_regulation_metrics
@@ -228,7 +228,7 @@ def create_app(
 
     def _life_status(meta: object | None) -> str:
         status = life_meta_get(meta, "status", None)
-        return str(status or "unknown").strip().lower()
+        return normalize_registry_status(status)
 
     def _active_run_locks(life_dir: Path) -> list[str]:
         runs = life_dir / "runs"
@@ -2347,7 +2347,7 @@ def create_app(
         status_reconciliation = [
             {
                 "life": name,
-                "registry_status": payload.get("life_status"),
+                "registry_status": payload.get("registry_status"),
                 "extinction_seen_in_runs": payload.get("extinction_seen_in_runs"),
                 "suggestion": payload.get("status_reconciliation_suggestion"),
             }
@@ -2404,7 +2404,7 @@ def create_app(
                     {
                         "life": life_name,
                         "slug": slug,
-                        "from_status": payload.get("life_status"),
+                        "from_status": payload.get("registry_status"),
                         "to_status": "extinct",
                         "suggestion": suggestion,
                     }
@@ -2946,7 +2946,7 @@ def create_app(
         payload_status: dict[str, object] = {
             "life": target,
             "available": available,
-            "life_status": life_status,
+            "registry_status": life_status,
             "status": status,
             "message": "Utilisez POST avec un corps JSON pour envoyer un message.",
             "timestamp": datetime.now(timezone.utc).isoformat(),
