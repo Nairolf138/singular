@@ -26,6 +26,7 @@ from singular.psyche import Psyche, Mood  # noqa: E402
 from singular.governance.policy import MutationGovernancePolicy  # noqa: E402
 from singular.life.reproduction import ReproductionDecisionPolicy  # noqa: E402
 from singular.events import EventBus  # noqa: E402
+from tests.run_logger_double import RecordingRunLogger  # noqa: E402
 
 
 def test_repository_addition_skill_satisfies_sandbox_scoring_contract():
@@ -788,25 +789,6 @@ def test_angry_increases_proposals(tmp_path: Path, monkeypatch):
         calls["n"] += 1
         return []
 
-    class DummyLogger:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            pass
-
-        def log(self, *a, **k):
-            pass
-
-        def log_death(self, *a, **k):
-            pass
-
-        def log_consciousness(self, *a, **k):
-            pass
-
     skill_dir = tmp_path / "skills"
     skill_dir.mkdir()
     checkpoint = tmp_path / "ckpt.json"
@@ -817,7 +799,7 @@ def test_angry_increases_proposals(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(life_loop, "propose_mutations", fake_propose)
     monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: psyche))
-    monkeypatch.setattr(life_loop, "RunLogger", DummyLogger)
+    monkeypatch.setattr(life_loop, "RunLogger", RecordingRunLogger)
 
     life_loop.run(
         skill_dir,
@@ -837,25 +819,6 @@ def test_fatigue_reduces_proposals(tmp_path: Path, monkeypatch):
         calls["n"] += 1
         return []
 
-    class DummyLogger:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            pass
-
-        def log(self, *a, **k):
-            pass
-
-        def log_death(self, *a, **k):
-            pass
-
-        def log_consciousness(self, *a, **k):
-            pass
-
     skill_dir = tmp_path / "skills"
     skill_dir.mkdir()
     checkpoint = tmp_path / "ckpt.json"
@@ -866,7 +829,7 @@ def test_fatigue_reduces_proposals(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(life_loop, "propose_mutations", fake_propose)
     monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: psyche))
-    monkeypatch.setattr(life_loop, "RunLogger", DummyLogger)
+    monkeypatch.setattr(life_loop, "RunLogger", RecordingRunLogger)
 
     life_loop.run(
         skill_dir,
