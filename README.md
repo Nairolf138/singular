@@ -320,8 +320,8 @@ Pour découvrir le format sans modifier le disque ni sélectionner de vie active
 utilisez les sorties intégrées :
 
 ```bash
-singular quest --example
-singular quest --schema
+singular quest create --example
+singular quest create --schema
 ```
 
 Un exemple complet versionné est également disponible dans

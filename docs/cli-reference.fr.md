@@ -158,7 +158,7 @@ Les chemins ci-dessous sont relatifs au root ou à `SINGULAR_HOME`. Toujours sau
 <!-- cli-command: quest -->
 ## `quest`
 
-**Syntaxe :** `singular quest [-h] [--example] [--schema] [spec]`
+**Syntaxe :** `singular quest create [-h] [--example] [--schema] [--life LIFE] [spec]`
 
 **Arguments et défauts :** `spec` (`None`); `--example` (`false`); `--schema` (`false`)
 
@@ -170,11 +170,221 @@ Les chemins ci-dessous sont relatifs au root ou à `SINGULAR_HOME`. Toujours sau
 
 **Effets de bord :** Crée/modifie des artefacts; `rollback` remplace atomiquement l'état actif.
 
-**Exemple minimal :** `singular quest --example`
+**Exemple minimal :** `singular quest create --example`
 
-**Exemple avancé :** `singular --root /srv/singular --life ada --format json quest --example`
+**Exemple avancé :** `singular --root /srv/singular --life ada --format json quest create --example`
 
 **Erreurs usuelles :** Entrée absente/invalide, génération inconnue, sortie existante ou non inscriptible.
+
+<!-- cli-command: skills -->
+## `skills`
+
+**Syntaxe :** `singular skills ACTION`
+
+**Arguments et défauts :** `ACTION` (requis/required)
+
+**Prérequis :** Une vie active pour les actions.
+
+**Root et vie ciblés :** `--life` global ou local; l'option locale est prioritaire.
+
+**Fichiers lus ou écrits :** Lit ou écrit les artefacts de la vie active.
+
+**Effets de bord :** L'action peut actualiser la mémoire de la vie.
+
+**Exemple minimal :** `singular skills list`
+
+**Exemple avancé :** `singular --root /srv/singular --life ada skills list`
+
+**Erreurs usuelles :** Sous-commande/argument manquant ou vie introuvable.
+
+<!-- cli-command: skills list -->
+## `skills list`
+
+**Syntaxe :** `singular skills list [--life LIFE]`
+
+**Arguments et défauts :** `--life` (`None`)
+
+**Prérequis :** Une vie active pour les actions.
+
+**Root et vie ciblés :** `--life` global ou local; l'option locale est prioritaire.
+
+**Fichiers lus ou écrits :** Lit ou écrit les artefacts de la vie active.
+
+**Effets de bord :** L'action peut actualiser la mémoire de la vie.
+
+**Exemple minimal :** `singular skills list --life ada`
+
+**Exemple avancé :** `singular --root /srv/singular --life ada skills list --life ada`
+
+**Erreurs usuelles :** Sous-commande/argument manquant ou vie introuvable.
+
+<!-- cli-command: quest create -->
+## `quest create`
+
+**Syntaxe :** `singular quest create [--example] [--schema] [--life LIFE] [spec]`
+
+**Arguments et défauts :** `spec` (`None`); options (`false`)
+
+**Prérequis :** Une vie active pour les actions.
+
+**Root et vie ciblés :** `--life` global ou local; l'option locale est prioritaire.
+
+**Fichiers lus ou écrits :** Lit ou écrit les artefacts de la vie active.
+
+**Effets de bord :** L'action peut actualiser la mémoire de la vie.
+
+**Exemple minimal :** `singular quest create --example`
+
+**Exemple avancé :** `singular --root /srv/singular --life ada quest create --example`
+
+**Erreurs usuelles :** Sous-commande/argument manquant ou vie introuvable.
+
+<!-- cli-command: quest list -->
+## `quest list`
+
+**Syntaxe :** `singular quest list [--life LIFE]`
+
+**Arguments et défauts :** `--life` (`None`)
+
+**Prérequis :** Une vie active pour les actions.
+
+**Root et vie ciblés :** `--life` global ou local; l'option locale est prioritaire.
+
+**Fichiers lus ou écrits :** Lit ou écrit les artefacts de la vie active.
+
+**Effets de bord :** L'action peut actualiser la mémoire de la vie.
+
+**Exemple minimal :** `singular quest list --life ada`
+
+**Exemple avancé :** `singular --root /srv/singular --life ada quest list --life ada`
+
+**Erreurs usuelles :** Sous-commande/argument manquant ou vie introuvable.
+
+<!-- cli-command: social -->
+## `social`
+
+**Syntaxe :** `singular social ACTION`
+
+**Arguments et défauts :** `ACTION` (requis/required)
+
+**Prérequis :** Une vie active pour les actions.
+
+**Root et vie ciblés :** `--life` global ou local; l'option locale est prioritaire.
+
+**Fichiers lus ou écrits :** Lit ou écrit les artefacts de la vie active.
+
+**Effets de bord :** L'action peut actualiser la mémoire de la vie.
+
+**Exemple minimal :** `singular social interact bob cooperation`
+
+**Exemple avancé :** `singular --root /srv/singular --life ada social interact bob cooperation`
+
+**Erreurs usuelles :** Sous-commande/argument manquant ou vie introuvable.
+
+<!-- cli-command: social interact -->
+## `social interact`
+
+**Syntaxe :** `singular social interact TARGET EVENT [--life LIFE]`
+
+**Arguments et défauts :** `TARGET`, `EVENT` (requis/required); `--life` (`None`)
+
+**Prérequis :** Une vie active pour les actions.
+
+**Root et vie ciblés :** `--life` global ou local; l'option locale est prioritaire.
+
+**Fichiers lus ou écrits :** Lit ou écrit les artefacts de la vie active.
+
+**Effets de bord :** L'action peut actualiser la mémoire de la vie.
+
+**Exemple minimal :** `singular social interact bob cooperation --life ada`
+
+**Exemple avancé :** `singular --root /srv/singular --life ada social interact bob cooperation --life ada`
+
+**Erreurs usuelles :** Sous-commande/argument manquant ou vie introuvable.
+
+<!-- cli-command: self-narrative -->
+## `self-narrative`
+
+**Syntaxe :** `singular self-narrative ACTION`
+
+**Arguments et défauts :** `ACTION` (requis/required)
+
+**Prérequis :** Une vie active pour les actions.
+
+**Root et vie ciblés :** `--life` global ou local; l'option locale est prioritaire.
+
+**Fichiers lus ou écrits :** Lit ou écrit les artefacts de la vie active.
+
+**Effets de bord :** L'action peut actualiser la mémoire de la vie.
+
+**Exemple minimal :** `singular self-narrative summarize`
+
+**Exemple avancé :** `singular --root /srv/singular --life ada self-narrative summarize`
+
+**Erreurs usuelles :** Sous-commande/argument manquant ou vie introuvable.
+
+<!-- cli-command: self-narrative summarize -->
+## `self-narrative summarize`
+
+**Syntaxe :** `singular self-narrative summarize [--long] [--life LIFE]`
+
+**Arguments et défauts :** `--long` (`false`); `--life` (`None`)
+
+**Prérequis :** Une vie active pour les actions.
+
+**Root et vie ciblés :** `--life` global ou local; l'option locale est prioritaire.
+
+**Fichiers lus ou écrits :** Lit ou écrit les artefacts de la vie active.
+
+**Effets de bord :** L'action peut actualiser la mémoire de la vie.
+
+**Exemple minimal :** `singular self-narrative summarize --life ada`
+
+**Exemple avancé :** `singular --root /srv/singular --life ada self-narrative summarize --life ada`
+
+**Erreurs usuelles :** Sous-commande/argument manquant ou vie introuvable.
+
+<!-- cli-command: cognition -->
+## `cognition`
+
+**Syntaxe :** `singular cognition ACTION`
+
+**Arguments et défauts :** `ACTION` (requis/required)
+
+**Prérequis :** Une vie active pour les actions.
+
+**Root et vie ciblés :** `--life` global ou local; l'option locale est prioritaire.
+
+**Fichiers lus ou écrits :** Lit ou écrit les artefacts de la vie active.
+
+**Effets de bord :** L'action peut actualiser la mémoire de la vie.
+
+**Exemple minimal :** `singular cognition self-observe`
+
+**Exemple avancé :** `singular --root /srv/singular --life ada cognition self-observe`
+
+**Erreurs usuelles :** Sous-commande/argument manquant ou vie introuvable.
+
+<!-- cli-command: cognition self-observe -->
+## `cognition self-observe`
+
+**Syntaxe :** `singular cognition self-observe [--life LIFE]`
+
+**Arguments et défauts :** `--life` (`None`)
+
+**Prérequis :** Une vie active pour les actions.
+
+**Root et vie ciblés :** `--life` global ou local; l'option locale est prioritaire.
+
+**Fichiers lus ou écrits :** Lit ou écrit les artefacts de la vie active.
+
+**Effets de bord :** L'action peut actualiser la mémoire de la vie.
+
+**Exemple minimal :** `singular cognition self-observe --life ada`
+
+**Exemple avancé :** `singular --root /srv/singular --life ada cognition self-observe --life ada`
+
+**Erreurs usuelles :** Sous-commande/argument manquant ou vie introuvable.
 
 <!-- cli-command: synthesize -->
 ## `synthesize`
