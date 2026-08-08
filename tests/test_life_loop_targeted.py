@@ -154,24 +154,50 @@ def test_reproduction_decision_accepts_healthy_governed_parents(temp_life) -> No
     assert decision.score >= 0.1
 
 
-def test_coevolution_rejects_regression_detected_by_living_test() -> None:
+@pytest.mark.parametrize(
+    (
+        "mutated_code",
+        "mutated_score",
+        "robustness_weight",
+        "expected_accepted",
+        "expected_combined",
+    ),
+    [
+        pytest.param("result = 2", 0.0, 1.0, False, 1.0, id="detected-regression"),
+        pytest.param("result = 1", 1.0, 1.0, True, 1.0, id="no-regression"),
+        pytest.param("result = 2", 1.0, 0.0, True, 1.0, id="zero-weight"),
+    ],
+)
+def test_coevolution_rejects_regression_detected_by_living_test(
+    mutated_code: str,
+    mutated_score: float,
+    robustness_weight: float,
+    expected_accepted: bool,
+    expected_combined: float,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     flow = CoevolutionFlow(
         pool=LivingTestPool(tests=[TestCandidate("result == 1")], ttl={"result == 1": 3}),
-        config=CoevolutionConfig(enabled=True, robustness_weight=1.0),
+        config=CoevolutionConfig(enabled=True, robustness_weight=robustness_weight),
     )
+    monkeypatch.setattr(flow.pool, "evaluate", lambda code: [code == "result = 1"])
 
     decision = flow.decide(
         base_code="result = 1",
-        mutated_code="result = 2",
+        mutated_code=mutated_code,
         base_score=1.0,
-        mutated_score=1.0,
+        mutated_score=mutated_score,
         initially_accepted=True,
         rng=random.Random(0),
     )
 
-    assert decision.accepted is False
-    assert decision.rejected_for_robustness is True
-    assert decision.regression_detection_rate == 1.0
+    regression_detected = mutated_code == "result = 2"
+    assert decision.accepted is expected_accepted
+    assert decision.rejected_for_robustness is (not expected_accepted)
+    assert decision.regression_detection_rate == float(regression_detected)
+    assert decision.robustness_score == float(not regression_detected)
+    assert decision.score_combined_base == 1.0
+    assert decision.score_combined_new == expected_combined
 
 
 def test_cycle_complet_creation_tick_mutation_learning_reproduction_and_stop(temp_life) -> None:

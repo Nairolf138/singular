@@ -143,9 +143,19 @@ class CoevolutionFlow:
 
         detection_rate = self.evaluate_against_mutation(base_code, mutated_code)
         robustness_score = self.robustness_from_detection_rate(detection_rate)
+        regression_penalty = self.config.robustness_weight * detection_rate
         combined_base = base_score
-        combined_new = mutated_score + (self.config.robustness_weight * detection_rate)
-        accepted = initially_accepted and combined_new <= combined_base
+        # Scores follow the minimization convention: detected regressions add a
+        # cost.  ``robustness_score`` remains a bounded reporting metric and is
+        # deliberately not mixed into the objective with the opposite sign.
+        combined_new = mutated_score + regression_penalty
+        strict_regression_rejection = self.config.robustness_weight > 0.0
+        regression_allowed = not strict_regression_rejection or detection_rate == 0.0
+        accepted = (
+            initially_accepted
+            and combined_new <= combined_base
+            and regression_allowed
+        )
         rejected_for_robustness = initially_accepted and not accepted
 
         proposed: list[TestCandidate] = []
