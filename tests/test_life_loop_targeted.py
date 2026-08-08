@@ -17,6 +17,8 @@ from singular.life.reproduction_flow import ReproductionDecisionPolicy, decide_r
 from singular.life.sandbox_scoring import score_code_with_error
 from singular.resource_manager import CapabilityStatus, ResourceManager
 
+pytestmark = pytest.mark.usefixtures("local_sandbox")
+
 
 def _dec_operator(tree: ast.AST, rng=None) -> ast.AST:
     for node in ast.walk(tree):

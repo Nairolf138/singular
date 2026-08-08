@@ -1,4 +1,14 @@
+import pytest
+
+from singular.life import sandbox
 from singular.life.score import score
+from singular.life.sandbox_scoring import (
+    SandboxScore,
+    _sandbox_failure_category,
+    score_code_with_error,
+)
+
+pytestmark = pytest.mark.usefixtures("local_sandbox")
 
 
 def test_score_single_run_variance_zero():
@@ -14,15 +24,8 @@ def test_complexity_penalty_increases_score():
     complex_score, _ = score(complex_code, runs=1, alpha=100.0)
     assert complex_score > simple_score
 
-from singular.life import sandbox
-from singular.life.sandbox_scoring import (
-    SandboxScore,
-    _sandbox_failure_category,
-    score_code_with_error,
-)
 
-
-def test_sandbox_score_finite_result_is_comparable():
+def test_sandbox_score_finite_result_is_comparable(local_sandbox):
     result = score_code_with_error("result = 2.5")
 
     assert result.ok is True
@@ -32,7 +35,7 @@ def test_sandbox_score_finite_result_is_comparable():
     assert result.is_infrastructure_failure is False
 
 
-def test_sandbox_score_non_finite_result_is_candidate_failure():
+def test_sandbox_score_non_finite_result_is_candidate_failure(local_sandbox):
     result = score_code_with_error("result = 1e309")
 
     assert result.ok is False
