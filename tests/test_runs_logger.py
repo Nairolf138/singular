@@ -1,5 +1,7 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
+import warnings
 
 from singular.runs import RunLogger
 from singular.runs.explain import summarize_mutation
@@ -34,8 +36,6 @@ def test_default_root_follows_two_successive_lives(
 
 
 def test_log_creation(tmp_path: Path) -> None:
-    logger = RunLogger("test", root=tmp_path)
-    assert (tmp_path / "test" / ".active.lock").exists()
     summary = summarize_mutation(
         operator="op",
         impacted_file="skill.py",
@@ -46,20 +46,27 @@ def test_log_creation(tmp_path: Path) -> None:
         score_base=0.2,
         score_new=0.1,
     )
-    logger.log(
-        "skill",
-        "op",
-        "diff",
-        True,
-        1.0,
-        2.0,
-        0.2,
-        0.1,
-        impacted_file="skill.py",
-        decision_reason="accepted: score improved",
-        human_summary=summary,
-    )
-    logger.close()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        logger = RunLogger("test", root=tmp_path)
+        lock_payload = json.loads(
+            (tmp_path / "test" / ".active.lock").read_text(encoding="utf-8")
+        )
+        logger.log(
+            "skill",
+            "op",
+            "diff",
+            True,
+            1.0,
+            2.0,
+            0.2,
+            0.1,
+            impacted_file="skill.py",
+            decision_reason="accepted: score improved",
+            human_summary=summary,
+        )
+        logger.close()
+
     files = list(tmp_path.glob("test-*.jsonl"))
     assert len(files) == 1
     with files[0].open(encoding="utf-8") as fh:
@@ -69,6 +76,10 @@ def test_log_creation(tmp_path: Path) -> None:
     assert line["human_summary"]
     assert "op=op" in line["human_summary"]
     assert line["impacted_file"] == "skill.py"
+    for timestamp in (lock_payload["started_at"], line["ts"]):
+        parsed = datetime.fromisoformat(timestamp)
+        assert parsed.tzinfo is not None
+        assert parsed.utcoffset() == timezone.utc.utcoffset(parsed)
 
     events_path = tmp_path / "test" / "events.jsonl"
     assert events_path.exists()

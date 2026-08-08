@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import ast
 import json
+from datetime import datetime, timezone
 from pathlib import Path
+import warnings
 
 import singular.cli as cli
 from singular.life import loop as life_loop
@@ -12,6 +14,33 @@ from singular.runs.generations import get_generations_path, record_generation
 
 def _read_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
+def test_generation_timestamp_is_timezone_aware_without_deprecation_warning(
+    tmp_path: Path,
+) -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        generation = record_generation(
+            run_id="timestamp-run",
+            iteration=1,
+            skill="sample",
+            operator="noop",
+            mutation_diff="",
+            score_base=1.0,
+            score_new=1.0,
+            accepted=False,
+            reason="test",
+            parent_hash="parent",
+            candidate_code="result = 1\n",
+            skill_relative_path="skills/sample.py",
+            security_metadata={},
+            base_dir=tmp_path,
+        )
+
+    timestamp = datetime.fromisoformat(generation["ts"])
+    assert timestamp.tzinfo is not None
+    assert timestamp.utcoffset() == timezone.utc.utcoffset(timestamp)
 
 
 def test_generation_registry_stays_coherent_with_run_events(tmp_path: Path, monkeypatch) -> None:

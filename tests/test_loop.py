@@ -2,6 +2,8 @@ import json
 import random
 import functools
 import sys
+import warnings
+from datetime import datetime, timezone
 from pathlib import Path
 
 import ast
@@ -1366,9 +1368,11 @@ def test_artifact_creation_persistence(tmp_path: Path, monkeypatch):
 
     mood = "neutre"
     resources = {"energy": 1}
-    text = create_text_art("bonjour", mood=mood, resources=resources)
-    drawing = create_ascii_drawing(2, 2, mood=mood, resources=resources)
-    melody = create_simple_melody(["C", "E", "G"], mood=mood, resources=resources)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        text = create_text_art("bonjour", mood=mood, resources=resources)
+        drawing = create_ascii_drawing(2, 2, mood=mood, resources=resources)
+        melody = create_simple_melody(["C", "E", "G"], mood=mood, resources=resources)
 
     art_dir = tmp_path / "runs" / "artifacts"
     assert ARTIFACTS_DIR == art_dir
@@ -1380,6 +1384,9 @@ def test_artifact_creation_persistence(tmp_path: Path, monkeypatch):
         assert meta["mood"] == mood
         assert meta["resources"] == resources
         assert "date" in meta
+        timestamp = datetime.fromisoformat(meta["date"])
+        assert timestamp.tzinfo is not None
+        assert timestamp.utcoffset() == timezone.utc.utcoffset(timestamp)
 
 
 def test_coevolution_rejects_regression_on_combined_score(tmp_path: Path, monkeypatch):

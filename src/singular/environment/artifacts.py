@@ -1,10 +1,14 @@
-"""Utilities to generate and persist simple artifacts."""
+"""Utilities to generate and persist simple artifacts.
+
+Metadata dates use ISO 8601 at second precision with the explicit UTC offset
+``+00:00``.
+"""
 
 from __future__ import annotations
 
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -57,7 +61,7 @@ def _save_metadata(path: Path, mood: str, resources: dict | None = None) -> Path
     """Persist metadata for the artifact located at ``path``."""
 
     meta = {
-        "date": datetime.utcnow().isoformat(timespec="seconds"),
+        "date": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "mood": mood,
         "resources": resources or {},
     }
