@@ -19,8 +19,18 @@ export const fetchSharedDashboardContext=()=>cachedJson('/dashboard/context');
 export const fetchSharedLivesComparison=()=>cachedJson(withScope('/lives/comparison?sort_by=last_activity&sort_order=desc'));
 export const fetchSharedCockpitEssential=()=>cachedJson(withScope('/api/cockpit/essential'));
 
-export const fetchSharedDashboardData=()=>Promise.all([
+export const fetchSharedDashboardData=()=>Promise.allSettled([
   fetchSharedDashboardContext(),
   fetchSharedLivesComparison(),
   fetchSharedCockpitEssential(),
-]).then(([context,comparison,essential])=>({context,comparison,essential}));
+]).then(results=>{
+  const [contextResult,comparisonResult,essentialResult]=results;
+  return {
+    context:contextResult.status==='fulfilled'?contextResult.value:{},
+    comparison:comparisonResult.status==='fulfilled'?comparisonResult.value:{table:[]},
+    essential:essentialResult.status==='fulfilled'?essentialResult.value:{},
+    registryState:results.every(result=>result.status==='rejected')?'error':(
+      results.some(result=>result.status==='rejected')?'partial':'ready'
+    ),
+  };
+});

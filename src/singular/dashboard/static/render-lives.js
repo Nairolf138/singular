@@ -1,6 +1,6 @@
 import {fetchJson} from './api.js';
 import {fetchSharedDashboardData} from './dashboard-data.js';
-import {updateOperatorLifeOptions} from './actions.js';
+import {mergeLifeRows,updateOperatorLifeOptions} from './actions.js';
 import {BADGE_TONE,liveState,livesTableState,na,scopeState,setPanelState,setSelectedLife} from './state.js';
 
 const byId=id=>document.getElementById(id);
@@ -377,7 +377,7 @@ export const loadLivesBoard=()=>{
   const presetKey=document.getElementById('filter-sort-preset')?.value||'watch';
   const preset=SORT_PRESETS[presetKey]||SORT_PRESETS.watch;
   const timeWindow=byId('filter-time-window')?.value||'all';
-  return fetchSharedDashboardData().then(({context,comparison,essential})=>{
+  return fetchSharedDashboardData().then(({context,comparison,essential,registryState})=>{
     const d=comparison||{};
     let mappedRows=(d.table||[]).map(row=>{
       const risk=rowRiskSummary(row);
@@ -403,7 +403,10 @@ export const loadLivesBoard=()=>{
     if(livesUiState.focus==='at_risk'){tableRows=tableRows.filter(row=>(row.__riskLevel||0)>=1);}
     clientSteps.push({step:'client_focus',label:`Après focus ${livesUiState.focus}`,applied:livesUiState.focus!=='all',count:tableRows.length});
     livesUiState.rowsByLife=new Map(mappedRows.map(row=>[row.life,row]));
-    updateOperatorLifeOptions(mappedRows);
+    const operatorRows=mergeLifeRows(context,comparison,essential);
+    updateOperatorLifeOptions(operatorRows,{
+      registryState:registryState==='ready'&&!operatorRows.length?'empty':registryState,
+    });
     renderLivesBuckets(Object.entries(d.lives||{}).map(([life,payload])=>({life,...payload})),d.life_metrics_contract);
     renderLivesTable(tableRows);
     if(livesUiState.selectedLife&&livesUiState.rowsByLife.has(livesUiState.selectedLife)){showLifeDetails(livesUiState.selectedLife);}

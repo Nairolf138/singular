@@ -705,7 +705,7 @@ globalThis.document = {{
 globalThis.window = {{ dispatchEvent() {{}} }};
 globalThis.CustomEvent = class CustomEvent {{ constructor(type, init) {{ this.type = type; this.detail = init?.detail; }} }};
 
-const {{ updateOperatorLifeOptions }} = await import('{module_path}');
+const {{ mergeLifeRows, updateOperatorLifeOptions }} = await import('{module_path}');
 const emptyComparison = {{ table: [] }};
 updateOperatorLifeOptions(emptyComparison.table);
 
@@ -717,6 +717,33 @@ if (birth.classList.contains('is-disabled')) {{ throw new Error('Créer une vie 
 for (const [label, button] of [['archive', archive], ['talk', talk], ['emergency_stop', emergency]]) {{
   if (!button.disabled) {{ throw new Error(`${{label}} should be disabled without a valid life`); }}
   if (button.getAttribute('aria-disabled') !== 'true') {{ throw new Error(`${{label}} aria-disabled missing`); }}
+}}
+
+// A context failure must not hide a life supplied by comparison.
+updateOperatorLifeOptions(mergeLifeRows({{}}, {{table: [{{life: 'comparison-life', life_status: 'active'}}]}}, {{}}), {{registryState: 'partial'}});
+if (![...elements.get('operator-action-life-select').options].some(option => option.value === 'comparison-life')) {{
+  throw new Error('comparison life missing after isolated /dashboard/context failure');
+}}
+elements.get('operator-action-life-select').value = 'comparison-life';
+updateOperatorLifeOptions(mergeLifeRows({{}}, {{}}, {{selected_life: 'essential-life'}}), {{registryState: 'partial'}});
+if (![...elements.get('operator-action-life-select').options].some(option => option.value === 'comparison-life')) {{
+  throw new Error('known comparison option was erased by an isolated comparison failure');
+}}
+if (![...elements.get('operator-action-life-select').options].some(option => option.value === 'essential-life')) {{
+  throw new Error('cockpit essential selected_life was not added');
+}}
+for (const [label, button] of [['archive', archive], ['talk', talk], ['emergency_stop', emergency]]) {{
+  if (button.disabled) {{ throw new Error(`${{label}} should remain enabled with one successful life source`); }}
+}}
+
+// Once all sources fail, creation remains independent while life actions are blocked.
+updateOperatorLifeOptions([], {{registryState: 'empty'}});
+updateOperatorLifeOptions([], {{registryState: 'error'}});
+if (!elements.get('operator-action-help').textContent.includes('Registre des vies indisponible')) {{
+  throw new Error('explicit all-source registry error missing');
+}}
+if (birth.disabled || !archive.disabled || !talk.disabled || !emergency.disabled) {{
+  throw new Error('incorrect exact action state when every registry source is unavailable');
 }}
 """,
         encoding="utf-8",
