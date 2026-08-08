@@ -10,6 +10,9 @@ from pathlib import Path
 import ast
 
 import logging
+import pytest
+
+pytestmark = pytest.mark.usefixtures("local_sandbox")
 
 root_dir = Path(__file__).resolve().parents[1]
 sys.path.append(str(root_dir))
@@ -28,7 +31,7 @@ from singular.life.reproduction import ReproductionDecisionPolicy  # noqa: E402
 from singular.events import EventBus  # noqa: E402
 
 
-def test_repository_addition_skill_satisfies_sandbox_scoring_contract():
+def test_repository_addition_skill_satisfies_sandbox_scoring_contract(local_sandbox):
     assert (
         life_loop.score_code_with_error(Path("skills/addition.py").read_text()).ok
         is True
@@ -51,7 +54,7 @@ def test_float_conversion_skill_satisfies_sandbox_scoring_contract(monkeypatch):
     ) == life_loop.SandboxScore(score=2.5)
 
 
-def test_score_code_with_error_returns_structured_sandbox_score():
+def test_score_code_with_error_returns_structured_sandbox_score(local_sandbox):
     ok = life_loop.score_code_with_error("result = 3")
     assert ok == life_loop.SandboxScore(score=3.0)
     assert ok.ok is True

@@ -17,6 +17,8 @@ def isolated_runtime(monkeypatch):
     def fake_run(command, **kwargs):
         if command[1] == "info":
             return subprocess.CompletedProcess(command, 0, '["name=seccomp"]', "")
+        if command[1:3] == ["image", "inspect"]:
+            return subprocess.CompletedProcess(command, 0, "[]", "")
         code = kwargs["input"]
         if "while True" in code:
             raise subprocess.TimeoutExpired(command, kwargs["timeout"])
@@ -44,6 +46,19 @@ def isolated_runtime(monkeypatch):
         return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
 
     monkeypatch.setattr(sandbox.subprocess, "run", fake_run)
+
+
+@pytest.fixture
+def oci_runtime():
+    """Return a verified runtime or clearly skip for an infrastructure gap."""
+
+    config = SandboxConfig.from_environment()
+    try:
+        runtime = sandbox._runtime(config.runtime)
+        sandbox._ensure_image_available(runtime, config.image)
+    except SandboxError as exc:
+        pytest.skip(f"OCI sandbox infrastructure unavailable: {exc}")
+    return runtime, config
 
 
 @pytest.mark.parametrize(
@@ -159,6 +174,31 @@ def test_container_has_all_required_system_isolation(isolated_runtime, monkeypat
     assert any(
         value.startswith("--tmpfs=/tmp:rw,noexec,nosuid,nodev") for value in command
     )
+    assert "--pull=never" in command
+
+
+def test_missing_configured_image_is_reported_clearly(monkeypatch):
+    monkeypatch.setattr(sandbox.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    def probe(command, **kwargs):
+        if command[1] == "info":
+            return subprocess.CompletedProcess(command, 0, '["name=seccomp"]', "")
+        return subprocess.CompletedProcess(command, 1, "", "No such image")
+
+    monkeypatch.setattr(sandbox.subprocess, "run", probe)
+    with pytest.raises(SandboxError, match="not available locally.*implicit pulls"):
+        run("result = 1", config=SandboxConfig(image="singular:test-missing"))
+
+
+@pytest.mark.sandbox_oci
+def test_oci_image_executes_worker_protocol(oci_runtime):
+    assert run("result = sum(range(5))") == 10
+
+
+@pytest.mark.sandbox_oci
+def test_oci_image_returns_worker_errors_as_json(oci_runtime):
+    with pytest.raises(SandboxError, match="ZeroDivisionError"):
+        run("result = 1 / 0")
 
 
 @pytest.mark.parametrize(

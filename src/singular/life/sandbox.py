@@ -95,7 +95,9 @@ class SandboxConfig:
             ),
             runtime=os.getenv("SINGULAR_SANDBOX_RUNTIME") or None,
             image=os.getenv("SINGULAR_SANDBOX_IMAGE", DEFAULT_IMAGE),
-            network_policy=os.getenv("SINGULAR_SANDBOX_NETWORK_POLICY", "none").strip().lower(),
+            network_policy=os.getenv("SINGULAR_SANDBOX_NETWORK_POLICY", "none")
+            .strip()
+            .lower(),
         )
 
 
@@ -138,6 +140,28 @@ def _runtime(configured: str | None) -> str:
             "secure sandbox unavailable: an active seccomp profile is required"
         )
     return candidate
+
+
+def _ensure_image_available(runtime: str, image: str) -> None:
+    """Refuse execution when the explicitly configured local image is absent."""
+
+    try:
+        probe = subprocess.run(
+            [runtime, "image", "inspect", image],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise SandboxError(
+            f"secure sandbox unavailable: could not inspect OCI image '{image}'"
+        ) from exc
+    if probe.returncode:
+        raise SandboxError(
+            f"secure sandbox unavailable: OCI image '{image}' is not available locally; "
+            "prepare SINGULAR_SANDBOX_IMAGE explicitly (implicit pulls are disabled)"
+        )
 
 
 _CONTAINER_WORKER = r"""
@@ -204,6 +228,7 @@ def run(
         timeout=timeout, memory_limit=memory_limit
     )
     runtime = _runtime(policy.runtime)
+    _ensure_image_available(runtime, policy.image)
     try:
         completed = subprocess.run(
             _command(runtime, policy),

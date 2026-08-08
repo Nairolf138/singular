@@ -1,5 +1,9 @@
+import pytest
+
 from singular.life.loop import score_code_with_error
 from singular.organisms.birth import _SKILL_TEMPLATES, _resolve_starter_skills
+
+pytestmark = pytest.mark.usefixtures("local_sandbox")
 
 
 def test_resolve_starter_skills_falls_back_to_assistant_profile() -> None:
@@ -13,7 +17,9 @@ def test_resolve_starter_skills_falls_back_to_assistant_profile() -> None:
     assert resolved == ["summary"]
 
 
-def test_starter_skill_templates_satisfy_sandbox_scoring_contract() -> None:
+def test_starter_skill_templates_satisfy_sandbox_scoring_contract(
+    local_sandbox,
+) -> None:
     for skill_name, source in _SKILL_TEMPLATES.items():
         score = score_code_with_error(source)
 

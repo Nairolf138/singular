@@ -1,3 +1,5 @@
+import ast
+import builtins
 import os
 import sys
 from pathlib import Path
@@ -29,8 +31,25 @@ sys.modules.setdefault("fastapi.staticfiles", fastapi_stub.staticfiles)
 import pytest  # noqa: E402
 
 from singular.life.checkpointing import Checkpoint, save_checkpoint  # noqa: E402
+from singular.life import sandbox as life_sandbox  # noqa: E402
 from singular.memory_layers.local_json import LocalJsonMemoryBackend  # noqa: E402
 from singular.memory_layers.service import MemoryLayerService  # noqa: E402
+
+
+@pytest.fixture
+def local_sandbox(monkeypatch):
+    """Emulate the trusted worker protocol without starting an OCI container."""
+
+    def execute(code):
+        life_sandbox._validate_ast(ast.parse(code, mode="exec"))
+        namespace = {"__builtins__": vars(builtins)}
+        exec(compile(code, "<unit-sandbox>", "exec"), namespace, namespace)
+        if "result" not in namespace:
+            raise life_sandbox.SandboxError("sandbox code did not set a result")
+        return namespace["result"]
+
+    monkeypatch.setattr(life_sandbox, "run", execute)
+    return execute
 
 
 @pytest.fixture
