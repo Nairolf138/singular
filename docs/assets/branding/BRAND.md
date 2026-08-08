@@ -13,9 +13,28 @@ Dégradé principal : `#0A1BFF → #2D6BFF → #00A7FF → #00E0D1`.
 
 ## Fichiers
 
-- `singular-logo.svg` : source vectorielle canonique du logo horizontal, recommandée pour la documentation et le dashboard.
-- `singular-logo-github.png` : export horizontal à placer dans ce dossier, en 1 400 × 430 px (affiché à 700 × 215 px, soit 2×), sur fond blanc explicite pour préserver la lisibilité dans les thèmes clair et sombre ; variante recommandée pour les README rendus par GitHub.
-- `singular-logo-stacked.svg` : version verticale.
+- `singular-logo.svg` : source vectorielle canonique du logo horizontal pour les fonds blancs ou très clairs.
+- `singular-logo-light.svg` : variante horizontale claire, avec libellé blanc et signature bleu clair, pour les fonds sombres.
+- `singular-logo-stacked.svg` : version verticale pour les fonds blancs ou très clairs.
+- `singular-logo-stacked-light.svg` : version verticale claire pour les fonds sombres.
+- `singular-logo-github.png` : export horizontal en 1 400 × 430 px (affiché à 700 × 215 px, soit 2×), sur fond blanc explicite pour préserver la lisibilité dans les thèmes clair et sombre ; variante recommandée pour les README rendus par GitHub.
 - `singular-icon.svg` : symbole seul, recommandé pour favicon, app icon et espaces compacts.
 
-Les mêmes ressources principales sont copiées dans `src/singular/dashboard/static/` pour leur utilisation par le dashboard web.
+Tous les libellés des SVG sont des tracés vectoriels : leur rendu ne requiert aucune police installée et ne dépend pas de CSS externe.
+
+## Contraste et choix de variante
+
+Les SVG restent transparents afin de pouvoir être composés librement. Le choix du fichier garantit le contraste sans héritage du thème de la page hôte :
+
+- sur fond blanc ou clair, utiliser `singular-logo.svg` ou `singular-logo-stacked.svg` (libellé navy `#0B1124`) ;
+- sur fond noir, navy ou sombre, utiliser `singular-logo-light.svg` ou `singular-logo-stacked-light.svg` (libellé blanc `#FFFFFF`) ;
+- sur un fond transparent ou inconnu, placer explicitement le logo dans un conteneur blanc et utiliser la variante standard, ou dans un conteneur navy et utiliser la variante claire ; ne pas choisir une variante au moyen de CSS appliqué à l'intérieur du SVG ;
+- conserver une zone de respiration au moins égale à la hauteur du « I » autour du logo et ne pas poser les libellés sur une zone d'image chargée.
+
+Le dashboard, dont le fond est navy sombre, embarque et sert la variante horizontale claire sous le nom historique `src/singular/dashboard/static/singular-logo.svg`. Une copie explicite `singular-logo-light.svg` est également fournie pour les nouveaux usages. Les deux fichiers sont autonomes et identiques afin que les anciennes URLs restent lisibles.
+
+## Tailles et contrôle visuel
+
+Tailles principales recommandées : 350 × 108 px pour le logo horizontal du dashboard, 700 × 215 px dans la documentation et 200 × 225 px pour le logo vertical. À petite taille, préférer le symbole seul en dessous de 160 px de large ; si le logotype complet est requis, ne pas descendre sous 120 px de large (horizontal) ou 96 px (vertical).
+
+Avant publication, vérifier chaque variante aux tailles principale et minimale sur des fonds blanc (`#FFFFFF`), noir (`#000000`) et transparent (visualisé sur un damier). Sur fond transparent, contrôler séparément la composition claire et la composition sombre décrites ci-dessus. Vérifier notamment que « SINGULAR » et « DIGITAL LIFE » restent lisibles, que le dégradé n'est pas écrêté et qu'aucune police de remplacement n'apparaît.
