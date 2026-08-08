@@ -40,6 +40,17 @@ h1 {
   text-shadow: 0 0 18px rgba(107, 124, 255, 0.45);
 }
 
+.brand-header {
+  max-width: 100%;
+}
+
+.brand-header img {
+  display: block;
+  width: 350px;
+  max-width: 100%;
+  height: auto;
+}
+
 h2, h3, h4 {
   margin-bottom: 8px;
   color: #d6e4ff;
@@ -541,5 +552,6 @@ body.essential-mode #toggle-essential { border-color: var(--ok); color: var(--ok
 .life-verdict-signals-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 8px; }
 
 @media (max-width: 720px) {
+  .brand-header img { width: min(350px, 100%); }
   .life-verdict-card { grid-column: span 1; }
 }

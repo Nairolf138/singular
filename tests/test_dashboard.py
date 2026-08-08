@@ -51,6 +51,29 @@ def test_dashboard_endpoints(tmp_path: Path, monkeypatch) -> None:
     assert "last_purge" in retention
 
 
+def test_dashboard_brand_assets_are_referenced_and_served_as_svg(tmp_path: Path) -> None:
+    app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
+    client = TestClient(app)
+
+    dashboard_response = client.get("/")
+    assert dashboard_response.status_code == 200
+    assert "<meta charset='utf-8'/>" in dashboard_response.text
+    assert "name='viewport'" in dashboard_response.text
+    assert "name='theme-color'" in dashboard_response.text
+    assert "href='/static/favicon.svg'" in dashboard_response.text
+    assert "src='/static/singular-logo.svg'" in dashboard_response.text
+    mutation_template = Path(
+        "src/singular/dashboard/templates/mutation_detail.html"
+    ).read_text(encoding="utf-8")
+    assert "href='/static/favicon.svg'" in mutation_template
+
+    for asset_url in ("/static/favicon.svg", "/static/singular-logo.svg"):
+        asset_response = client.get(asset_url)
+        assert asset_response.status_code == 200
+        assert asset_response.headers["content-type"].startswith("image/svg+xml")
+        assert asset_response.text.lstrip().startswith("<svg")
+
+
 def test_dashboard_context_normalizes_object_and_dict_life_metadata(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
