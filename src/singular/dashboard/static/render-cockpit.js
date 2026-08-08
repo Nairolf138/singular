@@ -567,7 +567,18 @@ export const loadCockpit=()=>Promise.allSettled([
   operatorSummaryState.cockpit={trend,liveness_index:livenessIndex,life_liveness_index:d.life_liveness_index,health_score:d.health_score,selected_life:essentialPayload.selected_life};
   const comparisonAvailable=livesResult.status==='fulfilled'&&isComparisonPayload(livesResult.value);
   if(comparisonAvailable){operatorSummaryState.lives=lives;}
-  updateOperatorLifeOptions(mergeLifeRows(ctx,comparisonAvailable?lives:{}));
+  const registryResults=[ctxResult,livesResult,essentialResult];
+  const successfulRegistrySources=registryResults.filter(result=>result.status==='fulfilled').length;
+  const registryState=successfulRegistrySources===0?'error':(
+    successfulRegistrySources<registryResults.length?'partial':(
+      mergeLifeRows(ctx,lives,essentialPayload).length?'ready':'empty'
+    )
+  );
+  updateOperatorLifeOptions(mergeLifeRows(
+    ctx,
+    comparisonAvailable?lives:{},
+    essentialResult.status==='fulfilled'?essentialPayload:{},
+  ),{registryState});
   renderOperatorSummary();
   setText('kpi-health',healthValue);
   setText('kpi-trend',trend);

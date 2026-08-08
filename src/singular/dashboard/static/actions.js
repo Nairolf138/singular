@@ -47,8 +47,9 @@ const hasValidSelectedLife=()=>{
 const operatorRegistryState=()=>{
   const select=operatorLifeSelect();
   if(!select){return 'loading';}
-  if(select.dataset.registryState!=='loaded'){return 'loading';}
-  if(validOperatorLives().size===0){return 'empty';}
+  const state=select.dataset.registryState||'loading';
+  if(state==='loading'||state==='error'){return state;}
+  if(validOperatorLives().size===0){return state==='empty'?'empty':'error';}
   return hasValidSelectedLife()?'valid':'invalid';
 };
 
@@ -94,6 +95,7 @@ export const updateOperatorActionState=()=>{
   const help=document.getElementById('operator-action-help');
   const helpMessages={
     loading:'Les données de vies n’ont pas encore chargé',
+    error:'Registre des vies indisponible : aucune source (/dashboard/context, comparaison des vies ou cockpit essentiel) n’a pu être chargée.',
     empty:'Aucune vie détectée dans le registre',
     invalid:'Sélectionnez une vie valide dans le registre pour activer “Supprimer/archiver” et “Parler”.',
     valid:blocksOperatorActions
@@ -146,7 +148,7 @@ const mergeDefined=(base,extra)=>{
   return merged;
 };
 
-export const mergeLifeRows=(context={},comparison={})=>{
+export const mergeLifeRows=(context={},comparison={},essential={})=>{
   const rowsByLife=new Map();
   const pushRow=(life,row)=>{
     const key=String(life||'').trim();
@@ -172,20 +174,28 @@ export const mergeLifeRows=(context={},comparison={})=>{
     const life=candidates.find(candidate=>rowsByLife.has(candidate))||candidates[0]||lifeRowName(row);
     pushRow(life,row);
   }
+  const selectedLife=String(essential?.selected_life||'').trim();
+  if(selectedLife){pushRow(selectedLife,{life:selectedLife,selected_life:true});}
   return [...rowsByLife.values()];
 };
 
-export const updateOperatorLifeOptions=(rows=[])=>{
+export const updateOperatorLifeOptions=(rows=[],{registryState='empty'}={})=>{
   const select=operatorLifeSelect();
   if(!select){return;}
   const previous=select.value;
-  select.dataset.registryState='loaded';
   const rowByName=new Map();
+  // Never let a failing/partial refresh erase lives learned from another source.
+  if(registryState!=='empty'){
+    for(const option of select.options){
+      if(option.value){rowByName.set(option.value,{life:option.value,status:option.dataset.lifeStatus});}
+    }
+  }
   for(const row of rows||[]){
     const name=String(lifeRowName(row)||'').trim();
     if(name&&!rowByName.has(name)){rowByName.set(name,row);}
   }
   const names=[...rowByName.keys()].sort((a,b)=>a.localeCompare(b));
+  select.dataset.registryState=names.length?(registryState==='error'?'partial':registryState):registryState;
   select.innerHTML='';
   const placeholder=document.createElement('option');
   placeholder.value='';
