@@ -21,8 +21,6 @@ const selectedOperatorLife=()=>getSelectedLife()||readValue('operator-action-lif
 const operatorMessage=()=>readValue('operator-action-message','action-prompt');
 const birthName=()=>readValue('operator-birth-name','action-life-name');
 const normalizeLifeStatus=value=>String(value||'').trim().toLowerCase();
-const blockedOperatorActionStatuses=new Set(['archived','dead','extinct','stopped']);
-const statusBlocksOperatorAction=status=>blockedOperatorActionStatuses.has(normalizeLifeStatus(status));
 const statusLabel=status=>{
   const normalized=normalizeLifeStatus(status);
   if(normalized==='archived'){return 'archivée';}
@@ -84,6 +82,13 @@ const selectedOperatorLifeStatus=()=>{
   const option=[...select.options].find(candidate=>candidate.value===selected);
   return normalizeLifeStatus(option?.dataset?.lifeStatus);
 };
+const selectedOperatorCapabilities=()=>{
+  const select=operatorLifeSelect();
+  const selected=selectedOperatorLife();
+  if(!select||!selected){return {};}
+  const option=[...select.options].find(candidate=>candidate.value===selected);
+  try{return JSON.parse(option?.dataset?.operatorActions||'{}');}catch(_err){return {};}
+};
 
 export const updateOperatorActionState=()=>{
   syncOperatorSelectToShared();
@@ -91,7 +96,8 @@ export const updateOperatorActionState=()=>{
   const hasSelection=registryState==='valid';
   const selected=selectedOperatorLife();
   const selectedStatus=selectedOperatorLifeStatus();
-  const blocksOperatorActions=hasSelection&&statusBlocksOperatorAction(selectedStatus);
+  const capabilities=selectedOperatorCapabilities();
+  const blocksOperatorActions=hasSelection&&capabilities.talk!==true;
   const help=document.getElementById('operator-action-help');
   const helpMessages={
     loading:'Les données de vies n’ont pas encore chargé',
@@ -125,7 +131,7 @@ export const updateOperatorActionState=()=>{
   ].forEach(([id,action])=>{
     const button=document.getElementById(id);
     if(!button){return;}
-    const blockedByStatus=hasSelection&&requiresRunnableLife(action)&&blocksOperatorActions;
+    const blockedByStatus=hasSelection&&capabilities[action]!==true;
     const disabled=!hasSelection||blockedByStatus;
     button.disabled=disabled;
     button.classList.toggle('is-disabled',disabled);
@@ -187,7 +193,11 @@ export const updateOperatorLifeOptions=(rows=[],{registryState='empty'}={})=>{
   // Never let a failing/partial refresh erase lives learned from another source.
   if(registryState!=='empty'){
     for(const option of select.options){
-      if(option.value){rowByName.set(option.value,{life:option.value,status:option.dataset.lifeStatus});}
+      if(option.value){
+        let operatorActions={};
+        try{operatorActions=JSON.parse(option.dataset.operatorActions||'{}');}catch(_err){operatorActions={};}
+        rowByName.set(option.value,{life:option.value,registry_status:option.dataset.lifeStatus,operator_actions:operatorActions});
+      }
     }
   }
   for(const row of rows||[]){
@@ -206,7 +216,8 @@ export const updateOperatorLifeOptions=(rows=[],{registryState='empty'}={})=>{
     option.value=name;
     option.textContent=name;
     const row=rowByName.get(name);
-    option.dataset.lifeStatus=normalizeLifeStatus(row?.life_status||row?.registry_status||row?.status);
+    option.dataset.lifeStatus=normalizeLifeStatus(row?.registry_status||row?.status);
+    option.dataset.operatorActions=JSON.stringify(row?.operator_actions||{});
     select.appendChild(option);
   }
   const shared=getSelectedLife();
@@ -286,7 +297,7 @@ const validateAction=(action,payload)=>{
     return 'Sélectionnez une vie valide dans le sélecteur opérateur avant de lancer cette action.';
   }
   const selectedStatus=selectedOperatorLifeStatus();
-  if(requiresRunnableLife(action)&&statusBlocksOperatorAction(selectedStatus)){
+  if(requiresRunnableLife(action)&&selectedOperatorCapabilities()[action]!==true){
     return `Action ${action} indisponible: la vie sélectionnée est ${statusLabel(selectedStatus)}.`;
   }
   if(action==='talk'&&!payload.prompt){

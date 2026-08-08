@@ -783,12 +783,12 @@ def test_dashboard_cockpit_life_status_uses_extinct_registry_status(
     client = TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json"))
 
     payload = client.get("/api/cockpit").json()
-    assert payload["life_status"] == "extinct"
+    assert payload["life_status"] == "dead"
     assert isinstance(payload["life_status_score"], float)
     assert payload["life_status_signals"].get("extinction") is True
 
     essential_payload = client.get("/api/cockpit/essential").json()
-    assert essential_payload["life_status"] == "extinct"
+    assert essential_payload["life_status"] == "dead"
     assert essential_payload["life_status_score"] == payload["life_status_score"]
 
 
@@ -1492,17 +1492,21 @@ def test_lives_comparison_table_aggregation_filters_and_sorting(
     assert [row["life"] for row in table] == ["life-c", "life-a", "life-b"]
     assert payload["lives"]["life-a"]["trend"] == "dégradation"
     assert payload["lives"]["life-a"]["selected_life"] is False
-    assert payload["lives"]["life-a"]["life_status"] == "active"
+    assert payload["lives"]["life-a"]["registry_status"] == "active"
+    assert payload["lives"]["life-a"]["life_status"] is None
+    assert payload["lives"]["life-a"]["operator_actions"]["talk"] is True
     assert payload["lives"]["life-a"]["is_registry_active_life"] is True
     assert payload["lives"]["life-a"]["extinction_seen_in_runs"] is False
     assert payload["lives"]["life-a"]["iterations"] == 2
     assert isinstance(payload["lives"]["life-a"]["alerts_count"], int)
     assert payload["lives"]["life-b"]["selected_life"] is False
-    assert payload["lives"]["life-b"]["life_status"] == "extinct"
+    assert payload["lives"]["life-b"]["registry_status"] == "extinct"
+    assert payload["lives"]["life-b"]["life_status"] == "dead"
+    assert payload["lives"]["life-b"]["operator_actions"]["talk"] is False
     assert payload["lives"]["life-b"]["is_registry_active_life"] is False
     assert payload["lives"]["life-b"]["extinction_seen_in_runs"] is True
     assert payload["lives"]["life-c"]["selected_life"] is True
-    assert payload["lives"]["life-c"]["life_status"] == "active"
+    assert payload["lives"]["life-c"]["registry_status"] == "active"
     assert payload["lives"]["life-c"]["stability"] == 0.99
 
     active_only = route(active_only=True)["table"]
@@ -2371,7 +2375,8 @@ def test_lives_comparison_get_does_not_reconcile_registry_silently(
 
     assert before == between == after
     assert json.loads(after)["lives"]["alpha"]["status"] == "active"
-    assert first_payload["lives"]["alpha"]["life_status"] == "active"
+    assert first_payload["lives"]["alpha"]["registry_status"] == "active"
+    assert first_payload["lives"]["alpha"]["life_status"] == "dead"
     assert first_payload["lives"]["alpha"]["extinction_seen_in_runs"] is True
     assert first_payload["lives"]["alpha"]["registry_run_status_inconsistency"] is True
     assert first_payload["lives"]["alpha"]["status_reconciliation_suggestion"] == "mark_extinct"
@@ -2473,7 +2478,7 @@ def test_chat_get_reports_status_without_running_chat(
 
     assert response["life"] == "alpha"
     assert response["available"] is True
-    assert response["life_status"] == "active"
+    assert response["registry_status"] == "active"
     assert response["status"] == "ready"
     assert response["message"] == "Utilisez POST avec un corps JSON pour envoyer un message."
 

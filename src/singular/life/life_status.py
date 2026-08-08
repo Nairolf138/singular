@@ -42,6 +42,71 @@ class LifeStatus(str, Enum):
 AUTHORIZED_LIFE_STATUSES: tuple[str, ...] = tuple(status.value for status in LifeStatus)
 
 
+class RegistryStatus(str, Enum):
+    """Administrative states persisted in the lives registry.
+
+    A registry state is deliberately not a biological verdict.  In particular,
+    archiving or stopping a life does not prove that it is dead.
+    """
+
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+    EXTINCT = "extinct"
+    STOPPED = "stopped"
+    UNKNOWN = "unknown"
+
+
+AUTHORIZED_REGISTRY_STATUSES: tuple[str, ...] = tuple(
+    status.value for status in RegistryStatus
+)
+
+# Read-old/write-new conversion table.  Both target columns are present so a
+# caller can never accidentally interpret an administrative value as biology.
+# ``None`` means that the legacy value contains no biological information.
+LEGACY_STATUS_CONVERSIONS: dict[str, dict[str, str | None]] = {
+    "degraded": {"registry_status": "active", "life_status": "degraded"},
+    "dead": {"registry_status": "extinct", "life_status": "dead"},
+    "archived": {"registry_status": "archived", "life_status": None},
+    "stopped": {"registry_status": "stopped", "life_status": None},
+}
+
+OPERATOR_ACTIONS: tuple[str, ...] = (
+    "archive", "talk", "emergency_stop", "lives_use", "memorial", "clone"
+)
+_RUNNABLE_OPERATOR_ACTIONS = frozenset({"archive", "talk", "emergency_stop"})
+
+
+def normalize_registry_status(value: object) -> str:
+    """Normalize registry input without returning a biological status."""
+
+    normalized = str(value or "unknown").strip().lower()
+    if normalized in AUTHORIZED_REGISTRY_STATUSES:
+        return normalized
+    conversion = LEGACY_STATUS_CONVERSIONS.get(normalized)
+    return str(conversion["registry_status"]) if conversion else "unknown"
+
+
+def legacy_life_status(value: object) -> str | None:
+    """Extract a biological verdict only when a legacy value actually has one."""
+
+    normalized = str(value or "").strip().lower()
+    if normalized in AUTHORIZED_LIFE_STATUSES:
+        return normalized
+    conversion = LEGACY_STATUS_CONVERSIONS.get(normalized)
+    return conversion["life_status"] if conversion else None
+
+
+def operator_action_capabilities(registry_status: object) -> dict[str, bool]:
+    """Return the single server-side capability contract consumed by the UI."""
+
+    status = normalize_registry_status(registry_status)
+    runnable = status == RegistryStatus.ACTIVE.value
+    return {
+        action: runnable or action not in _RUNNABLE_OPERATOR_ACTIONS
+        for action in OPERATOR_ACTIONS
+    }
+
+
 def _status_value(status: LifeStatus | str) -> str:
     return status.value if isinstance(status, LifeStatus) else str(status)
 

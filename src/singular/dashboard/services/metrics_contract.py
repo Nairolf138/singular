@@ -32,8 +32,9 @@ def build_life_counts(lives: dict[str, dict[str, Any]]) -> dict[str, int]:
             recent_activity_lives += 1
 
         life_status = payload.get("life_status")
+        registry_status = payload.get("registry_status")
         extinct_in_runs = bool(payload.get("extinction_seen_in_runs"))
-        if life_status == "extinct" or extinct_in_runs:
+        if life_status == "dead" or registry_status == "extinct" or extinct_in_runs:
             dead_lives += 1
 
     alive_lives = max(total_lives - dead_lives, 0)
