@@ -1,6 +1,8 @@
+import asyncio
 import json
 from pathlib import Path
 from queue import Empty
+import threading
 
 import pytest
 from fastapi_stub import TestClient
@@ -1967,6 +1969,35 @@ def test_websocket_multiple_clients_receive_the_same_bounded_stream(tmp_path: Pa
     assert first_event == second_event
     assert first_event["type"] == "run_event"
     assert first_event["run_id"] == "shared"
+
+
+def test_websocket_slow_discovery_does_not_block_http_or_disconnect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_iter_run_files(self, current_life_only: bool = False):
+        started.set()
+        release.wait(timeout=5)
+        return []
+
+    monkeypatch.setattr(
+        dashboard_module.RunRecordsRepository, "iter_run_files", slow_iter_run_files
+    )
+    app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "missing.json")
+
+    async def exercise() -> None:
+        ws = dashboard_module.WebSocket()
+        websocket_task = asyncio.create_task(app._ws_routes["/ws"](ws))
+        assert await asyncio.to_thread(started.wait, 1)
+        assert "<html>" in app._routes["/"]().lower()
+        websocket_task.cancel()
+        await asyncio.wait_for(websocket_task, timeout=0.25)
+        release.set()
+
+    asyncio.run(exercise())
+    assert "CancelledError" not in capsys.readouterr().err
 
 
 
