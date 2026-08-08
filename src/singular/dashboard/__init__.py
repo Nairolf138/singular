@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import Counter
 import json
+import inspect
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import os
@@ -172,6 +173,7 @@ def create_app(
     )
     ws_clients = 0
     ws_clients_lock = threading.Lock()
+    app.state.ws_clients = ws_clients
     ws_max_clients = max(
         1, int(os.environ.get("SINGULAR_DASHBOARD_WS_MAX_CLIENTS", "32"))
     )
@@ -3065,14 +3067,26 @@ def create_app(
                 await ws.close(code=1013)
                 return
             ws_clients += 1
-        await ws.accept()
+            app.state.ws_clients = ws_clients
         last_psyche_mtime_ns: int | None = None
         last_quests_mtime_ns: int | None = None
         log_cursors: dict[str, _LogCursor] = {}
 
         async def _send(payload: dict[str, object]) -> None:
             """Disconnect slow consumers instead of accumulating unbounded writes."""
-            await asyncio.wait_for(ws.send_json(payload), timeout=ws_send_timeout)
+            try:
+                await asyncio.wait_for(
+                    ws.send_json(payload), timeout=ws_send_timeout
+                )
+            except asyncio.CancelledError:
+                # ``wait_for`` must not turn application shutdown into a send failure.
+                raise
+
+        async def _close() -> None:
+            """Best-effort close compatible with Starlette and the test WebSocket."""
+            result = ws.close()
+            if inspect.isawaitable(result):
+                await result
 
         def _read_changed_json(
             path: Path, previous_mtime_ns: int | None
@@ -3160,6 +3174,7 @@ def create_app(
             }
 
         try:
+            await ws.accept()
             while True:
                 for source, path, previous_mtime in (
                     ("psyche", psyche_path, last_psyche_mtime_ns),
@@ -3231,12 +3246,23 @@ def create_app(
 
                 for event in incremental_events:
                     await _send(event)
-                await asyncio.sleep(ws_poll_interval)
-        except (WebSocketDisconnect, asyncio.TimeoutError, asyncio.CancelledError):
+                try:
+                    await asyncio.sleep(ws_poll_interval)
+                except asyncio.CancelledError:
+                    # Keep cancellation distinct from an ordinary stream error.
+                    raise
+        except asyncio.CancelledError:
+            try:
+                await _close()
+            except (WebSocketDisconnect, RuntimeError, OSError):
+                pass
+            raise
+        except (WebSocketDisconnect, asyncio.TimeoutError):
             pass
         finally:
             with ws_clients_lock:
                 ws_clients -= 1
+                app.state.ws_clients = ws_clients
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
