@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/branding/singular-logo.svg" alt="Singular" width="760">
+  <img src="docs/assets/branding/singular-logo-github.png" alt="Singular" width="700" height="215">
 </p>
 
 # 🌱 Singular — Un organisme numérique vivant interactif
