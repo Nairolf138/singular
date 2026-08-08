@@ -1,5 +1,9 @@
 # Index de la documentation
 
+La [grammaire des parcours CLI de recette](cli-visible-paths.fr.md) décrit les
+groupes `skills`, `quest`, `social`, `self-narrative` et `cognition`, ainsi que
+le placement cohérent de `--life` et la migration des anciennes syntaxes.
+
 Cet index est le point d'entrée canonique de la documentation Singular. Les
 documents de planification et les spécifications cibles sont volontairement
 séparés des fonctions utilisables afin qu'une intention ne soit pas interprétée

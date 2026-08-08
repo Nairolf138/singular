@@ -93,6 +93,41 @@ def _extract_talk_life_alias(argv: list[str] | None) -> str | None:
     return None
 
 
+def _normalize_legacy_quest_argv(
+    argv: list[str] | None,
+) -> tuple[list[str] | None, bool]:
+    """Translate ``quest SPEC`` to the documented ``quest create SPEC`` grammar."""
+
+    if argv is None:
+        return None, False
+    normalized = list(argv)
+    try:
+        index = normalized.index("quest")
+    except ValueError:
+        return normalized, False
+    following = normalized[index + 1 :]
+    if not following or following[0] in {"create", "list", "-h", "--help"}:
+        return normalized, False
+    if following[0] in {"--example", "--schema"}:
+        normalized.insert(index + 1, "create")
+        return normalized, True
+    if not following[0].startswith("-"):
+        normalized.insert(index + 1, "create")
+        return normalized, True
+    return normalized, False
+
+
+def _add_local_life_argument(parser: argparse.ArgumentParser) -> None:
+    """Add the uniform command-local spelling without shadowing global ``life``."""
+
+    parser.add_argument(
+        "--life",
+        dest="local_life",
+        default=None,
+        help="Life slug/name (overrides the global --life option)",
+    )
+
+
 def _build_life_suggestion_message(unknown: str) -> str | None:
     """Return a targeted suggestion when an unknown argument looks like a life slug."""
 
@@ -1118,20 +1153,64 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Alias de compatibilité déprécié pour `talk --life`",
     )
 
-    quest_parser = subparsers.add_parser(
-        "quest", help="Generate a skill from a specification"
+    skills_parser = subparsers.add_parser("skills", help="Inspect life skills")
+    skills_subparsers = skills_parser.add_subparsers(
+        dest="skills_command", required=True
     )
-    quest_parser.add_argument(
+    skills_list = skills_subparsers.add_parser("list", help="List available skills")
+    _add_local_life_argument(skills_list)
+
+    quest_parser = subparsers.add_parser("quest", help="Manage life quests")
+    quest_subparsers = quest_parser.add_subparsers(dest="quest_command", required=True)
+    quest_create = quest_subparsers.add_parser(
+        "create", help="Generate a skill from a quest specification"
+    )
+    quest_create.add_argument(
         "spec", nargs="?", type=Path, help="Path to specification JSON"
     )
-    quest_parser.add_argument(
+    quest_create.add_argument(
         "--example",
         action="store_true",
         help="Print a complete quest JSON example and exit",
     )
-    quest_parser.add_argument(
+    quest_create.add_argument(
         "--schema", action="store_true", help="Print the quest JSON schema and exit"
     )
+    _add_local_life_argument(quest_create)
+    quest_list = quest_subparsers.add_parser("list", help="List quest specifications")
+    _add_local_life_argument(quest_list)
+
+    social_parser = subparsers.add_parser("social", help="Manage social interactions")
+    social_subparsers = social_parser.add_subparsers(
+        dest="social_command", required=True
+    )
+    social_interact = social_subparsers.add_parser(
+        "interact", help="Record an interaction with another life"
+    )
+    social_interact.add_argument("target", help="Other life identifier")
+    social_interact.add_argument("event", help="Observed interaction event")
+    _add_local_life_argument(social_interact)
+
+    narrative_parser = subparsers.add_parser(
+        "self-narrative", help="Inspect the active life's narrative"
+    )
+    narrative_subparsers = narrative_parser.add_subparsers(
+        dest="narrative_command", required=True
+    )
+    narrative_summarize = narrative_subparsers.add_parser(
+        "summarize", help="Summarize the self narrative"
+    )
+    narrative_summarize.add_argument("--long", action="store_true")
+    _add_local_life_argument(narrative_summarize)
+
+    cognition_parser = subparsers.add_parser("cognition", help="Inspect cognition")
+    cognition_subparsers = cognition_parser.add_subparsers(
+        dest="cognition_command", required=True
+    )
+    cognition_observe = cognition_subparsers.add_parser(
+        "self-observe", help="Display evidence-bound self observations"
+    )
+    _add_local_life_argument(cognition_observe)
 
     synth_parser = subparsers.add_parser("synthesize", help="Synthesize results")
     synth_parser.add_argument("code", help="Code snippet to store in memory")
@@ -1569,7 +1648,8 @@ def main(argv: list[str] | None = None) -> int:
     implicit_root_before_override = (
         _implicit_registry_root_from_env_or_default().resolve()
     )
-    argv_list = list(argv) if argv is not None else None
+    raw_argv = list(argv) if argv is not None else sys.argv[1:]
+    argv_list, legacy_quest = _normalize_legacy_quest_argv(raw_argv)
     _preparse_environment(argv_list)
 
     from .lives import (
@@ -1601,6 +1681,13 @@ def main(argv: list[str] | None = None) -> int:
                 print(suggestion, file=sys.stderr)
         raise
 
+    if legacy_quest:
+        print(
+            "⚠️ `singular quest <spec>` est déprécié. "
+            "Utilisez `singular quest create <spec>`.",
+            file=sys.stderr,
+        )
+
     if args.command == "loop":
         if args.budget_seconds is None and args.ticks is not None:
             parser.error(
@@ -1624,6 +1711,12 @@ def main(argv: list[str] | None = None) -> int:
             if selected_life is None:
                 selected_life = args.talk_life_legacy
         args.life = selected_life if selected_life is not None else args.life
+
+    # Every local --life uses a separate parser destination; resolution happens
+    # exactly once here and local syntax consistently takes precedence.
+    local_life = getattr(args, "local_life", None)
+    if local_life is not None:
+        args.life = local_life
 
     _print_registry_context_message_if_needed(
         args.root,
@@ -1786,8 +1879,21 @@ def main(argv: list[str] | None = None) -> int:
         _ensure_active_life(resolve_life, args.life)
         talk(provider=args.provider, seed=args.seed, prompt=args.prompt)
 
+    elif args.command == "skills":
+        from .life.skill_catalog import refresh_skill_catalog
+
+        life_dir = _ensure_active_life(resolve_life, args.life)
+        catalog = refresh_skill_catalog(
+            skills_dir=life_dir / "skills", mem_dir=life_dir / "mem"
+        )
+        if args.output_format == "json":
+            print(json.dumps(catalog, ensure_ascii=False, indent=2))
+        else:
+            for name in sorted(catalog):
+                print(name)
+
     elif args.command == "quest":
-        if args.example or args.schema:
+        if getattr(args, "example", False) or getattr(args, "schema", False):
             from .life.quest import FULL_SPEC_EXAMPLE, QUEST_SCHEMA
 
             print(
@@ -1797,15 +1903,50 @@ def main(argv: list[str] | None = None) -> int:
                     indent=2,
                 )
             )
-            return
+            return 0
+        if args.quest_command == "list":
+            life_dir = _ensure_active_life(resolve_life, args.life)
+            names = sorted(path.stem for path in (life_dir / "quests").glob("*.json"))
+            if args.output_format == "json":
+                print(json.dumps(names, ensure_ascii=False))
+            else:
+                print("\n".join(names))
+            return 0
         if args.spec is None:
             parser.error(
-                "quest requires a spec path unless --example or --schema is used"
+                "quest create requires a spec path unless --example or --schema is used"
             )
         from .organisms.quest import quest
 
         _ensure_active_life(resolve_life, args.life)
         quest(spec=args.spec)
+
+    elif args.command == "social":
+        from .social.graph import SocialGraph
+
+        life_dir = _ensure_active_life(resolve_life, args.life)
+        observer = args.life or life_dir.name
+        result = SocialGraph(life_dir / "mem" / "social_graph.json").record_interaction(
+            observer, args.target, args.event
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+
+    elif args.command == "self-narrative":
+        from .self_narrative import summarize_long, summarize_short
+
+        life_dir = _ensure_active_life(resolve_life, args.life)
+        narrative_path = life_dir / "mem" / "self_narrative.json"
+        summarize = summarize_long if args.long else summarize_short
+        print(summarize(path=narrative_path))
+
+    elif args.command == "cognition":
+        from .cognition.self_observation import SelfObservationService
+
+        life_dir = _ensure_active_life(resolve_life, args.life)
+        model = SelfObservationService(
+            life_dir / "mem" / "self_model.json"
+        ).store.read()
+        print(json.dumps(model.get("metacognition", {}), ensure_ascii=False, indent=2))
 
     elif args.command == "synthesize":
         from .runs.synthesize import synthesize

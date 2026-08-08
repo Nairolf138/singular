@@ -158,7 +158,7 @@ Paths below are relative to the root or `SINGULAR_HOME`. Always back up before d
 <!-- cli-command: quest -->
 ## `quest`
 
-**Syntax :** `singular quest [-h] [--example] [--schema] [spec]`
+**Syntax :** `singular quest create [-h] [--example] [--schema] [--life LIFE] [spec]`
 
 **Arguments and defaults :** `spec` (`None`); `--example` (`false`); `--schema` (`false`)
 
@@ -170,11 +170,221 @@ Paths below are relative to the root or `SINGULAR_HOME`. Always back up before d
 
 **Side effects :** Creates/changes artifacts; `rollback` atomically replaces active state.
 
-**Minimal example :** `singular quest --example`
+**Minimal example :** `singular quest create --example`
 
-**Advanced example :** `singular --root /srv/singular --life ada --format json quest --example`
+**Advanced example :** `singular --root /srv/singular --life ada --format json quest create --example`
 
 **Common errors :** Missing/invalid input, unknown generation, existing or unwritable output.
+
+<!-- cli-command: skills -->
+## `skills`
+
+**Syntax :** `singular skills ACTION`
+
+**Arguments and defaults :** `ACTION` (requis/required)
+
+**Prerequisites :** An active life for actions.
+
+**Target root and life :** Global or local `--life`; the local option takes precedence.
+
+**Files read or written :** Reads or writes active-life artifacts.
+
+**Side effects :** The action may update life memory.
+
+**Minimal example :** `singular skills list`
+
+**Advanced example :** `singular --root /srv/singular --life ada skills list`
+
+**Common errors :** Missing subcommand/argument or unknown life.
+
+<!-- cli-command: skills list -->
+## `skills list`
+
+**Syntax :** `singular skills list [--life LIFE]`
+
+**Arguments and defaults :** `--life` (`None`)
+
+**Prerequisites :** An active life for actions.
+
+**Target root and life :** Global or local `--life`; the local option takes precedence.
+
+**Files read or written :** Reads or writes active-life artifacts.
+
+**Side effects :** The action may update life memory.
+
+**Minimal example :** `singular skills list --life ada`
+
+**Advanced example :** `singular --root /srv/singular --life ada skills list --life ada`
+
+**Common errors :** Missing subcommand/argument or unknown life.
+
+<!-- cli-command: quest create -->
+## `quest create`
+
+**Syntax :** `singular quest create [--example] [--schema] [--life LIFE] [spec]`
+
+**Arguments and defaults :** `spec` (`None`); options (`false`)
+
+**Prerequisites :** An active life for actions.
+
+**Target root and life :** Global or local `--life`; the local option takes precedence.
+
+**Files read or written :** Reads or writes active-life artifacts.
+
+**Side effects :** The action may update life memory.
+
+**Minimal example :** `singular quest create --example`
+
+**Advanced example :** `singular --root /srv/singular --life ada quest create --example`
+
+**Common errors :** Missing subcommand/argument or unknown life.
+
+<!-- cli-command: quest list -->
+## `quest list`
+
+**Syntax :** `singular quest list [--life LIFE]`
+
+**Arguments and defaults :** `--life` (`None`)
+
+**Prerequisites :** An active life for actions.
+
+**Target root and life :** Global or local `--life`; the local option takes precedence.
+
+**Files read or written :** Reads or writes active-life artifacts.
+
+**Side effects :** The action may update life memory.
+
+**Minimal example :** `singular quest list --life ada`
+
+**Advanced example :** `singular --root /srv/singular --life ada quest list --life ada`
+
+**Common errors :** Missing subcommand/argument or unknown life.
+
+<!-- cli-command: social -->
+## `social`
+
+**Syntax :** `singular social ACTION`
+
+**Arguments and defaults :** `ACTION` (requis/required)
+
+**Prerequisites :** An active life for actions.
+
+**Target root and life :** Global or local `--life`; the local option takes precedence.
+
+**Files read or written :** Reads or writes active-life artifacts.
+
+**Side effects :** The action may update life memory.
+
+**Minimal example :** `singular social interact bob cooperation`
+
+**Advanced example :** `singular --root /srv/singular --life ada social interact bob cooperation`
+
+**Common errors :** Missing subcommand/argument or unknown life.
+
+<!-- cli-command: social interact -->
+## `social interact`
+
+**Syntax :** `singular social interact TARGET EVENT [--life LIFE]`
+
+**Arguments and defaults :** `TARGET`, `EVENT` (requis/required); `--life` (`None`)
+
+**Prerequisites :** An active life for actions.
+
+**Target root and life :** Global or local `--life`; the local option takes precedence.
+
+**Files read or written :** Reads or writes active-life artifacts.
+
+**Side effects :** The action may update life memory.
+
+**Minimal example :** `singular social interact bob cooperation --life ada`
+
+**Advanced example :** `singular --root /srv/singular --life ada social interact bob cooperation --life ada`
+
+**Common errors :** Missing subcommand/argument or unknown life.
+
+<!-- cli-command: self-narrative -->
+## `self-narrative`
+
+**Syntax :** `singular self-narrative ACTION`
+
+**Arguments and defaults :** `ACTION` (requis/required)
+
+**Prerequisites :** An active life for actions.
+
+**Target root and life :** Global or local `--life`; the local option takes precedence.
+
+**Files read or written :** Reads or writes active-life artifacts.
+
+**Side effects :** The action may update life memory.
+
+**Minimal example :** `singular self-narrative summarize`
+
+**Advanced example :** `singular --root /srv/singular --life ada self-narrative summarize`
+
+**Common errors :** Missing subcommand/argument or unknown life.
+
+<!-- cli-command: self-narrative summarize -->
+## `self-narrative summarize`
+
+**Syntax :** `singular self-narrative summarize [--long] [--life LIFE]`
+
+**Arguments and defaults :** `--long` (`false`); `--life` (`None`)
+
+**Prerequisites :** An active life for actions.
+
+**Target root and life :** Global or local `--life`; the local option takes precedence.
+
+**Files read or written :** Reads or writes active-life artifacts.
+
+**Side effects :** The action may update life memory.
+
+**Minimal example :** `singular self-narrative summarize --life ada`
+
+**Advanced example :** `singular --root /srv/singular --life ada self-narrative summarize --life ada`
+
+**Common errors :** Missing subcommand/argument or unknown life.
+
+<!-- cli-command: cognition -->
+## `cognition`
+
+**Syntax :** `singular cognition ACTION`
+
+**Arguments and defaults :** `ACTION` (requis/required)
+
+**Prerequisites :** An active life for actions.
+
+**Target root and life :** Global or local `--life`; the local option takes precedence.
+
+**Files read or written :** Reads or writes active-life artifacts.
+
+**Side effects :** The action may update life memory.
+
+**Minimal example :** `singular cognition self-observe`
+
+**Advanced example :** `singular --root /srv/singular --life ada cognition self-observe`
+
+**Common errors :** Missing subcommand/argument or unknown life.
+
+<!-- cli-command: cognition self-observe -->
+## `cognition self-observe`
+
+**Syntax :** `singular cognition self-observe [--life LIFE]`
+
+**Arguments and defaults :** `--life` (`None`)
+
+**Prerequisites :** An active life for actions.
+
+**Target root and life :** Global or local `--life`; the local option takes precedence.
+
+**Files read or written :** Reads or writes active-life artifacts.
+
+**Side effects :** The action may update life memory.
+
+**Minimal example :** `singular cognition self-observe --life ada`
+
+**Advanced example :** `singular --root /srv/singular --life ada cognition self-observe --life ada`
+
+**Common errors :** Missing subcommand/argument or unknown life.
 
 <!-- cli-command: synthesize -->
 ## `synthesize`
