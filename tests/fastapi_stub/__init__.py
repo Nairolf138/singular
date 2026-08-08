@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict
 from dataclasses import dataclass, field
 from queue import Queue
+from types import SimpleNamespace
 
 
 class HTTPException(Exception):
@@ -49,6 +50,7 @@ class FastAPI:
     """Minimal application object supporting GET and WebSocket routes."""
 
     def __init__(self) -> None:
+        self.state = SimpleNamespace()
         self._routes: Dict[str, Callable[[], Any]] = {}
         self._post_routes: Dict[str, Callable[[], Any]] = {}
         self._ws_routes: Dict[str, Callable[[WebSocket], Any]] = {}

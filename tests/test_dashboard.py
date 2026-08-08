@@ -1993,8 +1993,36 @@ def test_websocket_slow_discovery_does_not_block_http_or_disconnect(
         assert await asyncio.to_thread(started.wait, 1)
         assert "<html>" in app._routes["/"]().lower()
         websocket_task.cancel()
-        await asyncio.wait_for(websocket_task, timeout=0.25)
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(websocket_task, timeout=0.25)
         release.set()
+
+    asyncio.run(exercise())
+    assert "CancelledError" not in capsys.readouterr().err
+
+
+def test_websocket_application_shutdown_closes_client_and_releases_slot(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "missing.json")
+
+    async def exercise() -> None:
+        ws = dashboard_module.WebSocket()
+        websocket_task = asyncio.create_task(app._ws_routes["/ws"](ws))
+
+        async def client_is_connected() -> None:
+            while app.state.ws_clients != 1:
+                await asyncio.sleep(0)
+
+        await asyncio.wait_for(client_is_connected(), timeout=0.25)
+
+        # ASGI servers cancel connection tasks while shutting the application down.
+        websocket_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(websocket_task, timeout=0.25)
+
+        assert ws.closed
+        assert app.state.ws_clients == 0
 
     asyncio.run(exercise())
     assert "CancelledError" not in capsys.readouterr().err
