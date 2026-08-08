@@ -1,8 +1,12 @@
-"""Generation registry utilities linked to mutation runs."""
+"""Generation registry utilities linked to mutation runs.
+
+Registry timestamps use ISO 8601 at second precision with the explicit UTC
+offset ``+00:00``.
+"""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -100,7 +104,7 @@ def record_generation(
         "parent_generation_id": parent.get("generation_id") if parent else None,
         "run_id": run_id,
         "iteration": iteration,
-        "ts": datetime.utcnow().isoformat(timespec="seconds"),
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "skill": skill,
         "skill_path": skill_relative_path,
         "mutation": {"operator": operator, "diff": mutation_diff},

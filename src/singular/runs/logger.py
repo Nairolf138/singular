@@ -1,9 +1,14 @@
-"""Utilities for recording execution runs."""
+"""Utilities for recording execution runs.
+
+Persisted timestamps use ISO 8601 at second precision with an explicit UTC
+offset (``+00:00``). Compact timestamps used in filenames remain UTC
+``YYYYmmddHHMMSS`` strings for backwards-compatible paths.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import json
 import logging
@@ -144,7 +149,7 @@ class RunLogger:
             json.dumps(
                 {
                     "run_id": self.run_id,
-                    "started_at": datetime.utcnow().isoformat(timespec="seconds"),
+                    "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 }
             ),
             encoding="utf-8",
@@ -173,7 +178,7 @@ class RunLogger:
             self.timestamp = stem.split("-", 1)[1]
             self._file = self.tmp_path.open("a", encoding="utf-8")
         else:
-            self.timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+            self.timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
             self.path = self.root / f"{self.run_id}-{self.timestamp}.jsonl"
             self.tmp_path = self.path.with_suffix(self.path.suffix + ".tmp")
             _ensure_dir(self.tmp_path)
@@ -288,7 +293,7 @@ class RunLogger:
 
         payload = {
             "version": USAGE_REPUTATION_SCHEMA_VERSION,
-            "updated_at": datetime.utcnow().isoformat(timespec="seconds"),
+            "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "skills": self._skill_reputation,
         }
         self.skill_reputation_path.write_text(json.dumps(payload), encoding="utf-8")
@@ -330,7 +335,7 @@ class RunLogger:
     ) -> None:
         """Record a reflection event in ``runs/<run_id>/consciousness.jsonl``."""
 
-        ts = datetime.utcnow().isoformat(timespec="seconds")
+        ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
         record: dict[str, Any] = {
             "ts": ts,
             "event": "consciousness",
@@ -374,7 +379,7 @@ class RunLogger:
     ) -> None:
         """Append a mutation record to the log file."""
 
-        ts = datetime.utcnow().isoformat(timespec="seconds")
+        ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
         record: dict[str, Any] = {
             "ts": ts,
             "skill": skill,
@@ -432,7 +437,7 @@ class RunLogger:
         """Record life-loop phase timings for profiling and dashboard views."""
 
         record: dict[str, Any] = {
-            "ts": datetime.utcnow().isoformat(timespec="seconds"),
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "event": "life_loop_phase_metrics",
             "iteration": iteration,
             "phase_metrics": {
@@ -451,7 +456,7 @@ class RunLogger:
         """Record a death event with optional additional information."""
 
         record: dict[str, Any] = {
-            "ts": datetime.utcnow().isoformat(timespec="seconds"),
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "event": "death",
             "reason": reason,
             **info,
@@ -464,7 +469,7 @@ class RunLogger:
         """Record a refusal to mutate ``skill``."""
 
         record: dict[str, Any] = {
-            "ts": datetime.utcnow().isoformat(timespec="seconds"),
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "event": "refuse",
             "skill": skill,
         }
@@ -476,7 +481,7 @@ class RunLogger:
         """Record a procrastination event for ``skill``."""
 
         record: dict[str, Any] = {
-            "ts": datetime.utcnow().isoformat(timespec="seconds"),
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "event": "delay",
             "skill": skill,
             "resume_at": resume_at,
@@ -489,7 +494,7 @@ class RunLogger:
         """Record an absurd mutation event."""
 
         record: dict[str, Any] = {
-            "ts": datetime.utcnow().isoformat(timespec="seconds"),
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "event": "absurde",
             "skill": skill,
             "diff": diff,
@@ -502,7 +507,7 @@ class RunLogger:
         """Record an explicit ecosystem interaction event."""
 
         record: dict[str, Any] = {
-            "ts": datetime.utcnow().isoformat(timespec="seconds"),
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "event": "interaction",
             "interaction": event,
             **info,
@@ -515,7 +520,7 @@ class RunLogger:
         """Record a named run event without wrapping it as an interaction."""
 
         record: dict[str, Any] = {
-            "ts": datetime.utcnow().isoformat(timespec="seconds"),
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "event": event,
             **info,
         }
@@ -545,7 +550,7 @@ class RunLogger:
         """Record co-evolution decisions for the living test pool."""
 
         record: dict[str, Any] = {
-            "ts": datetime.utcnow().isoformat(timespec="seconds"),
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "event": "test_coevolution",
             "skill": skill,
             "accepted": accepted,
