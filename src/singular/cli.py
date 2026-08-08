@@ -93,28 +93,22 @@ def _extract_talk_life_alias(argv: list[str] | None) -> str | None:
     return None
 
 
-def _normalize_legacy_quest_argv(
-    argv: list[str] | None,
-) -> tuple[list[str] | None, bool]:
-    """Translate ``quest SPEC`` to the documented ``quest create SPEC`` grammar."""
+def _normalize_quest_help_argv(argv: list[str] | None) -> list[str] | None:
+    """Allow the convenient top-level ``quest --example/--schema`` spellings."""
 
     if argv is None:
-        return None, False
+        return None
     normalized = list(argv)
     try:
         index = normalized.index("quest")
     except ValueError:
-        return normalized, False
+        return normalized
     following = normalized[index + 1 :]
     if not following or following[0] in {"create", "list", "-h", "--help"}:
-        return normalized, False
+        return normalized
     if following[0] in {"--example", "--schema"}:
         normalized.insert(index + 1, "create")
-        return normalized, True
-    if not following[0].startswith("-"):
-        normalized.insert(index + 1, "create")
-        return normalized, True
-    return normalized, False
+    return normalized
 
 
 def _add_local_life_argument(parser: argparse.ArgumentParser) -> None:
@@ -1649,7 +1643,11 @@ def main(argv: list[str] | None = None) -> int:
         _implicit_registry_root_from_env_or_default().resolve()
     )
     raw_argv = list(argv) if argv is not None else sys.argv[1:]
-    argv_list, legacy_quest = _normalize_legacy_quest_argv(raw_argv)
+    legacy_quest_help = any(
+        raw_argv[index : index + 2] in (["quest", "--example"], ["quest", "--schema"])
+        for index in range(max(0, len(raw_argv) - 1))
+    )
+    argv_list = _normalize_quest_help_argv(raw_argv)
     _preparse_environment(argv_list)
 
     from .lives import (
@@ -1681,10 +1679,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(suggestion, file=sys.stderr)
         raise
 
-    if legacy_quest:
+    if legacy_quest_help:
         print(
-            "⚠️ `singular quest <spec>` est déprécié. "
-            "Utilisez `singular quest create <spec>`.",
+            "Information: `quest create --example/--schema` est aussi disponible.",
             file=sys.stderr,
         )
 
@@ -1916,10 +1913,19 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(
                 "quest create requires a spec path unless --example or --schema is used"
             )
+        from .life.quest import QuestSpecError
         from .organisms.quest import quest
 
         _ensure_active_life(resolve_life, args.life)
-        quest(spec=args.spec)
+        try:
+            quest(spec=args.spec)
+        except QuestSpecError as exc:
+            print(
+                f"Erreur: {exc}. Syntaxe: singular quest create <spec>. "
+                "Aide: singular quest --example ou singular quest --schema.",
+                file=sys.stderr,
+            )
+            return 2
 
     elif args.command == "social":
         from .social.graph import SocialGraph

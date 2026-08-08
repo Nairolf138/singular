@@ -8,7 +8,23 @@ from typing import Any, List
 import json
 
 
-class SpecValidationError(ValueError):
+class QuestSpecError(ValueError):
+    """Base class for ordinary, user-correctable specification errors."""
+
+
+class SpecNotFoundError(QuestSpecError):
+    """Raised when the specification path does not exist."""
+
+
+class SpecUnreadableError(QuestSpecError):
+    """Raised when the specification path cannot be read."""
+
+
+class SpecJSONError(QuestSpecError):
+    """Raised when the specification is not valid JSON."""
+
+
+class SpecValidationError(QuestSpecError):
     """Raised when a specification fails validation."""
 
 
@@ -113,7 +129,36 @@ class Spec:
 def load(path: Path) -> Spec:
     """Parse *path* as a JSON spec and return a :class:`Spec`."""
 
-    data = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise SpecNotFoundError(f"spécification introuvable: {path}") from exc
+    except (OSError, UnicodeError) as exc:
+        raise SpecUnreadableError(f"spécification illisible: {path}") from exc
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SpecJSONError(
+            f"JSON invalide dans {path} (ligne {exc.lineno}, colonne {exc.colno})"
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise SpecValidationError(
+            f"spécification sémantiquement invalide dans {path}: "
+            "la racine JSON doit être un objet"
+        )
+
+    try:
+        return _load_data(data)
+    except SpecValidationError as exc:
+        raise SpecValidationError(
+            f"spécification sémantiquement invalide dans {path}: {exc}"
+        ) from exc
+
+
+def _load_data(data: dict[str, Any]) -> Spec:
+    """Validate already-decoded quest data."""
 
     name = data.get("name")
     if not isinstance(name, str) or not name.strip():
