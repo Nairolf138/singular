@@ -1,5 +1,10 @@
 import singular.providers as providers
-from singular.providers import LLMProviderContract, doctor_providers, provider_is_real
+from singular.providers import (
+    LLMProviderContract,
+    doctor_providers,
+    provider_diagnostics,
+    provider_is_real,
+)
 
 
 def test_provider_is_real_excludes_offline_stubs():
@@ -15,14 +20,10 @@ def test_doctor_providers_reports_missing_provider_category(monkeypatch):
 
     results = doctor_providers(["openai"])
 
-    assert results == [
-        {
-            "provider": "openai",
-            "ok": False,
-            "llm_real": True,
-            "error_category": "provider_missing",
-        }
-    ]
+    assert results[0]["provider"] == "openai"
+    assert results[0]["state"] == "unavailable"
+    assert results[0]["error_category"] == "provider_missing"
+    assert results[0]["configuration_command"] == "singular config openai"
 
 
 def test_doctor_providers_normalizes_healthcheck_failures(monkeypatch):
@@ -41,3 +42,69 @@ def test_doctor_providers_normalizes_healthcheck_failures(monkeypatch):
     assert result["ok"] is False
     assert result["llm_real"] is True
     assert result["error_category"] == "unavailable"
+    assert result["state"] == "unavailable"
+    assert result["cause"] == "offline"
+
+
+def test_diagnostics_distinguish_dummy_and_real_provider_restoration(monkeypatch):
+    contracts = {
+        "dummy": LLMProviderContract(
+            name="dummy",
+            generate=lambda prompt: prompt,
+            embed=lambda text: [1.0],
+            healthcheck=lambda: {"ok": True, "provider": "dummy"},
+            cost_estimate=lambda prompt, completion="": 0.0,
+        ),
+        "openai": LLMProviderContract(
+            name="openai",
+            generate=lambda prompt: prompt,
+            embed=lambda text: [1.0],
+            healthcheck=lambda: {"ok": True, "provider": "openai"},
+            cost_estimate=lambda prompt, completion="": 0.0,
+        ),
+    }
+    monkeypatch.setattr(
+        providers, "_load_provider_contract", lambda name: contracts.get(name)
+    )
+
+    assert provider_diagnostics(["dummy"])["state"] == "degraded_dummy"
+    restored = provider_diagnostics(["dummy", "openai"])
+    assert restored["state"] == "ready"
+    assert restored["llm_real"] is True
+
+
+def test_doctor_reports_missing_openai_key_and_ollama_timeout(monkeypatch):
+    contracts = {
+        "openai": LLMProviderContract(
+            name="openai",
+            generate=lambda prompt: prompt,
+            embed=lambda text: [1.0],
+            healthcheck=lambda: {
+                "ok": False,
+                "provider": "openai",
+                "error": "missing OPENAI_API_KEY",
+            },
+            cost_estimate=lambda prompt, completion="": 0.0,
+        ),
+        "ollama": LLMProviderContract(
+            name="ollama",
+            generate=lambda prompt: prompt,
+            embed=lambda text: [1.0],
+            healthcheck=lambda: {
+                "ok": False,
+                "provider": "ollama",
+                "error": "Ollama request timed out",
+            },
+            cost_estimate=lambda prompt, completion="": 0.0,
+        ),
+    }
+    monkeypatch.setattr(providers, "_load_provider_contract", contracts.get)
+    openai, ollama = doctor_providers(["openai", "ollama"])
+    assert (openai["state"], openai["error_category"]) == (
+        "unavailable",
+        "misconfigured",
+    )
+    assert (ollama["state"], ollama["cause"]) == (
+        "unavailable",
+        "Ollama request timed out",
+    )

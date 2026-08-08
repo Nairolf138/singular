@@ -23,6 +23,7 @@ from singular.metrics.autonomy import compute_autonomy_metrics
 from singular.metrics.behavioral_regulation import compute_behavioral_regulation_metrics
 from singular.memory import read_causal_timeline, read_episodes, read_skills
 from singular.storage_retention import retention_status_snapshot
+from singular.providers import provider_diagnostics
 
 from singular.dashboard.actions import DashboardActionService
 from singular.governance.policy import load_runtime_policy
@@ -2024,6 +2025,7 @@ def create_app(
             "policy_impact": policy.impact_summary(),
             "skills_lifecycle": _skill_lifecycle_summary(),
             "retention": retention,
+            "llm_providers": provider_diagnostics(),
         }
 
     @app.get("/api/retention/status")

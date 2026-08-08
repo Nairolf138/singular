@@ -15,6 +15,13 @@ DEFAULT_PROVIDER_MAX_RETRIES = 2
 # local backend, before trying the remote OpenAI service and deterministic dummy.
 DEFAULT_FALLBACK_CHAIN = ("ollama", "local", "openai", "dummy")
 
+PROVIDER_CONFIGURATION_COMMANDS = {
+    "openai": "singular config openai",
+    "ollama": "ollama serve",
+    "local": "singular config providers doctor",
+    "dummy": "singular config providers doctor",
+}
+
 
 class LLMProviderError(RuntimeError):
     """Base class for provider-facing errors."""
@@ -202,22 +209,29 @@ def describe_client(
         if isinstance(client, FallbackLLMClient)
         else ([client.name] if client else [])
     )
+    has_real = (
+        any(provider_is_real(name) for name in chain)
+        if chain
+        else provider_is_real(active)
+    )
+    state = (
+        "ready"
+        if has_real
+        else ("degraded_dummy" if active.lower() == "dummy" else "unavailable")
+    )
     return {
         "requested_provider": requested,
         "active_provider": active,
         "provider_chain": chain,
-        "llm_real": (
-            any(provider_is_real(name) for name in chain)
-            if chain
-            else provider_is_real(active)
-        ),
+        "llm_real": has_real,
+        "state": state,
     }
 
 
 def doctor_providers(names: list[str] | None = None) -> list[dict[str, Any]]:
     """Healthcheck configured providers without issuing a conversational success signal."""
 
-    provider_names = names or ["openai", "ollama", "local"]
+    provider_names = names or ["openai", "ollama", "local", "dummy"]
     results: list[dict[str, Any]] = []
     for name in provider_names:
         try:
@@ -229,18 +243,43 @@ def doctor_providers(names: list[str] | None = None) -> list[dict[str, Any]]:
                         "ok": False,
                         "llm_real": provider_is_real(name),
                         "error_category": "provider_missing",
+                        "state": "unavailable",
+                        "configuration_command": PROVIDER_CONFIGURATION_COMMANDS.get(
+                            name
+                        ),
+                        "cause": "provider implementation not installed",
                     }
                 )
                 continue
             status = contract.healthcheck()
             ok = bool(status.get("ok"))
+            real = provider_is_real(name)
+            state = (
+                "ready" if ok and real else ("degraded_dummy" if ok else "unavailable")
+            )
+            error = status.get("error")
+            category = (
+                None
+                if ok
+                else (
+                    "misconfigured"
+                    if isinstance(error, str)
+                    and (
+                        "missing" in error.lower() or "not configured" in error.lower()
+                    )
+                    else "unavailable"
+                )
+            )
             results.append(
                 {
                     **status,
                     "provider": str(status.get("provider") or name),
                     "ok": ok,
-                    "llm_real": provider_is_real(name),
-                    "error_category": None if ok else "unavailable",
+                    "llm_real": real,
+                    "error_category": category,
+                    "state": state,
+                    "configuration_command": PROVIDER_CONFIGURATION_COMMANDS.get(name),
+                    "cause": None if ok else str(error or "healthcheck failed"),
                 }
             )
         except LLMProviderError as exc:
@@ -251,9 +290,43 @@ def doctor_providers(names: list[str] | None = None) -> list[dict[str, Any]]:
                     "llm_real": provider_is_real(name),
                     "error_category": getattr(exc, "category", "provider_error"),
                     "error": str(exc),
+                    "state": "unavailable",
+                    "configuration_command": PROVIDER_CONFIGURATION_COMMANDS.get(name),
+                    "cause": str(exc),
+                }
+            )
+        except Exception as exc:  # defensive: diagnostics must report every provider
+            results.append(
+                {
+                    "provider": name,
+                    "ok": False,
+                    "llm_real": False,
+                    "error_category": "unavailable",
+                    "error": str(exc),
+                    "state": "unavailable",
+                    "configuration_command": PROVIDER_CONFIGURATION_COMMANDS.get(name),
+                    "cause": str(exc),
                 }
             )
     return results
+
+
+def provider_diagnostics(names: list[str] | None = None) -> dict[str, Any]:
+    """Return provider details and the effective three-state LLM availability."""
+
+    providers = doctor_providers(names)
+    if any(item["state"] == "ready" for item in providers):
+        state = "ready"
+    elif any(item["state"] == "degraded_dummy" for item in providers):
+        state = "degraded_dummy"
+    else:
+        state = "unavailable"
+    return {
+        "state": state,
+        "llm_real": state == "ready",
+        "deterministic_fake": state == "degraded_dummy",
+        "providers": providers,
+    }
 
 
 def _invoke_provider(fn: Callable[..., Any], **kwargs: Any) -> Any:
