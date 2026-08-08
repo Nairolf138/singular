@@ -43,10 +43,17 @@ _PATH_UNSUPPORTED_ERRORS = _path_unsupported_errors()
 def _safe_path(raw: str) -> Path:
     """Build a path safely across host/path-flavor mismatches."""
 
-    try:
-        return Path(raw)
-    except _PATH_UNSUPPORTED_ERRORS:
-        return _HOST_PATH_CLS(raw)
+    return _HOST_PATH_CLS(raw)
+
+
+def _is_windows_platform(platform_name: str | None = None) -> bool:
+    """Return whether Windows-specific persistence should be used.
+
+    ``platform_name`` makes platform policy independently testable without
+    changing ``os.name`` and therefore pathlib's choice of concrete path class.
+    """
+
+    return (os.name if platform_name is None else platform_name) == "nt"
 
 
 def _birth_alias_enabled() -> bool:
@@ -610,7 +617,13 @@ def _append_export_to_shell_profile(profile_path: Path, api_key: str) -> bool:
     return True
 
 
-def _configure_openai(api_key: str, *, shell_profile: str | None, test: bool) -> int:
+def _configure_openai(
+    api_key: str,
+    *,
+    shell_profile: str | None,
+    test: bool,
+    platform_name: str | None = None,
+) -> int:
     """Configure OPENAI_API_KEY for current platform and optionally test it."""
 
     warnings = _validate_openai_api_key(api_key)
@@ -624,13 +637,13 @@ def _configure_openai(api_key: str, *, shell_profile: str | None, test: bool) ->
     masked_key = _mask_api_key(api_key)
     print(f"✅ Clé OpenAI chargée (masquée): {masked_key}")
 
-    if os.name == "nt":
+    if _is_windows_platform(platform_name):
         _set_windows_user_env_var("OPENAI_API_KEY", api_key)
         print("✅ OPENAI_API_KEY enregistrée dans HKCU\\Environment.")
         print("➡️ Veuillez redémarrer PowerShell pour recharger l'environnement.")
     else:
         if shell_profile:
-            profile_path = Path(shell_profile)
+            profile_path = _safe_path(shell_profile)
             answer = input(
                 f"Confirmer l'écriture dans {profile_path.expanduser()} ? "
                 "Tapez OUI pour confirmer: "
