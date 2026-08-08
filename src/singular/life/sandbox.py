@@ -22,7 +22,17 @@ except ImportError:  # pragma: no cover - unsupported platforms
     resource_module = None
 
 
-ALLOWED_BUILTINS = ("abs", "min", "max", "range", "len", "sum", "all", "any")
+ALLOWED_BUILTINS = (
+    "abs",
+    "min",
+    "max",
+    "range",
+    "len",
+    "sum",
+    "all",
+    "any",
+    "float",
+)
 FORBIDDEN_NAMES = {
     "open",
     "exec",
@@ -133,7 +143,7 @@ def _runtime(configured: str | None) -> str:
 _CONTAINER_WORKER = r"""
 import builtins, json, sys
 code = sys.stdin.read()
-allowed_names = ("abs", "min", "max", "range", "len", "sum", "all", "any")
+allowed_names = __ALLOWED_BUILTINS__
 env = {"__builtins__": {name: getattr(builtins, name) for name in allowed_names}}
 try:
     exec(compile(code, "<sandbox>", "exec"), env, env)
@@ -142,7 +152,7 @@ try:
     print(json.dumps({"status": "result", "payload": env["result"]}))
 except BaseException as exc:
     print(json.dumps({"status": "error", "type": type(exc).__name__, "message": str(exc)}))
-"""
+""".replace("__ALLOWED_BUILTINS__", repr(ALLOWED_BUILTINS))
 
 
 def _command(runtime: str, config: SandboxConfig) -> list[str]:
