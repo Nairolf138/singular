@@ -10,7 +10,8 @@ from singular.dashboard import create_app
 from singular.environment import sim_world
 from singular.goals.quest_generation import generate_quests
 from singular.life.death import DeathMonitor
-from singular.life.loop import CHECKPOINT_VERSION, load_checkpoint
+from singular.life import loop as life_loop
+from singular.life.loop import load_checkpoint
 from singular.organisms.birth import birth
 from singular.organisms.status import status
 from singular.self_narrative import SCHEMA_VERSION, load, update_from_signals
@@ -152,7 +153,7 @@ def test_schema_invariants_and_migrations_for_narrative_and_checkpoint(tmp_path:
         encoding="utf-8",
     )
     checkpoint = load_checkpoint(checkpoint_path)
-    assert checkpoint.version == CHECKPOINT_VERSION
+    assert life_loop.CHECKPOINT_VERSION == checkpoint.version
     assert checkpoint.iteration == 5
 
 
