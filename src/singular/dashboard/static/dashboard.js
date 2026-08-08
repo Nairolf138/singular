@@ -25,12 +25,11 @@ const parseFloatSafe=value=>{
 
 const setActionableTone=(el,tone)=>{
   if(!el){return;}
-  el.classList.remove('actionable-warn','actionable-critical');
-  el.dataset.actionable='off';
-  if(tone==='critical'){
-    el.classList.add('actionable-critical');
-    el.dataset.actionable='on';
-  }
+  const critical=tone==='critical';
+  if(el.classList.contains('actionable-warn')){el.classList.remove('actionable-warn');}
+  if(el.classList.contains('actionable-critical')!==critical){el.classList.toggle('actionable-critical',critical);}
+  const actionable=critical?'on':'off';
+  if(el.dataset.actionable!==actionable){el.dataset.actionable=actionable;}
 };
 
 const isUrgencyText=text=>{
@@ -62,8 +61,9 @@ const updateDailyNarrativeSummary=()=>{
     items.push(`🚨 Urgence humaine requise: ${riskText||'un signal critique demande une validation humaine immédiate.'}`);
   }
 
-  summaryList.innerHTML='';
-  items.forEach(line=>{
+  const signature=JSON.stringify(items);
+  if(summaryList.dataset.summarySignature===signature){return;}
+  const renderedItems=items.map(line=>{
     const li=document.createElement('li');
     const urgent=line.startsWith('🚨');
     li.textContent=line;
@@ -72,8 +72,10 @@ const updateDailyNarrativeSummary=()=>{
       li.dataset.humanRequired='true';
       li.setAttribute('aria-label','Urgence humaine requise');
     }
-    summaryList.appendChild(li);
+    return li;
   });
+  summaryList.replaceChildren(...renderedItems);
+  summaryList.dataset.summarySignature=signature;
 };
 
 const evaluateActionableSignals=()=>{
@@ -109,12 +111,18 @@ const bindSeeMoreToggles=()=>{
   });
 };
 
+const observedCockpits=new WeakSet();
+
 const bindSignalObserver=()=>{
   const cockpit=document.getElementById('cockpit');
-  if(!cockpit){return;}
+  if(!cockpit||observedCockpits.has(cockpit)){return;}
+  observedCockpits.add(cockpit);
   evaluateActionableSignals();
   const observer=new MutationObserver(()=>evaluateActionableSignals());
-  observer.observe(cockpit,{subtree:true,childList:true,characterData:true});
+  ['kpi-alerts','kpi-vital-risk','kpi-health','kpi-active-lives','kpi-trend'].forEach(id=>{
+    const source=document.getElementById(id);
+    if(source){observer.observe(source,{subtree:true,childList:true,characterData:true});}
+  });
 };
 
 const initDashboardEnhancements=()=>{

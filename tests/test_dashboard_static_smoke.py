@@ -88,6 +88,122 @@ def test_dashboard_tab_navigation_supports_legacy_hashes() -> None:
         assert f"href='{legacy_href}'" not in template
 
 
+def test_dashboard_signal_observer_reaches_a_stable_dom(tmp_path: Path) -> None:
+    """Observer-driven KPI evaluation must not create a self-sustaining mutation loop."""
+    script = tmp_path / "dashboard_signal_observer_check.mjs"
+    dashboard_path = Path.cwd() / DASHBOARD_STATIC / "dashboard.js"
+    script.write_text(
+        f"""
+import fs from 'node:fs';
+
+const sourcePath = {str(dashboard_path)!r};
+let source = fs.readFileSync(sourcePath, 'utf8')
+  .replace("import {{bootstrapDashboard}} from './bootstrap.js';", '');
+const bootstrapStart = source.indexOf('try{{');
+const bootstrapEnd = source.indexOf('\\n}}\\n\\nconst parseFloatSafe') + 2;
+source = source.slice(0, bootstrapStart) + source.slice(bootstrapEnd);
+source = source.slice(0, source.indexOf("if(document.readyState==='loading')"));
+source += '\\nexport {{bindSignalObserver, bindSeeMoreToggles}};';
+const moduleUrl = `data:text/javascript;base64,${{Buffer.from(source).toString('base64')}}`;
+
+const microtasks = [];
+const observers = [];
+let observerCallbacks = 0;
+let summaryRenders = 0;
+
+const queueMutation = (target, type) => {{
+  for (const observer of observers) {{
+    if (!observer.targets.some(entry => entry.target === target || (entry.options.subtree && target.isWithin(entry.target)))) continue;
+    if ((type === 'attributes' && !observer.targets.some(entry => entry.options.attributes)) ||
+        (type === 'childList' && !observer.targets.some(entry => entry.options.childList)) ||
+        (type === 'characterData' && !observer.targets.some(entry => entry.options.characterData))) continue;
+    if (!observer.pending) {{
+      observer.pending = true;
+      microtasks.push(() => {{ observer.pending = false; observerCallbacks += 1; observer.callback([{{target, type}}]); }});
+    }}
+  }}
+}};
+
+class ClassList {{
+  constructor(owner) {{ this.owner = owner; this.values = new Set(); }}
+  contains(name) {{ return this.values.has(name); }}
+  add(...names) {{ for (const name of names) if (!this.values.has(name)) {{ this.values.add(name); queueMutation(this.owner, 'attributes'); }} }}
+  remove(...names) {{ for (const name of names) if (this.values.delete(name)) queueMutation(this.owner, 'attributes'); }}
+  toggle(name, force) {{
+    const enabled = force === undefined ? !this.values.has(name) : Boolean(force);
+    if (enabled) this.add(name); else this.remove(name);
+    return enabled;
+  }}
+}}
+
+class Element {{
+  constructor(id = '') {{
+    this.id = id; this.parent = null; this.children = []; this.attributes = {{}};
+    this.classList = new ClassList(this); this.listeners = {{}}; this._text = '';
+    this.dataset = new Proxy({{}}, {{set: (data, key, value) => {{
+      const next = String(value); if (data[key] !== next) {{ data[key] = next; queueMutation(this, 'attributes'); }} return true;
+    }}}});
+  }}
+  isWithin(ancestor) {{ for (let node = this; node; node = node.parent) if (node === ancestor) return true; return false; }}
+  appendChild(child) {{ child.parent = this; this.children.push(child); queueMutation(this, 'childList'); return child; }}
+  replaceChildren(...children) {{
+    this.children = []; for (const child of children) {{ child.parent = this; this.children.push(child); }}
+    if (this.id === 'daily-autonomous-summary') summaryRenders += 1;
+    queueMutation(this, 'childList');
+  }}
+  set textContent(value) {{ const next = String(value ?? ''); if (this._text !== next || this.children.length) {{ this._text = next; this.children = []; queueMutation(this, 'characterData'); }} }}
+  get textContent() {{ return this._text + this.children.map(child => child.textContent).join(''); }}
+  setAttribute(name, value) {{ const next = String(value); if (this.attributes[name] !== next) {{ this.attributes[name] = next; queueMutation(this, 'attributes'); }} }}
+  getAttribute(name) {{ return this.attributes[name] ?? null; }}
+  addEventListener(type, listener) {{ (this.listeners[type] ??= []).push(listener); }}
+  click() {{ for (const listener of this.listeners.click ?? []) listener(); }}
+}}
+
+globalThis.MutationObserver = class MutationObserver {{
+  constructor(callback) {{ this.callback = callback; this.targets = []; this.pending = false; observers.push(this); }}
+  observe(target, options) {{ this.targets.push({{target, options}}); }}
+}};
+
+const elements = new Map();
+const element = (id, text = '') => {{ const value = new Element(id); value._text = text; elements.set(id, value); return value; }};
+const cockpit = element('cockpit');
+for (const [id, text] of [['kpi-alerts', '0'], ['kpi-vital-risk', 'stable'], ['kpi-health', 'bonne'], ['kpi-active-lives', '2'], ['kpi-trend', 'positive']]) {{
+  cockpit.appendChild(element(id, text));
+}}
+const summary = element('daily-autonomous-summary'); cockpit.appendChild(summary);
+for (const id of ['kpi-next-action', 'kpi-autonomy-stability']) cockpit.appendChild(element(id));
+const panel = element('details'); panel.classList.add('panel-hidden');
+const button = element('more'); button.dataset.expandTarget = 'details'; button.dataset.closedLabel = 'Voir plus'; button.dataset.openLabel = 'Voir moins';
+button.attributes['data-expand-target'] = 'details';
+
+globalThis.document = {{
+  readyState: 'loading',
+  getElementById: id => elements.get(id) ?? null,
+  createElement: () => new Element(),
+  querySelectorAll: selector => selector === '[data-expand-target]' ? [button] : [],
+  addEventListener() {{}},
+}};
+
+const {{bindSignalObserver, bindSeeMoreToggles}} = await import(moduleUrl);
+bindSeeMoreToggles();
+bindSignalObserver();
+bindSignalObserver();
+if (observers.length !== 1) throw new Error(`observer was bound ${{observers.length}} times`);
+elements.get('kpi-alerts').textContent = '4';
+let drained = 0;
+while (microtasks.length) {{ if (++drained > 20) throw new Error('mutation microtask queue did not stabilize'); microtasks.shift()(); }}
+if (microtasks.length !== 0) throw new Error('mutation microtask queue was not drained');
+if (observerCallbacks !== 1) throw new Error(`expected one evaluation callback, got ${{observerCallbacks}}`);
+if (summaryRenders !== 2) throw new Error(`summary rendered ${{summaryRenders}} times instead of only for real changes`);
+button.click();
+if (panel.classList.contains('panel-hidden') || button.textContent !== 'Voir moins') throw new Error('button handler became unusable');
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(["node", str(script)], check=True)
+
+
 def test_genealogy_renderer_escapes_malicious_life_names(tmp_path: Path) -> None:
     """Exercise the genealogy DOM renderer with a life name that looks like XSS."""
     script = tmp_path / "genealogy_escape_check.mjs"
