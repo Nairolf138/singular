@@ -1,5 +1,5 @@
+import os
 import sys
-import time
 import types
 from dataclasses import replace
 import json
@@ -45,17 +45,14 @@ def test_weather_api_timeout(monkeypatch):
     monkeypatch.setenv("SINGULAR_HTTP_TIMEOUT", "0.1")
 
     def slow_get(url, timeout):
-        time.sleep(timeout)
+        assert timeout == 0.1
         raise Exception("timeout")
 
     fake_requests = types.SimpleNamespace(get=slow_get)
     monkeypatch.setitem(sys.modules, "requests", fake_requests)
 
-    start = time.time()
     signals = capture_signals()
-    duration = time.time() - start
 
-    assert duration < 0.5
     assert "weather" not in signals
 
 
@@ -74,8 +71,9 @@ def test_capture_signals_publishes_normalized_artifact_events(tmp_path):
 
     # prime state to allow detecting modifications/new logs during second scan
     capture_signals(bus=bus, sandbox_root=sandbox)
-    time.sleep(0.02)
+    previous_mtime_ns = code.stat().st_mtime_ns
     code.write_text("# FIXME: remove this hack\nprint('ok')\n", encoding="utf-8")
+    os.utime(code, ns=(previous_mtime_ns + 1_000_000_000,) * 2)
     signals = capture_signals(bus=bus, sandbox_root=sandbox)
 
     assert any(

@@ -1,5 +1,3 @@
-import time
-
 import pytest
 
 from singular.action.sandbox_runner import (
@@ -49,9 +47,10 @@ def test_only_catalog_actions_allowed():
 
 def test_timeout_is_enforced():
     backend = SpyBackend()
+    now = [0.0]
 
     def slow_click(**kwargs):
-        time.sleep(0.08)
+        now[0] += 0.08
         return {"ok": True}
 
     backend.click = slow_click
@@ -62,6 +61,7 @@ def test_timeout_is_enforced():
             require_qa_before_live=False,
             initial_mode="live",
         ),
+        clock=lambda: now[0],
     )
 
     with pytest.raises(ActionTimeoutError):

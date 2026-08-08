@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import threading
-import time
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Callable, Iterable
 
 from singular.agents import Agent
 from singular.environment import notifications
@@ -127,7 +126,12 @@ def alerts_from_records(
     ]
 
 
-def start(interval: float, agent: Agent) -> threading.Event:
+def start(
+    interval: float,
+    agent: Agent,
+    *,
+    wait: Callable[[float], bool] | None = None,
+) -> threading.Event:
     """Start a background scheduler calling ``reevaluate_goals``.
 
     The scheduler reevaluates ``agent``'s goals every ``interval`` seconds.
@@ -136,6 +140,7 @@ def start(interval: float, agent: Agent) -> threading.Event:
     """
 
     stop_event = threading.Event()
+    wait_for_interval = wait or stop_event.wait
 
     def loop() -> None:
         while not stop_event.is_set():
@@ -150,7 +155,8 @@ def start(interval: float, agent: Agent) -> threading.Event:
                                 level=level,
                                 action=str(alert.get("action", "")),
                             )
-            time.sleep(interval)
+            if wait_for_interval(interval):
+                break
 
     threading.Thread(target=loop, daemon=True).start()
     return stop_event
