@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
+import mimetypes
 
 import asyncio
 import inspect
@@ -15,9 +16,18 @@ from . import HTTPException, WebSocket, WebSocketDisconnect
 class Response:
     """Represents a minimal HTTP response object."""
 
-    def __init__(self, status_code: int, data: Any) -> None:
+    def __init__(
+        self, status_code: int, data: Any, headers: dict[str, str] | None = None
+    ) -> None:
         self.status_code = status_code
         self._data = data
+        self.headers = headers or {}
+
+    @property
+    def text(self) -> str:
+        if isinstance(self._data, bytes):
+            return self._data.decode("utf-8")
+        return str(self._data)
 
     def json(self) -> Any:  # pragma: no cover - trivial
         return self._data
@@ -30,6 +40,19 @@ class TestClient:
         self.app = app
 
     def get(self, path: str) -> Response:
+        for prefix, mount in self.app._mounts.items():
+            if path.startswith(f"{prefix}/"):
+                relative_path = path.removeprefix(f"{prefix}/")
+                static_root = mount["app"].directory.resolve()
+                asset_path = (static_root / relative_path).resolve()
+                if asset_path.is_file() and asset_path.is_relative_to(static_root):
+                    media_type, _ = mimetypes.guess_type(asset_path)
+                    return Response(
+                        200,
+                        asset_path.read_bytes(),
+                        {"content-type": media_type or "application/octet-stream"},
+                    )
+                return Response(404, None)
         handler = self.app._routes[path]
         try:
             data = handler()
