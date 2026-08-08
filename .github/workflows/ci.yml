@@ -24,7 +24,7 @@ jobs:
       - name: Install lint dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install . ruff black
+          pip install '.[test]'
       - name: Ruff
         run: ruff check .
       - name: Black
@@ -46,7 +46,7 @@ jobs:
       - name: Install typecheck dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install . mypy
+          pip install '.[test]'
       - name: Mypy
         run: mypy src
 
@@ -64,9 +64,9 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install . pytest pytest-cov
+          pip install '.[test]'
       - name: Pytest with global coverage guardrail
-        run: pytest --cov=src/singular --cov-fail-under=85 --cov-report=term-missing --cov-report=xml:coverage.xml
+        run: pytest -m "not integration" --cov=src/singular --cov-fail-under=85 --cov-report=term-missing --cov-report=xml:coverage.xml
       - name: Validate critical modules coverage >= 90%
         run: |
           python scripts/check_coverage_thresholds.py \
@@ -74,10 +74,41 @@ jobs:
             --threshold src/singular/cli.py=90 \
             --threshold src/singular/lives.py=90
 
+  optional-integrations:
+    name: optional integration (${{ matrix.integration }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - integration: dashboard
+            extra: dashboard
+            tests: tests/test_dashboard.py tests/test_dashboard_smoke_e2e.py
+          - integration: openai-provider
+            extra: llm-openai
+            tests: tests/providers/test_llm_openai.py
+          - integration: local-llm-provider
+            extra: llm-local
+            tests: tests/providers/test_llm_local.py
+          - integration: container-sandbox
+            extra: sandbox
+            tests: tests/test_sandbox.py
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install optional integration dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[test,${{ matrix.extra }}]"
+      - name: Run optional integration contract
+        run: pytest -q ${{ matrix.tests }}
+
   build:
     name: build
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, tests]
+    needs: [lint, typecheck, tests, optional-integrations]
     if: ${{ always() }}
     steps:
       - name: Fail when dependencies failed
@@ -86,4 +117,4 @@ jobs:
           echo "Upstream CI job failed or was cancelled."
           exit 1
       - name: CI summary
-        run: echo "lint/typecheck/tests completed successfully."
+        run: echo "lint/typecheck/tests/optional-integrations completed successfully."
