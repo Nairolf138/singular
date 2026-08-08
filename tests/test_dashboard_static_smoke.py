@@ -4,6 +4,8 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
+
 DASHBOARD_STATIC = Path("src/singular/dashboard/static")
 DASHBOARD_TEMPLATE = Path("src/singular/dashboard/templates/dashboard.html")
 AUDITED_JS = [
@@ -14,6 +16,29 @@ AUDITED_JS = [
     DASHBOARD_STATIC / "render-conversations.js",
     DASHBOARD_STATIC / "render-reflections.js",
 ]
+
+CANONICAL_BRANDING = Path("docs/assets/branding")
+
+
+@pytest.mark.parametrize(
+    ("canonical_name", "dashboard_name"),
+    [
+        ("singular-icon.svg", "singular-icon.svg"),
+        ("singular-icon.svg", "favicon.svg"),
+        ("singular-logo.svg", "singular-logo.svg"),
+    ],
+)
+def test_dashboard_branding_matches_canonical_assets(
+    canonical_name: str, dashboard_name: str
+) -> None:
+    """Dashboard branding copies must remain byte-identical to their sources."""
+    canonical = CANONICAL_BRANDING / canonical_name
+    dashboard_copy = DASHBOARD_STATIC / dashboard_name
+
+    assert dashboard_copy.read_bytes() == canonical.read_bytes(), (
+        f"{dashboard_copy} differs from canonical asset {canonical}; run "
+        "`python scripts/sync_dashboard_branding.py` to synchronize branding copies"
+    )
 
 
 def _ids_declared_in(text: str) -> set[str]:
