@@ -3,12 +3,175 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import socket
+import threading
+import time
 
 import pytest
 from fastapi_stub import TestClient
 
 from singular.dashboard import create_app
 from singular.lives import LifeMetadata
+
+
+@pytest.fixture
+def dashboard_browser_url(tmp_path: Path) -> str:
+    """Serve a real dashboard while a browser drives the public ``/`` route."""
+    uvicorn = pytest.importorskip("uvicorn")
+    app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    server = uvicorn.Server(
+        uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 5
+    while not server.started and thread.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert server.started, "the dashboard server did not become ready"
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
+
+
+def test_dashboard_browser_remains_responsive_when_backends_fail(
+    dashboard_browser_url: str,
+) -> None:
+    """Bound post-bootstrap work and exercise every critical local control."""
+    playwright = pytest.importorskip("playwright.sync_api")
+    with playwright.sync_playwright() as driver:
+        try:
+            browser = driver.chromium.launch(headless=True)
+        except playwright.Error as error:
+            pytest.skip(f"Playwright Chromium is not installed: {error}")
+
+        page = browser.new_page()
+        page.add_init_script("""
+            window.__dashboardProbe = {mutations: 0, scheduled: 0, network: 0};
+            const NativeObserver = window.MutationObserver;
+            window.MutationObserver = class extends NativeObserver {
+              constructor(callback) {
+                super((records, observer) => {
+                  window.__dashboardProbe.mutations += records.length;
+                  callback(records, observer);
+                });
+              }
+            };
+            for (const timerName of ['setTimeout', 'setInterval']) {
+              const nativeTimer = window[timerName].bind(window);
+              window[timerName] = (...args) => {
+                window.__dashboardProbe.scheduled += 1;
+                return nativeTimer(...args);
+              };
+            }
+            const nativeFetch = window.fetch.bind(window);
+            window.fetch = (...args) => {
+              window.__dashboardProbe.network += 1;
+              return nativeFetch(...args);
+            };
+            window.WebSocket = class UnavailableWebSocket {
+              constructor() {
+                queueMicrotask(() => this.onerror?.(new Event('error')));
+              }
+            };
+            window.confirm = () => true;
+            """)
+        page.route(
+            "**/api/cockpit*",
+            lambda route: route.fulfill(
+                status=503, content_type="application/json", body='{"detail":"offline"}'
+            ),
+        )
+        page.route(
+            "**/api/actions/birth",
+            lambda route: route.fulfill(
+                status=200,
+                content_type="application/json",
+                body='{"status":"created","name":"Browser Probe"}',
+            ),
+        )
+        try:
+            page.goto(
+                dashboard_browser_url + "/", wait_until="networkidle", timeout=10_000
+            )
+            page.wait_for_selector("#updates-toggle", timeout=5_000)
+            page.wait_for_function(
+                "document.querySelector('#live-status')?.textContent.includes('indisponible')",
+                timeout=2_000,
+            )
+            page.wait_for_function(
+                "document.querySelector('#last-update-cockpit')?.textContent.includes('erreur')",
+                timeout=5_000,
+            )
+
+            for tab in page.locator(".tab-trigger").all():
+                tab.click()
+                panel_id = tab.get_attribute("aria-controls")
+                page.wait_for_function(
+                    "id => !document.getElementById(id).classList.contains('panel-hidden')",
+                    arg=panel_id,
+                    timeout=1_000,
+                )
+                assert tab.get_attribute("aria-selected") == "true"
+
+            essential = page.locator("#toggle-essential")
+            essential.click()
+            page.wait_for_function(
+                "document.body.classList.contains('essential-mode')", timeout=1_000
+            )
+            assert essential.get_attribute("aria-pressed") == "true"
+
+            # Return to the default pane and leave essential mode so the
+            # expansion control is genuinely clickable, rather than invoking
+            # a handler on a hidden element.
+            page.locator("#tab-btn-decider").click()
+            essential.click()
+            expand = page.locator("[data-expand-target='cockpit-detail-json']")
+            target_id = expand.get_attribute("data-expand-target")
+            expand.click()
+            page.wait_for_function(
+                "id => !document.getElementById(id).classList.contains('panel-hidden')",
+                arg=target_id,
+                timeout=1_000,
+            )
+            assert expand.get_attribute("aria-expanded") == "true"
+
+            page.locator("#updates-toggle").click()
+            page.wait_for_function(
+                "document.querySelector('#updates-status')?.textContent.includes('pause')",
+                timeout=1_000,
+            )
+            page.locator("#operator-birth-name").fill("Browser Probe")
+            page.locator("#critical-birth").click()
+            page.wait_for_function(
+                "document.querySelector('#critical-action-result')?.textContent !== "
+                "'Aucune action critique exécutée.'",
+                timeout=2_000,
+            )
+
+            # Once globally paused, neither observers, newly scheduled work, nor
+            # requests may form a self-sustaining growth loop.
+            page.wait_for_timeout(500)
+            before = page.evaluate("({...window.__dashboardProbe})")
+            page.wait_for_timeout(1_200)
+            after = page.evaluate("({...window.__dashboardProbe})")
+            assert after["network"] - before["network"] == 0
+            assert after["scheduled"] - before["scheduled"] <= 2
+            assert after["mutations"] - before["mutations"] <= 2
+
+            started = time.monotonic()
+            page.wait_for_function(
+                "() => new Promise(resolve => setTimeout(() => resolve(true), 0))",
+                timeout=1_000,
+            )
+            assert time.monotonic() - started < 1
+        finally:
+            browser.close()
 
 
 def test_smoke_dashboard_e2e_capacites_critiques(
@@ -195,7 +358,9 @@ def test_smoke_dashboard_e2e_capacites_critiques(
     assert essential_payload["schema_version"] == "2026-04-15"
     assert "global_status" in essential_payload
     assert essential_payload["life_status"] == cockpit_payload["life_status"]
-    assert essential_payload["life_status_score"] == cockpit_payload["life_status_score"]
+    assert (
+        essential_payload["life_status_score"] == cockpit_payload["life_status_score"]
+    )
     assert "life_status_summary" in essential_payload
 
 

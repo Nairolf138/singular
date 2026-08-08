@@ -30,6 +30,8 @@ dashboard = [
     "uvicorn>=0.29,<1",
     "websockets>=12,<16",
 ]
+# Opt-in because Playwright also requires ``playwright install chromium``.
+dashboard-e2e = ["playwright>=1.46,<2"]
 viz = ["matplotlib>=3.8,<4"]
 # LLM clients are isolated from the mandatory test extra because they can pull
 # large model stacks or require external credentials/services.
