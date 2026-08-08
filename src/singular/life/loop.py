@@ -1016,11 +1016,22 @@ def run(
         health_tracker = HealthTracker.from_state(state.health_counters)
         delayed: list[tuple[float, str, Path]] = []
         tick_count = 0
+
+        def _persist_consumed_tick() -> None:
+            """Persist and account for a tick that exits the loop early."""
+
+            nonlocal tick_count
+            save_checkpoint(checkpoint_path, state)
+            tick_count += 1
+
         persistent_world_state_path = life_root / "mem" / "world_state.lifecycle.json"
         persistent_world_state = PersistentWorldState.load(persistent_world_state_path)
         while time.time() - start < budget_seconds:
             if max_iterations is not None and tick_count >= max_iterations:
                 break
+            # Every pass beyond the iteration-budget gate is a consumed tick,
+            # including sleep and decisions that intentionally skip mutation.
+            state.iteration += 1
             # Learning is metered separately and remains inactive until every
             # sandbox, baseline, governance, and publication gate has passed.
             if imitation_engine is not None and learning_attempts < max(0, learning_budget):
@@ -1040,7 +1051,7 @@ def run(
                     setattr(psyche, "sleeping", False)
                 if hasattr(psyche, "save_state"):
                     psyche.save_state()
-                tick_count += 1
+                _persist_consumed_tick()
                 continue
 
             resource_manager.metabolize()
@@ -1052,7 +1063,6 @@ def run(
             signals["temperature"] = temp
             signals["skill_reputation"] = logger.skill_reputation()
             resource_manager.update_from_environment(temp)
-            state.iteration += 1
             tick_profiler = LifeLoopProfiler()
             tick_profiler.merge(setup_profiler)
             setup_profiler = LifeLoopProfiler()
@@ -1109,7 +1119,7 @@ def run(
                     skill_path=str(skill_path),
                     alive=True,
                 )
-                tick_count += 1
+                _persist_consumed_tick()
                 continue
 
             # Multi-agent boundary: consult inbox and emit collaboration messages
@@ -1182,7 +1192,7 @@ def run(
                             alive=True,
                         )
                 if not multiagent_decision.mutation_allowed:
-                    tick_count += 1
+                    _persist_consumed_tick()
                     continue
             for penalty in persistent_world_state.consume_due_penalties(state.iteration):
                 selected_org.energy += penalty.energy_delta
@@ -1197,7 +1207,7 @@ def run(
                     interval=DEGRADED_MUTATION_INTERVAL,
                     alive=True,
                 )
-                tick_count += 1
+                _persist_consumed_tick()
                 continue
 
             trigger_genesis, trigger_name, trigger_snapshot = _should_trigger_skill_genesis(
@@ -1237,10 +1247,12 @@ def run(
                     reason=governance_policy.mutation_lock_reason(),
                     alive=True,
                 )
+                _persist_consumed_tick()
                 continue
 
             if decision is Psyche.Decision.REFUSE:
                 logger.log_refusal(skill_path.name)
+                _persist_consumed_tick()
                 continue
             if decision is Psyche.Decision.DELAY:
                 delay_until = time.time() + 0.01 + (
@@ -1248,6 +1260,7 @@ def run(
                 )
                 heapq.heappush(delayed, (delay_until, org_name, skill_path))
                 logger.log_delay(skill_path.name, delay_until)
+                _persist_consumed_tick()
                 continue
             if decision is Psyche.Decision.CURIOUS:
                 mutated = mutation_absurde(original)
@@ -1272,8 +1285,10 @@ def run(
                         corrective_action=decision.corrective_action,
                         alive=True,
                     )
+                    _persist_consumed_tick()
                     continue
                 logger.log_absurde(skill_path.name, diff)
+                _persist_consumed_tick()
                 continue
 
             policy = psyche.mutation_policy()
@@ -1486,6 +1501,7 @@ def run(
                     reason=mutation_moral_decision.veto_reason,
                     alive=True,
                 )
+                _persist_consumed_tick()
                 continue
             with tick_profiler.phase("mutation"):
                 mutated = apply_mutation(original, eligible_operators[op_name], rng)
@@ -1548,6 +1564,7 @@ def run(
                     },
                     payload_version=1,
                 )
+                _persist_consumed_tick()
                 continue
 
             if mutation_failed:
@@ -2601,7 +2618,7 @@ def run(
                         "reproduction",
                         (time.perf_counter() - reproduction_phase_started) * 1000.0,
                     )
-                    tick_count += 1
+                    _persist_consumed_tick()
                     continue
                 parent_names = list(_pick_crossover_parents(rng, world))
                 cooldown_remaining = max(

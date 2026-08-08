@@ -120,13 +120,15 @@ def test_run_tick_sleeps_without_mutating_when_energy_is_low(temp_life, monkeypa
         temp_life["checkpoint_path"],
         rng=random.Random(0),
         operators={"dec": _dec_operator},
-        tick_budget_seconds=0.05,
+        tick_budget_seconds=1.0,
     )
 
-    assert state.iteration == 0
+    assert state.iteration == 1
     assert sleepy.sleeping is True
     assert sleepy.sleep_ticks == 1
     assert (temp_life["skills_dir"] / "skill.py").read_text(encoding="utf-8") == "result = 2\n"
+    checkpoint = json.loads(temp_life["checkpoint_path"].read_text(encoding="utf-8"))
+    assert checkpoint["iteration"] == 1
 
 
 def test_reproduction_decision_accepts_healthy_governed_parents(temp_life) -> None:
