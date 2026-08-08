@@ -1,3 +1,4 @@
+import builtins
 import json
 import random
 import functools
@@ -15,6 +16,7 @@ sys.path.append(str(root_dir))
 sys.path.append(str(root_dir / "src"))
 
 import singular.life.loop as life_loop  # noqa: E402
+import singular.life.sandbox as life_sandbox  # noqa: E402
 from singular.life.loop import EcosystemRules, run  # noqa: E402
 from singular.life.checkpointing import load_checkpoint  # noqa: E402
 from singular.life.health import detect_health_state  # noqa: E402
@@ -31,6 +33,22 @@ def test_repository_addition_skill_satisfies_sandbox_scoring_contract():
         life_loop.score_code_with_error(Path("skills/addition.py").read_text()).ok
         is True
     )
+
+
+def test_float_conversion_skill_satisfies_sandbox_scoring_contract(monkeypatch):
+    def execute_with_dsl_builtins(code):
+        namespace = {
+            "__builtins__": {
+                name: getattr(builtins, name) for name in life_sandbox.ALLOWED_BUILTINS
+            }
+        }
+        exec(code, namespace, namespace)
+        return namespace["result"]
+
+    monkeypatch.setattr(life_sandbox, "run", execute_with_dsl_builtins)
+    assert life_loop.score_code_with_error(
+        "result = float('2.5')"
+    ) == life_loop.SandboxScore(score=2.5)
 
 
 def test_score_code_with_error_returns_structured_sandbox_score():

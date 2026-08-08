@@ -1,4 +1,5 @@
 import ast
+import builtins
 import json
 import subprocess
 
@@ -22,7 +23,11 @@ def isolated_runtime(monkeypatch):
         if "300 * 1024" in code:
             payload = {"status": "error", "type": "MemoryError", "message": ""}
         else:
-            env = {"__builtins__": sandbox.__dict__["__builtins__"]}
+            env = {
+                "__builtins__": {
+                    name: getattr(builtins, name) for name in sandbox.ALLOWED_BUILTINS
+                }
+            }
             # These snippets have already passed validation; this emulates only
             # the container protocol, not its security boundary.
             try:
@@ -41,8 +46,43 @@ def isolated_runtime(monkeypatch):
     monkeypatch.setattr(sandbox.subprocess, "run", fake_run)
 
 
-def test_basic_execution(isolated_runtime):
-    assert run("result = max(1, 2)") == 2
+@pytest.mark.parametrize(
+    ("builtin_expression", "expected"),
+    [
+        ("abs(-2)", 2),
+        ("min(3, 1)", 1),
+        ("max(1, 2)", 2),
+        ("sum(range(4))", 6),
+        ("len('abc')", 3),
+        ("sum((1, 2, 3))", 6),
+        ("all((True, True))", True),
+        ("any((False, True))", True),
+        ("float('2.5')", 2.5),
+    ],
+)
+def test_allowed_builtins_are_available(isolated_runtime, builtin_expression, expected):
+    assert run(f"result = {builtin_expression}") == expected
+
+
+@pytest.mark.parametrize(
+    "builtin_expression",
+    [
+        "print('not exposed')",
+        "int('2')",
+        "bool(1)",
+        "getattr((), 'count')",
+        "isinstance(1, int)",
+        "RuntimeError('not exposed')",
+    ],
+)
+def test_unapproved_builtins_are_inaccessible(isolated_runtime, builtin_expression):
+    with pytest.raises(SandboxError, match="NameError"):
+        run(f"result = {builtin_expression}")
+
+
+def test_container_worker_uses_the_canonical_builtin_list():
+    assert f"allowed_names = {sandbox.ALLOWED_BUILTINS!r}" in sandbox._CONTAINER_WORKER
+    assert "__ALLOWED_BUILTINS__" not in sandbox._CONTAINER_WORKER
 
 
 def test_missing_result_raises_sandbox_error(isolated_runtime):
