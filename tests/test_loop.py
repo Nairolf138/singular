@@ -26,7 +26,6 @@ from singular.psyche import Psyche, Mood  # noqa: E402
 from singular.governance.policy import MutationGovernancePolicy  # noqa: E402
 from singular.life.reproduction import ReproductionDecisionPolicy  # noqa: E402
 from singular.events import EventBus  # noqa: E402
-from tests.run_logger_double import RecordingRunLogger  # noqa: E402
 
 
 def test_repository_addition_skill_satisfies_sandbox_scoring_contract():
@@ -113,7 +112,8 @@ def test_mutation_persistence(tmp_path: Path):
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.1,
+        budget_seconds=10.0,
+        max_iterations=1,
         rng=random.Random(0),
         operators={"dec": _dec_operator},
     )
@@ -134,7 +134,8 @@ def test_resume_from_checkpoint(tmp_path: Path):
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.1,
+        budget_seconds=10.0,
+        max_iterations=1,
         rng=rng,
         operators={"dec": _dec_operator},
     )
@@ -144,7 +145,8 @@ def test_resume_from_checkpoint(tmp_path: Path):
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.1,
+        budget_seconds=10.0,
+        max_iterations=1,
         rng=rng,
         operators={"dec": _dec_operator},
     )
@@ -189,7 +191,8 @@ def test_log_and_memory_update(tmp_path: Path, monkeypatch):
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.1,
+        budget_seconds=10.0,
+        max_iterations=1,
         rng=random.Random(0),
         run_id="loop",
         operators={"dec": _dec_operator},
@@ -295,7 +298,7 @@ def test_reproduction_decision_is_logged_with_cooldown(tmp_path: Path, monkeypat
     run(
         {"org_a": org_a, "org_b": org_b},
         checkpoint,
-        budget_seconds=0.2,
+        budget_seconds=10.0,
         max_iterations=1,
         rng=random.Random(0),
         run_id="repro-loop",
@@ -334,7 +337,8 @@ def test_run_with_legacy_checkpoint_continues_without_crash(tmp_path: Path):
     state = run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.05,
+        budget_seconds=10.0,
+        max_iterations=1,
         rng=random.Random(0),
         operators={"dec": _dec_operator},
     )
@@ -635,7 +639,8 @@ def test_run_nan_score_does_not_contaminate_stats(tmp_path: Path):
     state = run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.05,
+        budget_seconds=10.0,
+        max_iterations=1,
         rng=random.Random(0),
         operators={"noop": _noop_operator},
     )
@@ -654,7 +659,8 @@ def test_run_inf_score_does_not_contaminate_stats(tmp_path: Path):
     state = run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.05,
+        budget_seconds=10.0,
+        max_iterations=1,
         rng=random.Random(0),
         operators={"noop": _noop_operator},
     )
@@ -697,7 +703,8 @@ def test_multi_operator_selection(tmp_path: Path, monkeypatch):
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=2.0,
+        budget_seconds=10.0,
+        max_iterations=4,
         rng=random.Random(0),
         run_id="loop",
         operators=operators,
@@ -752,7 +759,8 @@ def test_bandit_persistence_and_exploitation(tmp_path: Path, monkeypatch):
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.3,
+        budget_seconds=10.0,
+        max_iterations=8,
         rng=random.Random(0),
         run_id="loop1",
         operators=operators,
@@ -770,7 +778,8 @@ def test_bandit_persistence_and_exploitation(tmp_path: Path, monkeypatch):
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.2,
+        budget_seconds=10.0,
+        max_iterations=8,
         rng=random.Random(0),
         run_id="loop2",
         operators=operators,
@@ -1112,7 +1121,8 @@ def test_irrational_refusal(tmp_path: Path, monkeypatch):
     life_loop.run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.05,
+        budget_seconds=10.0,
+        max_iterations=1,
         rng=rng,
         operators={"dec": _dec_operator},
     )
@@ -1135,7 +1145,8 @@ def test_irrational_delay(tmp_path: Path, monkeypatch):
     life_loop.run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.1,
+        budget_seconds=10.0,
+        max_iterations=2,
         rng=rng,
         operators={"dec": _dec_operator},
     )
@@ -1158,7 +1169,8 @@ def test_irrational_curiosity(tmp_path: Path, monkeypatch):
     life_loop.run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.05,
+        budget_seconds=10.0,
+        max_iterations=1,
         rng=rng,
         operators={"dec": _dec_operator},
     )
@@ -1225,7 +1237,8 @@ def test_energy_debit_and_food_credit(tmp_path: Path, monkeypatch):
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.2,
+        budget_seconds=10.0,
+        max_iterations=1,
         rng=random.Random(0),
         operators={"dec": _dec_operator},
         resource_manager=rm,
@@ -1254,7 +1267,8 @@ def test_resource_moods_trigger(monkeypatch, tmp_path):
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.2,
+        budget_seconds=10.0,
+        max_iterations=1,
         rng=random.Random(0),
         operators={"dec": _dec_operator},
         resource_manager=rm,
@@ -1288,7 +1302,8 @@ def test_auto_post_messages(tmp_path: Path, monkeypatch):
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.5,
+        budget_seconds=10.0,
+        max_iterations=1,
         rng=random.Random(0),
         operators={"dec": _dec_operator},
     )
@@ -1351,7 +1366,8 @@ def test_coevolution_rejects_regression_on_combined_score(tmp_path: Path, monkey
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.05,
+        budget_seconds=10.0,
+        max_iterations=1,
         rng=random.Random(0),
         operators={"dec": _dec_operator},
         coevolve_tests=True,
@@ -1378,7 +1394,8 @@ def test_coevolution_logs_decisions(tmp_path: Path, monkeypatch):
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.05,
+        budget_seconds=10.0,
+        max_iterations=1,
         rng=random.Random(0),
         operators={"dec": _dec_operator},
         coevolve_tests=True,
@@ -1404,7 +1421,8 @@ def test_governance_blocks_mutation_write(tmp_path: Path):
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.1,
+        budget_seconds=10.0,
+        max_iterations=1,
         rng=random.Random(0),
         operators={"dec": _dec_operator},
         governance_policy=policy,
@@ -1413,7 +1431,9 @@ def test_governance_blocks_mutation_write(tmp_path: Path):
     assert _read_result(skill) == 1
 
 
-def test_run_tick_with_coevolution_logs_candidates_and_rejections(tmp_path: Path, monkeypatch):
+def test_run_tick_with_coevolution_logs_candidates_and_rejections(
+    tmp_path: Path, monkeypatch
+):
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     skill = skills_dir / "foo.py"
@@ -1490,7 +1510,9 @@ def test_loop_logs_psyche_action_decision_before_effector(tmp_path: Path, monkey
 
     records = [
         json.loads(line)
-        for line in (tmp_path / "logs" / "loop" / "events.jsonl").read_text().splitlines()
+        for line in (tmp_path / "logs" / "loop" / "events.jsonl")
+        .read_text()
+        .splitlines()
     ]
     decision_events = [
         record["payload"]

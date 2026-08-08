@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from singular.environment.sim_world import load_world_state
 from singular.events import EventBus, get_global_event_bus
@@ -118,6 +118,7 @@ class PerceptionNoiseFilter:
     confidence_threshold: float = 0.45
     cooldown_seconds: float = 5.0
     deduplicate: bool = True
+    clock: Callable[[], float] = time.monotonic
     _seen_signatures: set[str] = field(default_factory=set)
     _last_emitted_at: dict[str, float] = field(default_factory=dict)
 
@@ -127,7 +128,7 @@ class PerceptionNoiseFilter:
             return False
 
         event_type = str(event.get("type", ""))
-        now = time.monotonic()
+        now = self.clock()
         last_at = self._last_emitted_at.get(event_type)
         if last_at is not None and (now - last_at) < self.cooldown_seconds:
             return False

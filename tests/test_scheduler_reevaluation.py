@@ -1,4 +1,4 @@
-import time
+import threading
 
 from singular.agents import Agent
 from singular.schedulers import start
@@ -8,15 +8,17 @@ from singular.schedulers.reevaluation import alerts_from_records, detect_alerts
 def test_scheduler_triggers_goal_reevaluation():
     agent = Agent()
     calls = {"count": 0}
+    reevaluated = threading.Event()
 
     def spy() -> None:
         calls["count"] += 1
+        reevaluated.set()
 
     # Replace choose_goal with spy to count invocations
     agent.choose_goal = spy  # type: ignore[assignment]
 
     stop_event = start(0.01, agent)
-    time.sleep(0.05)
+    assert reevaluated.wait(timeout=1.0), "scheduler did not complete its first pass"
     stop_event.set()
 
     assert calls["count"] > 0

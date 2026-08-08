@@ -13,7 +13,6 @@ from threading import Event
 from time import monotonic
 from typing import Any, Callable, Deque, Dict, Literal, Mapping, MutableMapping
 
-
 AllowedActionName = str
 Rollback = Callable[[], None]
 RunnerMode = Literal["ghost", "live"]
@@ -77,6 +76,7 @@ class DefaultActionBackend:
 class SandboxRunner:
     backend: DefaultActionBackend
     config: RunnerConfig = field(default_factory=RunnerConfig)
+    clock: Callable[[], float] = monotonic
     _timestamps: Deque[float] = field(default_factory=deque, init=False)
     _cancel_event: Event = field(default_factory=Event, init=False)
     _consecutive_failures: int = field(default=0, init=False)
@@ -134,7 +134,11 @@ class SandboxRunner:
 
     def run_action(self, action: str, params: Mapping[str, Any] | None = None) -> Any:
         params = dict(params or {})
-        if self._mode == "live" and self.config.require_qa_before_live and not self._qa_completed:
+        if (
+            self._mode == "live"
+            and self.config.require_qa_before_live
+            and not self._qa_completed
+        ):
             raise ActionError("live mode requires a successful QA step in ghost mode")
 
         self._ensure_circuit_closed()
@@ -147,7 +151,7 @@ class SandboxRunner:
                 f"action '{action}' not allowed; allowed actions: {', '.join(self.allowed_actions)}"
             )
 
-        start = monotonic()
+        start = self.clock()
         try:
             if self._mode == "ghost":
                 result = self._simulate_action(action, params)
@@ -159,7 +163,7 @@ class SandboxRunner:
             self._rollback_best_effort()
             raise
 
-        elapsed = monotonic() - start
+        elapsed = self.clock() - start
         if elapsed > self.config.timeout_s:
             self._record_failure()
             self._rollback_best_effort()
@@ -178,7 +182,9 @@ class SandboxRunner:
             results.append(self.run_action(action, params))
         return results
 
-    def _run_with_timeout(self, handler: Callable[..., Any], params: Dict[str, Any]) -> Any:
+    def _run_with_timeout(
+        self, handler: Callable[..., Any], params: Dict[str, Any]
+    ) -> Any:
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(handler, **params)
             try:
@@ -187,7 +193,9 @@ class SandboxRunner:
                 future.cancel()
                 raise ActionTimeoutError("action timed out") from exc
 
-    def _simulate_action(self, action: str, params: Mapping[str, Any]) -> dict[str, Any]:
+    def _simulate_action(
+        self, action: str, params: Mapping[str, Any]
+    ) -> dict[str, Any]:
         simulated = {
             "ok": True,
             "simulated": True,
@@ -199,7 +207,7 @@ class SandboxRunner:
         return simulated
 
     def _check_rate_limit(self) -> None:
-        now = monotonic()
+        now = self.clock()
         window_start = now - self.config.rate_limit_window_s
         while self._timestamps and self._timestamps[0] < window_start:
             self._timestamps.popleft()
@@ -216,14 +224,14 @@ class SandboxRunner:
             raise CancellationError("runner cancelled")
 
     def _ensure_circuit_closed(self) -> None:
-        now = monotonic()
+        now = self.clock()
         if now < self._circuit_open_until:
             raise CircuitBreakerOpenError("circuit breaker open")
 
     def _record_failure(self) -> None:
         self._consecutive_failures += 1
         if self._consecutive_failures >= self.config.max_consecutive_failures:
-            self._circuit_open_until = monotonic() + self.config.circuit_open_s
+            self._circuit_open_until = self.clock() + self.config.circuit_open_s
 
     def _register_rollback(self, action: str, params: Mapping[str, Any]) -> None:
         if action == "open_app":
