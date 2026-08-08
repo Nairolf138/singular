@@ -1614,7 +1614,7 @@ def run(
                     psyche.feel(Mood.CURIOUS)
                 seen_diffs.add(diff)
 
-            accepted = (
+            candidate_accepted = (
                 False
                 if mutation_failed or not scores_comparable
                 else (
@@ -1628,7 +1628,7 @@ def run(
             world_effects: list[dict[str, object]] = []
             security_metadata: dict[str, object] = {
                 "governance_checked": False,
-                "allowed": accepted,
+                "allowed": candidate_accepted,
                 "level": None,
                 "reason": "score_gate",
                 "corrective_action": None,
@@ -1636,10 +1636,13 @@ def run(
             if coevolution_flow is not None and not selected_org.degraded_mode:
                 can_run_coevo, coevo_state = resource_manager.apply_capability_cost("test_coevolution")
                 if not can_run_coevo:
-                    accepted = accepted and coevo_state != CapabilityStatus.UNSTABLE
+                    candidate_accepted = (
+                        candidate_accepted
+                        and coevo_state != CapabilityStatus.UNSTABLE
+                    )
                     logger.log_test_coevolution(
                         skill=skill_path.stem,
-                        accepted=accepted,
+                        accepted=candidate_accepted,
                         pool_size=len(coevolution_flow.pool.tests),
                         added=0,
                         removed=0,
@@ -1661,13 +1664,13 @@ def run(
                             mutated_code=mutated,
                             base_score=base_score,
                             mutated_score=mutated_score,
-                            initially_accepted=accepted,
+                            initially_accepted=candidate_accepted,
                             rng=rng,
                         )
-                    accepted = coevo_decision.accepted
+                    candidate_accepted = coevo_decision.accepted
                     logger.log_test_coevolution(
                         skill=skill_path.stem,
-                        accepted=accepted,
+                        accepted=candidate_accepted,
                         pool_size=coevo_decision.pool_size,
                         added=coevo_decision.tests_added,
                         removed=coevo_decision.tests_removed,
@@ -1682,47 +1685,131 @@ def run(
                         rejected_tests=list(coevo_decision.rejected_tests),
                         rejected_for_robustness=coevo_decision.rejected_for_robustness,
                     )
-            accepted = accepted and not mutation_failed and scores_comparable
+            candidate_accepted = (
+                candidate_accepted and not mutation_failed and scores_comparable
+            )
             if mutated_comparable_score is not None:
                 org.last_score = mutated_comparable_score
-            if accepted:
-                governance_root = skill_path.parent.parent if skill_path.parent.name == "skills" else skill_path.parent
-                decision = governance_policy.enforce_write(skill_path, mutated, root=governance_root)
-                security_metadata = {
-                    "governance_checked": True,
-                    "allowed": decision.allowed,
-                    "level": decision.level,
-                    "reason": decision.reason,
-                    "corrective_action": decision.corrective_action,
-                }
-                if not decision.allowed:
-                    accepted = False
+
+            # Account for sandbox execution before deciding whether enough
+            # resources remain for the mutation itself.  All gates below are
+            # evaluated before the governed write, so no observer can see a
+            # mutation which is subsequently rejected.
+            cpu_ms = ms_base + ms_new
+            moods = manage_resources(
+                resource_manager,
+                cpu_ms / 1000.0,
+                _profiled_test_runner if test_runner is not None else None,
+            )
+            governance_root = (
+                skill_path.parent.parent
+                if skill_path.parent.name == "skills"
+                else skill_path.parent
+            )
+            governance_decision = governance_policy.simulate_write(
+                skill_path, root=governance_root
+            )
+            security_metadata = {
+                "governance_checked": True,
+                "allowed": governance_decision.allowed,
+                "level": governance_decision.level,
+                "reason": governance_decision.reason,
+                "corrective_action": governance_decision.corrective_action,
+            }
+
+            can_mutate = False
+            state_flag = resource_manager.viability_state()
+            if candidate_accepted and governance_decision.allowed:
+                can_mutate, state_flag = resource_manager.apply_capability_cost(
+                    "mutation"
+                )
+                if state_flag == CapabilityStatus.FATIGUED:
+                    candidate_accepted = (
+                        candidate_accepted and mutated_score <= base_score
+                    )
+
+            final_accepted = (
+                candidate_accepted and governance_decision.allowed and can_mutate
+            )
+            if candidate_accepted and not governance_decision.allowed:
+                logger.log_interaction(
+                    "mutation.governance_rejected",
+                    organism=org_name,
+                    target=str(skill_path),
+                    level=governance_decision.level,
+                    severity=governance_decision.severity,
+                    reason=governance_decision.reason,
+                    corrective_action=governance_decision.corrective_action,
+                    alive=True,
+                )
+            elif candidate_accepted and not can_mutate:
+                logger.log_interaction(
+                    "mutation.resource_rejected",
+                    organism=org_name,
+                    target=str(skill_path),
+                    capability_status=state_flag.value,
+                    reason="mutation capability cost refused",
+                    alive=True,
+                )
+            if final_accepted:
+                try:
+                    decision = governance_policy.enforce_write(
+                        skill_path, mutated, root=governance_root
+                    )
+                except Exception as exc:
+                    # A governed write is the sole persistence attempt. Restore
+                    # the known source if an implementation fails after touching
+                    # the target, and turn that failure into an explicit verdict.
+                    if skill_path.read_text(encoding="utf-8") != original:
+                        skill_path.write_text(original, encoding="utf-8")
+                    final_accepted = False
+                    security_metadata.update(
+                        allowed=False,
+                        reason=f"governed write failed: {exc}",
+                    )
                     logger.log_interaction(
-                        "governance_violation",
+                        "mutation.write_rejected",
                         organism=org_name,
                         target=str(skill_path),
-                        level=decision.level,
-                        severity=decision.severity,
-                        reason=decision.reason,
-                        corrective_action=decision.corrective_action,
+                        reason=str(exc),
                         alive=True,
                     )
-                    org.energy -= 0.1
                 else:
-                    org.energy += 0.2
-                    effect_type = ACTION_TYPE_FROM_LOOP_EVENT["mutation.accepted"]
-                    world_effects.append(
-                        sim_world.map_action_type_to_effect(
-                            effect_type,
-                            {"health_delta": 0.2 if accepted else 0.0},
+                    final_accepted = decision.allowed
+                    security_metadata = {
+                        "governance_checked": True,
+                        "allowed": decision.allowed,
+                        "level": decision.level,
+                        "reason": decision.reason,
+                        "corrective_action": decision.corrective_action,
+                    }
+                    if not decision.allowed:
+                        logger.log_interaction(
+                            "mutation.write_rejected",
+                            organism=org_name,
+                            target=str(skill_path),
+                            reason=decision.reason,
+                            alive=True,
                         )
+
+            # From here on every reward, statistic, reputation update and event
+            # consumes this single immutable persistence verdict.
+            accepted = final_accepted
+            if accepted:
+                org.energy += 0.2
+                effect_type = ACTION_TYPE_FROM_LOOP_EVENT["mutation.accepted"]
+                world_effects.append(
+                    sim_world.map_action_type_to_effect(
+                        effect_type,
+                        {"health_delta": 0.2},
                     )
-                    world.reputation.update(
-                        org_name,
-                        "share",
-                        {"moral_weights": ecosystem_rules.reputation_action_weights},
-                    )
-                    env_artifacts.save_text(f"mutation_{state.iteration}", diff)
+                )
+                world.reputation.update(
+                    org_name,
+                    "share",
+                    {"moral_weights": ecosystem_rules.reputation_action_weights},
+                )
+                env_artifacts.save_text(f"mutation_{state.iteration}", diff)
             else:
                 org.energy -= 0.1
                 effect_type = ACTION_TYPE_FROM_LOOP_EVENT["mutation.rejected"]
@@ -1819,18 +1906,6 @@ def run(
             belief_store.forget_stale()
             state.stats = stats
 
-            # Resource accounting
-            cpu_ms = ms_base + ms_new
-            moods = manage_resources(
-                resource_manager,
-                cpu_ms / 1000.0,
-                _profiled_test_runner if test_runner is not None else None,
-            )
-            can_mutate, state_flag = resource_manager.apply_capability_cost("mutation")
-            if not can_mutate:
-                accepted = False
-            elif state_flag == CapabilityStatus.FATIGUED:
-                accepted = accepted and (mutated_score <= base_score)
             if "tired" in moods:
                 if hasattr(psyche, "feel"):
                     psyche.feel(Mood.FATIGUE)

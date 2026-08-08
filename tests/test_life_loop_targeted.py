@@ -15,7 +15,7 @@ from singular.life.loop import EcosystemRules, Organism, WorldState, run_tick
 from singular.life.mutation_flow import select_operator
 from singular.life.reproduction_flow import ReproductionDecisionPolicy, decide_reproduction
 from singular.life.sandbox_scoring import score_code_with_error
-from singular.resource_manager import ResourceManager
+from singular.resource_manager import CapabilityStatus, ResourceManager
 
 
 def _dec_operator(tree: ast.AST, rng=None) -> ast.AST:
@@ -94,6 +94,52 @@ def test_run_tick_manages_resources_and_mutates_skill(temp_life) -> None:
     assert state.iteration == 1
     assert (temp_life["skills_dir"] / "skill.py").read_text(encoding="utf-8").strip() == "result = 1"
     assert resources.energy != before_energy
+
+
+class _MutationGateResourceManager(ResourceManager):
+    def __init__(self, path: Path, *, allow_mutation: bool) -> None:
+        super().__init__(path=path)
+        self.allow_mutation = allow_mutation
+        self.mutation_cost_calls = 0
+
+    def apply_capability_cost(self, capability: str) -> tuple[bool, CapabilityStatus]:
+        if capability == "mutation":
+            self.mutation_cost_calls += 1
+            if not self.allow_mutation:
+                return False, CapabilityStatus.FATIGUED
+        return super().apply_capability_cost(capability)
+
+
+@pytest.mark.parametrize("allow_mutation", [True, False])
+def test_mutation_is_persisted_only_after_resource_gate_accepts(
+    temp_life, monkeypatch: pytest.MonkeyPatch, allow_mutation: bool
+) -> None:
+    original = "result = 2\n"
+    skill_path = temp_life["skills_dir"] / "skill.py"
+    assert skill_path.read_text(encoding="utf-8") == original
+    resources = _MutationGateResourceManager(
+        temp_life["root"] / "gated-resources.json",
+        allow_mutation=allow_mutation,
+    )
+    monkeypatch.setattr(
+        loop,
+        "score_code_with_error",
+        lambda code: loop.SandboxScore(score=float(code.split("=")[1].strip())),
+    )
+
+    run_tick(
+        temp_life["skills_dir"],
+        temp_life["checkpoint_path"],
+        rng=random.Random(0),
+        operators={"dec": _dec_operator},
+        resource_manager=resources,
+        ecosystem_rules=EcosystemRules(crossover_interval=0),
+        tick_budget_seconds=0.05,
+    )
+
+    expected = "result = 1" if allow_mutation else original
+    assert skill_path.read_text(encoding="utf-8") == expected
+    assert resources.mutation_cost_calls == 1
 
 
 @dataclass
