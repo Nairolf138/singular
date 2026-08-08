@@ -154,6 +154,17 @@ SKILL_SANDBOX_QUARANTINE_HOURS = int(
 ScoreCodeResult = SandboxScore
 
 
+def initial_proposal_warmup_frequency(mutation_rate: float, energy: float) -> int:
+    """Return the number of empty Graine proposals used during warmup.
+
+    Keeping this policy independent from :class:`Psyche` and the life loop
+    makes the combined influence of mood-derived mutation rate and energy
+    directly testable without running a tick.
+    """
+
+    return max(1, int(mutation_rate * (energy / 100)))
+
+
 def _graine_zones_for_skill(
     skill_path: Path, operator_names: Iterable[str]
 ) -> list[dict[str, object]]:
@@ -942,12 +953,9 @@ def run(
     start = time.time()
     learning_attempts = 0
     last_post = 0.0
-    initial_freq = max(
-        1,
-        int(
-            getattr(psyche, "mutation_rate", 1.0)
-            * (getattr(psyche, "energy", 100.0) / 100)
-        ),
+    initial_freq = initial_proposal_warmup_frequency(
+        getattr(psyche, "mutation_rate", 1.0),
+        getattr(psyche, "energy", 100.0),
     )
     for _ in range(initial_freq):
         # Warm up Graine with an empty zone list; real per-skill proposals are

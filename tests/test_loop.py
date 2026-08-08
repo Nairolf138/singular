@@ -782,64 +782,28 @@ def test_bandit_persistence_and_exploitation(tmp_path: Path, monkeypatch):
     assert second_stats["inc"]["count"] == first_stats["inc"]["count"]
 
 
-def test_angry_increases_proposals(tmp_path: Path, monkeypatch):
-    calls = {"n": 0}
-
-    def fake_propose(zones=None):
-        calls["n"] += 1
-        return []
-
-    skill_dir = tmp_path / "skills"
-    skill_dir.mkdir()
-    checkpoint = tmp_path / "ckpt.json"
-
+def test_frustration_increases_initial_proposal_warmup_frequency():
     psyche = life_loop.Psyche()
     psyche.last_mood = Mood.FRUSTRATED
     psyche.energy = 100.0
 
-    monkeypatch.setattr(life_loop, "propose_mutations", fake_propose)
-    monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: psyche))
-    monkeypatch.setattr(life_loop, "RunLogger", RecordingRunLogger)
-
-    life_loop.run(
-        skill_dir,
-        checkpoint,
-        budget_seconds=0.0,
-        rng=random.Random(0),
-        operators={"inc": _inc_operator},
+    frequency = life_loop.initial_proposal_warmup_frequency(
+        psyche.mutation_rate, psyche.energy
     )
 
-    assert calls["n"] == 2
+    assert frequency == 2
 
 
-def test_fatigue_reduces_proposals(tmp_path: Path, monkeypatch):
-    calls = {"n": 0}
-
-    def fake_propose(zones=None):
-        calls["n"] += 1
-        return []
-
-    skill_dir = tmp_path / "skills"
-    skill_dir.mkdir()
-    checkpoint = tmp_path / "ckpt.json"
-
+def test_low_energy_reduces_initial_proposal_warmup_frequency():
     psyche = life_loop.Psyche()
     psyche.last_mood = Mood.FRUSTRATED
     psyche.energy = 20.0
 
-    monkeypatch.setattr(life_loop, "propose_mutations", fake_propose)
-    monkeypatch.setattr(life_loop.Psyche, "load_state", staticmethod(lambda: psyche))
-    monkeypatch.setattr(life_loop, "RunLogger", RecordingRunLogger)
-
-    life_loop.run(
-        skill_dir,
-        checkpoint,
-        budget_seconds=0.0,
-        rng=random.Random(0),
-        operators={"inc": _inc_operator},
+    frequency = life_loop.initial_proposal_warmup_frequency(
+        psyche.mutation_rate, psyche.energy
     )
 
-    assert calls["n"] == 1
+    assert frequency == 1
 
 
 def test_sandbox_violation_burst_enters_degraded_mode_without_immediate_extinction(
