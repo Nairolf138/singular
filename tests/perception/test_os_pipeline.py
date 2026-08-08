@@ -11,6 +11,7 @@ from singular.perception.os.capture import (
     OSSnapshotProvider,
 )
 from singular.perception.os.pipeline import OSPerceptionPipeline
+import singular.perception as perception
 
 
 @dataclass
@@ -19,6 +20,22 @@ class StaticSnapshotProvider(OSSnapshotProvider):
 
     def collect_snapshot(self) -> OSSnapshot:
         return self.snapshot
+
+
+def test_loading_os_pipeline_does_not_shadow_standard_library_os(
+    tmp_path, monkeypatch
+) -> None:
+    sensor_file = tmp_path / "sensor.txt"
+    sensor_file.write_text("pipeline-safe", encoding="utf-8")
+    monkeypatch.setenv("SINGULAR_SENSOR_FILE", str(sensor_file))
+    monkeypatch.delenv("SINGULAR_WEATHER_API", raising=False)
+
+    # Importing the pipeline installs the public ``perception.os`` package
+    # attribute; environment access must still use the standard library alias.
+    assert perception.os.__name__ == "singular.perception.os"
+    signals = perception.capture_signals(sandbox_root=tmp_path)
+
+    assert signals["file"] == "pipeline-safe"
 
 
 def test_os_pipeline_emits_raw_and_semantic_events() -> None:

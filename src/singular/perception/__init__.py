@@ -12,7 +12,7 @@ publishes normalized perception events on the :class:`~singular.events.EventBus`
 
 from __future__ import annotations
 
-import os
+import os as stdlib_os
 import random
 import time
 from dataclasses import dataclass, field
@@ -33,7 +33,7 @@ from singular.sensors import (
 
 def _read_optional_file() -> dict[str, Any]:
     """Read data from ``SINGULAR_SENSOR_FILE`` if available."""
-    path = os.getenv("SINGULAR_SENSOR_FILE")
+    path = stdlib_os.getenv("SINGULAR_SENSOR_FILE")
     if not path:
         return {}
     try:
@@ -44,13 +44,13 @@ def _read_optional_file() -> dict[str, Any]:
 
 def _query_optional_weather_api() -> dict[str, Any]:
     """Query ``SINGULAR_WEATHER_API`` for weather data if possible."""
-    url = os.getenv("SINGULAR_WEATHER_API")
+    url = stdlib_os.getenv("SINGULAR_WEATHER_API")
     if not url:
         return {}
     try:  # pragma: no cover - network failures are expected
         import requests  # type: ignore[import-untyped]
 
-        timeout_str = os.getenv("SINGULAR_HTTP_TIMEOUT", "5")
+        timeout_str = stdlib_os.getenv("SINGULAR_HTTP_TIMEOUT", "5")
         try:
             timeout = float(timeout_str)
         except ValueError:
@@ -64,7 +64,7 @@ def _query_optional_weather_api() -> dict[str, Any]:
 
 def _resolve_sandbox_root(path: str | Path | None) -> Path:
     if path is None:
-        path = os.getenv("SINGULAR_SANDBOX_ROOT", "sandbox")
+        path = stdlib_os.getenv("SINGULAR_SANDBOX_ROOT", "sandbox")
     candidate = Path(path).resolve()
     if not candidate.exists() or not candidate.is_dir():
         return candidate
@@ -188,7 +188,9 @@ def _collect_host_signals() -> dict[str, float | None] | None:
         if not policy.allow_sensor("host_metrics"):
             return None
         metrics = collect_host_metrics()
-        opt_in = os.getenv("SINGULAR_SENSOR_SENSITIVE_OPT_IN", "").strip().lower() in {
+        opt_in = stdlib_os.getenv(
+            "SINGULAR_SENSOR_SENSITIVE_OPT_IN", ""
+        ).strip().lower() in {
             "1",
             "true",
             "yes",
