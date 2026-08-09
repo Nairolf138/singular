@@ -10,9 +10,9 @@ ou API compatible) avec :
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import time
+from dataclasses import dataclass
 from typing import Any
 from urllib import error, request
 

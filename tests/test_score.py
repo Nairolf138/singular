@@ -1,14 +1,14 @@
 import pytest
 
-from singular.life.fitness import LifecycleFitnessConfig, evaluate_mutation_fitness
 from singular.life import sandbox
-from singular.life.score import score
+from singular.life.fitness import LifecycleFitnessConfig, evaluate_mutation_fitness
 from singular.life.sandbox_scoring import (
     SandboxScore,
-    classify_source_sandbox_path,
     _sandbox_failure_category,
+    classify_source_sandbox_path,
     score_code_with_error,
 )
+from singular.life.score import score
 
 pytestmark = pytest.mark.usefixtures("local_sandbox")
 

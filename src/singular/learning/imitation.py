@@ -11,8 +11,10 @@ from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 
 from singular.io_utils import append_jsonl_line, atomic_write_text
-from singular.life.sandbox import SandboxError, run as sandbox_run
+from singular.life.sandbox import SandboxError
+from singular.life.sandbox import run as sandbox_run
 from singular.life.skill_catalog import refresh_skill_catalog
+
 from .demonstration import DemonstrationEvent
 
 

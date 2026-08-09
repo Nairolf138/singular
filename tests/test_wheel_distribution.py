@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 
 def test_installed_wheel_contains_all_runtime_resources(tmp_path: Path) -> None:

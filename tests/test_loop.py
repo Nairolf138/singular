@@ -1,15 +1,14 @@
+import ast
 import builtins
-import json
-import random
 import functools
+import json
+import logging
+import random
 import sys
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 
-import ast
-
-import logging
 import pytest
 
 pytestmark = pytest.mark.usefixtures("local_sandbox")
@@ -20,15 +19,15 @@ sys.path.append(str(root_dir / "src"))
 
 import singular.life.loop as life_loop  # noqa: E402
 import singular.life.sandbox as life_sandbox  # noqa: E402
-from singular.life.loop import EcosystemRules, run  # noqa: E402
+from singular.events import EventBus  # noqa: E402
+from singular.governance.policy import MutationGovernancePolicy  # noqa: E402
 from singular.life.checkpointing import load_checkpoint  # noqa: E402
 from singular.life.health import detect_health_state  # noqa: E402
-from singular.life.test_coevolution import LivingTestPool, TestCandidate  # noqa: E402
-from singular.resource_manager import ResourceManager  # noqa: E402
-from singular.psyche import Psyche, Mood  # noqa: E402
-from singular.governance.policy import MutationGovernancePolicy  # noqa: E402
+from singular.life.loop import EcosystemRules, run  # noqa: E402
 from singular.life.reproduction import ReproductionDecisionPolicy  # noqa: E402
-from singular.events import EventBus  # noqa: E402
+from singular.life.test_coevolution import LivingTestPool, TestCandidate  # noqa: E402
+from singular.psyche import Mood, Psyche  # noqa: E402
+from singular.resource_manager import ResourceManager  # noqa: E402
 
 
 def test_repository_addition_skill_satisfies_sandbox_scoring_contract(local_sandbox):
@@ -1323,15 +1322,16 @@ def test_artifact_creation_persistence(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
 
     import importlib
+
     from singular.environment import artifacts as env_artifacts
 
     importlib.reload(env_artifacts)
 
     from singular.environment.artifacts import (
-        create_text_art,
+        ARTIFACTS_DIR,
         create_ascii_drawing,
         create_simple_melody,
-        ARTIFACTS_DIR,
+        create_text_art,
     )
 
     mood = "neutre"

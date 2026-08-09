@@ -6,16 +6,15 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
-
-from singular.security.policy_engine import ActionPolicyEngine
 from uuid import uuid4
-from singular.memory import add_causal_trace, add_episode, get_mem_dir
+
 from singular.cognition.self_observation import SelfObservationService
 from singular.embodiment import Acknowledgement, Command, EmergencyStop, Observation
-from singular.morals import MoralAction, MoralDecisionEngine
-from singular.morals import MoralContextBuilder
 from singular.identity.core import IdentityCoreService
+from singular.memory import add_causal_trace, add_episode, get_mem_dir
 from singular.memory_layers.embodiment_pipeline import EmbodimentOutcomePipeline
+from singular.morals import MoralAction, MoralContextBuilder, MoralDecisionEngine
+from singular.security.policy_engine import ActionPolicyEngine
 
 DEFAULT_SCHEMA_VERSION = "1.0"
 

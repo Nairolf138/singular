@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from singular import cli
+from singular.core.agent_runtime import AgentRuntime, Intent
 from singular.embodiment import (
     ActuatorSimulator,
     Command,
@@ -10,7 +11,6 @@ from singular.embodiment import (
     ErrorCode,
     ScriptedSensor,
 )
-from singular.core.agent_runtime import AgentRuntime, Intent
 from singular.identity.consolidation_coordinator import ConsolidationCoordinator
 from singular.memory_layers import (
     EmbodimentOutcomePipeline,

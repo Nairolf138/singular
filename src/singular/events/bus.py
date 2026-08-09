@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import atexit
 import logging
 import os
-from queue import Empty, Queue
 import threading
+from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from queue import Empty, Queue
 from typing import Any, Callable
 
 EventHandler = Callable[["Event"], None]

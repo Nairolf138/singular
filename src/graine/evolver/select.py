@@ -10,9 +10,9 @@ rejected before the multi-objective selection is performed.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Dict, List
-import logging
 
 from .dsl import Patch
 

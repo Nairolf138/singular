@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from singular.identity.consolidation_coordinator import ConsolidationCoordinator, STAGES
+from singular.identity.consolidation_coordinator import STAGES, ConsolidationCoordinator
 
 
 def test_stage_checkpoints_resume_and_retry_idempotently(

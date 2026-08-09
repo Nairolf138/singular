@@ -1,7 +1,6 @@
 import pytest
 
-from graine.kernel import run_variant, VerificationError
-from graine.kernel import verifier
+from graine.kernel import VerificationError, run_variant, verifier
 
 
 def test_load_objectives_parses_config():

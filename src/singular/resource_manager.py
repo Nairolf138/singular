@@ -9,8 +9,7 @@ from pathlib import Path
 from typing import List
 from uuid import uuid4
 
-from .memory import add_causal_trace
-from .memory import _atomic_write_text
+from .memory import _atomic_write_text, add_causal_trace
 
 
 class CapabilityStatus(str, Enum):

@@ -3,131 +3,130 @@ from __future__ import annotations
 import argparse
 import ast
 import difflib
-from importlib.resources import as_file
+import hashlib
+import heapq
 import json
 import logging
 import math
+import os
 import random
 import time
-import heapq
-import hashlib
-import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from importlib.resources import as_file
 from pathlib import Path
 from typing import Callable, Dict, Iterable, Mapping
 
+# Graine is the external proposal generator for the life loop: it does not
+# write files directly here, but supplies validated patch/operator intentions.
+from graine.evolver.generate import propose_mutations
+from singular import self_narrative
+from singular.beliefs.meta_learning import (
+    extract_run_features,
+    recommend_strategy,
+    register_run_result,
+)
+from singular.beliefs.store import BeliefStore
 from singular.cognition.reflect import (
     ActionHypothesis,
     ReflectionDecision,
     reflect_action,
 )
 from singular.cognition.self_observation import SelfObservationService
-from singular.beliefs.store import BeliefStore
-from singular.beliefs.meta_learning import (
-    extract_run_features,
-    recommend_strategy,
-    register_run_result,
-)
-from singular.events import EventBus, get_global_event_bus
-from singular.memory import (
-    add_causal_trace,
-    read_skills,
-    register_memory_event_handlers,
-    temporarily_disable_skill,
-    update_score,
-    add_episode,
-    get_mem_dir,
-    format_recalled_memories,
-    recall_relevant_episodes,
-)
-from singular.psyche import Psyche, Mood, choose_action_from_psyche
-from singular.resources import config_resource
-from singular.runs.logger import RunLogger
-from singular.runs.explain import summarize_mutation
-from singular.runs.generations import record_generation
-from singular.organisms.spawn import mutation_absurde
-from singular.perception import capture_signals, get_temperature
-
-# Graine is the external proposal generator for the life loop: it does not
-# write files directly here, but supplies validated patch/operator intentions.
-from graine.evolver.generate import propose_mutations
 from singular.environment import artifacts as env_artifacts
 from singular.environment import files as env_files
 from singular.environment import notifications as env_notifications
 from singular.environment import sim_world
 from singular.environment.reputation import ReputationSystem
 from singular.environment.world_resources import CompetitorIntent, WorldResourcePool
+from singular.events import EventBus, get_global_event_bus
 from singular.goals import IntrinsicGoals
-from singular import self_narrative
-from singular.resource_manager import ResourceManager
-from singular.resource_manager import CapabilityStatus
-from singular.life.metabolism.rewards import RewardContribution, apply_rewards
-from singular.lives import load_registry, set_life_status
-from singular.life.effectors import perform_action
-from singular.life.world_state import PersistentWorldState
-from singular.social.graph import SocialGraph
-from singular.multiagent.runtime import LifeTickContext, MultiAgentRuntime
-from singular.life.ecosystem import (
-    ARCHETYPES,
-    EcosystemRulesConfig,
-    compute_population_metrics,
-    draw_global_event,
-)
-
-from .death import DeathMonitor
-from .health import HealthTracker, ViabilityDriftDetector
 from singular.governance.policy import (
     MutationGovernancePolicy,
     classify_governance_incident,
     classify_sandbox_error_type,
 )
 from singular.governance.values import load_value_weights
+from singular.identity.core import IdentityCoreService
+from singular.learning.imitation import ImitationEngine
+from singular.life.ecosystem import (
+    ARCHETYPES,
+    EcosystemRulesConfig,
+    compute_population_metrics,
+    draw_global_event,
+)
+from singular.life.effectors import perform_action
+from singular.life.metabolism.rewards import RewardContribution, apply_rewards
+from singular.life.world_state import PersistentWorldState
+from singular.lives import load_registry, set_life_status
+from singular.memory import (
+    add_causal_trace,
+    add_episode,
+    format_recalled_memories,
+    get_mem_dir,
+    read_skills,
+    recall_relevant_episodes,
+    register_memory_event_handlers,
+    temporarily_disable_skill,
+    update_score,
+)
 from singular.morals import (
     MoralAction,
     MoralContextBuilder,
     MoralDecision,
     MoralDecisionEngine,
 )
-from singular.identity.core import IdentityCoreService
+from singular.multiagent.runtime import LifeTickContext, MultiAgentRuntime
+from singular.organisms.spawn import mutation_absurde
+from singular.perception import capture_signals, get_temperature
+from singular.psyche import Mood, Psyche, choose_action_from_psyche
+from singular.resource_manager import CapabilityStatus, ResourceManager
+from singular.resources import config_resource
+from singular.runs.explain import summarize_mutation
+from singular.runs.generations import record_generation
+from singular.runs.logger import RunLogger
+from singular.social.graph import SocialGraph
 
 from .checkpointing import (
     CHECKPOINT_VERSION as CHECKPOINT_VERSION,
+)
+from .checkpointing import (
     Checkpoint,
     load_checkpoint,
     save_checkpoint,
 )
-from .sandbox_scoring import (
-    SandboxScore,
-    classify_source_sandbox_path,
-    score_code_with_error,
-    score_code,
-    _sandbox_failure_category,
+from .coevolution_flow import (
+    CoevolutionConfig,
+    CoevolutionFlow,
+    LivingTestPool,
+    MapElites,
 )
-from .mutation_flow import apply_mutation, select_operator, _load_default_operators
+from .death import DeathMonitor
 from .fitness import (
     FitnessDecision,
     evaluate_mutation_fitness,
     load_lifecycle_fitness_config,
 )
-from .resource_flow import manage_resources
+from .health import HealthTracker, ViabilityDriftDetector
+from .mutation_flow import _load_default_operators, apply_mutation, select_operator
+from .profiling import LifeLoopProfiler
 from .reproduction_flow import (
     ReproductionDecisionPolicy,
+    _pick_crossover_parents,
     authorize_reproduction_write,
     crossover,
     decide_reproduction,
-    _pick_crossover_parents,
 )
-from .coevolution_flow import (
-    CoevolutionConfig,
-    CoevolutionFlow,
-    MapElites,
-    LivingTestPool,
+from .resource_flow import manage_resources
+from .sandbox_scoring import (
+    SandboxScore,
+    _sandbox_failure_category,
+    classify_source_sandbox_path,
+    score_code,
+    score_code_with_error,
 )
 from .skill_genesis import create_skill
 from .social_decision import decide_social_actions
-from .profiling import LifeLoopProfiler
-from singular.learning.imitation import ImitationEngine
 
 # mypy: ignore-errors
 

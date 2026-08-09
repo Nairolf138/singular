@@ -6,11 +6,11 @@ when the optional :mod:`PyYAML <yaml>` package is available.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping
 import json
 import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Callable, Iterable, Mapping
 
 from .events import Event, EventBus
 from .io_utils import append_jsonl_line, atomic_write_text

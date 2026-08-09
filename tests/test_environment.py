@@ -1,7 +1,7 @@
-from singular.resource_manager import ResourceManager
 from singular.environment.notifications import auto_post, notify
 from singular.memory import read_causal_timeline
 from singular.perception import PerceptionNoiseFilter
+from singular.resource_manager import ResourceManager
 
 
 def test_update_from_environment_increases_warmth(tmp_path, monkeypatch):

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Iterable, Dict, List, Any
+from typing import Any, Dict, Iterable, List
+
+from graine.runs.replay import SNAPSHOT_DIR
 
 from .dsl import MetaSpec
-from graine.runs.replay import SNAPSHOT_DIR
 
 
 def replay(history: Iterable[Dict[str, object]]) -> bool:

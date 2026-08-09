@@ -1,4 +1,5 @@
 import json
+
 import pytest
 
 from singular.life import quest

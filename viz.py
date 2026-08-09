@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
             output = args.output or Path(f"{args.id}.png")
             _png_charts(scores, ops, output)
             print(f"Saved plot to {output}")
-        except Exception:
+        except (ImportError, OSError, RuntimeError, ValueError):
             print("matplotlib is required for PNG output; use --ascii if unavailable")
             return 1
     return 0

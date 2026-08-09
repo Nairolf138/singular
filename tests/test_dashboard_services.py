@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from singular.dashboard.services.code_evolution import aggregate_code_evolution
 from singular.dashboard.services.lives_comparison import (
     aggregate_lives,
     build_life_timeseries,
 )
 from singular.dashboard.services.metrics_contract import normalize_life_metrics
-from singular.dashboard.services.code_evolution import aggregate_code_evolution
 from singular.dashboard.services.trajectory import build_trajectory
 
 

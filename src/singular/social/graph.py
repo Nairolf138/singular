@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-import json
 
 from singular.memory import _atomic_write_text, get_mem_dir
 from singular.social.theory_of_mind import TheoryOfMindStore

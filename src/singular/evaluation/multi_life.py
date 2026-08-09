@@ -6,12 +6,12 @@ simulated state is evidence of subjective experience.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import json
 import os
-from pathlib import Path
 import random
+from dataclasses import dataclass
+from pathlib import Path
 from statistics import median, pstdev
 from typing import Any
 

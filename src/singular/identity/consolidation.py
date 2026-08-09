@@ -7,10 +7,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .episodic_store import EpisodicStore
 from .core import IdentityCoreService
-from .semantic_memory import SemanticMemoryStore
+from .episodic_store import EpisodicStore
 from .self_model import SelfModelStore
+from .semantic_memory import SemanticMemoryStore
 
 
 @dataclass(frozen=True)

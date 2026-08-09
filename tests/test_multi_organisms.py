@@ -1,13 +1,13 @@
-from pathlib import Path
-
 import ast
 import json
 import random
+from pathlib import Path
+
+from fastapi_stub import TestClient
 
 import singular.life.loop as life_loop
-from singular.life.loop import EcosystemRules, WorldState
 from singular.dashboard import create_app
-from fastapi_stub import TestClient
+from singular.life.loop import EcosystemRules, WorldState
 
 
 def _dec_operator(tree: ast.AST, rng=None) -> ast.AST:

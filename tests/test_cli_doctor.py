@@ -1,5 +1,5 @@
-from pathlib import Path
 import types
+from pathlib import Path
 
 import singular.cli as cli
 from singular.lives import load_registry

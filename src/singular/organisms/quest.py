@@ -9,7 +9,7 @@ from singular.life.quest import SpecValidationError, load
 from singular.life.synthesis import synthesise
 
 from ..memory import add_episode, ensure_memory_structure, update_score
-from ..psyche import Psyche, Mood
+from ..psyche import Mood, Psyche
 
 
 def quest(spec: Path) -> None:

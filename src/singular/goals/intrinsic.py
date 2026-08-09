@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
-import json
 
+from singular.goals.perception_rules import apply_perception_rules
 from singular.governance.values import ValueWeights
 from singular.memory import _atomic_write_text, get_mem_dir
-from singular.goals.perception_rules import apply_perception_rules
 
 OBJECTIVE_CATALOGUE = ("coherence", "robustesse", "efficacite", "exploration")
 INTRINSIC_MODULATION_VERSION = "intrinsic-mod-v2"

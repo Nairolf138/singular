@@ -2,31 +2,31 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from enum import Enum
 import hashlib
 import json
 import logging
 import signal
 import time
-from uuid import uuid4
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
+from uuid import uuid4
 
+from singular.cognition.self_observation import SelfObservationService
 from singular.events import (
+    HELP_REQUESTED,
     Event,
     EventBus,
-    HELP_REQUESTED,
     build_help_event_payload,
     get_global_event_bus,
 )
 from singular.goals import IntrinsicGoals
 from singular.goals.quest_generation import generate_quests
-from singular.cognition.self_observation import SelfObservationService
+from singular.governance.policy import MutationGovernancePolicy
 from singular.identity import ConsolidationCoordinator, ConsolidationPipeline
 from singular.identity.synchronization import IdentitySynchronizationService
-from singular.governance.policy import MutationGovernancePolicy
 from singular.life.coevolution_flow import LivingTestPool
 from singular.life.loop import WorldState, run_tick
 from singular.lives import canonical_life_id, resolve_life
@@ -37,12 +37,20 @@ from singular.memory import (
     read_episodes,
     read_psyche,
 )
+from singular.metrics import (
+    compute_behavioral_regulation_metrics,
+    compute_regulation_inputs,
+)
 from singular.orchestrator.lifecycle_clock import (
     LifecycleClockConfig,
     load_lifecycle_clock_config,
 )
 from singular.perception import capture_signals
 from singular.psyche import Psyche
+from singular.quests import QuestRuntime
+from singular.resource_manager import ResourceManager
+from singular.routines import RoutinesOrchestrator
+from singular.runs.logger import RunLogger
 from singular.self_narrative import (
     infer_trend,
     load_snapshots,
@@ -50,16 +58,8 @@ from singular.self_narrative import (
     summarize_short,
     update_from_signals,
 )
-from singular.resource_manager import ResourceManager
-from singular.quests import QuestRuntime
 from singular.sensors import load_host_sensor_thresholds
 from singular.skills.runtime import SkillRuntime
-from singular.routines import RoutinesOrchestrator
-from singular.runs.logger import RunLogger
-from singular.metrics import (
-    compute_behavioral_regulation_metrics,
-    compute_regulation_inputs,
-)
 
 log = logging.getLogger(__name__)
 

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
-import json
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Mapping

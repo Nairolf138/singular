@@ -17,11 +17,11 @@ from singular.lives import (
     reconcile_lives,
     resolve_life,
     rival_lives,
-    set_proximity,
     set_life_status,
+    set_proximity,
 )
-from singular.root_config import set_configured_registry_root
 from singular.organisms.birth import birth
+from singular.root_config import set_configured_registry_root
 
 
 def test_birth_uses_isolated_homes(tmp_path: Path) -> None:

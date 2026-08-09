@@ -1,6 +1,6 @@
-from datetime import datetime, timedelta, timezone
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -13,8 +13,8 @@ from singular.governance.policy import (
     load_circuit_state,
 )
 from singular.governance.values import (
-    ValueWeights,
     ValuesSchemaError,
+    ValueWeights,
     load_value_weights,
     validate_values_payload,
 )

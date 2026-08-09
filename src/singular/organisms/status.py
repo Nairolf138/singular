@@ -5,14 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ..lives import list_relations
 from ..life.health import detect_health_state
 from ..life.life_status import compute_life_status
 from ..life.vital import compute_vital_timeline
+from ..lives import list_relations
+from ..memory import get_mem_dir, read_skills
 from ..metrics.autonomy import compute_autonomy_metrics
 from ..psyche import Psyche
-from ..memory import get_mem_dir
-from ..memory import read_skills
 from ..runs.logger import RUNS_DIR
 from ..schedulers.reevaluation import alerts_from_records
 from ..sensors import compute_host_metrics_aggregates, summarize_environmental_impact

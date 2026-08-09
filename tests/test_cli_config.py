@@ -1,8 +1,8 @@
-import json
-from pathlib import Path
-import types
 import grp
+import json
 import pwd
+import types
+from pathlib import Path
 
 import singular.cli as cli
 

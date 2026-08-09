@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Mapping, Literal, Protocol
+from typing import Any, Literal, Mapping, Protocol
 
 Origin = Literal["intrinsic", "external"]
 

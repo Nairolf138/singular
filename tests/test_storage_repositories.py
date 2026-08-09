@@ -1,14 +1,14 @@
-from pathlib import Path
 import json
 import sqlite3
+from pathlib import Path
 
 from singular.storage import (
     EpisodesRepository,
     RunsRepository,
+    SkillScoresRepository,
     SQLiteStorage,
     StorageConfig,
     WorldStateRepository,
-    SkillScoresRepository,
     import_legacy_storage,
 )
 

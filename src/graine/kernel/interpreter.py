@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import signal
 import time
-from typing import Any, Dict, Callable, Optional, Set
+from typing import Any, Callable, Dict, Optional, Set
 
 try:  # pragma: no cover - psutil is optional
     import psutil  # type: ignore[import-untyped]

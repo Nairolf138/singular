@@ -6,8 +6,8 @@ not imply that a ROS installation (or robot) is present.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, fields, is_dataclass
 import time
+from dataclasses import dataclass, field, fields, is_dataclass
 from typing import Any, Callable, Mapping
 
 from .contracts import (

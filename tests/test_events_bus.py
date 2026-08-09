@@ -7,9 +7,9 @@ from singular.events.bus import (
     HELP_COMPLETED,
     HELP_OFFERED,
     HELP_REQUESTED,
-    EventBus,
-    Event,
     STANDARD_HELP_EVENTS,
+    Event,
+    EventBus,
     build_help_event_payload,
     get_bus_strict_from_env,
 )

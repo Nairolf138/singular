@@ -7,15 +7,15 @@ offline for diagnostics.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Iterable, Mapping
 import hashlib
 import json
 import os
 import re
 import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Iterable, Mapping
 
 _SENSITIVE_KEY_PATTERN = re.compile(
     r"(pass(word)?|secret|token|api[_-]?key|authorization|cookie|session|private[_-]?key|"

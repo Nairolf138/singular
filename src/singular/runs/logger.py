@@ -7,28 +7,26 @@ offset (``+00:00``). Compact timestamps used in filenames remain UTC
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
 import json
 import logging
 import os
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable, Dict, Mapping
 from uuid import uuid4
-from typing import Any, Mapping
 
-from ..storage_retention import run_retention_service
 from ..lives import canonical_life_id
+from ..memory import add_episode, add_procedural_memory
+from ..psyche import Psyche
 from ..storage import (
     ProviderEventsRepository,
     RunsRepository,
-    SQLiteStorage,
     SkillScoresRepository,
+    SQLiteStorage,
     StorageConfig,
 )
-
-from ..psyche import Psyche
-from ..memory import add_episode, add_procedural_memory
-from typing import Callable, Dict
+from ..storage_retention import run_retention_service
 
 # Base directory for persistent files
 _BASE_DIR = Path(os.environ.get("SINGULAR_HOME", "."))

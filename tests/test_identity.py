@@ -1,6 +1,6 @@
-from pathlib import Path
-from datetime import datetime
 import hashlib
+from datetime import datetime
+from pathlib import Path
 
 from singular.identity import create_identity, read_identity
 

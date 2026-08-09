@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, cast
+from typing import Any, Dict, List, cast
 
 from graine.evolver.dsl import OPERATOR_NAMES
 from graine.kernel.verifier import DIFF_LIMIT

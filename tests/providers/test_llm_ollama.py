@@ -11,8 +11,8 @@ from singular.providers import (
     ProviderMisconfiguredError,
     ProviderTimeoutError,
     ProviderUnavailableError,
+    llm_ollama,
 )
-from singular.providers import llm_ollama
 
 
 class FakeHTTPResponse:

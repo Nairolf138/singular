@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import random
 import string
-import json
-import hashlib
 from datetime import datetime, timezone
 from math import isfinite
 from pathlib import Path
@@ -16,9 +16,9 @@ from ..environment.sim_world import default_world_state, save_world_state
 from ..goals.intrinsic import GoalState
 from ..governance.values import ValueWeights
 from ..identity import create_identity
+from ..life.skill_catalog import refresh_skill_catalog
 from ..memory import ensure_memory_structure, update_score, write_profile
 from ..psyche import Psyche
-from ..life.skill_catalog import refresh_skill_catalog
 from ..resources import config_resource
 
 _PSYCHE_TRAITS = ("curiosity", "patience", "playfulness", "optimism", "resilience")

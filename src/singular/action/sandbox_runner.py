@@ -7,7 +7,8 @@ small typed catalog of actions.
 from __future__ import annotations
 
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from threading import Event
 from time import monotonic

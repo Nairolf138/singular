@@ -649,6 +649,7 @@ def _circuit_corrective_action(state: dict[str, Any]) -> str:
 def _recover_governance(*, operator: str, justification: str, emergency: bool) -> int:
     """Move open -> half_open -> closed only through an audited safe mutation probe."""
     from datetime import datetime, timezone
+
     from .governance.policy import (
         audit_circuit_transition,
         load_circuit_state,
@@ -2804,6 +2805,7 @@ def main(argv: list[str] | None = None) -> int:
 
     elif args.command == "policy":
         from dataclasses import replace
+
         from .governance.policy import (
             PolicySchemaError,
             load_runtime_policy,

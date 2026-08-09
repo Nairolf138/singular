@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import ast
 import json
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-import warnings
 
 import singular.cli as cli
 from singular.life import loop as life_loop

@@ -1,13 +1,13 @@
+import json
 import os
 import sys
 import types
 from dataclasses import replace
-import json
 
 from singular.events import EventBus
 from singular.governance.policy import load_runtime_policy, save_runtime_policy
-from singular.perception import capture_signals, reset_perception_state
 from singular.memory import add_episode, read_episodes
+from singular.perception import capture_signals, reset_perception_state
 from singular.perception.interaction import (
     CONTRACT_VERSION,
     apply_psyche_deltas,

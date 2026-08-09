@@ -1,6 +1,6 @@
-from pathlib import Path
 import hashlib
 import json
+from pathlib import Path
 
 from singular.life.skill_catalog import read_skill_catalog, refresh_skill_catalog
 

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from singular.security.immune_response import AdaptiveImmunityEngine, IncidentRecord
 from singular.governance.policy import MutationGovernancePolicy
+from singular.security.immune_response import AdaptiveImmunityEngine, IncidentRecord
 
 
 def test_trigger_response_builds_targeted_actions_and_blacklist() -> None:

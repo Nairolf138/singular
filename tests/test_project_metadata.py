@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 
 def test_dashboard_extra_declares_testclient_compatible_httpx_range() -> None:

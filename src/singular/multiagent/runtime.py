@@ -10,6 +10,7 @@ from singular.governance.policy import (
     AUTH_REVIEW_REQUIRED,
     MutationGovernancePolicy,
 )
+from singular.learning.imitation import ImitationEngine
 from singular.multiagent.protocol import (
     AgentMessage,
     CollectiveMemory,
@@ -19,7 +20,6 @@ from singular.multiagent.protocol import (
     resolve_conflicts,
 )
 from singular.social.graph import SocialGraph
-from singular.learning.imitation import ImitationEngine
 
 
 @dataclass(slots=True)

@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from singular.events import EventBus, HELP_REQUESTED
+from singular.events import HELP_REQUESTED, EventBus
 from singular.orchestrator import service as orchestrator_service
 from singular.orchestrator.service import (
     LifecyclePhase,

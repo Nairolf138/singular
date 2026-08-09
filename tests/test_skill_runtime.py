@@ -1,5 +1,5 @@
-from pathlib import Path
 import json
+from pathlib import Path
 
 from singular.events import EventBus
 from singular.skills.runtime import SkillRuntime

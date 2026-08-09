@@ -1,4 +1,5 @@
 import json
+
 import pytest
 
 from graine.runs import capture_run, replay

@@ -7,9 +7,9 @@ import json
 import statistics
 from collections import defaultdict
 from pathlib import Path
-from typing import Iterable, Dict, List, Any, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
-from .replay import SNAPSHOT_DIR, REPORT_DIR
+from .replay import REPORT_DIR, SNAPSHOT_DIR
 
 
 def _pareto_front(points: List[Dict[str, float]]) -> List[Dict[str, float]]:

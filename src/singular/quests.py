@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from singular.goals.quest_generation import GeneratedQuest
-
-from singular.life.quest import Spec, load as load_spec
+from singular.life.quest import Spec
+from singular.life.quest import load as load_spec
 from singular.memory import _atomic_write_text, add_episode, get_mem_dir
 from singular.psyche import Mood, Psyche
 from singular.resource_manager import ResourceManager

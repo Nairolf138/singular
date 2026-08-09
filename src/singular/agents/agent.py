@@ -8,10 +8,9 @@ from typing import Dict, Optional
 
 from singular.cognition.reflect import ActionHypothesis, reflect_action
 from singular.memory import add_episode
-from singular.morals.moral_rules import score_action
-from singular.morals import MoralAction, MoralDecisionEngine
-
 from singular.models.agents.motivation import Motivation
+from singular.morals import MoralAction, MoralDecisionEngine
+from singular.morals.moral_rules import score_action
 
 
 @dataclass

@@ -8,13 +8,13 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import List
 
-from .generate import propose_mutations
-from .select import Candidate, select
-from .dsl import Patch
 from ..kernel.logger import JsonlLogger
-from ..meta.dsl import MetaSpec, ALLOWED_MUTABLE_SURFACES
+from ..meta.dsl import ALLOWED_MUTABLE_SURFACES, MetaSpec
 from ..meta.evolve import propose_mutation as mutate_meta
 from ..meta.phantom import replay_snapshots
+from .dsl import Patch
+from .generate import propose_mutations
+from .select import Candidate, select
 
 META_MUTATION_LOG = Path("life/meta_mutation_log")
 

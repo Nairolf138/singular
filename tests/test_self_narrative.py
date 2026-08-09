@@ -3,13 +3,13 @@ from pathlib import Path
 
 from singular.self_narrative import (
     SCHEMA_VERSION,
+    diagnose_timeline,
     load,
+    project_event,
+    rebuild_from_timeline,
     summarize_long,
     summarize_short,
     update_from_signals,
-    diagnose_timeline,
-    project_event,
-    rebuild_from_timeline,
 )
 
 

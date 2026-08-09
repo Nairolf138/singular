@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
-from urllib.parse import parse_qs, urlsplit
-import mimetypes
-
 import asyncio
 import inspect
+import mimetypes
 import threading
+from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 from . import HTTPException, WebSocket, WebSocketDisconnect
 

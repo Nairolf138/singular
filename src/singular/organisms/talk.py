@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import time
-import json
 from dataclasses import dataclass, field
-from typing import Mapping, Any, Iterable
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Iterable, Mapping
 from uuid import uuid4
 
+from ..identity.synchronization import IdentitySynchronizationService
+from ..learning.imitation import ImitationEngine
+from ..lives import canonical_life_id
 from ..memory import (
     add_causal_trace,
     add_episode,
@@ -22,11 +25,8 @@ from ..memory import (
 from ..memory_layers import MemoryRetrievalService, build_backend
 from ..perception import capture_signals
 from ..perception.interaction import apply_psyche_deltas, extract_structured_signals
-from ..psyche import Mood, Psyche
-from ..identity.synchronization import IdentitySynchronizationService
-from ..self_narrative import load as load_self_narrative, summarize_short
-from ..lives import canonical_life_id
 from ..providers import (
+    PROVIDER_CONFIGURATION_COMMANDS,
     FallbackLLMClient,
     LLMProviderError,
     ProviderMisconfiguredError,
@@ -34,13 +34,14 @@ from ..providers import (
     ProviderRetryExhaustedError,
     ProviderTimeoutError,
     ProviderUnavailableError,
-    PROVIDER_CONFIGURATION_COMMANDS,
     describe_client,
     load_llm_client,
     provider_is_real,
 )
+from ..psyche import Mood, Psyche
 from ..runs.logger import log_provider_event
-from ..learning.imitation import ImitationEngine
+from ..self_narrative import load as load_self_narrative
+from ..self_narrative import summarize_short
 
 _UNKNOWN_GUARD = 'Garde anti-hallucination: si une information demandée est inconnue, réponds explicitement "inconnu".'
 
