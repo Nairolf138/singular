@@ -73,6 +73,16 @@ def test_multi_organisms_independent(tmp_path: Path, monkeypatch):
     assert world.organisms["org2"].last_score == val2
 
 
+def test_run_logger_canonicalizes_three_life_identifiers(tmp_path: Path) -> None:
+    from singular.runs.logger import RunLogger
+
+    for raw, expected in (("Ada", "ada"), ("BOB", "bob"), ("Eve Smith", "eve-smith")):
+        with RunLogger(raw, root=tmp_path / raw / "runs", life_id=raw) as logger:
+            logger.log_event("contradictory", summary=raw)
+        record = json.loads((tmp_path / raw / "runs" / raw / "events.jsonl").read_text().splitlines()[0])
+        assert record["life_id"] == expected
+        assert record["payload"]["life_id"] == expected
+
 def test_multi_organism_events_and_dashboard(tmp_path: Path, monkeypatch) -> None:
     org1 = tmp_path / "org1" / "skills"
     org2 = tmp_path / "org2" / "skills"

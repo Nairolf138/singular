@@ -470,7 +470,7 @@ class DashboardActionService:
         if seed is not None and not isinstance(seed, int):
             raise ValueError("seed must be an integer")
 
-        from singular.lives import resolve_life
+        from singular.lives import canonical_life_id, resolve_life
         from singular.organisms.talk import talk
 
         life = resolve_life(name)
@@ -480,7 +480,7 @@ class DashboardActionService:
         def _run() -> dict[str, Any]:
             response = talk(provider=provider, seed=seed, prompt=prompt, life_home=life)
             return {
-                "life": str(life),
+                "life": canonical_life_id(life),
                 "name": name,
                 "prompt": prompt,
                 "response": response,

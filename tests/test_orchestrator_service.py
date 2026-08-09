@@ -183,6 +183,22 @@ def test_orchestrator_detects_external_stimulus(monkeypatch, tmp_path: Path) -> 
     assert service._external_stimulus_detected() is True
 
 
+def test_recent_run_events_exclude_other_and_unattributed_lives(monkeypatch, tmp_path: Path) -> None:
+    life = tmp_path / "Ada"
+    (life / "skills").mkdir(parents=True)
+    (life / "runs").mkdir()
+    monkeypatch.setenv("SINGULAR_HOME", str(life))
+    events = life / "runs" / "mixed.jsonl"
+    events.write_text(
+        '\n'.join(json.dumps(item) for item in (
+            {"life_id": "ADA", "summary": "ada"},
+            {"life_id": "Bob", "summary": "bob"},
+            {"summary": "ambiguous"},
+        )) + '\n', encoding="utf-8"
+    )
+    service = OrchestratorService(config=OrchestratorConfig(dry_run=True), bus=EventBus())
+    assert [item["summary"] for item in service._load_recent_run_events()] == ["ada"]
+
 def test_orchestrator_triggers_and_settles_quest(monkeypatch, tmp_path: Path) -> None:
     life = tmp_path / "life"
     (life / "skills").mkdir(parents=True)

@@ -11,6 +11,7 @@ import hashlib
 
 from singular.identity.coherence import detect_contradictions
 from singular.io_utils import append_jsonl_line, atomic_write_text
+from singular.lives import canonical_life_id
 
 SCHEMA_VERSION = 3
 TIMELINE_SUFFIX = ".timeline.jsonl"
@@ -221,12 +222,51 @@ def timeline_path(path: Path | str | None = None) -> Path:
     return current.with_name(current.stem + TIMELINE_SUFFIX)
 
 
-def load_snapshots(path: Path | str | None = None) -> list[dict[str, Any]]:
+def load_snapshots(path: Path | str | None = None, *, life_id: str | None = None) -> list[dict[str, Any]]:
     """Read valid snapshots without letting a damaged line hide later history."""
 
-    return sorted(
-        _load_timeline_records(path), key=lambda item: str(item["recorded_at"])
-    )
+    records = _load_timeline_records(path)
+    if life_id is not None:
+        wanted = canonical_life_id(life_id)
+        records = [item for item in records if _record_life_id(item) == wanted]
+    return sorted(records, key=lambda item: str(item["recorded_at"]))
+
+
+def _record_life_id(record: Mapping[str, Any]) -> str | None:
+    candidates = [record.get("life_id")]
+    for key in ("entry", "narrative", "resulting_narrative"):
+        nested = record.get(key)
+        if isinstance(nested, Mapping):
+            candidates.append(nested.get("life_id"))
+    attributed = {
+        canonical_life_id(value)
+        for value in candidates
+        if isinstance(value, str) and value.strip()
+    }
+    return next(iter(attributed)) if len(attributed) == 1 else None
+
+
+def diagnose_timeline(path: Path | str | None = None) -> dict[str, Any]:
+    """Detect cross-life/missing attribution and propose safe per-life rebuilds."""
+
+    records = _load_timeline_records(path)
+    attributable: dict[str, int] = {}
+    ambiguous: list[int] = []
+    for index, record in enumerate(records, start=1):
+        life = _record_life_id(record)
+        if life is None:
+            ambiguous.append(index)
+        else:
+            attributable[life] = attributable.get(life, 0) + 1
+    return {
+        "contaminated": len(attributable) > 1 or bool(ambiguous),
+        "lives": attributable,
+        "ambiguous_record_lines": ambiguous,
+        "reconstruction_proposals": [
+            {"life_id": life, "command": f"rebuild_from_timeline(path, life_id={life!r})"}
+            for life in sorted(attributable)
+        ],
+    }
 
 
 def _load_timeline_records(path: Path | str | None = None) -> list[dict[str, Any]]:
@@ -451,12 +491,20 @@ def _migrate(payload: Mapping[str, Any]) -> SelfNarrative:
     return narrative
 
 
-def load(path: Path | str | None = None) -> SelfNarrative:
+def _quarantine_entries(path: Path, entries: Sequence[Mapping[str, Any]], reason: str) -> None:
+    quarantine = path.with_name(path.stem + ".quarantine.jsonl")
+    for entry in entries:
+        append_jsonl_line(quarantine, {"quarantined_at": _iso_now(), "reason": reason, "entry": dict(entry)})
+
+
+def load(path: Path | str | None = None, *, life_id: str | None = None) -> SelfNarrative:
     """Load narrative from disk with graceful fallback for missing/corrupt file."""
 
     file_path = _path_or_default(path)
     if not file_path.exists():
         narrative = _default_narrative()
+        if life_id is not None:
+            narrative.life_id = canonical_life_id(life_id)
         save(narrative, file_path, record_snapshot=False)
         return narrative
 
@@ -470,7 +518,7 @@ def load(path: Path | str | None = None) -> SelfNarrative:
             file_path.rename(backup)
         except OSError:
             pass
-        narrative = rebuild_from_timeline(file_path, persist=False)
+        narrative = rebuild_from_timeline(file_path, life_id=life_id, persist=False)
         save(narrative, file_path, record_snapshot=False)
         return narrative
 
@@ -479,7 +527,39 @@ def load(path: Path | str | None = None) -> SelfNarrative:
         save(narrative, file_path, record_snapshot=False)
         return narrative
 
-    narrative = _migrate(payload)
+    expected = canonical_life_id(life_id) if life_id is not None else None
+    raw_life = payload.get("life_id")
+    owner = canonical_life_id(raw_life) if isinstance(raw_life, str) and raw_life.strip() else expected
+    # Explicit bootstrap migration: an untouched, entry-free default projection
+    # may be claimed by the first concrete life that opens its own path.
+    if expected is not None and owner == "default" and not payload.get("entries"):
+        owner = expected
+    if expected is not None and owner is not None and owner != expected:
+        raise ValueError("narrative path belongs to a different life")
+    owner = owner or "default"
+    clean_payload = dict(payload)
+    clean_payload["life_id"] = owner
+    accepted: list[Mapping[str, Any]] = []
+    rejected: list[Mapping[str, Any]] = []
+    for item in payload.get("entries", []) if isinstance(payload.get("entries"), list) else []:
+        if not isinstance(item, Mapping):
+            continue
+        raw_entry_life = item.get("life_id")
+        # Explicit legacy rule: schema < 3 entries inherit an explicit projection owner.
+        if raw_entry_life is None and int(payload.get("schema_version", 0) or 0) < 3 and raw_life:
+            migrated = dict(item)
+            migrated["life_id"] = owner
+            accepted.append(migrated)
+        elif isinstance(raw_entry_life, str) and raw_entry_life.strip() and canonical_life_id(raw_entry_life) == owner:
+            canonical = dict(item)
+            canonical["life_id"] = owner
+            accepted.append(canonical)
+        else:
+            rejected.append(item)
+    clean_payload["entries"] = accepted
+    if rejected:
+        _quarantine_entries(file_path, rejected, "missing_or_foreign_life_id")
+    narrative = _migrate(clean_payload)
     save(narrative, file_path, record_snapshot=False)
     return narrative
 
@@ -495,6 +575,12 @@ def save(
     """Persist narrative JSON and return canonicalized object."""
 
     file_path = _path_or_default(path)
+    narrative.life_id = canonical_life_id(narrative.life_id)
+    foreign = [entry for entry in narrative.entries if canonical_life_id(entry.life_id) != narrative.life_id]
+    if foreign:
+        raise ValueError("cannot save narrative entries belonging to another life")
+    for entry in narrative.entries:
+        entry.life_id = narrative.life_id
     file_path.parent.mkdir(parents=True, exist_ok=True)
     narrative.schema_version = SCHEMA_VERSION
     narrative.identity.logical_age = _compute_logical_age(narrative.identity.born_at)
@@ -578,6 +664,8 @@ def _event_identifier(event: Mapping[str, Any]) -> str:
 
 
 def _apply_entry(narrative: SelfNarrative, entry: NarrativeEntry) -> bool:
+    entry.life_id = canonical_life_id(entry.life_id)
+    narrative.life_id = canonical_life_id(narrative.life_id)
     if entry.life_id != narrative.life_id:
         return False
     if any(current.entry_id == entry.entry_id for current in narrative.entries):
@@ -594,7 +682,7 @@ def rebuild_from_timeline(
 ) -> SelfNarrative:
     """Rebuild a projection from valid append-only records, skipping damage."""
 
-    wanted_life = life_id
+    wanted_life = canonical_life_id(life_id) if life_id is not None else None
     narrative = _default_narrative()
     if wanted_life is not None:
         narrative.life_id = wanted_life
@@ -602,13 +690,22 @@ def rebuild_from_timeline(
         projection = record.get("narrative")
         if isinstance(projection, Mapping) and not record.get("entry"):
             candidate = _migrate(projection)
+            candidate.life_id = canonical_life_id(candidate.life_id)
+            candidate.entries = [
+                entry
+                for entry in candidate.entries
+                if entry.life_id and canonical_life_id(entry.life_id) == candidate.life_id
+            ]
             if wanted_life is None or candidate.life_id == wanted_life:
                 narrative = candidate
             continue
         raw_entry = record.get("entry")
         if not isinstance(raw_entry, Mapping):
             continue
-        record_life = str(raw_entry.get("life_id", "default"))
+        raw_record_life = raw_entry.get("life_id")
+        if not isinstance(raw_record_life, str) or not raw_record_life.strip():
+            continue
+        record_life = canonical_life_id(raw_record_life)
         if wanted_life is None and not narrative.entries:
             narrative.life_id = record_life
         if record_life != narrative.life_id:
@@ -620,6 +717,12 @@ def rebuild_from_timeline(
         resulting = record.get("resulting_narrative")
         if isinstance(resulting, Mapping):
             candidate = _migrate(resulting)
+            candidate.life_id = canonical_life_id(candidate.life_id)
+            candidate.entries = [
+                entry
+                for entry in candidate.entries
+                if entry.life_id and canonical_life_id(entry.life_id) == candidate.life_id
+            ]
             if candidate.life_id == narrative.life_id:
                 narrative = candidate
     if persist:
@@ -643,7 +746,8 @@ def project_event(
     if event_type not in SIGNIFICANT_EVENT_TYPES:
         raise ValueError(f"unsupported narrative event type: {event_type or 'missing'}")
     file_path = _path_or_default(path)
-    projected = load(file_path)
+    life_id = canonical_life_id(life_id)
+    projected = load(file_path, life_id=life_id)
     if projected.entries and projected.life_id != life_id:
         # A path is the storage boundary of one life; never mix identities.
         raise ValueError("narrative path belongs to a different life")
@@ -758,10 +862,11 @@ def update_from_signals(
     path: Path | str | None = None,
     *,
     clock: Callable[[], datetime] | None = None,
+    life_id: str | None = None,
 ) -> SelfNarrative:
     """Update persisted narrative from external signals and return it."""
 
-    narrative = load(path)
+    narrative = load(path, life_id=life_id)
 
     identity_patch = signals.get("identity")
     if isinstance(identity_patch, Mapping):

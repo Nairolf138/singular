@@ -16,6 +16,7 @@ import os
 from typing import Any, Mapping
 
 from ..storage_retention import run_retention_service
+from ..lives import canonical_life_id
 from ..storage import (
     ProviderEventsRepository,
     RunsRepository,
@@ -133,6 +134,7 @@ class RunLogger:
     root: Path | None = None
     psyche: Psyche = field(default_factory=Psyche.load_state)
     reputation_update_every: int = DEFAULT_REPUTATION_UPDATE_EVERY
+    life_id: str | None = None
 
     def __post_init__(self) -> None:
         self.root = (
@@ -141,6 +143,8 @@ class RunLogger:
             else Path(os.environ.get("SINGULAR_HOME", ".")) / "runs"
         )
         self.root.mkdir(parents=True, exist_ok=True)
+        inferred_life = self.life_id or self.root.parent.name or "default"
+        self.life_id = canonical_life_id(inferred_life)
 
         self.run_dir = self.root / self.run_id
         self.run_dir.mkdir(parents=True, exist_ok=True)
@@ -305,17 +309,20 @@ class RunLogger:
         return {name: dict(stats) for name, stats in self._skill_reputation.items()}
 
     def _write_record(self, record: dict[str, Any]) -> None:
+        record["life_id"] = canonical_life_id(record.get("life_id") or self.life_id or "default")
         self._file.write(json.dumps(record) + "\n")
         self._file.flush()
         os.fsync(self._file.fileno())
         self._runs_repository.add_event(self.run_id, record)
 
     def _write_event(self, event_type: str, payload: dict[str, Any], ts: str) -> None:
+        payload["life_id"] = canonical_life_id(payload.get("life_id") or self.life_id or "default")
         event = {
             "version": EVENT_SCHEMA_VERSION,
             "event_type": event_type,
             "ts": ts,
             "payload": payload,
+            "life_id": self.life_id,
         }
         self._events_file.write(json.dumps(event) + "\n")
         self._events_file.flush()

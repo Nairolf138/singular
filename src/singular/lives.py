@@ -446,6 +446,15 @@ def _slugify(name: str) -> str:
     return slug or "life"
 
 
+def canonical_life_id(value: str | Path) -> str:
+    """Return the single canonical (registry slug) representation of a life id."""
+
+    raw = Path(value).name if isinstance(value, Path) else str(value)
+    if not raw.strip():
+        raise ValueError("life_id must not be empty")
+    return _slugify(raw)
+
+
 def _resolve_life_metadata(name: str) -> tuple[dict[str, Any], str, LifeMetadata]:
     registry = load_registry()
     lives: dict[str, LifeMetadata] = registry.setdefault("lives", {})
