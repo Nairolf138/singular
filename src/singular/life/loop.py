@@ -1482,6 +1482,18 @@ def run(
                 if temp <= 5.0
                 else "stable"
             )
+            contextual_vital_state = (
+                "terminal" if baseline_failure_risk >= 0.7 else "fragile"
+                if baseline_failure_risk >= 0.35 else "stable"
+            )
+            contextual_objective_weights = asdict(goal_weights)
+            contextual_objective = max(
+                contextual_objective_weights, key=contextual_objective_weights.get
+            )
+            contextual_candidate = {"skill": selected_skill_key}
+            contextual_governance = (
+                "enabled" if governance_policy.mutations_enabled() else "locked"
+            )
             meta_recommendation = None
             if policy != "analyze":
                 meta_recommendation = recommend_strategy(
@@ -1491,6 +1503,11 @@ def run(
                     mood=mood_label,
                     outcome_hint="success",
                     candidates=eligible_operators.keys(),
+                    skill_family=skill_path.suffix.lstrip(".") or "unknown",
+                    vital_state=contextual_vital_state,
+                    objective=contextual_objective,
+                    governance_mode=contextual_governance,
+                    candidate_characteristics=contextual_candidate,
                 )
             if policy == "analyze":
                 op_name = select_operator(
@@ -1504,9 +1521,20 @@ def run(
                 reflection.action is None
                 and meta_recommendation is not None
                 and meta_recommendation.confidence >= 0.55
+                and meta_recommendation.sample_count >= 3
+                and meta_recommendation.regression_risk
+                    <= max(0.05, 1.0 - baseline_failure_risk)
                 and meta_recommendation.operator in eligible_operators
             ):
-                op_name = meta_recommendation.operator
+                op_name = select_operator(
+                    eligible_operators,
+                    stats,
+                    policy,
+                    rng,
+                    objective_bias=combined_bias,
+                    contextual_recommendation=meta_recommendation,
+                    vital_risk=baseline_failure_risk,
+                )
             else:
                 reflected_action = (
                     reflection.action if reflection.action in eligible_operators else None
@@ -2007,6 +2035,12 @@ def run(
                 mutated_score=mutated_score,
                 temperature=temp,
                 mood=mood_value,
+                skill_family=skill_path.suffix.lstrip(".") or "unknown",
+                vital_state=contextual_vital_state,
+                objective=contextual_objective,
+                governance_mode=contextual_governance,
+                candidate_characteristics=contextual_candidate,
+                source_run_id=f"{logger.run_id}:{state.iteration}",
             )
             register_run_result(
                 belief_store,

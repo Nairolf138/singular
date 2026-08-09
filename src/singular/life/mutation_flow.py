@@ -3,7 +3,10 @@ from __future__ import annotations
 import ast
 import importlib
 import random
-from typing import Callable, Dict, Mapping
+from typing import Callable, Dict, Mapping, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from singular.beliefs.meta_learning import StrategyRecommendation
 
 from . import sandbox
 
@@ -75,6 +78,9 @@ def select_operator(
     policy: str,
     rng: random.Random,
     objective_bias: Mapping[str, float] | None = None,
+    contextual_recommendation: "StrategyRecommendation | None" = None,
+    vital_risk: float = 0.0,
+    minimum_evidence: int = 3,
 ) -> str:
     """Reflect on operator history and choose the next mutation strategy."""
 
@@ -83,7 +89,18 @@ def select_operator(
     if policy == "analyze":
         return min(names, key=lambda n: stats[n]["count"])
 
+    # Exploration disappears as extinction risk approaches one.
     epsilon = {"exploit": 0.0, "explore": 1.0}.get(policy, 0.1)
+    epsilon *= max(0.0, 1.0 - min(1.0, vital_risk))
+
+    if (
+        contextual_recommendation is not None
+        and contextual_recommendation.operator in operators
+        and contextual_recommendation.sample_count >= minimum_evidence
+        and contextual_recommendation.regression_risk <= max(0.05, 1.0 - vital_risk)
+        and rng.random() >= epsilon
+    ):
+        return contextual_recommendation.operator
 
     if rng.random() < epsilon or all(stats[n]["count"] == 0 for n in names):
         return rng.choice(names)

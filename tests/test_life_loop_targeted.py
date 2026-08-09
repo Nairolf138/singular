@@ -296,3 +296,27 @@ def test_cycle_complet_creation_tick_mutation_learning_reproduction_and_stop(tem
         max_iterations=0,
     )
     assert stopped.iteration == state.iteration
+
+
+def test_contextual_operator_is_preferred_for_stable_life_but_refused_terminal() -> None:
+    from singular.beliefs.meta_learning import StrategyRecommendation
+
+    operators = {"proven": _dec_operator, "fallback": _inc_operator}
+    stats = {
+        "proven": {"count": 5, "reward": 0.0},
+        "fallback": {"count": 5, "reward": 5.0},
+    }
+    evidence = StrategyRecommendation(
+        operator="proven", confidence=0.75, context_key="stable",
+        sample_count=8, regression_risk=0.2, uncertainty=0.1, recency=1.0,
+    )
+    stable = select_operator(
+        operators, stats, "exploit", random.Random(0),
+        contextual_recommendation=evidence, vital_risk=0.1,
+    )
+    terminal = select_operator(
+        operators, stats, "exploit", random.Random(0),
+        contextual_recommendation=evidence, vital_risk=0.95,
+    )
+    assert stable == "proven"
+    assert terminal == "fallback"

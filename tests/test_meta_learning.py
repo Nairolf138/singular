@@ -155,3 +155,66 @@ def test_meta_learning_documents_features_and_strategy_conditions(
         "rank candidates by decayed Bayesian confidence"
         in recommendation.learning_conditions
     )
+
+
+def test_contextual_evidence_is_stable_but_not_transferable_to_terminal_life(
+    tmp_path: Path,
+) -> None:
+    store = BeliefStore(path=tmp_path / "beliefs.json")
+    for index in range(6):
+        register_run_result(
+            store,
+            extract_run_features(
+                operator="const_tune",
+                accepted=True,
+                base_score=2.0,
+                mutated_score=1.0,
+                temperature=20.0,
+                mood="calm",
+                skill_family="python",
+                vital_state="stable",
+                objective="robustesse",
+                governance_mode="enabled",
+                candidate_characteristics={"complexity": "low"},
+                source_run_id=f"run-{index}",
+            ),
+            reward_delta=1.0,
+        )
+
+    stable = recommend_strategy(
+        store, failure_type="anticipated", environment_signal="stable",
+        mood="calm", outcome_hint="success", candidates=["const_tune"],
+        skill_family="python", vital_state="stable", objective="robustesse",
+        governance_mode="enabled", candidate_characteristics={"complexity": "low"},
+    )
+    terminal = recommend_strategy(
+        store, failure_type="anticipated", environment_signal="stable",
+        mood="calm", outcome_hint="success", candidates=["const_tune"],
+        skill_family="python", vital_state="terminal", objective="robustesse",
+        governance_mode="enabled", candidate_characteristics={"complexity": "low"},
+    )
+
+    assert stable is not None
+    assert stable.operator == "const_tune"
+    assert stable.sample_count == 6
+    assert stable.confidence > 0.6
+    assert stable.uncertainty < 0.2
+    assert stable.regression_risk < 0.2
+    assert terminal is None
+    assert store.list_beliefs()[0].source_runs == [f"run-{i}" for i in range(6)]
+
+
+def test_one_success_does_not_create_high_confidence(tmp_path: Path) -> None:
+    store = BeliefStore(path=tmp_path / "beliefs.json")
+    features = extract_run_features(
+        operator="lucky", accepted=True, base_score=1.0, mutated_score=0.5,
+        temperature=20.0, mood="calm",
+    )
+    register_run_result(store, features, reward_delta=0.5)
+    recommendation = recommend_strategy(
+        store, failure_type="anticipated", environment_signal="stable",
+        mood="calm", outcome_hint="success", candidates=["lucky"],
+    )
+    assert recommendation is not None
+    assert recommendation.sample_count == 1
+    assert recommendation.confidence < 0.5

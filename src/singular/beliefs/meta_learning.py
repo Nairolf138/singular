@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable
+from datetime import datetime, timezone
+import math
+from typing import Iterable, Mapping
 
-from .store import BeliefStore
+from .store import BeliefStore, _parse_datetime
 
 
 @dataclass(frozen=True)
@@ -29,11 +31,22 @@ class RunFeatures:
     outcome: str
     extracted_features: dict[str, str] = field(default_factory=dict)
     learning_conditions: list[str] = field(default_factory=list)
+    skill_family: str = "unknown"
+    vital_state: str = "stable"
+    objective: str = "unknown"
+    governance_mode: str = "standard"
+    candidate_characteristics: dict[str, str] = field(default_factory=dict)
+    source_run_id: str | None = None
 
     def context_key(self) -> str:
+        candidate = ",".join(
+            f"{key}={value}" for key, value in sorted(self.candidate_characteristics.items())
+        ) or "unknown"
         return (
             f"failure={self.failure_type}|env={self.environment_signal}|"
-            f"mood={self.mood}|outcome={self.outcome}"
+            f"mood={self.mood}|outcome={self.outcome}|family={self.skill_family}|"
+            f"vital={self.vital_state}|objective={self.objective}|"
+            f"governance={self.governance_mode}|candidate={candidate}"
         )
 
     def feature_summary(self) -> dict[str, str]:
@@ -60,6 +73,10 @@ class StrategyRecommendation:
     strategy_reason: str = ""
     supporting_features: dict[str, str] = field(default_factory=dict)
     learning_conditions: list[str] = field(default_factory=list)
+    uncertainty: float = 1.0
+    sample_count: int = 0
+    regression_risk: float = 1.0
+    recency: float = 0.0
 
 
 def extract_run_features(
@@ -70,6 +87,12 @@ def extract_run_features(
     mutated_score: float,
     temperature: float,
     mood: str | None,
+    skill_family: str = "unknown",
+    vital_state: str = "stable",
+    objective: str = "unknown",
+    governance_mode: str = "standard",
+    candidate_characteristics: Mapping[str, str] | None = None,
+    source_run_id: str | None = None,
 ) -> RunFeatures:
     """Extract stable run features for context-conditioned memory."""
 
@@ -118,6 +141,12 @@ def extract_run_features(
         outcome=outcome,
         extracted_features=extracted_features,
         learning_conditions=learning_conditions,
+        skill_family=skill_family,
+        vital_state=vital_state,
+        objective=objective,
+        governance_mode=governance_mode,
+        candidate_characteristics=dict(candidate_characteristics or {}),
+        source_run_id=source_run_id,
     )
 
 
@@ -145,10 +174,10 @@ def register_run_result(
         success=success,
         evidence=evidence,
         reward_delta=reward_delta,
+        source_run_id=features.source_run_id,
     )
-    anticipated_context = (
-        f"failure=anticipated|env={features.environment_signal}|"
-        f"mood={features.mood}|outcome={features.outcome}"
+    anticipated_context = features.context_key().replace(
+        f"failure={features.failure_type}", "failure=anticipated", 1
     )
     store.update_probabilistic_rule(
         context_key=anticipated_context,
@@ -156,6 +185,7 @@ def register_run_result(
         success=success,
         evidence=evidence,
         reward_delta=reward_delta,
+        source_run_id=features.source_run_id,
     )
 
 
@@ -167,26 +197,61 @@ def recommend_strategy(
     mood: str | None,
     outcome_hint: str,
     candidates: Iterable[str],
+    skill_family: str = "unknown",
+    vital_state: str = "stable",
+    objective: str = "unknown",
+    governance_mode: str = "standard",
+    candidate_characteristics: Mapping[str, str] | None = None,
+    minimum_samples: int = 3,
 ) -> StrategyRecommendation | None:
     """Return the highest-confidence strategy for the current context."""
 
     normalized_mood = (mood or "unknown").strip().lower() or "unknown"
     candidate_list = list(candidates)
+    candidate = ",".join(
+        f"{key}={value}" for key, value in sorted((candidate_characteristics or {}).items())
+    ) or "unknown"
     context_key = (
         f"failure={failure_type}|env={environment_signal}|"
-        f"mood={normalized_mood}|outcome={outcome_hint}"
+        f"mood={normalized_mood}|outcome={outcome_hint}|family={skill_family}|"
+        f"vital={vital_state}|objective={objective}|governance={governance_mode}|"
+        f"candidate={candidate}"
     )
     ranked = store.recommend_strategies(
         context_key=context_key, candidates=candidate_list
     )
     if not ranked:
         return None
-    best_operator, confidence = ranked[0]
+    # Rank on conservative confidence, not posterior mean: one lucky success
+    # must never become strong evidence.
+    assessed = []
+    now = datetime.now(timezone.utc)
+    for operator, posterior_mean in ranked:
+        record = store._beliefs[f"strategy:{context_key}->{operator}"]
+        samples = record.runs
+        evidence_weight = samples / (samples + 2.0)
+        confidence = posterior_mean * evidence_weight
+        uncertainty = math.sqrt(
+            (record.alpha * record.beta)
+            / (((record.alpha + record.beta) ** 2) * (record.alpha + record.beta + 1.0))
+        )
+        age_days = max(
+            0.0, (now - _parse_datetime(record.updated_at)).total_seconds() / 86400.0
+        )
+        recency = math.exp(-store.decay_per_day * age_days)
+        regression_risk = record.beta / max(record.alpha + record.beta, 1e-9)
+        assessed.append((confidence, -regression_risk, operator, uncertainty, samples, regression_risk, recency))
+    assessed.sort(reverse=True)
+    confidence, _, best_operator, uncertainty, samples, regression_risk, recency = assessed[0]
     supporting_features = {
         "failure_type": failure_type,
         "environment_signal": environment_signal,
         "mood": normalized_mood,
         "outcome_hint": outcome_hint,
+        "skill_family": skill_family,
+        "vital_state": vital_state,
+        "objective": objective,
+        "governance_mode": governance_mode,
     }
     return StrategyRecommendation(
         operator=best_operator,
@@ -200,5 +265,10 @@ def recommend_strategy(
         learning_conditions=[
             "recommend only strategies with existing probabilistic evidence",
             "rank candidates by decayed Bayesian confidence",
+            f"require at least {minimum_samples} samples for operational preference",
         ],
+        uncertainty=uncertainty,
+        sample_count=samples,
+        regression_risk=regression_risk,
+        recency=recency,
     )

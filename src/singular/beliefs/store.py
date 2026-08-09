@@ -40,6 +40,14 @@ class BeliefRecord:
     beta: float = 1.0
     score_ema: float = 0.0
     runs: int = 0
+    source_runs: list[str] = None  # type: ignore[assignment]
+    deprecated_at: str | None = None
+
+    def __post_init__(self) -> None:
+        # A list (rather than only the last evidence string) makes decay
+        # compatible with audit/replay of the observations behind a belief.
+        if self.source_runs is None:
+            self.source_runs = []
 
 
 class BeliefStore:
@@ -84,6 +92,8 @@ class BeliefStore:
                 beta=float(value.get("beta", self.prior_beta)),
                 score_ema=float(value.get("score_ema", 0.0)),
                 runs=int(value.get("runs", 0)),
+                source_runs=[str(item) for item in value.get("source_runs", [])],
+                deprecated_at=value.get("deprecated_at"),
             )
         return beliefs
 
@@ -136,7 +146,11 @@ class BeliefStore:
             record = self._beliefs[key]
             self._apply_decay(record, now)
             if self._is_stale(record, now):
-                self._beliefs.pop(key, None)
+                if record.deprecated_at is not None:
+                    continue
+                # Do not destroy provenance.  Deprecated records remain in the
+                # JSON store but are excluded from recommendations.
+                record.deprecated_at = now.isoformat()
                 removed += 1
             else:
                 record.confidence = record.alpha / max(record.alpha + record.beta, 1e-9)
@@ -153,6 +167,7 @@ class BeliefStore:
         evidence: str,
         reward_delta: float = 0.0,
         when: datetime | None = None,
+        source_run_id: str | None = None,
     ) -> BeliefRecord:
         now = when or _utcnow()
         record = self._beliefs.get(hypothesis) or BeliefRecord(
@@ -171,6 +186,9 @@ class BeliefStore:
         else:
             record.beta += 1.0
         record.runs += 1
+        record.deprecated_at = None
+        if source_run_id and source_run_id not in record.source_runs:
+            record.source_runs.append(source_run_id)
         record.score_ema = (record.score_ema * 0.8) + (float(reward_delta) * 0.2)
         record.confidence = record.alpha / max(record.alpha + record.beta, 1e-9)
         record.updated_at = now.isoformat()
@@ -216,6 +234,7 @@ class BeliefStore:
         evidence: str,
         reward_delta: float = 0.0,
         when: datetime | None = None,
+        source_run_id: str | None = None,
     ) -> BeliefRecord:
         rule_hypothesis = f"strategy:{context_key}->{strategy}"
         return self.update_after_run(
@@ -224,6 +243,7 @@ class BeliefStore:
             evidence=evidence,
             reward_delta=reward_delta,
             when=when,
+            source_run_id=source_run_id,
         )
 
     def recommend_strategies(
@@ -239,11 +259,12 @@ class BeliefStore:
             record = self._beliefs.get(hypothesis)
             if record is None:
                 continue
+            if record.deprecated_at is not None:
+                continue
             self._apply_decay(record, now)
             record.confidence = record.alpha / max(record.alpha + record.beta, 1e-9)
-            record.updated_at = now.isoformat()
             if self._is_stale(record, now):
-                self._beliefs.pop(hypothesis, None)
+                record.deprecated_at = now.isoformat()
                 continue
             ranked.append((name, record.confidence))
         if ranked:
