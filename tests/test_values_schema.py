@@ -67,7 +67,9 @@ def test_load_value_weights_defaults_when_file_missing_or_empty(tmp_path: Path) 
     assert load_value_weights(empty) == ValueWeights()
 
 
-def test_policy_blocks_destructive_overwrite_when_memory_preservation_high(tmp_path: Path) -> None:
+def test_policy_blocks_destructive_overwrite_when_memory_preservation_high(
+    tmp_path: Path,
+) -> None:
     root = tmp_path
     target = root / "skills" / "example.py"
     target.parent.mkdir(parents=True)
@@ -88,7 +90,9 @@ def test_policy_blocks_destructive_overwrite_when_memory_preservation_high(tmp_p
 
 def test_policy_enforces_mutation_quota(tmp_path: Path) -> None:
     target = tmp_path / "skills" / "example.py"
-    policy = MutationGovernancePolicy(mutation_quota_per_window=1, mutation_quota_window_seconds=60.0)
+    policy = MutationGovernancePolicy(
+        mutation_quota_per_window=1, mutation_quota_window_seconds=60.0
+    )
 
     first = policy.enforce_write(target, "result = 1\n", root=tmp_path)
     second = policy.enforce_write(target, "result = 2\n", root=tmp_path)
@@ -99,7 +103,7 @@ def test_policy_enforces_mutation_quota(tmp_path: Path) -> None:
     assert second.severity == "medium"
 
 
-def test_policy_opens_circuit_breaker_on_repeated_violations(tmp_path: Path) -> None:
+def test_internal_policy_denials_do_not_open_global_breaker(tmp_path: Path) -> None:
     target = tmp_path / "skills" / "example.py"
     forbidden = tmp_path / "src" / "blocked.py"
     policy = MutationGovernancePolicy(
@@ -112,10 +116,8 @@ def test_policy_opens_circuit_breaker_on_repeated_violations(tmp_path: Path) -> 
     policy.enforce_write(forbidden, "x = 2\n", root=tmp_path)
     decision = policy.enforce_write(target, "result = 42\n", root=tmp_path)
 
-    assert policy.mutations_enabled() is False
-    assert decision.allowed is False
-    assert "circuit-breaker active" in decision.reason
-    assert decision.severity == "critical"
+    assert policy.mutations_enabled() is True
+    assert decision.allowed is True
 
 
 def test_policy_logs_circuit_breaker_opened_only_once_when_already_open(
@@ -131,15 +133,21 @@ def test_policy_logs_circuit_breaker_opened_only_once_when_already_open(
     policy._now = lambda: clock["now"]  # type: ignore[method-assign]
     caplog.set_level(logging.ERROR, logger="singular.governance.policy")
 
-    first = policy.record_violation(category="governance_violation", severity="high")
-    opened = policy.record_violation(category="governance_violation", severity="high")
-    repeated = policy.record_violation(category="governance_violation", severity="high")
-    policy.record_violation(category="governance_violation", severity="high")
+    first = policy.record_violation(
+        category="confirmed_root_escape", severity="critical"
+    )
+    opened = policy.record_violation(
+        category="confirmed_root_escape", severity="critical"
+    )
+    repeated = policy.record_violation(
+        category="confirmed_root_escape", severity="critical"
+    )
+    policy.record_violation(category="confirmed_root_escape", severity="critical")
 
     assert first is None
     assert opened is not None
-    assert opened.category == "governance_violation"
-    assert opened.severity == "high"
+    assert opened.category == "confirmed_root_escape"
+    assert opened.severity == "critical"
     assert opened.threshold == 2
     assert opened.cooldown_seconds == 120.0
     assert opened.open_until == "2026-01-01T00:02:00+00:00"
@@ -149,7 +157,9 @@ def test_policy_logs_circuit_breaker_opened_only_once_when_already_open(
     assert repeated is None
 
     opened_events = [
-        record for record in caplog.records if "governance circuit breaker opened" in record.message
+        record
+        for record in caplog.records
+        if "governance circuit breaker opened" in record.message
     ]
     assert len(opened_events) == 1
 
@@ -179,7 +189,9 @@ def test_policy_blocks_blacklisted_runtime_capability(tmp_path: Path) -> None:
     assert "blacklisted" in decision.reason
 
 
-def test_skill_circuit_breaker_cooldown_and_reactivation_controlled(tmp_path: Path) -> None:
+def test_skill_circuit_breaker_cooldown_and_reactivation_controlled(
+    tmp_path: Path,
+) -> None:
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     clock = {"now": start}
     policy = MutationGovernancePolicy(
@@ -202,12 +214,18 @@ def test_skill_circuit_breaker_cooldown_and_reactivation_controlled(tmp_path: Pa
     assert policy.skill_reactivation_allowed(skill) is False
 
     clock["now"] = start + timedelta(seconds=31)
-    allowed = policy.evaluate_skill_execution(skill_name=skill, capability="compute")
-    assert allowed.allowed is True
-    assert policy.skill_reactivation_allowed(skill) is True
+    half_open = policy.evaluate_skill_execution(skill_name=skill, capability="compute")
+    assert half_open.allowed is False
+    assert policy.record_safe_probe(success=True, responsible=skill) is True
+    assert (
+        policy.evaluate_skill_execution(skill_name=skill, capability="compute").allowed
+        is True
+    )
 
 
-def test_policy_safe_mode_requires_review_for_sensitive_skill_family(tmp_path: Path) -> None:
+def test_policy_safe_mode_requires_review_for_sensitive_skill_family(
+    tmp_path: Path,
+) -> None:
     policy = MutationGovernancePolicy(
         safe_mode=True,
         safe_mode_review_required_skill_families=("network", "shell"),
@@ -222,7 +240,9 @@ def test_policy_safe_mode_requires_review_for_sensitive_skill_family(tmp_path: P
     assert "safe-mode requires manual review" in decision.reason
 
 
-def test_policy_blocks_explicit_hostile_interlife_behavior(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_policy_blocks_explicit_hostile_interlife_behavior(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
     policy = MutationGovernancePolicy()
 
@@ -269,7 +289,9 @@ def test_policy_conflict_threshold_triggers_mediation_and_prudent_mode(
     assert policy.social_prudent_mode_enabled() is True
 
 
-def test_cli_values_show_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys) -> None:
+def test_cli_values_show_json(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+) -> None:
     root = tmp_path / "root"
     monkeypatch.delenv("SINGULAR_ROOT", raising=False)
     monkeypatch.delenv("SINGULAR_HOME", raising=False)
@@ -288,7 +310,9 @@ def test_cli_values_show_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, c
     }
 
 
-def test_cli_policy_show_and_set(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys) -> None:
+def test_cli_policy_show_and_set(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+) -> None:
     root = tmp_path / "root"
     monkeypatch.delenv("SINGULAR_ROOT", raising=False)
     monkeypatch.delenv("SINGULAR_HOME", raising=False)

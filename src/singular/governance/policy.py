@@ -953,11 +953,13 @@ class MutationGovernancePolicy:
         self._skill_creation_timestamps: deque[datetime] = deque()
         self._violation_timestamps: deque[datetime] = deque()
         self._circuit_open_until: datetime | None = None
+        self._circuit_half_open = False
         self._last_circuit_breaker_state: CircuitBreakerState | None = None
         self._runtime_call_timestamps: deque[datetime] = deque()
         self._skill_failure_timestamps: dict[str, deque[datetime]] = {}
         self._skill_cost_totals: dict[str, float] = {}
         self._skill_circuit_open_until: dict[str, datetime] = {}
+        self._local_half_open: set[str] = set()
         self._social_influence: dict[tuple[str, str], float] = {}
         self._social_conflict_timestamps: dict[tuple[str, str], deque[datetime]] = {}
         self._social_mediation_until: dict[tuple[str, str], datetime] = {}
@@ -1062,8 +1064,51 @@ class MutationGovernancePolicy:
             return True
         if self._now() < self._circuit_open_until:
             return False
-        self._circuit_open_until = None
-        return True
+        self._circuit_half_open = True
+        return False
+
+    def circuit_breaker_state(self) -> str:
+        """Return ``closed``, ``open`` or ``half-open`` without granting work."""
+
+        if self._circuit_open_until is None:
+            return "half-open" if self._circuit_half_open else "closed"
+        if self._now() < self._circuit_open_until:
+            return "open"
+        self._circuit_half_open = True
+        return "half-open"
+
+    def record_safe_probe(
+        self, *, success: bool, responsible: str | None = None
+    ) -> bool:
+        """Close a half-open breaker only after an isolated, side-effect-free probe."""
+
+        if responsible:
+            key = responsible.strip().lower()
+            if key not in self._local_half_open:
+                return False
+            if success:
+                self._skill_circuit_open_until.pop(key, None)
+                self._skill_failure_timestamps.pop(key, None)
+                self._skill_cost_totals.pop(key, None)
+                self._local_half_open.discard(key)
+                return True
+            self._skill_circuit_open_until[key] = self._now() + timedelta(
+                seconds=self.skill_circuit_breaker_cooldown_seconds
+            )
+            self._local_half_open.discard(key)
+            return False
+        if not self._circuit_half_open:
+            return False
+        if success:
+            self._circuit_open_until = None
+            self._circuit_half_open = False
+            self._violation_timestamps.clear()
+            return True
+        self._circuit_open_until = self._now() + timedelta(
+            seconds=self.circuit_breaker_cooldown_seconds
+        )
+        self._circuit_half_open = False
+        return False
 
     def mutation_lock_reason(self) -> str | None:
         if self.safe_mode:
@@ -1111,7 +1156,7 @@ class MutationGovernancePolicy:
                 self._skill_cost_totals.pop(skill_name, None)
         for skill_name, open_until in list(self._skill_circuit_open_until.items()):
             if now >= open_until:
-                self._skill_circuit_open_until.pop(skill_name, None)
+                self._local_half_open.add(skill_name)
         social_cutoff = now - timedelta(seconds=self.social_conflict_window_seconds)
         for pair, timestamps in list(self._social_conflict_timestamps.items()):
             while timestamps and timestamps[0] < social_cutoff:
@@ -1130,7 +1175,7 @@ class MutationGovernancePolicy:
         return self._last_circuit_breaker_state
 
     def record_violation(
-        self, *, category: str, severity: str = "high"
+        self, *, category: str, severity: str = "high", responsible: str | None = None
     ) -> CircuitBreakerState | None:
         """Record a policy violation and return state when the breaker opens.
 
@@ -1142,20 +1187,22 @@ class MutationGovernancePolicy:
         self._prune_history()
         normalized_category = category.strip().lower()
         normalized_severity = severity.strip().lower()
-        dangerous_categories = {
-            "dangerous_mutation_violation",
-            "source_sandbox_violation",
-            "governance_violation",
-        }
+        confirmed_escape_categories = {"confirmed_root_escape", "outbound_symlink"}
         if normalized_category == "infrastructure" or normalized_severity in {
             "info",
             "low",
         }:
             return None
-        if (
-            normalized_category not in dangerous_categories
-            and normalized_severity != "critical"
-        ):
+        if normalized_category not in confirmed_escape_categories:
+            if responsible and normalized_category in {
+                "invalid_mutation",
+                "invalid_mutation_rejected",
+                "unresolved_path",
+                "missing_artifact",
+                "unauthorized_internal_path",
+                "dangerous_mutation_violation",
+            }:
+                self.record_skill_execution(skill_name=responsible, success=False)
             return None
 
         now = self._now()
@@ -1172,6 +1219,7 @@ class MutationGovernancePolicy:
             self._circuit_open_until = now + timedelta(
                 seconds=self.circuit_breaker_cooldown_seconds
             )
+            self._circuit_half_open = False
             state = CircuitBreakerState(
                 category=category,
                 severity=severity,
@@ -1206,6 +1254,8 @@ class MutationGovernancePolicy:
 
     def _skill_circuit_open(self, skill_name: str) -> bool:
         open_until = self._skill_circuit_open_until.get(skill_name)
+        if skill_name in self._local_half_open:
+            return True
         return open_until is not None and self._now() < open_until
 
     @staticmethod
@@ -1459,6 +1509,8 @@ class MutationGovernancePolicy:
         if success:
             self._skill_failure_timestamps.pop(normalized_skill, None)
             self._skill_cost_totals.pop(normalized_skill, None)
+            self._skill_circuit_open_until.pop(normalized_skill, None)
+            self._local_half_open.discard(normalized_skill)
             return
         failures = self._skill_failure_timestamps.setdefault(normalized_skill, deque())
         failures.append(now)
