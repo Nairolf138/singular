@@ -4,6 +4,7 @@ from singular.life import sandbox
 from singular.life.score import score
 from singular.life.sandbox_scoring import (
     SandboxScore,
+    classify_source_sandbox_path,
     _sandbox_failure_category,
     score_code_with_error,
 )
@@ -82,7 +83,7 @@ def test_sandbox_failure_category_distinguishes_base_and_mutation_failures():
 
     assert _sandbox_failure_category(
         base.is_candidate_failure, mutation.is_candidate_failure, "result = 1"
-    ) == ("source_sandbox_violation", "critical", True)
+    ) == ("invalid_mutation", "medium", False)
 
     base = SandboxScore(score=1.0)
     mutation = SandboxScore(
@@ -91,7 +92,7 @@ def test_sandbox_failure_category_distinguishes_base_and_mutation_failures():
 
     assert _sandbox_failure_category(
         base.is_candidate_failure, mutation.is_candidate_failure, "result = 'bad'"
-    ) == ("invalid_mutation_rejected", "medium", False)
+    ) == ("invalid_mutation", "medium", False)
 
 
 def test_double_failure_is_not_comparable():
@@ -138,4 +139,43 @@ def test_loop_rejects_candidate_mutation_failure_without_global_breaker():
     assert _should_retry_sandbox_scoring(base, mutation) is False
     assert _sandbox_failure_category(
         base.is_candidate_failure, mutation.is_candidate_failure, "result = 'bad'"
-    ) == ("invalid_mutation_rejected", "medium", False)
+    ) == ("invalid_mutation", "medium", False)
+
+
+def test_source_path_categories_cover_missing_escape_and_symlinks(tmp_path):
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    inside = skills / "ok.py"
+    inside.write_text("result = 1\n")
+    outside = tmp_path.parent / "outside.py"
+    outside.write_text("result = 2\n")
+
+    assert (
+        classify_source_sandbox_path(
+            "skills/ok.py", (skills,), sandbox_root=tmp_path
+        ).category
+        is None
+    )
+    assert (
+        classify_source_sandbox_path(
+            skills / "missing.py", (skills,), sandbox_root=tmp_path
+        ).category
+        == "missing_artifact"
+    )
+    assert (
+        classify_source_sandbox_path(outside, (skills,), sandbox_root=tmp_path).category
+        == "confirmed_root_escape"
+    )
+    (skills / "out.py").symlink_to(outside)
+    assert (
+        classify_source_sandbox_path(
+            skills / "out.py", (skills,), sandbox_root=tmp_path
+        ).category
+        == "outbound_symlink"
+    )
+    inbound = tmp_path / "inbound.py"
+    inbound.symlink_to(inside)
+    assert (
+        classify_source_sandbox_path(inbound, (skills,), sandbox_root=tmp_path).category
+        is None
+    )

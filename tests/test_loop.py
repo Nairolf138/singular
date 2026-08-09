@@ -537,7 +537,7 @@ def test_base_ok_mutation_failure_is_noncritical_rejection(tmp_path: Path, monke
     assert diagnostic["mutated_score"] == float("-inf")
     assert diagnostic["base_failed"] is False
     assert diagnostic["mutation_failed"] is True
-    assert diagnostic["sandbox_violation_category"] == "invalid_mutation_rejected"
+    assert diagnostic["sandbox_violation_category"] == "invalid_mutation"
     assert diagnostic["sandbox_violation_severity"] == "medium"
     assert diagnostic["sandbox_violation_global_recorded"] is False
     assert diagnostic["dangerous_mutation_pattern"] is False
@@ -573,12 +573,17 @@ def test_base_failure_remains_critical_violation(tmp_path: Path, monkeypatch):
     diagnostic = _sandbox_diagnostics(events)[0]
     assert diagnostic["base_failed"] is True
     assert diagnostic["mutation_failed"] is False
-    assert diagnostic["sandbox_violation_category"] == "source_sandbox_violation"
-    assert diagnostic["sandbox_violation_severity"] == "critical"
-    assert diagnostic["sandbox_violation_global_recorded"] is True
-    breaker = _event_payloads(events, "governance.circuit_breaker_opened")[0]
-    assert breaker["category"] == "source_sandbox_violation"
-    assert breaker["severity"] == "critical"
+    assert diagnostic["sandbox_violation_category"] == "invalid_mutation"
+    assert diagnostic["sandbox_violation_severity"] == "medium"
+    assert diagnostic["sandbox_violation_global_recorded"] is False
+    assert diagnostic["requested_path"]
+    assert diagnostic["resolved_path"]
+    assert diagnostic["allowed_root"]
+    assert diagnostic["triggered_rule"] == "resolved_path_within_allowed_root"
+    assert diagnostic["responsible_skill"]
+    assert diagnostic["responsible_mutation"]
+    assert len(diagnostic["correlation_id"]) == 24
+    assert not _event_payloads(events, "governance.circuit_breaker_opened")
 
 
 def test_dangerous_mutation_failure_can_escalate_to_critical(
@@ -597,7 +602,7 @@ def test_dangerous_mutation_failure_can_escalate_to_critical(
     assert diagnostic["base_failed"] is False
     assert diagnostic["mutation_failed"] is True
     assert diagnostic["mutation_error_type"] == "missing_result"
-    assert diagnostic["sandbox_violation_category"] == "invalid_mutation_rejected"
+    assert diagnostic["sandbox_violation_category"] == "invalid_mutation"
     assert diagnostic["sandbox_violation_severity"] == "medium"
     assert diagnostic["sandbox_violation_global_recorded"] is False
     assert diagnostic["dangerous_mutation_pattern"] is False
@@ -621,7 +626,7 @@ def test_noncritical_mutation_failures_do_not_immediately_block_orchestrator(
     assert len(diagnostics) == 4
     assert state.iteration >= 4
     assert all(
-        diagnostic["sandbox_violation_category"] == "invalid_mutation_rejected"
+        diagnostic["sandbox_violation_category"] == "invalid_mutation"
         for diagnostic in diagnostics
     )
     assert all(

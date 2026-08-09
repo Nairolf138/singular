@@ -76,7 +76,13 @@ from singular.morals import MoralAction, MoralContextBuilder, MoralDecision, Mor
 from singular.identity.core import IdentityCoreService
 
 from .checkpointing import CHECKPOINT_VERSION, Checkpoint, load_checkpoint, save_checkpoint
-from .sandbox_scoring import SandboxScore, score_code_with_error, score_code, _sandbox_failure_category
+from .sandbox_scoring import (
+    SandboxScore,
+    classify_source_sandbox_path,
+    score_code_with_error,
+    score_code,
+    _sandbox_failure_category,
+)
 from .mutation_flow import apply_mutation, select_operator, _load_default_operators
 from .resource_flow import manage_resources
 from .reproduction_flow import (
@@ -1543,6 +1549,18 @@ def run(
                 sandbox_violation_severity,
                 record_global_sandbox_violation,
             ) = _sandbox_failure_category(base_failed, mutation_failed, mutated)
+            path_classification = classify_source_sandbox_path(
+                skill_path,
+                (skill_path.parent,),
+                sandbox_root=skill_path.parent.parent,
+                require_exists=True,
+            )
+            if path_classification.category is not None:
+                sandbox_violation_category = path_classification.category
+                record_global_sandbox_violation = path_classification.confirmed_escape
+                sandbox_violation_severity = (
+                    "critical" if path_classification.confirmed_escape else "medium"
+                )
             critical_sandbox_failure = sandbox_violation_severity == "critical"
 
             if infrastructure_failure:
@@ -1624,7 +1642,11 @@ def run(
 
             candidate_accepted = (
                 False
-                if mutation_failed or not scores_comparable
+                if (
+                    mutation_failed
+                    or not scores_comparable
+                    or path_classification.category is not None
+                )
                 else (
                     _map_elites_accept(
                         map_elites, mutated, mutated_comparable_score, tick_profiler
@@ -2250,11 +2272,25 @@ def run(
                     payload_version=1,
                 )
 
-            sandbox_failure = base_failed or mutation_failed
+            sandbox_failure = (
+                base_failed
+                or mutation_failed
+                or path_classification.category is not None
+            )
+            correlation_id = hashlib.sha256(
+                f"{logger.run_id}:{state.iteration}:{org_name}:{selected_skill_key}:{op_name}".encode()
+            ).hexdigest()[:24]
             sandbox_diagnostic = {
                 "organism": org_name,
                 "skill_path": str(skill_path),
                 "operator": op_name,
+                "correlation_id": correlation_id,
+                "requested_path": path_classification.requested_path,
+                "resolved_path": path_classification.resolved_path,
+                "allowed_root": path_classification.allowed_root,
+                "triggered_rule": path_classification.rule,
+                "responsible_skill": selected_skill_key,
+                "responsible_mutation": op_name,
                 "base_score": base_score,
                 "mutated_score": mutated_score,
                 "base_failed": base_failed,
@@ -2351,10 +2387,11 @@ def run(
                         },
                         payload_version=1,
                     )
-                elif record_global_sandbox_violation:
+                elif sandbox_violation_category is not None:
                     breaker_state = governance_policy.record_violation(
                         category=sandbox_violation_category or "sandbox_violation",
                         severity=sandbox_violation_severity or "high",
+                        responsible=selected_skill_key,
                     )
                     if breaker_state is not None:
                         breaker_payload = breaker_state.to_payload()

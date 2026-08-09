@@ -17,13 +17,17 @@ def test_trigger_response_builds_targeted_actions_and_blacklist() -> None:
     assert "test_guard_semantic_drift" in plan.targeted_tests
     assert "deny_pattern:semantic_drift" in plan.hardened_rules
     assert plan.blacklist_ttl_seconds == 600.0
-    assert engine.is_temporarily_blacklisted("semantic_drift", now + timedelta(seconds=1))
+    assert engine.is_temporarily_blacklisted(
+        "semantic_drift", now + timedelta(seconds=1)
+    )
 
 
 def test_memory_decay_forgets_weak_entries() -> None:
     engine = AdaptiveImmunityEngine(half_life_seconds=10.0)
     start = datetime(2026, 5, 3, tzinfo=timezone.utc)
-    engine.trigger_response(IncidentRecord(pattern="constraint_bypass", happened_at=start))
+    engine.trigger_response(
+        IncidentRecord(pattern="constraint_bypass", happened_at=start)
+    )
 
     engine.decay_memory(start + timedelta(seconds=50))
 
@@ -68,27 +72,21 @@ def test_three_non_dangerous_invalid_mutations_do_not_stop_global_breaker() -> N
     assert policy.last_circuit_breaker_state() is None
 
 
-def test_critical_violations_open_security_circuit_breaker() -> None:
+def test_invalid_mutations_open_only_the_responsible_local_breaker() -> None:
     policy = MutationGovernancePolicy(
         circuit_breaker_threshold=15,
         circuit_breaker_critical_threshold=2,
         circuit_breaker_cooldown_seconds=45.0,
     )
 
-    assert (
+    for _ in range(3):
         policy.record_violation(
-            category="dangerous_mutation_violation", severity="critical"
+            category="invalid_mutation", severity="critical", responsible="skill.bad"
         )
-        is None
-    )
-    opened = policy.record_violation(
-        category="dangerous_mutation_violation", severity="critical"
-    )
 
-    assert opened is not None
-    assert opened.threshold == 2
-    assert opened.cooldown_seconds == 45.0
-    assert policy.mutations_enabled() is False
+    assert policy.evaluate_skill_execution(skill_name="skill.bad").allowed is False
+    assert policy.evaluate_skill_execution(skill_name="skill.good").allowed is True
+    assert policy.mutations_enabled() is True
 
 
 def test_circuit_breaker_cooldown_is_configurable() -> None:
@@ -101,11 +99,14 @@ def test_circuit_breaker_cooldown_is_configurable() -> None:
     policy._now = lambda: clock["now"]  # type: ignore[method-assign]
 
     opened = policy.record_violation(
-        category="source_sandbox_violation", severity="critical"
+        category="confirmed_root_escape", severity="critical"
     )
 
     assert opened is not None
     assert opened.open_until == "2026-05-03T00:00:07+00:00"
     assert policy.mutations_enabled() is False
     clock["now"] = start + timedelta(seconds=8)
+    assert policy.mutations_enabled() is False
+    assert policy.circuit_breaker_state() == "half-open"
+    assert policy.record_safe_probe(success=True) is True
     assert policy.mutations_enabled() is True

@@ -2,10 +2,131 @@ from __future__ import annotations
 
 import ast
 import math
+import os
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable
 from typing import ClassVar
 
 from . import sandbox
+
+
+CONFIRMED_ROOT_ESCAPE = "confirmed_root_escape"
+OUTBOUND_SYMLINK = "outbound_symlink"
+UNRESOLVED_PATH = "unresolved_path"
+UNAUTHORIZED_INTERNAL_PATH = "unauthorized_internal_path"
+MISSING_ARTIFACT = "missing_artifact"
+INVALID_MUTATION = "invalid_mutation"
+
+
+@dataclass(frozen=True)
+class SandboxPathClassification:
+    """Result of a filesystem-aware sandbox source check."""
+
+    category: str | None
+    requested_path: str
+    resolved_path: str | None
+    allowed_root: str | None
+    rule: str
+
+    @property
+    def confirmed_escape(self) -> bool:
+        return self.category in {CONFIRMED_ROOT_ESCAPE, OUTBOUND_SYMLINK}
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    """Compare path components (not strings) to determine containment."""
+
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def classify_source_sandbox_path(
+    requested_path: str | Path,
+    allowed_roots: Iterable[str | Path],
+    *,
+    sandbox_root: str | Path | None = None,
+    require_exists: bool = True,
+) -> SandboxPathClassification:
+    """Classify a requested source path, including missing and symlink cases.
+
+    Relative paths are interpreted from ``sandbox_root`` (or the current working
+    directory).  A missing leaf is an absent artifact; a broken symlink or other
+    strict-resolution failure is unresolved.  A lexical path inside an allowed
+    root which resolves outside it is explicitly an outbound symlink.
+    """
+
+    requested = Path(requested_path)
+    base = Path(sandbox_root) if sandbox_root is not None else Path.cwd()
+    try:
+        base_resolved = base.resolve(strict=True)
+        roots = tuple(Path(root).resolve(strict=True) for root in allowed_roots)
+    except (OSError, RuntimeError) as exc:
+        return SandboxPathClassification(
+            UNRESOLVED_PATH,
+            str(requested),
+            None,
+            None,
+            f"allowed_root_resolution_failed:{type(exc).__name__}",
+        )
+    lexical = requested if requested.is_absolute() else base_resolved / requested
+    lexical = Path(os.path.abspath(lexical))
+    lexical_root = next((root for root in roots if _is_within(lexical, root)), None)
+    try:
+        resolved = lexical.resolve(strict=False)
+        if lexical.is_symlink() and not lexical.exists():
+            lexical.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        return SandboxPathClassification(
+            UNRESOLVED_PATH,
+            str(requested),
+            None,
+            str(lexical_root) if lexical_root else None,
+            f"path_resolution_failed:{type(exc).__name__}",
+        )
+    resolved_root = next((root for root in roots if _is_within(resolved, root)), None)
+    if lexical_root is not None and resolved_root is None:
+        return SandboxPathClassification(
+            OUTBOUND_SYMLINK,
+            str(requested),
+            str(resolved),
+            str(lexical_root),
+            "symlink_target_outside_allowed_root",
+        )
+    if resolved_root is None:
+        if _is_within(resolved, base_resolved):
+            return SandboxPathClassification(
+                UNAUTHORIZED_INTERNAL_PATH,
+                str(requested),
+                str(resolved),
+                str(base_resolved),
+                "path_inside_sandbox_but_outside_allowed_roots",
+            )
+        return SandboxPathClassification(
+            CONFIRMED_ROOT_ESCAPE,
+            str(requested),
+            str(resolved),
+            str(base_resolved),
+            "resolved_path_outside_sandbox_root",
+        )
+    if require_exists and not resolved.exists():
+        return SandboxPathClassification(
+            MISSING_ARTIFACT,
+            str(requested),
+            str(resolved),
+            str(resolved_root),
+            "required_artifact_does_not_exist",
+        )
+    return SandboxPathClassification(
+        None,
+        str(requested),
+        str(resolved),
+        str(resolved_root),
+        "resolved_path_within_allowed_root",
+    )
 
 
 @dataclass(init=False, frozen=True)
@@ -24,22 +145,26 @@ class SandboxScore:
     error_message: str | None
     _legacy_exception_type: str | None
 
-    INFRASTRUCTURE_ERROR_TYPES: ClassVar[frozenset[str]] = frozenset({
-        "timeout",
-        "sandbox_startup_timeout",
-        "sandbox_worker_no_payload",
-        "multiprocessing_error",
-    })
-    CANDIDATE_ERROR_TYPES: ClassVar[frozenset[str]] = frozenset({
-        "syntax_error",
-        "missing_result",
-        "non_numeric_result",
-        "non_finite_result",
-        "forbidden_syntax",
-        "forbidden_name",
-        "sandbox_error",
-        "runtime_exception",
-    })
+    INFRASTRUCTURE_ERROR_TYPES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "timeout",
+            "sandbox_startup_timeout",
+            "sandbox_worker_no_payload",
+            "multiprocessing_error",
+        }
+    )
+    CANDIDATE_ERROR_TYPES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "syntax_error",
+            "missing_result",
+            "non_numeric_result",
+            "non_finite_result",
+            "forbidden_syntax",
+            "forbidden_name",
+            "sandbox_error",
+            "runtime_exception",
+        }
+    )
 
     def __init__(
         self,
@@ -160,11 +285,11 @@ def _sandbox_failure_category(
     """Classify sandbox failures for governance escalation."""
 
     if base_failed:
-        return "source_sandbox_violation", "critical", True
+        return "invalid_mutation", "medium", False
     if mutation_failed:
         if _has_explicit_dangerous_pattern(mutated):
-            return "dangerous_mutation_violation", "critical", True
-        return "invalid_mutation_rejected", "medium", False
+            return "invalid_mutation", "high", False
+        return "invalid_mutation", "medium", False
     return None, None, False
 
 
