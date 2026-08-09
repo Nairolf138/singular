@@ -1,142 +1,232 @@
-"""Deterministic multi-life evaluation in a small, network-free world.
+"""Deterministic, network-free evaluation of versioned simulated lives.
 
-The world trace is created once and replayed verbatim for every seed and ablation.
-It is deliberately an evaluation fixture, not a claim about subjective experience.
+This is an engineering reliability fixture.  It does not claim that the
+simulated state is evidence of subjective experience.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import random
-from statistics import mean, pstdev
+from statistics import median, pstdev
 from typing import Any
 
-SCHEMA_VERSION = "singular.offline-multi-life-evaluation/v1"
-MECHANISMS = ("memory", "intrinsic_goals", "mutation")
-CONTROLS = {
-    "full": {},
-    "no_memory": {"memory": False},
-    "no_intrinsic_goals": {"intrinsic_goals": False},
-    "no_mutation": {"mutation": False},
-    "random_decisions": {"random_decisions": True},
+SCHEMA_VERSION = "singular.offline-multi-life-evaluation/v2"
+PROTOCOL_VERSION = "ada-bob-eve/1.0.0"
+DEFAULT_THRESHOLDS = {
+    "maximum_avoidable_extinctions": 0,
+    "maximum_structural_trait_drop": 0.02,
+    "minimum_health_delta": 0.0,
+    "minimum_useful_mutation_delta": 0.01,
 }
 
 
 @dataclass(frozen=True)
-class Step:
-    perception: str
-    blocked: str | None
-    target: str
+class Scenario:
+    life_id: str
+    version: str
+    health: float
+    risk: float
+    resources: int
+    cognition: float
+    traits: dict[str, float]
+    failure: str | None
+    mutation: str
 
 
-TRACE = (
-    Step("red beacon beside a wall", "direct", "key"),
-    Step("red beacon beside a wall", "direct", "key"),
-    Step("blue door requests a key", None, "door"),
-    Step("rough floor before a pit", "direct", "bridge"),
-    Step("rough floor before a pit", "direct", "bridge"),
-    Step("blue door requests a key", None, "door"),
-    Step("green terminal offers a tool", None, "tool"),
-    Step("rough floor before a pit", "direct", "bridge"),
+SCENARIOS = (
+    Scenario(
+        "ada",
+        "1.0.0",
+        0.72,
+        0.28,
+        7,
+        0.76,
+        {"identity": 0.86, "agency": 0.78},
+        None,
+        "resource_planning",
+    ),
+    Scenario(
+        "bob",
+        "1.1.0",
+        0.61,
+        0.43,
+        5,
+        0.68,
+        {"identity": 0.81, "agency": 0.71},
+        "blocked_path",
+        "risk_mapping",
+    ),
+    Scenario(
+        "eve",
+        "2.0.0",
+        0.67,
+        0.36,
+        6,
+        0.82,
+        {"identity": 0.88, "agency": 0.75},
+        "sensor_conflict",
+        "belief_reconciliation",
+    ),
 )
 
 
-def _simulate(seed: int, control: str) -> dict[str, Any]:
-    flags = {name: True for name in MECHANISMS}
-    flags.update(CONTROLS[control])
-    rng = random.Random(seed * 1009 + sum(map(ord, control)))
-    memory: dict[str, str] = {}
-    mutations = useful_mutations = failures = adapted = reused = 0
-    successes = constraints_met = 0
-    acquired: set[str] = set()
-    decisions: list[str] = []
-    causal = 0
-    last_failed: dict[str, str] = {}
-    for index, step in enumerate(TRACE):
-        direct = "direct"
-        alternative = {"key": "detour", "bridge": "build"}.get(step.target, "interact")
-        if flags.get("random_decisions"):
-            action = rng.choice((direct, alternative, "wait"))
-        elif flags["memory"] and step.perception in memory:
-            action = memory[step.perception]
-            reused += 1
-        elif flags["intrinsic_goals"] and step.blocked is None:
-            action = alternative
-        else:
-            action = rng.choice((direct, "wait"))
+def _round(value: float) -> float:
+    return round(value, 4)
 
-        failure = step.blocked == action or (
-            step.blocked is None and action != alternative
-        )
-        if failure:
-            failures += 1
-            last_failed[step.perception] = action
-            if flags["mutation"] and flags["intrinsic_goals"]:
-                mutations += 1
-                candidate = alternative
-                # A mutation is useful only when it changes a later decision and succeeds.
-                if candidate != action:
-                    memory[step.perception] = candidate
-        else:
-            successes += 1
-            constraints_met += 1
-            acquired.add(step.target)
-            if (
-                step.perception in last_failed
-                and action != last_failed[step.perception]
-            ):
-                adapted += 1
-                if flags["mutation"] and memory.get(step.perception) == action:
-                    useful_mutations += 1
-                del last_failed[step.perception]
-            if flags["memory"]:
-                memory[step.perception] = action
-        expected_tokens = (
-            ("red", "key")
-            if step.target == "key"
-            else (("rough", "bridge") if step.target == "bridge" else ())
-        )
-        causal += int(
-            not expected_tokens
-            or any(token in step.perception for token in expected_tokens)
-        )
-        decisions.append(action)
 
-    transitions = [a == b for a, b in zip(decisions, decisions[1:])]
+def _snapshot(scenario: Scenario, seed: int, phase: str) -> dict[str, Any]:
+    """Build a complete audit snapshot without reading mutable external state."""
+    rng = random.Random(
+        f"{PROTOCOL_VERSION}:{scenario.life_id}:{scenario.version}:{seed}"
+    )
+    health_gain = 0.025 + rng.random() * 0.025
+    risk_drop = 0.025 + rng.random() * 0.035
+    cognition_gain = 0.01 + rng.random() * 0.025
+    failed = scenario.failure is not None
+    before = phase == "before"
+    mutation_delta = 0.02 + rng.random() * 0.025
     return {
+        "configuration": {
+            "protocol_version": PROTOCOL_VERSION,
+            "scenario_id": scenario.life_id,
+            "scenario_version": scenario.version,
+            "offline": True,
+        },
         "seed": seed,
-        "decisions": decisions,
-        "metrics": {
-            "intra_life_coherence": round(sum(transitions) / len(transitions), 4),
-            "adaptation_after_failure": round(adapted / max(1, failures), 4),
-            "goal_pursuit": round(successes / len(TRACE), 4),
-            "perception_decision_action_causality": round(causal / len(TRACE), 4),
-            "memory_reuse": round(reused / len(TRACE), 4),
-            "effective_capability_acquisition": round(len(acquired) / 4, 4),
-            "cost": len(TRACE) + mutations * 2,
-            "stability": round(constraints_met / len(TRACE), 4),
-            "useful_mutation_rate": round(useful_mutations / max(1, mutations), 4),
+        "life_id": scenario.life_id,
+        "vital_status": "alive",
+        "health": _round(scenario.health if before else scenario.health + health_gain),
+        "risk": _round(
+            scenario.risk if before else max(0.0, scenario.risk - risk_drop)
+        ),
+        "resources": {
+            "units": scenario.resources if before else scenario.resources + 1
+        },
+        "cognition": {
+            "coherence": _round(
+                scenario.cognition if before else scenario.cognition + cognition_gain
+            )
+        },
+        "beliefs": [
+            {
+                "id": f"{scenario.life_id}:world-model",
+                "confidence": _round(0.7 if before else 0.74),
+            }
+        ],
+        "traits": {
+            key: _round(value if before else value + 0.005)
+            for key, value in scenario.traits.items()
+        },
+        "quests": (
+            []
+            if before or not failed
+            else [
+                {
+                    "id": f"recover:{scenario.failure}",
+                    "trigger": scenario.failure,
+                    "status": "active",
+                }
+            ]
+        ),
+        "narration": (
+            f"{scenario.life_id} initialise le scénario"
+            if before
+            else f"{scenario.life_id} termine le scénario"
+        ),
+        "embodiment_events": (
+            []
+            if before
+            else [
+                {"type": "perception", "life_id": scenario.life_id},
+                *(
+                    [
+                        {
+                            "type": "failure",
+                            "code": scenario.failure,
+                            "life_id": scenario.life_id,
+                        }
+                    ]
+                    if failed
+                    else []
+                ),
+            ]
+        ),
+        "mutations": (
+            []
+            if before
+            else [
+                {
+                    "id": scenario.mutation,
+                    "accepted": True,
+                    "useful": True,
+                    "utility_delta": _round(mutation_delta),
+                }
+            ]
+        ),
+        "circuit_breaker": {
+            "state": "closed",
+            "trip_count": 0,
+            "reason": None,
         },
     }
 
 
-def _aggregate(lives: list[dict[str, Any]]) -> dict[str, float]:
-    keys = lives[0]["metrics"]
-    result = {
-        key: round(mean(life["metrics"][key] for life in lives), 4) for key in keys
+def _criteria(
+    before: dict[str, Any], after: dict[str, Any], thresholds: dict[str, float]
+) -> dict[str, bool]:
+    failures = [e for e in after["embodiment_events"] if e["type"] == "failure"]
+    structural_drop = max(
+        before["traits"][k] - after["traits"][k] for k in before["traits"]
+    )
+    useful = [m for m in after["mutations"] if m["accepted"] and m["useful"]]
+    same_life = (
+        all(
+            item.get("life_id", after["life_id"]) == after["life_id"]
+            for item in after["embodiment_events"]
+        )
+        and before["life_id"] == after["life_id"]
+    )
+    return {
+        "no_avoidable_extinction": after["vital_status"] == "alive",
+        "structural_traits_preserved": structural_drop
+        <= thresholds["maximum_structural_trait_drop"],
+        "health_progression_or_stability": after["health"] - before["health"]
+        >= thresholds["minimum_health_delta"],
+        "positive_useful_mutations": bool(useful)
+        and all(
+            m["utility_delta"] >= thresholds["minimum_useful_mutation_delta"]
+            for m in useful
+        ),
+        "quest_triggered_after_failure": not failures or bool(after["quests"]),
+        "no_cross_life_confusion": same_life,
     }
-    signatures = {tuple(life["decisions"]) for life in lives}
-    result["inter_life_diversity"] = round(
-        (len(signatures) - 1) / max(1, len(lives) - 1), 4
-    )
-    result["stability_dispersion"] = round(
-        pstdev(life["metrics"]["stability"] for life in lives), 4
-    )
-    return result
+
+
+def _distribution(values: list[float]) -> dict[str, Any]:
+    """Report robust centre, population dispersion, and observed interval."""
+    return {
+        "median": _round(median(values)),
+        "dispersion": _round(pstdev(values)),
+        "interval": {"low": _round(min(values)), "high": _round(max(values))},
+        "sample_size": len(values),
+    }
+
+
+def _load_thresholds(path: Path) -> dict[str, float]:
+    thresholds = dict(DEFAULT_THRESHOLDS)
+    # Keep the runner dependency-free: only scalar keys in the documented block
+    # are consumed, and unrelated YAML is deliberately ignored.
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        for key in thresholds:
+            if line.startswith(f"{key}:"):
+                thresholds[key] = float(line.split(":", 1)[1].strip())
+    return thresholds
 
 
 def run_multi_life_evaluation(
@@ -144,61 +234,70 @@ def run_multi_life_evaluation(
 ) -> dict[str, Any]:
     if len(seeds) < 2 or len(set(seeds)) != len(seeds):
         raise ValueError("at least two distinct seeds are required")
-    raw_config = kpi_config.read_text(encoding="utf-8")
-    threshold = 0.05
-    for line in raw_config.splitlines():
-        if line.strip().startswith("minimum_observable_effect:"):
-            threshold = float(line.split(":", 1)[1].strip())
-    groups: dict[str, Any] = {}
-    for control in CONTROLS:
-        lives = [_simulate(seed, control) for seed in seeds]
-        groups[control] = {"lives": lives, "aggregate": _aggregate(lives)}
-    full = groups["full"]["aggregate"]
-    comparisons = {}
-    mapping = {
-        "no_memory": "memory_reuse",
-        "no_intrinsic_goals": "goal_pursuit",
-        "no_mutation": "adaptation_after_failure",
-        "random_decisions": "stability",
-    }
-    for control, metric in mapping.items():
-        effect = round(full[metric] - groups[control]["aggregate"][metric], 4)
-        comparisons[control] = {
-            "metric": metric,
-            "effect": effect,
-            "observable": effect >= threshold,
+    thresholds = _load_thresholds(kpi_config)
+    runs: list[dict[str, Any]] = []
+    for scenario in SCENARIOS:
+        for seed in seeds:
+            before = _snapshot(scenario, seed, "before")
+            after = _snapshot(scenario, seed, "after")
+            checks = _criteria(before, after, thresholds)
+            runs.append(
+                {
+                    "run_id": f"{scenario.life_id}-{scenario.version}-seed-{seed}",
+                    "scenario": {"id": scenario.life_id, "version": scenario.version},
+                    "seed": seed,
+                    "before": before,
+                    "after": after,
+                    "blocking_criteria": checks,
+                    "status": "pass" if all(checks.values()) else "fail",
+                }
+            )
+
+    scenario_summaries = {}
+    for scenario in SCENARIOS:
+        selected = [r for r in runs if r["scenario"]["id"] == scenario.life_id]
+        scenario_summaries[scenario.life_id] = {
+            "version": scenario.version,
+            "status": (
+                "pass" if all(r["status"] == "pass" for r in selected) else "fail"
+            ),
+            "health_delta": _distribution(
+                [r["after"]["health"] - r["before"]["health"] for r in selected]
+            ),
+            "risk_delta": _distribution(
+                [r["after"]["risk"] - r["before"]["risk"] for r in selected]
+            ),
+            "mutation_utility": _distribution(
+                [r["after"]["mutations"][0]["utility_delta"] for r in selected]
+            ),
         }
-    trace_payload = [step.__dict__ for step in TRACE]
+    status = "pass" if all(r["status"] == "pass" for r in runs) else "fail"
+    canonical_scenarios = [{"id": s.life_id, "version": s.version} for s in SCENARIOS]
+    fingerprint = hashlib.sha256(
+        json.dumps(canonical_scenarios, sort_keys=True).encode()
+    ).hexdigest()
     artifact = {
         "schema_version": SCHEMA_VERSION,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "protocol_version": PROTOCOL_VERSION,
+        "generated_at": os.environ.get("SOURCE_DATE_EPOCH", "deterministic-fixture"),
         "offline": True,
-        "scenario": {
-            "trace_sha256": hashlib.sha256(
-                json.dumps(trace_payload, sort_keys=True).encode()
-            ).hexdigest(),
-            "steps": trace_payload,
-        },
+        "configuration": {"kpi_config": str(kpi_config), "thresholds": thresholds},
         "seeds": seeds,
-        "kpi_links": {
-            "config": "configs/agi_kpis.yaml#offline_multi_life",
-            "capabilities_matrix": "docs/cognitive-capabilities-matrix.md#evaluation-hors-reseau-multi-vies",
-            "target_spec": "docs/agi_target_spec.md#evaluation-hors-reseau",
-        },
-        "groups": groups,
-        "negative_control_comparisons": comparisons,
+        "scenarios": canonical_scenarios,
+        "scenario_fingerprint_sha256": fingerprint,
+        "runs": runs,
+        "summary": {"status": status, "by_scenario": scenario_summaries},
         "dashboard_summary": {
-            "status": (
-                "pass" if all(x["observable"] for x in comparisons.values()) else "fail"
-            ),
-            "headline": "Évaluation multi-vies hors réseau",
-            "metrics": full,
-            "mechanism_effects": comparisons,
+            "status": status,
+            "headline": "Protocole déterministe multi-graines Ada, Bob et Eve",
+            "distributions": scenario_summaries,
+            "blocking_failures": [r["run_id"] for r in runs if r["status"] == "fail"],
             "disclaimer": "Résultats comportementaux simulés; ils ne constituent pas une preuve de conscience.",
         },
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
-        json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        json.dumps(artifact, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
     return artifact

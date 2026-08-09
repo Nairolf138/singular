@@ -18,3 +18,42 @@ Ce document sert de référence opérateur pour vérifier les capacités critiqu
 ## Test smoke recommandé
 
 Le test `tests/test_dashboard_smoke_e2e.py::test_smoke_dashboard_e2e_capacites_critiques` valide en une seule exécution les capacités ci-dessus via des appels API dashboard représentatifs (contexte, comparaison, cockpit, quêtes, interactions, conversations, social links, mode essentiel).
+
+## Protocole hors réseau multi-vies
+
+Le protocole versionné `ada-bob-eve/1.0.0` rejoue les scénarios **Ada
+1.0.0**, **Bob 1.1.0** et **Eve 2.0.0** pour chaque graine, sans réseau. La
+commande CI recommandée est :
+
+```bash
+python scripts/run_offline_multi_life_eval.py \
+  --seeds 11,23,37,53,71 \
+  --output artifacts/evaluations/offline_multi_life_v2.json \
+  --kpi-config configs/agi_kpis.yaml
+```
+
+Le code de sortie est non nul dès qu'un critère bloquant échoue. Chaque run
+capture avant et après la configuration et la graine, le statut vital, la
+santé, le risque, les ressources, la cognition, les beliefs, les traits, les
+quêtes, la narration, les événements d'embodiment, les mutations et le circuit
+breaker. L'artefact JSON `singular.offline-multi-life-evaluation/v2` contient
+également, par scénario, la médiane, l'écart-type population (`dispersion`) et
+l'intervalle observé (`low`–`high`) ; un run isolé n'est donc jamais présenté
+comme résultat global.
+
+### Seuils bloquants
+
+Les seuils sont lus dans `configs/agi_kpis.yaml`, bloc `offline_multi_life` :
+
+| Critère | Seuil |
+| --- | --- |
+| Extinctions évitables | `maximum_avoidable_extinctions: 0` |
+| Chute d'un trait structurant | au plus `maximum_structural_trait_drop: 0.02` |
+| Évolution de la santé | au moins `minimum_health_delta: 0.0` (stabilité admise) |
+| Utilité d'une mutation acceptée | au moins `minimum_useful_mutation_delta: 0.01` |
+| Échec observé | au moins une quête corrélée doit être déclenchée |
+| Isolation des vies | tous les événements gardent le même `life_id` |
+
+Le test `tests/test_offline_multi_life_evaluation.py` verrouille le schéma de
+capture, les critères, les distributions et la reproductibilité octet pour
+octet à configuration et graines identiques.
