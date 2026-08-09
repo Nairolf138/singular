@@ -1,4 +1,5 @@
 import {fetchJson,withScope} from './api.js';
+import {getSelectedLife} from './state.js';
 
 const CACHE_TTL_MS=1500;
 const cache=new Map();
@@ -16,8 +17,12 @@ const cachedJson=url=>{
 };
 
 export const fetchSharedDashboardContext=()=>cachedJson('/dashboard/context');
-export const fetchSharedLivesComparison=()=>cachedJson(withScope('/lives/comparison?sort_by=last_activity&sort_order=desc'));
-export const fetchSharedCockpitEssential=()=>cachedJson(withScope('/api/cockpit/essential'));
+const selectedLifeQuery=()=>{
+  const lifeId=getSelectedLife();
+  return lifeId?`&life_id=${encodeURIComponent(lifeId)}`:'';
+};
+export const fetchSharedLivesComparison=()=>cachedJson(withScope(`/lives/comparison?sort_by=last_activity&sort_order=desc${selectedLifeQuery()}`));
+export const fetchSharedCockpitEssential=()=>cachedJson(withScope(`/api/cockpit/essential?dashboard=1${selectedLifeQuery()}`));
 
 export const fetchSharedDashboardData=()=>Promise.allSettled([
   fetchSharedDashboardContext(),

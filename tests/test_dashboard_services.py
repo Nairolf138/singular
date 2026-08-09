@@ -3,8 +3,26 @@ from __future__ import annotations
 from pathlib import Path
 
 from singular.dashboard.services.lives_comparison import aggregate_lives, build_life_timeseries
+from singular.dashboard.services.metrics_contract import normalize_life_metrics
 from singular.dashboard.services.code_evolution import aggregate_code_evolution
 from singular.dashboard.services.trajectory import build_trajectory
+
+
+def test_life_metrics_contract_keeps_selected_active_and_latest_distinct() -> None:
+    lives, identities = normalize_life_metrics(
+        {
+            "consulted": {"registry_status": "active", "life_status": "alive", "last_activity": None},
+            "running": {"registry_status": "active", "life_status": "alive", "last_activity": "2026-08-08T00:00:00Z"},
+            "observed": {"registry_status": "archived", "life_status": "fragile", "last_activity": "2026-08-09T00:00:00Z"},
+        },
+        selected_life_id="consulted",
+        registry_active_life_id="running",
+    )
+    assert lives["consulted"]["selected_life"] is True
+    assert lives["running"]["is_registry_active_life"] is True
+    assert identities["latest_event_life_id"] == "observed"
+    assert identities["latest_event_life_status"] == "fragile"
+    assert lives["observed"]["viability_status"] == "unknown"
 
 
 def test_trajectory_service_builds_priority_changes_and_links(tmp_path: Path) -> None:
