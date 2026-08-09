@@ -5,6 +5,18 @@ from pathlib import Path
 import singular.cli as cli
 
 
+def test_autonomous_generation_is_explicitly_optional(monkeypatch, tmp_path) -> None:
+    from singular.diagnostics import autonomous
+
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    report = autonomous.autonomous_diagnostics(run_generation=False)
+    generation = next(
+        c for c in report["checks"] if c["check_id"] == "minimal_generation"
+    )
+    assert generation["state"] == "ready"
+    assert generation["evidence"]["requested"] is False
+
+
 def _write_skill(home: Path, name: str, source: str) -> None:
     skills = home / "skills"
     skills.mkdir(parents=True, exist_ok=True)

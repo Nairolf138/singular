@@ -89,6 +89,24 @@ def load_configured_registry_root(cwd: Path | None = None) -> Path | None:
     )
 
 
+def diagnose_registry_root(cwd: Path | None = None) -> dict[str, Any]:
+    """Return the effective registry root and its non-secret provenance.
+
+    This is deliberately a data-only helper so installers, the CLI and the web
+    dashboard can present the exact same root-resolution decision.
+    """
+
+    env_root = os.environ.get("SINGULAR_ROOT")
+    configured = load_configured_registry_root(cwd)
+    if env_root:
+        root, source = _safe_path(env_root).expanduser().resolve(), "environment"
+    elif configured is not None:
+        root, source = configured.resolve(), "configuration"
+    else:
+        root, source = default_registry_root().resolve(), "default"
+    return {"root": root, "source": source, "exists": root.is_dir()}
+
+
 def set_configured_registry_root(
     value: str, *, scope: str, cwd: Path | None = None
 ) -> tuple[Path, Path]:
@@ -97,11 +115,15 @@ def set_configured_registry_root(
     if scope not in {"global", "project"}:
         raise ValueError("scope must be 'global' or 'project'")
 
-    config_path = global_config_path() if scope == "global" else project_config_path(cwd)
+    config_path = (
+        global_config_path() if scope == "global" else project_config_path(cwd)
+    )
     payload = _load_json(config_path)
     payload[_REGISTRY_ROOT_KEY] = value
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    config_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     resolved = _decode_registry_root(value, base_dir=config_path.parent)
     if resolved is None:

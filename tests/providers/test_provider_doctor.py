@@ -125,3 +125,22 @@ def test_doctor_distinguishes_missing_ollama_model(monkeypatch):
     assert result["installed"] is True
     assert result["configured"] is False
     assert result["reachable"] is False
+
+
+def test_provider_diagnostics_exposes_all_three_dashboard_states(monkeypatch):
+    monkeypatch.setattr(
+        providers,
+        "doctor_providers",
+        lambda _names=None: [{"state": "unavailable"}],
+    )
+    assert provider_diagnostics()["state"] == "unavailable"
+    monkeypatch.setattr(
+        providers,
+        "doctor_providers",
+        lambda _names=None: [{"state": "degraded_dummy"}],
+    )
+    assert provider_diagnostics()["state"] == "degraded_dummy"
+    monkeypatch.setattr(
+        providers, "doctor_providers", lambda _names=None: [{"state": "ready"}]
+    )
+    assert provider_diagnostics()["state"] == "ready"

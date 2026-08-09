@@ -1812,6 +1812,16 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Try to add user Scripts directory to user Path on Windows",
     )
+    doctor_parser.add_argument(
+        "--autonomous",
+        action="store_true",
+        help="Vérifie l'aptitude à fonctionner en autonomie",
+    )
+    doctor_parser.add_argument(
+        "--generate",
+        action="store_true",
+        help="Ajoute une génération LLM minimale au diagnostic autonome",
+    )
     config_parser = subparsers.add_parser("config", help="Configure providers and env")
     config_subparsers = config_parser.add_subparsers(
         dest="config_command", required=True
@@ -2553,6 +2563,22 @@ def main(argv: list[str] | None = None) -> int:
             return _retention_config_show()
 
     elif args.command == "doctor":
+        if args.autonomous:
+            from .diagnostics.autonomous import autonomous_diagnostics
+
+            report = autonomous_diagnostics(run_generation=args.generate)
+            if args.output_format == "json":
+                print(json.dumps(report, ensure_ascii=False, indent=2))
+            else:
+                print(f"Diagnostic autonomie: {report['status']}")
+                print("check_id | sévérité | état | preuve | correction")
+                for check in report["checks"]:
+                    print(
+                        f"{check['check_id']} | {check['severity']} | {check['state']} | "
+                        f"{json.dumps(check['evidence'], ensure_ascii=False, sort_keys=True)} | "
+                        f"{check['remediation_command'] or '-'}"
+                    )
+            return int(report["exit_code"])
         _doctor(fix=args.fix)
         _doctor_providers()
 
