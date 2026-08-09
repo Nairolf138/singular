@@ -6,7 +6,12 @@ from pathlib import Path
 import pytest
 
 from singular.cli import main
-from singular.governance.policy import AUTH_BLOCKED, MutationGovernancePolicy
+from singular.governance.policy import (
+    AUTH_BLOCKED,
+    MutationGovernancePolicy,
+    classify_governance_incident,
+    load_circuit_state,
+)
 from singular.governance.values import (
     ValueWeights,
     ValuesSchemaError,
@@ -118,6 +123,29 @@ def test_internal_policy_denials_do_not_open_global_breaker(tmp_path: Path) -> N
 
     assert policy.mutations_enabled() is True
     assert decision.allowed is True
+
+
+def test_incident_scopes_only_allow_global_escape_to_open_breaker(tmp_path: Path) -> None:
+    policy = MutationGovernancePolicy(
+        circuit_breaker_category_thresholds={"confirmed_root_escape": 1},
+        circuit_state_file=tmp_path / "mem" / "governance_circuit.json",
+    )
+
+    for category in ("invalid_mutation", "source_invalid", "infrastructure"):
+        assert policy.record_violation(category=category) is None
+    assert policy.circuit_breaker_state() == "closed"
+    assert policy.record_violation(category="confirmed_root_escape") is not None
+    assert policy.circuit_breaker_state() == "open"
+    evidence = load_circuit_state(tmp_path)["violations"]["evidence"][-1]
+    assert evidence["window_seconds"] == policy.circuit_breaker_window_seconds
+    assert evidence["expires_at"]
+
+
+def test_canonical_incident_recovery_contract() -> None:
+    assert classify_governance_incident("invalid_mutation").scope == "candidate"
+    assert classify_governance_incident("source_invalid").scope == "skill"
+    assert classify_governance_incident("infrastructure").scope == "life"
+    assert classify_governance_incident("outbound_symlink").scope == "global"
 
 
 def test_policy_logs_circuit_breaker_opened_only_once_when_already_open(

@@ -151,3 +151,17 @@ def test_diagnose_evolution_json_ok_when_no_patterns(tmp_path, capsys) -> None:
     assert exit_code == 0
     assert payload["events_analyzed"] == 1
     assert all(not row["detected"] for row in payload["patterns"])
+
+
+def test_diagnose_evolution_does_not_treat_candidate_incident_as_global_breaker(
+    tmp_path, capsys
+) -> None:
+    home = tmp_path / "life"
+    _write_jsonl(
+        home / "runs" / "run-1" / "events.jsonl",
+        [{"event": "sandbox_violation", "category": "invalid_mutation", "scope": "candidate"}],
+    )
+
+    cli.main(["--home", str(home), "diagnose", "evolution"])
+
+    assert "breaker_open | OK | 0" in capsys.readouterr().out

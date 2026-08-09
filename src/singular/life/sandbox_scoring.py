@@ -285,7 +285,7 @@ def _sandbox_failure_category(
     """Classify sandbox failures for governance escalation."""
 
     if base_failed:
-        return "invalid_mutation", "medium", False
+        return "source_invalid", "medium", False
     if mutation_failed:
         if _has_explicit_dangerous_pattern(mutated):
             return "invalid_mutation", "high", False

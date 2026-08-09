@@ -42,6 +42,44 @@ _CIRCUIT_STATE_FILE = "governance_circuit.json"
 _CIRCUIT_AUDIT_LOG = "governance_circuit_audit.jsonl"
 
 
+@dataclass(frozen=True)
+class GovernanceIncident:
+    """Canonical routing decision for a governance incident."""
+
+    category: str
+    severity: str
+    scope: str
+    recovery: str
+
+
+_INCIDENT_POLICIES: dict[str, GovernanceIncident] = {
+    "source_invalid": GovernanceIncident("source_invalid", "medium", "skill", "quarantine_skill_and_try_another"),
+    "infrastructure": GovernanceIncident("infrastructure", "low", "life", "defer_evaluation_without_penalty"),
+    "invalid_mutation": GovernanceIncident("invalid_mutation", "medium", "candidate", "reject_candidate_and_record_operator_failure"),
+    "dangerous_mutation_violation": GovernanceIncident("dangerous_mutation_violation", "high", "candidate", "reject_candidate_and_record_operator_failure"),
+    "missing_artifact": GovernanceIncident("missing_artifact", "medium", "skill", "quarantine_skill_and_try_another"),
+    "unresolved_path": GovernanceIncident("unresolved_path", "medium", "skill", "quarantine_skill_and_try_another"),
+    "unauthorized_internal_path": GovernanceIncident("unauthorized_internal_path", "high", "skill", "quarantine_skill_and_try_another"),
+    "confirmed_root_escape": GovernanceIncident("confirmed_root_escape", "critical", "global", "open_global_breaker"),
+    "outbound_symlink": GovernanceIncident("outbound_symlink", "critical", "global", "open_global_breaker"),
+}
+
+
+def classify_governance_incident(category: str, severity: str | None = None) -> GovernanceIncident:
+    """Normalize legacy category names into one explicit incident contract."""
+
+    normalized = category.strip().lower()
+    if normalized in {"invalid_candidate", "invalid_mutation_rejected"}:
+        normalized = "invalid_mutation"
+    incident = _INCIDENT_POLICIES.get(
+        normalized,
+        GovernanceIncident(normalized or "unknown", "high", "life", "isolate_life_and_review"),
+    )
+    if severity is None:
+        return incident
+    return GovernanceIncident(incident.category, severity.strip().lower(), incident.scope, incident.recovery)
+
+
 class PolicySchemaError(ValueError):
     """Raised when ``policy.yaml`` does not respect strict governance schema."""
 
@@ -827,6 +865,7 @@ class MutationGovernancePolicy:
         circuit_breaker_cooldown_seconds: float = 60.0,
         circuit_breaker_critical_threshold: int | None = None,
         circuit_breaker_invalid_mutation_threshold: int | None = None,
+        circuit_breaker_category_thresholds: Mapping[str, int] | None = None,
         skill_circuit_breaker_failure_threshold: int = 3,
         skill_circuit_breaker_cost_threshold: float = 5.0,
         skill_circuit_breaker_cooldown_seconds: float = 600.0,
@@ -953,6 +992,10 @@ class MutationGovernancePolicy:
             ),
             1,
         )
+        self.circuit_breaker_category_thresholds = {
+            str(category).strip().lower(): max(int(threshold), 1)
+            for category, threshold in (circuit_breaker_category_thresholds or {}).items()
+        }
         self.skill_circuit_breaker_failure_threshold = max(
             int(
                 skill_circuit_breaker_failure_threshold
@@ -1035,6 +1078,7 @@ class MutationGovernancePolicy:
         self._mutation_timestamps: deque[datetime] = deque()
         self._skill_creation_timestamps: deque[datetime] = deque()
         self._violation_timestamps: deque[datetime] = deque()
+        self._violation_timestamps_by_category: dict[str, deque[datetime]] = {}
         self._circuit_open_until: datetime | None = None
         self._circuit_half_open = False
         self._last_circuit_breaker_state: CircuitBreakerState | None = None
@@ -1071,6 +1115,8 @@ class MutationGovernancePolicy:
                     seconds=self.circuit_breaker_window_seconds
                 ):
                     self._violation_timestamps.append(happened_at)
+                    category = str(item.get("category", "unknown")).strip().lower()
+                    self._violation_timestamps_by_category.setdefault(category, deque()).append(happened_at)
 
     def _persist_circuit(
         self,
@@ -1098,7 +1144,13 @@ class MutationGovernancePolicy:
             by_category = violations.setdefault("by_category", {})
             by_category[cause] = int(by_category.get(cause, 0)) + 1
             violations.setdefault("evidence", []).append(
-                {"timestamp": now, "category": cause, "severity": severity}
+                {
+                    "timestamp": now,
+                    "category": cause,
+                    "severity": severity,
+                    "window_seconds": self.circuit_breaker_window_seconds,
+                    "expires_at": (self._now() + timedelta(seconds=self.circuit_breaker_window_seconds)).isoformat(),
+                }
             )
             violations["evidence"] = violations["evidence"][-50:]
             if payload.get("initial_cause") is None:
@@ -1265,6 +1317,7 @@ class MutationGovernancePolicy:
             self._circuit_open_until = None
             self._circuit_half_open = False
             self._violation_timestamps.clear()
+            self._violation_timestamps_by_category.clear()
             self._persist_circuit(
                 state="closed",
                 probe=probe,
@@ -1302,6 +1355,11 @@ class MutationGovernancePolicy:
             and self._violation_timestamps[0] < violation_cutoff
         ):
             self._violation_timestamps.popleft()
+        for category, timestamps in list(self._violation_timestamps_by_category.items()):
+            while timestamps and timestamps[0] < violation_cutoff:
+                timestamps.popleft()
+            if not timestamps:
+                self._violation_timestamps_by_category.pop(category, None)
         creation_cutoff = now - timedelta(
             seconds=self.skill_creation_quota_window_seconds
         )
@@ -1356,23 +1414,13 @@ class MutationGovernancePolicy:
         """
 
         self._prune_history()
-        normalized_category = category.strip().lower()
-        normalized_severity = severity.strip().lower()
-        confirmed_escape_categories = {"confirmed_root_escape", "outbound_symlink"}
-        if normalized_category == "infrastructure" or normalized_severity in {
-            "info",
-            "low",
-        }:
-            return None
-        if normalized_category not in confirmed_escape_categories:
-            if responsible and normalized_category in {
-                "invalid_mutation",
-                "invalid_mutation_rejected",
-                "unresolved_path",
-                "missing_artifact",
-                "unauthorized_internal_path",
-                "dangerous_mutation_violation",
-            }:
+        incident = classify_governance_incident(category, severity)
+        normalized_category = incident.category
+        normalized_severity = incident.severity
+        # Candidate, skill and life incidents are deliberately local: callers own
+        # their recovery and they never consume the global security budget.
+        if incident.scope != "global":
+            if responsible and incident.scope == "skill":
                 self.record_skill_execution(skill_name=responsible, success=False)
             return None
 
@@ -1386,12 +1434,16 @@ class MutationGovernancePolicy:
             self._circuit_open_until is not None and now < self._circuit_open_until
         )
         self._violation_timestamps.append(now)
-        threshold = (
+        category_timestamps = self._violation_timestamps_by_category.setdefault(
+            normalized_category, deque()
+        )
+        category_timestamps.append(now)
+        threshold = self.circuit_breaker_category_thresholds.get(normalized_category, (
             self.circuit_breaker_critical_threshold
             if normalized_severity == "critical"
             else self.circuit_breaker_threshold
-        )
-        if not was_open and len(self._violation_timestamps) >= threshold:
+        ))
+        if not was_open and len(category_timestamps) >= threshold:
             self._circuit_open_until = now + timedelta(
                 seconds=self.circuit_breaker_cooldown_seconds
             )
@@ -1975,5 +2027,8 @@ __all__ = [
     "load_runtime_policy",
     "save_runtime_policy",
     "GovernanceDecision",
+    "GovernanceIncident",
+    "classify_governance_incident",
+    "load_circuit_state",
     "MutationGovernancePolicy",
 ]

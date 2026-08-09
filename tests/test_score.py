@@ -104,7 +104,7 @@ def test_sandbox_failure_category_distinguishes_base_and_mutation_failures():
 
     assert _sandbox_failure_category(
         base.is_candidate_failure, mutation.is_candidate_failure, "result = 1"
-    ) == ("invalid_mutation", "medium", False)
+    ) == ("source_invalid", "medium", False)
 
     base = SandboxScore(score=1.0)
     mutation = SandboxScore(
