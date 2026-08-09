@@ -14,6 +14,12 @@ from singular.life import loop as life_loop
 from singular.life.loop import load_checkpoint
 from singular.organisms.birth import birth
 from singular.organisms.status import status
+from singular.events import EventBus
+from singular.orchestrator.service import (
+    LifecyclePhase,
+    OrchestratorConfig,
+    OrchestratorService,
+)
 from singular.self_narrative import SCHEMA_VERSION, load, update_from_signals
 
 
@@ -27,7 +33,50 @@ class _DummyPsyche:
 
 
 def _read_jsonl(path: Path) -> list[dict[str, object]]:
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def test_recovery_success_closes_generated_quest(tmp_path: Path, monkeypatch) -> None:
+    life_home = tmp_path / "life"
+    (life_home / "skills").mkdir(parents=True)
+    (life_home / "mem").mkdir(parents=True)
+    monkeypatch.setenv("SINGULAR_HOME", str(life_home))
+    episodes = life_home / "mem" / "episodic.jsonl"
+    episodes.write_text(
+        "".join(
+            f'{{"event":"attempt-{index}","status":"failure"}}\n' for index in range(4)
+        ),
+        encoding="utf-8",
+    )
+    service = OrchestratorService(
+        config=OrchestratorConfig(dry_run=True), bus=EventBus()
+    )
+    service.state.current_phase = LifecyclePhase.INTROSPECTION.value
+    service.tick()
+
+    with episodes.open("a", encoding="utf-8") as handle:
+        handle.write('{"event":"repair","status":"success"}\n')
+    service.state.current_phase = LifecyclePhase.INTROSPECTION.value
+    service.tick()
+
+    state = json.loads(
+        (life_home / "mem" / "quests_state.json").read_text(encoding="utf-8")
+    )
+    assert not any(
+        item["name"] == "recover_execution_reliability" for item in state["active"]
+    )
+    completed = next(
+        item
+        for item in state["completed"]
+        if item["name"] == "recover_execution_reliability"
+    )
+    assert completed["status"] == "completed"
+    assert completed["progress"] == 1.0
+    assert completed["completed_at"]
 
 
 def test_targeted_lifecycle_birth_introspection_goals_world_action_death(
@@ -95,7 +144,9 @@ def test_targeted_lifecycle_birth_introspection_goals_world_action_death(
     assert reason == "too many failures"
 
 
-def test_narrative_files_persist_and_reload_with_fixed_seed(tmp_path: Path, monkeypatch) -> None:
+def test_narrative_files_persist_and_reload_with_fixed_seed(
+    tmp_path: Path, monkeypatch
+) -> None:
     life_home = tmp_path / "life"
     monkeypatch.setenv("SINGULAR_HOME", str(life_home))
     birth(seed=7, home=life_home)
@@ -115,12 +166,16 @@ def test_narrative_files_persist_and_reload_with_fixed_seed(tmp_path: Path, monk
     assert reloaded.current_heading == "Documenter une trajectoire explicable."
     assert reloaded.life_periods[-1].title == "Boot"
 
-    biography_payload = json.loads((life_home / "mem" / "biography.json").read_text(encoding="utf-8"))
+    biography_payload = json.loads(
+        (life_home / "mem" / "biography.json").read_text(encoding="utf-8")
+    )
     assert biography_payload["birth_certificate"]["event_type"] == "birth_certificate"
     assert biography_payload["self_summaries"]
 
 
-def test_schema_invariants_and_migrations_for_narrative_and_checkpoint(tmp_path: Path) -> None:
+def test_schema_invariants_and_migrations_for_narrative_and_checkpoint(
+    tmp_path: Path,
+) -> None:
     narrative_path = tmp_path / "mem" / "self_narrative.json"
     narrative_path.parent.mkdir(parents=True, exist_ok=True)
     narrative_path.write_text(

@@ -22,6 +22,7 @@ from singular.events import (
     get_global_event_bus,
 )
 from singular.goals import IntrinsicGoals
+from singular.goals.quest_generation import generate_quests
 from singular.cognition.self_observation import SelfObservationService
 from singular.identity import ConsolidationCoordinator, ConsolidationPipeline
 from singular.identity.synchronization import IdentitySynchronizationService
@@ -121,6 +122,7 @@ class OrchestratorConfig:
     help_request_failure_threshold: int = 3
     max_consecutive_tick_failures: int = 10
     tick_failure_backoff_seconds: float = 0.2
+    max_active_generated_quests: int = 3
 
 
 class OrchestratorService:
@@ -451,6 +453,12 @@ class OrchestratorService:
             if ep.get("status") == "failure"
         ]
 
+        quest_changes = self._refresh_generated_quests(
+            psyche_state=psyche_state,
+            successes=len(successes),
+            failures=len(failures),
+        )
+
         def _trait_value(name: str) -> float:
             try:
                 return float(psyche_state.get(name, 0.5))
@@ -544,6 +552,7 @@ class OrchestratorService:
             "run_events_loaded": len(run_events),
             "short_summary": summary_short,
             "long_summary": summary_long,
+            "generated_quests": quest_changes,
         }
         self.bus.publish("self_narrative.updated", payload, payload_version=1)
         self.state.last_events.append(
@@ -555,6 +564,75 @@ class OrchestratorService:
         )
         self.state.last_events = self.state.last_events[-100:]
         return payload
+
+    def _refresh_generated_quests(
+        self, *, psyche_state: dict[str, Any], successes: int, failures: int
+    ) -> dict[str, list[str]]:
+        """Generate and durably reconcile intrinsic quests during introspection."""
+
+        resources = {
+            "energy": self.resource_manager.energy,
+            "food": self.resource_manager.food,
+            "warmth": self.resource_manager.warmth,
+        }
+        world_resources = self.world_state.world_resources
+        world = {
+            "delayed_crisis_pressure": self._latest_signals.get(
+                "delayed_crisis_pressure", 0.0
+            ),
+            "opportunity_pressure": self._latest_signals.get(
+                "opportunity_pressure", 0.0
+            ),
+            "cpu_budget": world_resources.cpu_budget,
+            "mutation_slots": world_resources.mutation_slots,
+            "attention_score": world_resources.attention_score,
+        }
+        surprise = {
+            key: self._latest_signals.get(key, 0.0)
+            for key in (
+                "surprise",
+                "frustration",
+                "curiosity",
+                "operator_family_failure_pressure",
+            )
+        }
+        candidates = generate_quests(
+            psyche_traits=psyche_state,
+            outcomes_history={
+                "recent_successes": successes,
+                "recent_failures": failures,
+            },
+            value_performance_tension=self._latest_signals.get(
+                "value_performance_tension", 0.0
+            ),
+            world_state=world,
+            resources=resources,
+            surprise_signals=surprise,
+        )
+        context_payload = {
+            "life_id": canonical_life_id(self.base_dir),
+            "source": "introspection",
+        }
+        context = json.dumps(context_payload, sort_keys=True, separators=(",", ":"))
+        terminal = bool(
+            self._latest_signals.get("terminal")
+            or self._latest_signals.get("terminal_lifecycle_state")
+        )
+        degraded = bool(
+            self._latest_signals.get("degraded")
+            or self._latest_signals.get("degraded_mode")
+        )
+        circuit_open = self._latest_signals.get("circuit_breaker_status") in {
+            "open",
+            "ouvert",
+        } or bool(self._latest_signals.get("circuit_breaker_open"))
+        return self.quest_runtime.reconcile_generated(
+            candidates,
+            context=context,
+            recent_successes=successes,
+            max_active=max(0, int(self.config.max_active_generated_quests)),
+            restrict_costly=terminal or degraded or circuit_open,
+        )
 
     def _run_phase(self, phase: LifecyclePhase) -> None:
         if phase is LifecyclePhase.VEILLE:
