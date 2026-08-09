@@ -52,6 +52,27 @@ class CoherenceDecision:
     invariant_violations: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class IdentityChangePolicy:
+    """Configurable boundary between observations and protected identity."""
+
+    plastic_bounds: tuple[float, float] = (0.0, 1.0)
+    max_delta: float = 0.10
+    important_delta: float = 0.15
+    independent_evidence_required: int = 2
+
+
+@dataclass(frozen=True)
+class IdentityChangeDecision:
+    """Result of classifying and checking a proposed identity evolution."""
+
+    category: str
+    status: str
+    accepted: bool
+    value: Any
+    reasons: tuple[str, ...]
+
+
 class IdentityCoherenceGuard:
     """Detects drift and guards invariant-breaking decisions."""
 
@@ -60,10 +81,70 @@ class IdentityCoherenceGuard:
         *,
         invariants: IdentityInvariants,
         root: Path | str = Path("."),
+        change_policy: IdentityChangePolicy | None = None,
     ) -> None:
         self.invariants = invariants
         self.root = Path(root)
         self.audit_path = self.root / _AUDIT_RELATIVE_PATH
+        self.change_policy = change_policy or IdentityChangePolicy()
+
+    def evaluate_identity_change(
+        self,
+        *,
+        category: str,
+        current: Any,
+        proposed: Any,
+        cause: str,
+        evidence: list[str] | tuple[str, ...] = (),
+    ) -> IdentityChangeDecision:
+        """Gate plastic traits, commitments, and non-negotiable safety limits.
+
+        Safety limits can only be strengthened here. Commitments always require
+        corroboration; plastic numeric traits are bounded and rate limited.
+        Every attempt is audited, including refused attempts, for narration.
+        """
+        reasons: list[str] = []
+        accepted = True
+        value = proposed
+        independent = list(dict.fromkeys(str(item) for item in evidence if str(item)))
+        if category == "safety_limit":
+            accepted = proposed == current or (
+                isinstance(current, bool) and isinstance(proposed, bool) and proposed
+            )
+            if not accepted:
+                reasons.append("safety_limit_cannot_be_weakened")
+        elif category == "identity_commitment":
+            if len(independent) < self.change_policy.independent_evidence_required:
+                accepted = False
+                reasons.append("commitment_requires_independent_evidence")
+        elif category == "plastic_trait":
+            try:
+                old, requested = float(current), float(proposed)
+                low, high = self.change_policy.plastic_bounds
+                requested = max(low, min(high, requested))
+                delta = requested - old
+                if abs(delta) >= self.change_policy.important_delta and len(independent) < self.change_policy.independent_evidence_required:
+                    accepted = False
+                    reasons.append("important_change_requires_independent_evidence")
+                value = old + max(-self.change_policy.max_delta, min(self.change_policy.max_delta, delta))
+                value = max(low, min(high, value))
+                if accepted and value != requested:
+                    reasons.append("rate_limited")
+            except (TypeError, ValueError):
+                accepted = False
+                reasons.append("plastic_trait_must_be_numeric")
+        else:
+            accepted = False
+            reasons.append("unknown_identity_category")
+        status = "applied" if accepted else "review"
+        append_jsonl_line(self.audit_path, {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "kind": "identity_change", "category": category, "status": status,
+            "accepted": accepted, "before": current, "requested": proposed,
+            "value": value if accepted else current, "cause": cause,
+            "evidence": independent, "reasons": reasons,
+        })
+        return IdentityChangeDecision(category, status, accepted, value if accepted else current, tuple(reasons))
 
     def evaluate_decision(
         self,

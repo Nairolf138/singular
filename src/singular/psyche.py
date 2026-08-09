@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Dict, Any, ClassVar, Mapping, Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 import random
 from enum import Enum
@@ -76,6 +77,24 @@ class PsycheActionDecision:
     action: str
     reason: str
     scores: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class TraitEvolutionPolicy:
+    """Safety envelope for plastic personality traits.
+
+    Commitments and red lines deliberately are not traits: they are handled by
+    the identity coherence guard and cannot be modified through this policy.
+    """
+
+    minimum: float = 0.0
+    maximum: float = 1.0
+    max_delta: float = 0.10
+    important_delta: float = 0.15
+    independent_evidence_required: int = 2
+    collapse_drop: float = 0.20
+    cumulative_window: int = 3
+    freeze_events: int = 2
 
 
 def _numeric_signal(
@@ -260,6 +279,11 @@ class Psyche:
     # Monotonic identity revision (distinct from the JSON schema version).
     psyche_version: int = 0
     last_identity_event_id: str | None = None
+    evolution_policy: TraitEvolutionPolicy = field(default_factory=TraitEvolutionPolicy)
+    trait_history: list[dict[str, Any]] = field(default_factory=list)
+    evolution_reviews: list[dict[str, Any]] = field(default_factory=list)
+    evolution_freeze_remaining: int = 0
+    last_coherent_traits: dict[str, float] = field(default_factory=dict)
 
     # ``last_mood`` is updated every time :meth:`feel` is called and can be
     # queried by other subsystems (interaction and mutation policies).
@@ -371,6 +395,91 @@ class Psyche:
         "jealousy",
         "resentment",
     )
+    _PLASTIC_TRAITS: ClassVar[tuple[str, ...]] = (
+        "curiosity", "patience", "playfulness", "optimism", "resilience"
+    )
+    _STRUCTURAL_TRAITS: ClassVar[tuple[str, ...]] = (
+        "patience", "optimism", "resilience"
+    )
+
+    def __post_init__(self) -> None:
+        for trait in self._PLASTIC_TRAITS:
+            setattr(self, trait, _clamp(float(getattr(self, trait)), self.evolution_policy.minimum, self.evolution_policy.maximum))
+        if not self.last_coherent_traits:
+            self.last_coherent_traits = self.trait_snapshot()
+        else:
+            snapshot = self.trait_snapshot()
+            self.last_coherent_traits = {
+                name: float(self.last_coherent_traits.get(name, snapshot[name]))
+                for name in self._PLASTIC_TRAITS
+            }
+
+    def trait_snapshot(self) -> dict[str, float]:
+        """Return only plastic values, excluding commitments and safety limits."""
+        return {name: float(getattr(self, name)) for name in self._PLASTIC_TRAITS}
+
+    def evolve_traits(
+        self,
+        deltas: Mapping[str, float],
+        *,
+        cause: str,
+        evidence: Sequence[str] = (),
+    ) -> str:
+        """Apply bounded, rate-limited and auditable plastic-trait changes.
+
+        Returns ``applied``, ``review`` or ``frozen``.  Distinct evidence is
+        mandatory when the *requested* change is important, even though the
+        applied change is subsequently rate limited.
+        """
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        independent = tuple(dict.fromkeys(str(item) for item in evidence if str(item)))
+        requested = {k: float(v) for k, v in deltas.items() if k in self._PLASTIC_TRAITS}
+        if self.evolution_freeze_remaining > 0:
+            self.evolution_freeze_remaining -= 1
+            self.trait_history.append({"ts": now, "status": "frozen", "cause": cause,
+                                       "evidence": list(independent), "requested": requested})
+            return "frozen"
+        if any(abs(delta) >= self.evolution_policy.important_delta for delta in requested.values()) and len(independent) < self.evolution_policy.independent_evidence_required:
+            self.trait_history.append({"ts": now, "status": "review", "cause": cause,
+                                       "evidence": list(independent), "requested": requested,
+                                       "reason": "insufficient_independent_evidence"})
+            return "review"
+
+        before = self.trait_snapshot()
+        applied: dict[str, float] = {}
+        for trait, delta in requested.items():
+            limited = max(-self.evolution_policy.max_delta, min(self.evolution_policy.max_delta, delta))
+            target = _clamp(before[trait] + limited, self.evolution_policy.minimum, self.evolution_policy.maximum)
+            applied[trait] = target - before[trait]
+
+        recent = [row for row in self.trait_history[-self.evolution_policy.cumulative_window + 1:] if row.get("status") == "applied"]
+        structural_drops = []
+        for trait in self._STRUCTURAL_TRAITS:
+            cumulative = -applied.get(trait, 0.0) + sum(max(0.0, -float(row.get("applied", {}).get(trait, 0.0))) for row in recent)
+            if cumulative >= self.evolution_policy.collapse_drop:
+                structural_drops.append(trait)
+        if len(structural_drops) >= 2:
+            for trait, value in self.last_coherent_traits.items():
+                setattr(self, trait, value)
+            review = {"ts": now, "status": "restored", "cause": cause,
+                      "traits": structural_drops, "snapshot": dict(self.last_coherent_traits)}
+            self.evolution_reviews.append(review)
+            self.trait_history.append({**review, "requested": requested, "evidence": list(independent)})
+            self.evolution_freeze_remaining = self.evolution_policy.freeze_events
+            return "review"
+
+        for trait, delta in applied.items():
+            setattr(self, trait, before[trait] + delta)
+        after = self.trait_snapshot()
+        self.trait_history.append({"ts": now, "status": "applied", "cause": cause,
+                                   "evidence": list(independent), "before": before,
+                                   "requested": requested, "applied": applied, "after": after})
+        self.trait_history = self.trait_history[-512:]
+        # A broadly negative structural movement remains provisional until the
+        # configured cumulative window proves that it is not a collapse.
+        if sum(applied.get(name, 0.0) < 0 for name in self._STRUCTURAL_TRAITS) < 2:
+            self.last_coherent_traits = after
+        return "applied"
 
     _SOCIAL_EVENT_DELTAS: Dict[str, Dict[str, float]] = field(
         default_factory=lambda: {
@@ -563,9 +672,11 @@ class Psyche:
         if len(self.mood_history) > 256:
             self.mood_history = self.mood_history[-256:]
 
-        for attr, delta in self._MOOD_EFFECTS[mood].items():
-            value = getattr(self, attr)
-            setattr(self, attr, _clamp(value + delta))
+        self.evolve_traits(
+            self._MOOD_EFFECTS[mood],
+            cause=f"mood:{mood.value}",
+            evidence=(f"mood_observation:{mood.value}", "configured_mood_effect"),
+        )
 
         if mood == Mood.PLEASURE:
             for obj in self.objectives.values():
@@ -749,6 +860,10 @@ class Psyche:
             "energy": self.energy,
             "last_mood": self.last_mood.value if self.last_mood else None,
             "mood_history": list(self.mood_history),
+            "trait_history": list(self.trait_history),
+            "evolution_reviews": list(self.evolution_reviews),
+            "evolution_freeze_remaining": self.evolution_freeze_remaining,
+            "last_coherent_traits": dict(self.last_coherent_traits),
             "social_states": {
                 target: {
                     key: _clamp(float(values.get(key, 0.5)))
@@ -860,6 +975,10 @@ class Psyche:
                 if data.get("last_identity_event_id")
                 else None
             ),
+            trait_history=list(data.get("trait_history", []))[-512:],
+            evolution_reviews=list(data.get("evolution_reviews", []))[-128:],
+            evolution_freeze_remaining=max(0, int(data.get("evolution_freeze_remaining", 0))),
+            last_coherent_traits=dict(data.get("last_coherent_traits", {})),
         )
         mood_val = data.get("last_mood")
         psyche.last_mood = Mood(mood_val) if mood_val else None

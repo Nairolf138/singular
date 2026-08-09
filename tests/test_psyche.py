@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from singular.psyche import Psyche, Mood, choose_action_from_psyche
+from singular.psyche import Psyche, Mood, TraitEvolutionPolicy, choose_action_from_psyche
 from singular.resource_manager import ResourceManager
 from singular.motivation import GoalPolicy, Objective
 
@@ -72,6 +72,29 @@ def test_state_persistence(tmp_path: Path) -> None:
     assert loaded.optimism == psyche.optimism
     assert loaded.resilience == psyche.resilience
     assert loaded.last_mood == psyche.last_mood
+    assert loaded.trait_history == psyche.trait_history
+
+
+def test_trait_evolution_is_bounded_rate_limited_and_explained() -> None:
+    psyche = Psyche(evolution_policy=TraitEvolutionPolicy(max_delta=0.05))
+    assert psyche.evolve_traits({"curiosity": 0.4}, cause="observations", evidence=["a", "b"]) == "applied"
+    assert psyche.curiosity == pytest.approx(0.55)
+    assert psyche.trait_history[-1]["cause"] == "observations"
+    assert psyche.trait_history[-1]["before"]["curiosity"] == 0.5
+
+
+def test_cumulative_correlated_structural_collapse_restores_and_freezes() -> None:
+    psyche = Psyche(evolution_policy=TraitEvolutionPolicy(collapse_drop=0.19))
+    initial = psyche.trait_snapshot()
+    for index in range(2):
+        status = psyche.evolve_traits(
+            {"patience": -0.1, "optimism": -0.1, "resilience": -0.1},
+            cause=f"stress-{index}", evidence=["sensor-a", "sensor-b"],
+        )
+    assert status == "review"
+    assert psyche.trait_snapshot() == initial
+    assert psyche.evolution_reviews[-1]["status"] == "restored"
+    assert psyche.evolve_traits({"curiosity": 0.05}, cause="next", evidence=[]) == "frozen"
 
 
 def test_resource_manager_influences_mood(tmp_path: Path) -> None:

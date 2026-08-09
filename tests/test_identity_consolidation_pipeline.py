@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from singular.identity import ConsolidationPipeline, ConsolidationPolicy, EpisodicStore
+from singular.psyche import Psyche
 
 
 def test_pipeline_consolidates_facts_and_updates_self_model(tmp_path: Path) -> None:
@@ -44,3 +45,20 @@ def test_pipeline_compaction_preserves_identity_invariants(tmp_path: Path) -> No
     lines = (mem / "episodic.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(lines) == 3
     assert "identity.created" in lines[0]
+
+
+def test_pipeline_detects_cumulative_simultaneous_trait_collapse(tmp_path: Path) -> None:
+    mem = tmp_path / "mem"
+    Psyche().save_state(mem / "psyche.json")
+    episodes = [
+        {"event": "stress", "cause": f"stress-{index}", "evidence": ["sensor", "report"],
+         "trait_changes": {"patience": -0.1, "optimism": -0.1, "resilience": -0.1}}
+        for index in range(2)
+    ]
+    result = ConsolidationPipeline(
+        mem_dir=mem, policy=ConsolidationPolicy(structural_collapse_drop=0.19)
+    ).run(episodes=episodes)
+    restored = Psyche.load_state(mem / "psyche.json")
+    assert result.identity_evolution["review"] == 1
+    assert restored.patience == restored.optimism == restored.resilience == 0.5
+    assert restored.evolution_reviews[-1]["status"] == "restored"

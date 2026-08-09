@@ -19,6 +19,12 @@ class ConsolidationPolicy:
 
     keep_last_episodes: int = 1_000
     keep_top_self_model_entries: int = 100
+    trait_minimum: float = 0.0
+    trait_maximum: float = 1.0
+    max_trait_delta: float = 0.10
+    important_trait_delta: float = 0.15
+    independent_evidence_required: int = 2
+    structural_collapse_drop: float = 0.20
 
 
 @dataclass(frozen=True)
@@ -29,6 +35,7 @@ class ConsolidationResult:
     episodes_seen: int
     facts_count: int
     episodic_compaction: dict[str, Any]
+    identity_evolution: dict[str, Any]
 
 
 class ConsolidationPipeline:
@@ -60,6 +67,7 @@ class ConsolidationPipeline:
         episodes = self.episodic.read_all() if episodes is None else episodes
         facts = self.semantic.consolidate_from_episodes(episodes)
         self.self_model.apply_facts(facts)
+        evolution = self._apply_trait_evolution(episodes)
         self.self_model.compact(self.policy.keep_top_self_model_entries)
         # Reconcile projections after every consolidation so narrative, psyche,
         # birth artifacts and coherence do not drift into competing identities.
@@ -73,4 +81,39 @@ class ConsolidationPipeline:
             episodes_seen=len(episodes),
             facts_count=len(facts),
             episodic_compaction=compaction,
+            identity_evolution=evolution,
         )
+
+    def _apply_trait_evolution(self, episodes: list[dict[str, Any]]) -> dict[str, Any]:
+        """Apply evidence-bearing plastic changes separately from identity facts."""
+        # Imported lazily because psyche persistence depends on the memory
+        # package, whose layered services import the identity package.
+        from singular.psyche import Psyche, TraitEvolutionPolicy
+
+        path = self.mem_dir / "psyche.json"
+        psyche = Psyche.load_state(path)
+        psyche.evolution_policy = TraitEvolutionPolicy(
+            minimum=self.policy.trait_minimum,
+            maximum=self.policy.trait_maximum,
+            max_delta=self.policy.max_trait_delta,
+            important_delta=self.policy.important_trait_delta,
+            independent_evidence_required=self.policy.independent_evidence_required,
+            collapse_drop=self.policy.structural_collapse_drop,
+        )
+        counts = {"applied": 0, "review": 0, "frozen": 0}
+        for episode in episodes:
+            changes = episode.get("trait_changes")
+            if not isinstance(changes, dict):
+                continue
+            evidence = episode.get("evidence", [])
+            if isinstance(evidence, str):
+                evidence = [evidence]
+            status = psyche.evolve_traits(
+                changes,
+                cause=str(episode.get("cause") or episode.get("event") or "consolidation"),
+                evidence=evidence if isinstance(evidence, list) else [],
+            )
+            counts[status] += 1
+        if sum(counts.values()):
+            psyche.save_state(path)
+        return {**counts, "frozen_remaining": psyche.evolution_freeze_remaining}
