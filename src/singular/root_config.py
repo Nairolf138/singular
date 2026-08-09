@@ -27,10 +27,10 @@ def _safe_path(raw: str) -> Path:
 def default_registry_root() -> Path:
     """Return the documented fallback registry root."""
 
-    # Go through ``Path`` rather than the cached concrete path class so callers
-    # can override the user home (notably embedders and isolated CLI tests).
+    # Keep the configurable lookup overridable while ensuring its result uses
+    # the concrete path implementation selected on the actual host.
     home = Path.home()
-    return home / _CONFIG_DIRNAME
+    return _HOST_PATH_CLS(home) / _CONFIG_DIRNAME
 
 
 def global_config_path() -> Path:
@@ -42,10 +42,8 @@ def global_config_path() -> Path:
 def project_config_path(cwd: Path | None = None) -> Path:
     """Return the project config file path rooted in cwd."""
 
-    if cwd is not None:
-        base = cwd
-    else:
-        base = Path.cwd()
+    configured_cwd = cwd if cwd is not None else Path.cwd()
+    base = _HOST_PATH_CLS(configured_cwd)
     return base / _CONFIG_DIRNAME / _CONFIG_FILENAME
 
 
