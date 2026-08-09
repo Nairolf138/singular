@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
 
@@ -15,6 +15,7 @@ from singular.embodiment import Acknowledgement, Command, EmergencyStop, Observa
 from singular.morals import MoralAction, MoralDecisionEngine
 from singular.morals import MoralContextBuilder
 from singular.identity.core import IdentityCoreService
+from singular.memory_layers.embodiment_pipeline import EmbodimentOutcomePipeline
 
 DEFAULT_SCHEMA_VERSION = "1.0"
 
@@ -146,6 +147,7 @@ class AgentRuntime:
         resource_gate: Callable[[ActionRequest], bool | tuple[bool, str]] | None = None,
         emergency_stop: EmergencyStop | None = None,
         self_observation: SelfObservationService | None = None,
+        outcome_pipeline: EmbodimentOutcomePipeline | None = None,
     ) -> None:
         self.perception = perception
         self.mind = mind
@@ -172,6 +174,12 @@ class AgentRuntime:
         self.self_observation = self_observation or SelfObservationService(
             get_mem_dir() / "self_model.json"
         )
+        self.outcome_pipeline = outcome_pipeline
+        if outcome_pipeline is not None:
+            self.event_bus.subscribe(
+                "embodiment.action.result", outcome_pipeline.consume
+            )
+            self.event_bus.subscribe("causal.trace", outcome_pipeline.consume)
 
     @property
     def disabled(self) -> bool:
@@ -215,6 +223,18 @@ class AgentRuntime:
             self._ensure_schema_version(percept.schema_version)
             self.event_bus.publish("perception.received", percept)
 
+            if self.outcome_pipeline is not None:
+                recalled = self.outcome_pipeline.decision_context()
+                if recalled["outcomes"]:
+                    percept = replace(
+                        percept,
+                        payload={
+                            **percept.payload,
+                            "embodied_memory_context": recalled,
+                        },
+                    )
+                    self.event_bus.publish("decision.memory.injected", recalled)
+
             intent = self.mind.propose_intent(percept)
             if intent is None:
                 self.event_bus.publish("mind.intent.skipped", {"percept": percept})
@@ -229,7 +249,9 @@ class AgentRuntime:
             self._ensure_schema_version(request.schema_version)
             self.event_bus.publish("action.requested", request)
 
-            action = MoralAction(request.action_type, request.parameters, intent.rationale)
+            action = MoralAction(
+                request.action_type, request.parameters, intent.rationale
+            )
             moral_context = self.moral_context_builder.build(
                 action, request.parameters.get("moral_context", {})
             )
@@ -579,6 +601,14 @@ class AgentRuntime:
             "dry_run": getattr(decision, "dry_run", None),
         }
         gain_loss = 1.0 if result.success else -1.0
+        dry_run = bool(policy_details["dry_run"])
+        executed = bool(result.actual.get("executed", result.success and not dry_run))
+        refused = not result.success and not executed
+        cost = result.audit.get("cost", result.actual.get("cost", 0.0))
+        try:
+            cost_value = float(cost)
+        except (TypeError, ValueError):
+            cost_value = 0.0
         trace = CausalTrace(
             trace_id=uuid4().hex,
             input={
@@ -620,7 +650,21 @@ class AgentRuntime:
             "decision": trace.decision,
             "action": trace.action,
             "result": trace.result,
+            "embodied_outcome": True,
+            "objective": intent.goal,
+            "confidence": max(0.0, min(1.0, float(intent.confidence))),
+            "importance": 1.0 if refused or cost_value > 0 else 0.75,
+            "dry_run": dry_run,
+            "costly": cost_value > 0,
+            "outcome_status": (
+                "refused" if refused else ("success" if result.success else "failure")
+            ),
+            "summary": (
+                f"{request.action_type} pour {intent.goal}: "
+                f"{result.message or result.error or ('réussi' if result.success else 'échoué')}"
+            ),
         }
+        self.event_bus.publish("embodiment.action.result", payload)
         add_causal_trace(payload)
         add_episode({"event": "embodiment.action.result", **payload})
         # The persisted trace id is the evidence anchor; never learn from an

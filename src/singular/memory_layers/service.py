@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import json
-from pathlib import Path
 from typing import Any
 
 from .base import MemoryBackend, MemoryRecord
@@ -56,6 +55,44 @@ class MemoryLayerService:
             metadata={"kind": "mutation", "ts": now, **result},
         )
         self.backend.put(_PROCEDURAL_LAYER, record)
+
+    def ingest_embodied_outcome(self, outcome: dict[str, Any]) -> None:
+        """Store an executed/refused embodied outcome with its evidence anchor."""
+
+        if outcome.get("dry_run"):
+            return
+        self.ingest_episode(outcome)
+
+    def embodied_outcomes(
+        self, *, objective: str = "", limit: int = 5
+    ) -> list[dict[str, Any]]:
+        """Retrieve outcomes by explicit causal provenance, not inferred similarity."""
+
+        matches: list[dict[str, Any]] = []
+        for layer in (_SHORT_TERM_LAYER, _LONG_TERM_LAYER):
+            for record in self.backend.search(layer, query="", limit=10000):
+                metadata = record.metadata
+                if metadata.get("kind") != "episode" or not metadata.get("trace_id"):
+                    continue
+                if objective and str(metadata.get("objective")) != objective:
+                    continue
+                matches.append(
+                    {
+                        "provenance": f"causal:{metadata['trace_id']}",
+                        "trace_id": metadata["trace_id"],
+                        "objective": metadata.get("objective"),
+                        "result": metadata.get("result"),
+                        "confidence": metadata.get("confidence", 0.0),
+                        "importance": metadata.get("importance", 0.0),
+                        "summary": metadata.get("summary", record.text),
+                    }
+                )
+        deduplicated = {row["trace_id"]: row for row in matches}
+        return sorted(
+            deduplicated.values(),
+            key=lambda row: float(row.get("importance", 0.0)),
+            reverse=True,
+        )[: max(0, limit)]
 
     def consolidate(self) -> None:
         recent = self.backend.search(_SHORT_TERM_LAYER, query="", limit=10000)
