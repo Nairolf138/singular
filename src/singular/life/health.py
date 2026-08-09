@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Iterable, Literal, Mapping
+from typing import Iterable, Literal, Mapping
 
 HealthState = Literal["amélioration", "plateau", "dégradation"]
 ViabilityAction = Literal["normal", "throttled", "paused", "restored", "operator"]
@@ -77,7 +77,14 @@ class ViabilityDriftDetector:
     def _score(self, item: Mapping[str, float]) -> float:
         good = sum(_clamp(float(item.get(k, 1.0))) for k in self._BENEFICIAL)
         adverse = sum(1.0 - _clamp(float(item.get(k, 0.0))) for k in self._ADVERSE)
-        return (good + adverse) / (len(self._BENEFICIAL) + len(self._ADVERSE))
+        score = (good + adverse) / (len(self._BENEFICIAL) + len(self._ADVERSE))
+        # Activity, retained skills and fitness are supporting signals, never a
+        # licence to select an organism whose direct health is critical.
+        health = _clamp(float(item.get("health", 1.0)))
+        risk = _clamp(float(item.get("risk", 0.0)))
+        if health <= self.config.critical_score or risk >= 1.0 - self.config.critical_score:
+            score = min(score, self.config.critical_score)
+        return score
 
     def observe(self, metrics: Mapping[str, float]) -> tuple[ViabilityAction, str | None]:
         normalized = {key: _clamp(float(metrics.get(key, 0.0))) for key in (*self._BENEFICIAL, *self._ADVERSE)}

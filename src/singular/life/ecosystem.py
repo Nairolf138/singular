@@ -6,6 +6,31 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
 
+from .vital import VitalState
+
+
+@dataclass(frozen=True)
+class SurvivalPolicy:
+    """Actions permitted as an organism approaches an irreversible state."""
+
+    mutations_enabled: bool
+    essential_only: bool
+    quest_priority: str
+    restore_resources: bool
+    seek_healthy_checkpoint: bool
+
+
+def survival_policy(state: VitalState | str) -> SurvivalPolicy:
+    state = VitalState(state)
+    endangered = state in {VitalState.AT_RISK, VitalState.CRITICAL, VitalState.TERMINAL}
+    return SurvivalPolicy(
+        mutations_enabled=state in {VitalState.STABLE, VitalState.AT_RISK},
+        essential_only=state in {VitalState.CRITICAL, VitalState.TERMINAL},
+        quest_priority="recovery" if endangered else "normal",
+        restore_resources=endangered,
+        seek_healthy_checkpoint=state in {VitalState.CRITICAL, VitalState.TERMINAL},
+    )
+
 
 @dataclass(frozen=True)
 class ArchetypeProfile:
