@@ -115,3 +115,16 @@ select = ["E4", "E7", "E9", "F", "I"]
 "src/singular/storage/__init__.py" = ["I001"]
 "src/singular/watch/__init__.py" = ["I001"]
 "tests/fastapi_stub/__init__.py" = ["I001"]
+
+[tool.mypy]
+python_version = "3.10"
+# The type-checking baseline is intentionally progressive.  Keep this list
+# explicit so newly-clean modules can be added without globally suppressing
+# concrete errors in the rest of the historical codebase.
+files = [
+    "src/singular/cli.py",
+    "src/singular/dashboard/actions.py",
+    "src/singular/diagnostics/autonomous.py",
+    "src/singular/organisms/status.py",
+]
+follow_imports = "skip"

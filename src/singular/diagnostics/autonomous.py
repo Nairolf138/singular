@@ -7,12 +7,27 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 READY = 0
 DEGRADED = 1
 BLOCKED = 2
 SCHEMA_VERSION = 1
+
+
+class DiagnosticCheck(TypedDict):
+    check_id: str
+    severity: str
+    state: str
+    evidence: dict[str, Any]
+    remediation_command: str | None
+
+
+class AutonomousDiagnosticReport(TypedDict):
+    schema_version: int
+    status: str
+    exit_code: int
+    checks: list[DiagnosticCheck]
 
 
 def _check(
@@ -21,7 +36,7 @@ def _check(
     state: str,
     evidence: dict[str, Any],
     remediation: str | None,
-) -> dict[str, Any]:
+) -> DiagnosticCheck:
     return {
         "check_id": check_id,
         "severity": severity,
@@ -65,7 +80,7 @@ def _mutation_evidence(home: Path) -> dict[str, Any] | None:
     return newest[1] if newest else None
 
 
-def _systemd_check(root: Path, home: Path) -> dict[str, Any]:
+def _systemd_check(root: Path, home: Path) -> DiagnosticCheck:
     if not shutil.which("systemctl"):
         return _check(
             "systemd_consistency",
@@ -106,7 +121,9 @@ def _systemd_check(root: Path, home: Path) -> dict[str, Any]:
     )
 
 
-def autonomous_diagnostics(*, run_generation: bool = False) -> dict[str, Any]:
+def autonomous_diagnostics(
+    *, run_generation: bool = False
+) -> AutonomousDiagnosticReport:
     """Run ordered autonomous-readiness checks and return a stable payload."""
 
     from singular.governance.policy import load_circuit_state
@@ -114,7 +131,7 @@ def autonomous_diagnostics(*, run_generation: bool = False) -> dict[str, Any]:
     from singular.providers import doctor_providers
     from singular.root_config import diagnose_registry_root
 
-    checks: list[dict[str, Any]] = []
+    checks: list[DiagnosticCheck] = []
     root_info = diagnose_registry_root()
     root = root_info["root"]
     root_ok = root.is_dir()
