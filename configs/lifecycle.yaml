@@ -10,6 +10,24 @@ coevolution:
   max_test_candidates: 3
   ttl: 3
 
+mutation_fitness:
+  version: 1
+  observation:
+    minimum_samples: 2
+  thresholds:
+    minimum_fitness_gain: 0.0
+    maximum_vital_regression: 0.15
+  weights:
+    functional_gain: 0.30
+    health: 0.18
+    vital_risk: -0.18
+    resources: 0.08
+    sandbox_stability: 0.08
+    cost: -0.05
+    quest_progress: 0.05
+    identity_continuity: 0.05
+    useful_skills_retention: 0.03
+
 phases:
   veille:
     cpu_budget_percent: 30

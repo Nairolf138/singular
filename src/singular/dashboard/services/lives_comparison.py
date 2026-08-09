@@ -238,6 +238,7 @@ def compute_mutation_viability(records: list[dict[str, object]]) -> dict[str, ob
     ]
     decided = []
     useful = 0
+    viable = 0
     failures = 0
     for record in mutation_records:
         accepted = record.get("accepted")
@@ -256,7 +257,11 @@ def compute_mutation_viability(records: list[dict[str, object]]) -> dict[str, ob
         )
         health = record.get("health")
         has_health = isinstance(health, dict) and isinstance(health.get("score"), (int, float))
-        if accepted is True and (improved or has_health):
+        explicitly_useful = record.get("useful")
+        durably_viable = record.get("durably_viable")
+        if accepted is True and durably_viable is not False:
+            viable += 1
+        if accepted is True and (explicitly_useful is True or (explicitly_useful is None and (improved or has_health))):
             useful += 1
     score = None
     if mutation_records:
@@ -270,6 +275,7 @@ def compute_mutation_viability(records: list[dict[str, object]]) -> dict[str, ob
         "accepted_count": sum(1 for value in decided if value),
         "rejected_count": sum(1 for value in decided if not value),
         "accepted_useful_changes": useful,
+        "durably_viable_count": viable,
     }
 
 

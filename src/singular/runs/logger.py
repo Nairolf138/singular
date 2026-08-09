@@ -396,6 +396,7 @@ class RunLogger:
         source_error_message: str | None = None,
         mutation_error_type: str | None = None,
         mutation_error_message: str | None = None,
+        fitness: Mapping[str, object] | None = None,
     ) -> None:
         """Append a mutation record to the log file."""
 
@@ -422,6 +423,7 @@ class RunLogger:
             "source_error_message": source_error_message,
             "mutation_error_type": mutation_error_type,
             "mutation_error_message": mutation_error_message,
+            **dict(fitness or {}),
         }
         self._write_record(record)
         self._write_event("mutation", record, ts)

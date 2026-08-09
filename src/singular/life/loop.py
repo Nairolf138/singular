@@ -84,6 +84,7 @@ from .sandbox_scoring import (
     _sandbox_failure_category,
 )
 from .mutation_flow import apply_mutation, select_operator, _load_default_operators
+from .fitness import FitnessDecision, evaluate_mutation_fitness, load_lifecycle_fitness_config
 from .resource_flow import manage_resources
 from .reproduction_flow import (
     ReproductionDecisionPolicy,
@@ -565,6 +566,7 @@ def log_mutation(
     source_error_message: str | None = None,
     mutation_error_type: str | None = None,
     mutation_error_message: str | None = None,
+    fitness_decision: FitnessDecision | None = None,
 ) -> None:
     """Record mutation outcome and notify observers."""
 
@@ -601,6 +603,10 @@ def log_mutation(
         "perceived_quality": perceived_quality,
         "user_satisfaction": user_satisfaction,
     }
+    fitness_payload = fitness_decision.to_dict() if fitness_decision else {}
+    if fitness_payload:
+        fitness_payload["fitness_gate_accepted"] = fitness_payload.pop("accepted")
+        fitness_payload["accepted"] = accepted
     logger.log(
         key,
         op_name,
@@ -621,6 +627,7 @@ def log_mutation(
         source_error_message=source_error_message,
         mutation_error_type=mutation_error_type,
         mutation_error_message=mutation_error_message,
+        fitness=fitness_payload,
     )
 
 
@@ -943,6 +950,7 @@ def run(
     stats: Dict[str, Dict[str, float]] = state.stats
     for name in operators:
         stats.setdefault(name, {"count": 0, "reward": 0.0})
+        stats[name].setdefault("fitness_reward", 0.0)
 
     psyche = Psyche.load_state()
     belief_store = BeliefStore()
@@ -974,6 +982,7 @@ def run(
     quarantined_skill_keys: set[str] = set()
     sleep_ticks_remaining = 0
     intrinsic_goals = IntrinsicGoals(value_weights=value_weights)
+    lifecycle_fitness_config = load_lifecycle_fitness_config()
     self_observation = SelfObservationService(
         life_root / "mem" / "self_model.json"
     )
@@ -1563,6 +1572,44 @@ def run(
                 )
             critical_sandbox_failure = sandbox_violation_severity == "critical"
 
+            previous_health = state.health_history[-1] if state.health_history else {}
+            previous_health_score = float(
+                previous_health.get("health_score", previous_health.get("score", 1.0))
+            )
+            if previous_health_score > 1.0:
+                previous_health_score /= 100.0
+            skill_count = max(1, len(list(selected_org.skills_dir.glob("*.py"))))
+            pre_mutation_snapshot = {
+                "functional_gain": 0.0,
+                "health": _clamp01(previous_health_score),
+                "vital_risk": _clamp01(selected_org.sandbox_violation_streak / SANDBOX_EXTINCTION_THRESHOLD),
+                "resources": _clamp01(float(selected_org.resources)),
+                "sandbox_stability": 1.0 if selected_org.sandbox_violation_streak == 0 else 0.0,
+                "cost": _clamp01(ms_base / 1000.0),
+                "quest_progress": 0.0,
+                "identity_continuity": 1.0 - _clamp01(float(getattr(psyche, "identity_wounds", 0.0))),
+                "useful_skills_retention": 1.0,
+            }
+            technical_gain = (
+                (base_score - mutated_score) / max(abs(base_score), 1.0)
+                if scores_comparable else -1.0
+            )
+            post_mutation_snapshot = dict(pre_mutation_snapshot)
+            post_mutation_snapshot.update(
+                functional_gain=technical_gain,
+                vital_risk=_clamp01(pre_mutation_snapshot["vital_risk"] + (1.0 if mutation_failed else 0.0)),
+                sandbox_stability=0.0 if mutation_failed else pre_mutation_snapshot["sandbox_stability"],
+                cost=_clamp01(ms_new / 1000.0),
+                identity_continuity=1.0 - _clamp01(float(getattr(psyche, "identity_wounds", 0.0))),
+                useful_skills_retention=min(1.0, len(list(selected_org.skills_dir.glob("*.py"))) / skill_count),
+            )
+            fitness_decision = evaluate_mutation_fitness(
+                pre_mutation_snapshot,
+                post_mutation_snapshot,
+                lifecycle_fitness_config,
+                observations=lifecycle_fitness_config.minimum_observations,
+            )
+
             if infrastructure_failure:
                 infrastructure_diagnostic = {
                     "organism": org_name,
@@ -1655,6 +1702,7 @@ def run(
                     else mutated_comparable_score <= base_comparable_score
                 )
             )
+            candidate_accepted = candidate_accepted and fitness_decision.accepted
             world_effects: list[dict[str, object]] = []
             security_metadata: dict[str, object] = {
                 "governance_checked": False,
@@ -1914,6 +1962,9 @@ def run(
             reward_delta = base_score - mutated_score
             if math.isfinite(reward_delta):
                 stats[op_name]["reward"] += reward_delta
+            fitness_reward = fitness_decision.fitness_after - fitness_decision.fitness_before
+            if math.isfinite(fitness_reward):
+                stats[op_name]["fitness_reward"] += fitness_reward
             belief_store.update_after_run(
                 f"operator:{op_name}",
                 success=accepted,
@@ -2500,6 +2551,7 @@ def run(
                 "impacted_file": skill_path.name,
                 "timing_ms": {"base": ms_base, "new": ms_new},
                 "skill_reputation": logger.skill_reputation().get(key, {}),
+                **fitness_decision.to_dict(),
             }
             gain_loss = round(base_score - mutated_score, 6)
             causal_payload = {
@@ -2587,6 +2639,7 @@ def run(
                 source_error_message=base_score_result.error_message,
                 mutation_error_type=mutated_score_result.error_type,
                 mutation_error_message=mutated_score_result.error_message,
+                fitness_decision=fitness_decision,
             )
             tick_profiler.record_duration(
                 "logging", (time.perf_counter() - logging_phase_started) * 1000.0
