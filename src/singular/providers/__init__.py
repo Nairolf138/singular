@@ -7,10 +7,13 @@ from importlib import import_module
 from importlib.metadata import entry_points
 import inspect
 import os
+import queue
+import threading
 from typing import Any, Callable, Protocol
 
 DEFAULT_PROVIDER_TIMEOUT_SECONDS = 8.0
 DEFAULT_PROVIDER_MAX_RETRIES = 2
+DEFAULT_HEALTHCHECK_TIMEOUT_SECONDS = 2.0
 # Automatic selection prefers a locally managed Ollama model, then the built-in
 # local backend, before trying the remote OpenAI service and deterministic dummy.
 DEFAULT_FALLBACK_CHAIN = ("ollama", "local", "openai", "dummy")
@@ -119,6 +122,10 @@ class LLMProviderClient:
     metrics: ProviderMetrics = field(
         default_factory=lambda: ProviderMetrics(provider="unknown")
     )
+    requested_provider: str | None = None
+    selected_provider: str | None = None
+    health_state: str = "unknown"
+    candidates: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.metrics.provider == "unknown":
@@ -203,7 +210,11 @@ def describe_client(
 ) -> dict[str, Any]:
     """Return status details for a loaded provider client."""
 
-    active = client.name if client is not None else (requested or "automatic")
+    selected = (
+        getattr(client, "selected_provider", None) or getattr(client, "name", None)
+        if client is not None
+        else None
+    )
     chain = (
         [child.name for child in client.chain]
         if isinstance(client, FallbackLLMClient)
@@ -212,16 +223,23 @@ def describe_client(
     has_real = (
         any(provider_is_real(name) for name in chain)
         if chain
-        else provider_is_real(active)
+        else provider_is_real(selected)
     )
     state = (
         "ready"
         if has_real
-        else ("degraded_dummy" if active.lower() == "dummy" else "unavailable")
+        else ("degraded_dummy" if selected == "dummy" else "unavailable")
     )
     return {
         "requested_provider": requested,
-        "active_provider": active,
+        "selected_provider": selected,
+        # A backend only becomes active after generate_reply succeeds.
+        "active_provider": getattr(client, "last_active_provider", None),
+        "fallback_used": getattr(client, "last_fallback_used", False),
+        "health_state": getattr(client, "health_state", "unknown")
+        if client
+        else "unavailable",
+        "candidates": getattr(client, "candidates", []) if client else [],
         "provider_chain": chain,
         "llm_real": has_real,
         "state": state,
@@ -240,6 +258,10 @@ def doctor_providers(names: list[str] | None = None) -> list[dict[str, Any]]:
                 results.append(
                     {
                         "provider": name,
+                        "installed": False,
+                        "configured": False,
+                        "reachable": False,
+                        "degraded": False,
                         "ok": False,
                         "llm_real": provider_is_real(name),
                         "error_category": "provider_missing",
@@ -251,21 +273,23 @@ def doctor_providers(names: list[str] | None = None) -> list[dict[str, Any]]:
                     }
                 )
                 continue
-            status = contract.healthcheck()
+            status = _bounded_healthcheck(contract.healthcheck)
             ok = bool(status.get("ok"))
             real = provider_is_real(name)
             state = (
                 "ready" if ok and real else ("degraded_dummy" if ok else "unavailable")
             )
             error = status.get("error")
-            category = (
+            category = status.get("error_category") or (
                 None
                 if ok
                 else (
                     "misconfigured"
                     if isinstance(error, str)
                     and (
-                        "missing" in error.lower() or "not configured" in error.lower()
+                        "missing" in error.lower()
+                        or "not configured" in error.lower()
+                        or ("model" in error.lower() and "not found" in error.lower())
                     )
                     else "unavailable"
                 )
@@ -274,6 +298,10 @@ def doctor_providers(names: list[str] | None = None) -> list[dict[str, Any]]:
                 {
                     **status,
                     "provider": str(status.get("provider") or name),
+                    "installed": True,
+                    "configured": category != "misconfigured",
+                    "reachable": ok,
+                    "degraded": state == "degraded_dummy",
                     "ok": ok,
                     "llm_real": real,
                     "error_category": category,
@@ -286,6 +314,10 @@ def doctor_providers(names: list[str] | None = None) -> list[dict[str, Any]]:
             results.append(
                 {
                     "provider": name,
+                    "installed": True,
+                    "configured": getattr(exc, "category", "") != "misconfigured",
+                    "reachable": False,
+                    "degraded": False,
                     "ok": False,
                     "llm_real": provider_is_real(name),
                     "error_category": getattr(exc, "category", "provider_error"),
@@ -299,6 +331,10 @@ def doctor_providers(names: list[str] | None = None) -> list[dict[str, Any]]:
             results.append(
                 {
                     "provider": name,
+                    "installed": True,
+                    "configured": False,
+                    "reachable": False,
+                    "degraded": False,
                     "ok": False,
                     "llm_real": False,
                     "error_category": "unavailable",
@@ -309,6 +345,40 @@ def doctor_providers(names: list[str] | None = None) -> list[dict[str, Any]]:
                 }
             )
     return results
+
+
+def _bounded_healthcheck(
+    healthcheck: Callable[[], dict[str, Any]],
+    timeout: float = DEFAULT_HEALTHCHECK_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Run a healthcheck with a hard caller-side deadline.
+
+    The daemon worker deliberately cannot hold process shutdown hostage when a
+    third-party healthcheck ignores its own network timeout.
+    """
+
+    result: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
+
+    def run() -> None:
+        try:
+            result.put((True, healthcheck()))
+        except BaseException as exc:  # returned as diagnostic, never leaked
+            result.put((False, exc))
+
+    threading.Thread(target=run, daemon=True, name="provider-healthcheck").start()
+    try:
+        succeeded, value = result.get(timeout=max(0.001, timeout))
+    except queue.Empty:
+        return {
+            "ok": False,
+            "error": f"healthcheck timed out after {timeout:g}s",
+            "error_category": "timeout",
+        }
+    if not succeeded:
+        raise value
+    if not isinstance(value, dict):
+        return {"ok": False, "error": "invalid healthcheck response"}
+    return value
 
 
 def provider_diagnostics(names: list[str] | None = None) -> dict[str, Any]:
@@ -422,9 +492,49 @@ def load_llm_client(name: str | None) -> LLMProviderClient | None:
 
     chain_names = _resolve_provider_chain(name)
     clients: list[LLMProviderClient] = []
+    candidates: list[dict[str, Any]] = []
+    automatic = not bool(name)
     for chain_name in chain_names:
         contract = _load_provider_contract(chain_name)
         if contract is None:
+            candidates.append(
+                {
+                    "provider": chain_name,
+                    "installed": False,
+                    "configured": False,
+                    "reachable": False,
+                    "degraded": False,
+                    "health_state": "unavailable",
+                    "exclusion_cause": "provider implementation not installed",
+                }
+            )
+            continue
+        status = (
+            _bounded_healthcheck(contract.healthcheck) if automatic else {"ok": True}
+        )
+        ok = bool(status.get("ok"))
+        error = str(status.get("error") or "healthcheck failed")
+        misconfigured = not ok and (
+            "missing" in error.lower()
+            or "not configured" in error.lower()
+            or "model" in error.lower()
+            and "not found" in error.lower()
+        )
+        degraded = ok and not provider_is_real(chain_name)
+        candidates.append(
+            {
+                "provider": chain_name,
+                "installed": True,
+                "configured": not misconfigured,
+                "reachable": ok,
+                "degraded": degraded,
+                "health_state": "degraded"
+                if degraded
+                else ("ready" if ok else "unavailable"),
+                "exclusion_cause": None if ok else error,
+            }
+        )
+        if automatic and not ok:
             continue
         clients.append(
             LLMProviderClient(
@@ -434,12 +544,17 @@ def load_llm_client(name: str | None) -> LLMProviderClient | None:
                 healthcheck=contract.healthcheck,
                 cost_estimate=contract.cost_estimate,
                 max_retries=contract.max_retries,
+                requested_provider=name,
+                selected_provider=contract.name,
+                health_state="degraded" if degraded else "ready",
+                candidates=candidates,
             )
         )
 
     if not clients:
         return None
     if len(clients) == 1:
+        clients[0].candidates = candidates
         return clients[0]
     return FallbackLLMClient(
         name=",".join(client.name for client in clients),
@@ -449,6 +564,12 @@ def load_llm_client(name: str | None) -> LLMProviderClient | None:
         cost_estimate=clients[0].cost_estimate,
         max_retries=0,
         chain=clients,
+        requested_provider=name,
+        selected_provider=clients[0].name,
+        health_state="degraded"
+        if all(not provider_is_real(c.name) for c in clients)
+        else "ready",
+        candidates=candidates,
     )
 
 

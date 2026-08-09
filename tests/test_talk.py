@@ -370,7 +370,7 @@ def test_talk_bounds_context_budget_and_logs_narrative_version(monkeypatch, tmp_
     assert len(captured["prompt"].split("Utilisateur:")[0]) <= 425
     assistant_episodes = [e for e in read_episodes() if e.get("role") == "assistant"]
     assert assistant_episodes
-    assert assistant_episodes[-1]["context"]["self_narrative_version"] == 1
+    assert assistant_episodes[-1]["context"]["self_narrative_version"] == 3
 
 
 def test_talk_subcommand_life_argument_has_priority(monkeypatch, tmp_path):
@@ -472,7 +472,8 @@ def test_talk_status_includes_active_fallback_and_error_category(monkeypatch, tm
 
     talk(provider="missing", seed=2)
 
-    assert any("Provider active: missing" in out for out in outputs)
+    assert any("Provider actif: aucun" in out for out in outputs)
+    assert not any("active=missing" in out for out in outputs)
     assert any(
         "fallback=true" in out and "error_category=provider_missing" in out
         for out in outputs

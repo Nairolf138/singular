@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import time
 from typing import Any
 
@@ -19,6 +20,26 @@ MAX_RETRIES = 2
 DEFAULT_OPENAI_MODEL = "gpt-3.5-turbo"
 
 LAST_METRICS = ProviderMetrics(provider="openai")
+
+
+def _api_key() -> str:
+    direct = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if direct:
+        return direct
+    reference = (os.getenv("OPENAI_API_KEY_FILE") or "").strip()
+    if not reference:
+        return ""
+    path = Path(reference).expanduser()
+    try:
+        if path.stat().st_mode & 0o077:
+            return ""
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    if value.startswith("OPENAI_API_KEY="):
+        value = value.partition("=")[2].strip().strip('"')
+    return value
+
 
 try:  # pragma: no cover - optional dependency
     from openai import (  # type: ignore
@@ -44,7 +65,7 @@ def _filter(text: str) -> str:
 def generate(prompt: str, *, timeout: float = 8.0) -> str:
     """Generate a reply via OpenAI using typed errors for failures."""
 
-    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    api_key = _api_key()
     model = (os.getenv("OPENAI_MODEL") or "").strip() or DEFAULT_OPENAI_MODEL
     if not api_key:
         raise ProviderMisconfiguredError("OPENAI_API_KEY not configured")
@@ -62,19 +83,27 @@ def generate(prompt: str, *, timeout: float = 8.0) -> str:
         )
         choices = getattr(response, "choices", None)
         if not isinstance(choices, list):
-            raise ProviderExecutionError("OpenAI response schema error: choices is not a list")
+            raise ProviderExecutionError(
+                "OpenAI response schema error: choices is not a list"
+            )
         if not choices:
             raise ProviderExecutionError("OpenAI response schema error: empty choices")
 
         message = getattr(choices[0], "message", None)
         if message is None:
-            raise ProviderExecutionError("OpenAI response schema error: missing message")
+            raise ProviderExecutionError(
+                "OpenAI response schema error: missing message"
+            )
 
         content = getattr(message, "content", None)
         if content is None:
-            raise ProviderExecutionError("OpenAI response schema error: missing message content")
+            raise ProviderExecutionError(
+                "OpenAI response schema error: missing message content"
+            )
         if not isinstance(content, str):
-            raise ProviderExecutionError("OpenAI response schema error: message content is not a string")
+            raise ProviderExecutionError(
+                "OpenAI response schema error: message content is not a string"
+            )
 
         text: str = content
     except APITimeoutError as exc:
@@ -82,7 +111,9 @@ def generate(prompt: str, *, timeout: float = 8.0) -> str:
     except TimeoutError as exc:
         raise ProviderTimeoutError("OpenAI request timed out") from exc
     except RateLimitError as exc:
-        raise ProviderQuotaExceededError("OpenAI quota exceeded or rate limited") from exc
+        raise ProviderQuotaExceededError(
+            "OpenAI quota exceeded or rate limited"
+        ) from exc
     except AuthenticationError as exc:
         raise ProviderMisconfiguredError("OpenAI credentials are invalid") from exc
     except APIConnectionError as exc:
@@ -101,12 +132,14 @@ def generate(prompt: str, *, timeout: float = 8.0) -> str:
     output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
     LAST_METRICS.input_tokens = input_tokens or len(prompt.split())
     LAST_METRICS.output_tokens = output_tokens or len(filtered.split())
-    LAST_METRICS.estimated_cost_usd = cost_estimate(prompt, filtered, input_tokens=input_tokens, output_tokens=output_tokens)
+    LAST_METRICS.estimated_cost_usd = cost_estimate(
+        prompt, filtered, input_tokens=input_tokens, output_tokens=output_tokens
+    )
     return filtered
 
 
 def embed(text: str, *, timeout: float = 8.0) -> list[float]:
-    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    api_key = _api_key()
     if not api_key:
         raise ProviderMisconfiguredError("OPENAI_API_KEY not configured")
     if OpenAI is None:
@@ -114,14 +147,18 @@ def embed(text: str, *, timeout: float = 8.0) -> list[float]:
 
     try:  # pragma: no cover - network call
         client = OpenAI(api_key=api_key)
-        response: Any = client.embeddings.create(model="text-embedding-3-small", input=text, timeout=timeout)
+        response: Any = client.embeddings.create(
+            model="text-embedding-3-small", input=text, timeout=timeout
+        )
         values = response.data[0].embedding
     except APITimeoutError as exc:
         raise ProviderTimeoutError("OpenAI embedding timed out") from exc
     except TimeoutError as exc:
         raise ProviderTimeoutError("OpenAI embedding timed out") from exc
     except RateLimitError as exc:
-        raise ProviderQuotaExceededError("OpenAI quota exceeded or rate limited") from exc
+        raise ProviderQuotaExceededError(
+            "OpenAI quota exceeded or rate limited"
+        ) from exc
     except AuthenticationError as exc:
         raise ProviderMisconfiguredError("OpenAI credentials are invalid") from exc
     except APIConnectionError as exc:
@@ -133,7 +170,7 @@ def embed(text: str, *, timeout: float = 8.0) -> list[float]:
 
 
 def healthcheck() -> dict[str, object]:
-    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    api_key = _api_key()
     model = (os.getenv("OPENAI_MODEL") or "").strip() or DEFAULT_OPENAI_MODEL
     if not api_key:
         return {
@@ -152,8 +189,16 @@ def cost_estimate(
     input_tokens: int | None = None,
     output_tokens: int | None = None,
 ) -> float:
-    in_tokens = input_tokens if input_tokens is not None and input_tokens > 0 else max(1, len(prompt.split()))
-    out_tokens = output_tokens if output_tokens is not None and output_tokens > 0 else len(completion.split())
+    in_tokens = (
+        input_tokens
+        if input_tokens is not None and input_tokens > 0
+        else max(1, len(prompt.split()))
+    )
+    out_tokens = (
+        output_tokens
+        if output_tokens is not None and output_tokens > 0
+        else len(completion.split())
+    )
     # Heuristic for gpt-3.5-turbo style pricing approximation.
     return round((in_tokens * 0.0000005) + (out_tokens * 0.0000015), 8)
 

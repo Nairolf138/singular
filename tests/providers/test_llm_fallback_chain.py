@@ -92,3 +92,28 @@ def test_fallback_client_records_the_provider_that_succeeds():
     assert client.last_errors == [
         {"provider": "first", "category": "unavailable", "error": "offline"}
     ]
+
+
+def test_automatic_selection_excludes_unhealthy_ollama_and_uses_real_fallback(
+    monkeypatch,
+):
+    contracts = {
+        "ollama": LLMProviderContract(
+            name="ollama",
+            generate=lambda prompt: prompt,
+            embed=lambda text: [],
+            healthcheck=lambda: {"ok": False, "error": "Unable to connect to Ollama"},
+            cost_estimate=lambda prompt, completion="": 0.0,
+        ),
+        "openai": _dummy_contract("openai"),
+    }
+    monkeypatch.setenv("LLM_PROVIDER_FALLBACK", "ollama,openai")
+    monkeypatch.setattr(providers, "_load_provider_contract", contracts.get)
+
+    client = load_llm_client(None)
+
+    assert client is not None
+    assert client.selected_provider == "openai"
+    assert client.candidates[0]["installed"] is True
+    assert client.candidates[0]["reachable"] is False
+    assert client.candidates[0]["exclusion_cause"] == "Unable to connect to Ollama"

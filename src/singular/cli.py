@@ -820,7 +820,50 @@ def _configure_openai(
     return 0
 
 
-def _doctor_providers() -> int:
+def _save_provider_configuration(
+    *,
+    config_file: Path,
+    provider: str | None,
+    fallback: str | None,
+    ollama_model: str | None,
+    api_key: str | None,
+    credentials_file: Path | None,
+) -> None:
+    """Atomically persist service settings and keep credentials separate."""
+
+    values = {
+        "LLM_PROVIDER": provider,
+        "LLM_PROVIDER_FALLBACK": fallback,
+        "OLLAMA_MODEL": ollama_model,
+    }
+    if api_key:
+        secret_path = credentials_file or config_file.with_name(
+            "provider-credentials.env"
+        )
+        _atomic_write(
+            secret_path, f"OPENAI_API_KEY={_systemd_quote(api_key)}\n", mode=0o600
+        )
+        values["OPENAI_API_KEY_FILE"] = str(secret_path.resolve())
+    content = "".join(
+        f"{key}={_systemd_quote(value)}\n"
+        for key, value in values.items()
+        if value is not None
+    )
+    _atomic_write(config_file, content, mode=0o640)
+    print(f"✅ Configuration providers enregistrée atomiquement: {config_file}")
+    if api_key:
+        print("✅ Identifiants enregistrés séparément (permissions 0600).")
+
+
+def _doctor_providers(
+    *,
+    config_file: str | None = None,
+    provider: str | None = None,
+    fallback: str | None = None,
+    ollama_model: str | None = None,
+    api_key: str | None = None,
+    credentials_file: str | None = None,
+) -> int:
     """Display LLM provider diagnostics for OpenAI, Ollama and local backends."""
 
     from .providers import doctor_providers
@@ -852,6 +895,17 @@ def _doctor_providers() -> int:
         command = result.get("configuration_command")
         if command:
             print(f"  Configuration: `{command}`")
+    if config_file:
+        _save_provider_configuration(
+            config_file=_safe_path(config_file).expanduser(),
+            provider=provider,
+            fallback=fallback,
+            ollama_model=ollama_model,
+            api_key=api_key,
+            credentials_file=(
+                _safe_path(credentials_file).expanduser() if credentials_file else None
+            ),
+        )
     return exit_code
 
 
@@ -1610,8 +1664,25 @@ def _build_parser() -> argparse.ArgumentParser:
     config_providers_subparsers = config_providers_parser.add_subparsers(
         dest="config_providers_command", required=True
     )
-    config_providers_subparsers.add_parser(
+    providers_doctor_parser = config_providers_subparsers.add_parser(
         "doctor", help="Vérifie OpenAI, Ollama et local"
+    )
+    providers_doctor_parser.add_argument(
+        "--save",
+        dest="config_file",
+        help="Fichier EnvironmentFile de service à écrire atomiquement",
+    )
+    providers_doctor_parser.add_argument("--provider", help="Valeur LLM_PROVIDER")
+    providers_doctor_parser.add_argument(
+        "--fallback", help="Valeur LLM_PROVIDER_FALLBACK"
+    )
+    providers_doctor_parser.add_argument("--ollama-model", help="Valeur OLLAMA_MODEL")
+    providers_doctor_parser.add_argument(
+        "--api-key",
+        help="Clé OpenAI, stockée uniquement dans le fichier d'identifiants 0600",
+    )
+    providers_doctor_parser.add_argument(
+        "--credentials-file", help="Fichier d'identifiants séparé"
     )
     config_root_parser = config_subparsers.add_parser(
         "root", help="Configurer le root de registre persistant"
@@ -2291,7 +2362,14 @@ def main(argv: list[str] | None = None) -> int:
             )
         if args.config_command == "providers":
             if args.config_providers_command == "doctor":
-                return _doctor_providers()
+                return _doctor_providers(
+                    config_file=args.config_file,
+                    provider=args.provider,
+                    fallback=args.fallback,
+                    ollama_model=args.ollama_model,
+                    api_key=args.api_key,
+                    credentials_file=args.credentials_file,
+                )
         if args.config_command == "root":
             if args.config_root_command == "set":
                 config_path, resolved_root = set_configured_registry_root(
