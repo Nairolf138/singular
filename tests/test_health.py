@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from singular.life.health import HealthTracker, detect_health_state
+from singular.life.health import HealthTracker, ViabilityDriftDetector, detect_health_state
 from singular.life.loop import _retain_health_history
 from singular.runs import report as report_mod
 
@@ -68,6 +68,18 @@ def test_health_tracker_regression() -> None:
 
     assert scores[-1] < scores[49]
     assert detect_health_state(scores, short_window=10, long_window=50) == "dégradation"
+
+
+def test_viability_drift_state_round_trips_with_metrics_and_thresholds() -> None:
+    detector = ViabilityDriftDetector()
+    metrics = {"health": .8, "risk": .1, "resources": .7, "failure_rate": .1,
+               "traits": .9, "useful_skills": .8, "fitness": .75}
+    for _ in range(7):
+        detector.observe(metrics)
+    diagnostics = ViabilityDriftDetector.from_state(detector.to_state()).diagnostics()
+    assert diagnostics["metrics"]["useful_skills"] == .8
+    assert diagnostics["thresholds"]["stable_cycles"] == 4
+    assert diagnostics["windows"]["short"] > .7
 
 
 def test_report_prints_health_state(tmp_path: Path, capsys) -> None:

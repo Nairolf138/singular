@@ -20,6 +20,7 @@ class Checkpoint:
     stats: Dict[str, Dict[str, float]] = field(default_factory=dict)
     health_history: list[dict[str, float | int]] = field(default_factory=list)
     health_counters: dict[str, float | int] = field(default_factory=dict)
+    viability_governance: dict[str, object] = field(default_factory=dict)
 
 
 def _migrate_checkpoint_data(data: Mapping[str, object]) -> dict[str, object]:

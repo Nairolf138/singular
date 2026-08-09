@@ -66,7 +66,7 @@ from singular.multiagent.runtime import LifeTickContext, MultiAgentRuntime
 from singular.life.ecosystem import ARCHETYPES, EcosystemRulesConfig, compute_population_metrics, draw_global_event
 
 from .death import DeathMonitor
-from .health import HealthTracker
+from .health import HealthTracker, ViabilityDriftDetector
 from singular.governance.policy import (
     MutationGovernancePolicy,
     classify_sandbox_error_type,
@@ -1037,6 +1037,8 @@ def run(
         logger_kwargs["root"] = life_root / "runs"
     with RunLogger(run_id, **logger_kwargs) as logger:
         health_tracker = HealthTracker.from_state(state.health_counters)
+        viability_detector = ViabilityDriftDetector.from_state(state.viability_governance)
+        healthy_checkpoint_path = checkpoint_path.with_suffix(checkpoint_path.suffix + ".healthy")
         delayed: list[tuple[float, str, Path]] = []
         tick_count = 0
 
@@ -1078,6 +1080,25 @@ def run(
                 continue
 
             resource_manager.metabolize()
+            # Preventive viability governance is deliberately independent from
+            # sandbox violations. Throttling still permits sampled mutations;
+            # all later levels remain mutation-free until hysteretic recovery.
+            if viability_detector.action == "throttled" and state.iteration % 2:
+                logger.log_interaction(
+                    "mutation_paused", iteration=state.iteration,
+                    reason="viability_throttled", governance=viability_detector.diagnostics(),
+                )
+                _persist_consumed_tick()
+                continue
+            if viability_detector.action in {"paused", "restored", "operator"}:
+                logger.log_interaction(
+                    "mutation_paused", iteration=state.iteration,
+                    reason=f"viability_{viability_detector.action}",
+                    operator_intervention_required=viability_detector.action == "operator",
+                    governance=viability_detector.diagnostics(),
+                )
+                _persist_consumed_tick()
+                continue
             try:
                 signals = capture_signals(bus=event_bus)
             except TypeError:
@@ -2511,6 +2532,44 @@ def run(
             state.health_history.append(health_snapshot.to_dict())
             state.health_history = _retain_health_history(state.health_history)
             state.health_counters = health_tracker.to_state()
+
+            viability_metrics = {
+                "health": health_snapshot.score / 100.0,
+                "risk": post_mutation_snapshot["vital_risk"],
+                "resources": post_mutation_snapshot["resources"],
+                "failure_rate": health_snapshot.failure_frequency,
+                "traits": post_mutation_snapshot["identity_continuity"],
+                "useful_skills": post_mutation_snapshot["useful_skills_retention"],
+                "fitness": _clamp01((fitness_decision.fitness_after + 1.0) / 2.0),
+            }
+            viability_action, viability_transition = viability_detector.observe(viability_metrics)
+            state.viability_governance = viability_detector.to_state()
+            viability_payload = {
+                "iteration": state.iteration,
+                "action": viability_action,
+                "metrics": viability_metrics,
+                "thresholds": asdict(viability_detector.config),
+                "windows": viability_detector.diagnostics()["windows"],
+                "sandbox_violation_streak": org.sandbox_violation_streak,
+            }
+            if viability_transition == "drift":
+                logger.log_interaction("governance.viability_drift_detected", **viability_payload)
+                event_bus.publish("governance.viability_drift_detected", viability_payload, payload_version=1)
+                if viability_action == "paused":
+                    logger.log_interaction("mutation_paused", reason="viability_drift", **viability_payload)
+                elif viability_action == "restored":
+                    healthy = load_checkpoint(healthy_checkpoint_path)
+                    if healthy_checkpoint_path.exists():
+                        state.stats = healthy.stats
+                        state.health_history = healthy.health_history
+                        state.health_counters = healthy.health_counters
+                    logger.log_interaction("checkpoint.restored", checkpoint=str(healthy_checkpoint_path), **viability_payload)
+                    event_bus.publish("checkpoint.restored", viability_payload, payload_version=1)
+            elif viability_transition == "recovered":
+                logger.log_interaction("governance.viability_recovered", **viability_payload)
+                event_bus.publish("governance.viability_recovered", viability_payload, payload_version=1)
+            if viability_action == "normal":
+                save_checkpoint(healthy_checkpoint_path, state)
 
             logger.log_interaction(
                 INTERACTION_RESOURCE_COMPETITION,
