@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 import os
 from pathlib import Path
 import socket
@@ -8,10 +9,38 @@ import threading
 import time
 
 import pytest
-from fastapi_stub import TestClient
+from fastapi.testclient import TestClient
 
 from singular.dashboard import create_app
 from singular.lives import LifeMetadata
+
+
+def _route(app: object, path: str, *, method: str = "GET"):
+    """Return a route endpoint from either FastAPI or the unit-test stub."""
+    stub_routes = getattr(
+        app, "_ws_routes" if method == "WEBSOCKET" else "_routes", None
+    )
+    if stub_routes is not None:
+        return stub_routes[path]
+    for route in app.routes:
+        if route.path == path and (
+            method == "WEBSOCKET" or method in getattr(route, "methods", ())
+        ):
+            endpoint = route.endpoint
+
+            def call_endpoint(*args, **kwargs):
+                signature = inspect.signature(endpoint)
+                bound = signature.bind_partial(*args, **kwargs)
+                for name, parameter in signature.parameters.items():
+                    default = parameter.default
+                    if name not in bound.arguments and type(
+                        default
+                    ).__module__.startswith("fastapi."):
+                        bound.arguments[name] = default.default
+                return endpoint(*bound.args, **bound.kwargs)
+
+            return call_endpoint
+    raise LookupError(f"{method} route {path!r} is not registered")
 
 
 @pytest.fixture
@@ -344,7 +373,7 @@ def test_smoke_dashboard_e2e_capacites_critiques(
     quests_payload = quests.json()
     assert len(quests_payload["active"]) == 1
 
-    timeline_payload = app._routes["/api/runs/{run_id}/timeline"](run_id=run_id)
+    timeline_payload = _route(app, "/api/runs/{run_id}/timeline")(run_id=run_id)
     assert any(item["event"] == "interaction" for item in timeline_payload["items"])
 
     work_items = client.get("/api/dashboard/work-items")

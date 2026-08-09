@@ -1,16 +1,45 @@
 import asyncio
+import inspect
 import json
 from pathlib import Path
 from queue import Empty
 import threading
 
 import pytest
-from fastapi_stub import TestClient
+from fastapi.testclient import TestClient
 
 import singular.dashboard as dashboard_module
 from singular.dashboard import create_app, run
 from singular.dashboard.services.trajectory import build_trajectory
 from singular.lives import LifeMetadata, create_life
+
+
+def _route(app: object, path: str, *, method: str = "GET"):
+    """Return a route endpoint from either FastAPI or the unit-test stub."""
+    stub_routes = getattr(
+        app, "_ws_routes" if method == "WEBSOCKET" else "_routes", None
+    )
+    if stub_routes is not None:
+        return stub_routes[path]
+    for route in app.routes:
+        if route.path == path and (
+            method == "WEBSOCKET" or method in getattr(route, "methods", ())
+        ):
+            endpoint = route.endpoint
+
+            def call_endpoint(*args, **kwargs):
+                signature = inspect.signature(endpoint)
+                bound = signature.bind_partial(*args, **kwargs)
+                for name, parameter in signature.parameters.items():
+                    default = parameter.default
+                    if name not in bound.arguments and type(
+                        default
+                    ).__module__.startswith("fastapi."):
+                        bound.arguments[name] = default.default
+                return endpoint(*bound.args, **bound.kwargs)
+
+            return call_endpoint
+    raise LookupError(f"{method} route {path!r} is not registered")
 
 
 def test_comparison_exposes_distinct_consulted_active_and_observed_lives(
@@ -41,7 +70,7 @@ def test_comparison_exposes_distinct_consulted_active_and_observed_lives(
         lambda: {"active": "running", "lives": registry_lives},
     )
     app = create_app(runs_dir=runs, psyche_file=tmp_path / "psyche.json")
-    route = app._routes["/lives/comparison"]
+    route = _route(app, "/lives/comparison")
     payload = route(life_id="consulted")
     assert payload["life_identities"]["selected_life_id"] == "consulted"
     assert payload["life_identities"]["registry_active_life_id"] == "running"
@@ -114,9 +143,7 @@ def test_trajectory_contract_joins_records_by_correlation_id(tmp_path: Path) -> 
     assert payload["causal_chronology"][2]["corrective_action"] == "halt mutations"
 
 
-def _receive_with_timeout(
-    ws: TestClient._WSConnection, timeout: float = 2.0
-) -> dict[str, object]:
+def _receive_with_timeout(ws: object, timeout: float = 2.0) -> dict[str, object]:
     try:
         return ws.ws._queue.get(timeout=timeout)
     except Empty as exc:  # pragma: no cover - defensive for slow CI
@@ -213,7 +240,7 @@ def test_dashboard_context_normalizes_object_and_dict_life_metadata(
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
 
     app = create_app(psyche_file=tmp_path / "psyche.json")
-    context = app._routes["/dashboard/context"]()
+    context = _route(app, "/dashboard/context")()
 
     assert context["registry_lives"] == [
         {
@@ -307,7 +334,7 @@ def test_lives_comparison_current_life_only_uses_registry_after_life_creation(
 
     # Equivalent to GET /lives/comparison?current_life_only=true; the test
     # FastAPI stub dispatches query parameters via direct route kwargs.
-    payload = app._routes["/lives/comparison"](current_life_only=True)
+    payload = _route(app, "/lives/comparison")(current_life_only=True)
     assert set(payload["lives"]) == {life.slug}
     assert payload["lives"][life.slug]["health_score"] == 91.0
     assert payload["table"][0]["life"] == life.slug
@@ -476,7 +503,7 @@ def test_dashboard_latest_run_summary_endpoint(tmp_path: Path) -> None:
     )
 
     app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
-    summary = app._routes["/runs/latest/summary"]()
+    summary = _route(app, "/runs/latest/summary")()
     assert summary["run"] == "latest"
     assert summary["summary"] == {
         "entries": 3,
@@ -487,7 +514,7 @@ def test_dashboard_latest_run_summary_endpoint(tmp_path: Path) -> None:
         "last_timestamp": "2026-04-12T10:02:00",
     }
 
-    latest_payload = app._routes["/runs/latest"]()
+    latest_payload = _route(app, "/runs/latest")()
     assert latest_payload["run"] == "latest"
     assert len(latest_payload["records"]) == 3
 
@@ -526,21 +553,21 @@ def test_dashboard_includes_temporary_jsonl_run_files(tmp_path: Path) -> None:
 
     app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
 
-    latest_payload = app._routes["/runs/latest"]()
+    latest_payload = _route(app, "/runs/latest")()
     assert latest_payload["run"] == "run-live"
     assert [record["ts"] for record in latest_payload["records"]] == [
         "2026-05-11T09:00:00+00:00",
         "2026-05-11T09:01:00+00:00",
     ]
 
-    timeline_payload = app._routes["/api/runs/{run_id}/timeline"](run_id="run-live")
+    timeline_payload = _route(app, "/api/runs/{run_id}/timeline")(run_id="run-live")
     assert timeline_payload["pagination"]["total"] == 2
     assert [item["event"] for item in timeline_payload["items"]] == [
         "interaction",
         "mutation",
     ]
 
-    ecosystem_payload = app._routes["/ecosystem"]()
+    ecosystem_payload = _route(app, "/ecosystem")()
     assert ecosystem_payload["organisms"]["temp-life"]["last_interaction"] == "signal"
     assert ecosystem_payload["organisms"]["temp-life"]["energy"] == 7
 
@@ -593,7 +620,7 @@ def test_dashboard_surfaces_sandbox_events_from_temporary_run(tmp_path: Path) ->
 
     app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
 
-    cockpit_payload = app._routes["/api/cockpit"]()
+    cockpit_payload = _route(app, "/api/cockpit")()
     governance = cockpit_payload["sandbox_governance"]
     assert governance["circuit_breaker_status"] == "ouvert"
     assert governance["recent_violations_count"] == 2
@@ -604,7 +631,7 @@ def test_dashboard_surfaces_sandbox_events_from_temporary_run(tmp_path: Path) ->
         "mutation_halted",
     }
 
-    timeline_payload = app._routes["/api/runs/{run_id}/timeline"](run_id="run-live")
+    timeline_payload = _route(app, "/api/runs/{run_id}/timeline")(run_id="run-live")
     assert [item["event"] for item in timeline_payload["items"]] == [
         "sandbox_violation",
         "governance.circuit_breaker_opened",
@@ -1174,7 +1201,7 @@ def test_dashboard_timeline_comparison_and_top_mutations(tmp_path: Path) -> None
 
     app = create_app(runs_dir=runs_dir, psyche_file=psyche_file)
 
-    timeline_payload = app._routes["/timeline"](
+    timeline_payload = _route(app, "/timeline")(
         life="life-a",
         period="2026-04-10",
         operator="flip",
@@ -1193,7 +1220,7 @@ def test_dashboard_timeline_comparison_and_top_mutations(tmp_path: Path) -> None
     assert timeline_payload["items"][0]["impact"] == "beneficial"
     assert timeline_payload["items"][0]["impact_delta"] == 3.0
 
-    comparison_payload = app._routes["/lives/comparison"]()["lives"]
+    comparison_payload = _route(app, "/lives/comparison")()["lives"]
     assert set(comparison_payload) == {"life-a", "life-b"}
     assert comparison_payload["life-a"]["health_score"] == 90.0
     assert comparison_payload["life-a"]["progression_slope"] == 2.0
@@ -1204,7 +1231,7 @@ def test_dashboard_timeline_comparison_and_top_mutations(tmp_path: Path) -> None
     assert comparison_payload["life-a"]["iterations"] == 2
     assert comparison_payload["life-b"]["failure_rate"] == 0.0
 
-    top_payload = app._routes["/mutations/top"](limit=1)
+    top_payload = _route(app, "/mutations/top")(limit=1)
     assert set(top_payload) == {"most_beneficial", "most_risky", "most_frequent"}
     assert top_payload["most_beneficial"][0]["life"] == "life-b"
     assert top_payload["most_beneficial"][0]["impact_delta"] == 4.0
@@ -1247,7 +1274,7 @@ def test_dashboard_consciousness_endpoint_filters(tmp_path: Path) -> None:
     )
 
     app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
-    payload = app._routes["/api/runs/{run_id}/consciousness"](
+    payload = _route(app, "/api/runs/{run_id}/consciousness")(
         run_id="mind-20260412101010",
         objective="coherence",
         success="true",
@@ -1294,7 +1321,7 @@ def test_dashboard_lives_comparison_excludes_runs_without_explicit_life(
     )
 
     app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
-    payload = app._routes["/lives/comparison"]()
+    payload = _route(app, "/lives/comparison")()
 
     assert set(payload["lives"]) == {"life-explicit"}
     assert "loop-1001" not in payload["lives"]
@@ -1375,7 +1402,7 @@ def test_dashboard_code_evolution_endpoint_and_comparison_link(tmp_path: Path) -
         == "/api/lives/life%20explicit%2Fwith%20spaces/code-evolution"
     )
 
-    endpoint_payload = app._routes["/api/lives/{life}/code-evolution"](
+    endpoint_payload = _route(app, "/api/lives/{life}/code-evolution")(
         life="life-explicit"
     )
     assert endpoint_payload["life"] == "life-explicit"
@@ -1383,7 +1410,7 @@ def test_dashboard_code_evolution_endpoint_and_comparison_link(tmp_path: Path) -
     assert endpoint_payload["summary"]["by_status"] == {"accepté": 1, "rejeté": 1}
     assert endpoint_payload["items"][0]["run_id"] == "run-2001"
 
-    filtered_payload = app._routes["/api/lives/{life}/code-evolution"](
+    filtered_payload = _route(app, "/api/lives/{life}/code-evolution")(
         life="life-explicit",
         status="accepté",
         limit=1,
@@ -1479,7 +1506,7 @@ def test_run_timeline_endpoint_filters_pagination_and_event_coherence(
     )
 
     app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
-    route = app._routes["/api/runs/{run_id}/timeline"]
+    route = _route(app, "/api/runs/{run_id}/timeline")
 
     all_payload = route(run_id="run-42", page=1, page_size=2)
     assert all_payload["pagination"] == {
@@ -1580,7 +1607,7 @@ def test_run_mutation_detail_endpoint_returns_diff_metrics_and_ast(
     )
 
     app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
-    route = app._routes["/api/runs/{run_id}/mutations/{index}"]
+    route = _route(app, "/api/runs/{run_id}/mutations/{index}")
 
     payload = route(run_id="run-mut", index=0)
     assert payload["run_id"] == "run-mut"
@@ -1677,7 +1704,7 @@ def test_lives_comparison_table_aggregation_filters_and_sorting(
             },
         },
     )
-    route = app._routes["/lives/comparison"]
+    route = _route(app, "/lives/comparison")
 
     payload = route(sort_by="score", sort_order="desc")
     table = payload["table"]
@@ -1756,7 +1783,7 @@ def test_lives_comparison_sorting_keeps_none_values_last(
         lambda: {"active": None, "lives": {}},
     )
     app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
-    route = app._routes["/lives/comparison"]
+    route = _route(app, "/lives/comparison")
 
     expected = {
         ("score", "asc"): ["alpha", "delta", "charlie", "bravo"],
@@ -1806,7 +1833,7 @@ def test_lives_comparison_compare_lives_filter(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
-    payload = app._routes["/lives/comparison"](
+    payload = _route(app, "/lives/comparison")(
         compare_lives="life-a", time_window="all"
     )
     assert set(payload["lives"]) == {"life-a"}
@@ -1834,7 +1861,7 @@ def test_lives_comparison_prefers_record_life_over_skill_prefix(tmp_path: Path) 
     )
     app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
 
-    payload = app._routes["/lives/comparison"]()
+    payload = _route(app, "/lives/comparison")()
 
     assert set(payload["lives"]) == {"life-a"}
 
@@ -1866,7 +1893,7 @@ def test_lives_comparison_maps_timestamped_run_file_to_registry_life(
         },
     )
 
-    payload = app._routes["/lives/comparison"]()
+    payload = _route(app, "/lives/comparison")()
 
     assert "life-alpha" in payload["lives"]
     assert payload["unattached_runs"]["records_count"] == 0
@@ -1925,9 +1952,9 @@ def test_dashboard_life_metrics_contract_is_consistent_across_endpoints(
         },
     )
 
-    cockpit_contract = app._routes["/api/cockpit"]()["life_metrics_contract"]
-    comparison_contract = app._routes["/lives/comparison"]()["life_metrics_contract"]
-    ecosystem_contract = app._routes["/ecosystem"]()["life_metrics_contract"]
+    cockpit_contract = _route(app, "/api/cockpit")()["life_metrics_contract"]
+    comparison_contract = _route(app, "/lives/comparison")()["life_metrics_contract"]
+    ecosystem_contract = _route(app, "/ecosystem")()["life_metrics_contract"]
 
     assert cockpit_contract["counts"] == {
         "total_lives": 3,
@@ -2016,7 +2043,7 @@ def test_lives_genealogy_returns_normalized_relationships_and_conflicts(
         },
     )
 
-    payload = app._routes["/lives/genealogy"]()
+    payload = _route(app, "/lives/genealogy")()
 
     assert payload["filters"] == {"life": None}
     assert payload["active_relations"]
@@ -2059,7 +2086,7 @@ def test_lives_genealogy_life_filter_limits_active_relations(
         },
     )
 
-    payload = app._routes["/lives/genealogy"](life="life-b")
+    payload = _route(app, "/lives/genealogy")(life="life-b")
 
     assert payload["filters"] == {"life": "life-b"}
     assert payload["active_relations"]
@@ -2199,9 +2226,9 @@ def test_websocket_slow_discovery_does_not_block_http_or_disconnect(
 
     async def exercise() -> None:
         ws = dashboard_module.WebSocket()
-        websocket_task = asyncio.create_task(app._ws_routes["/ws"](ws))
+        websocket_task = asyncio.create_task(_route(app, "/ws", method="WEBSOCKET")(ws))
         assert await asyncio.to_thread(started.wait, 1)
-        assert "<html>" in app._routes["/"]().lower()
+        assert "<html>" in _route(app, "/")().lower()
         websocket_task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(websocket_task, timeout=0.25)
@@ -2218,7 +2245,7 @@ def test_websocket_application_shutdown_closes_client_and_releases_slot(
 
     async def exercise() -> None:
         ws = dashboard_module.WebSocket()
-        websocket_task = asyncio.create_task(app._ws_routes["/ws"](ws))
+        websocket_task = asyncio.create_task(_route(app, "/ws", method="WEBSOCKET")(ws))
 
         async def client_is_connected() -> None:
             while app.state.ws_clients != 1:
@@ -2296,7 +2323,7 @@ def test_dashboard_actions_endpoint_and_ui_panel(
     assert "current_life_home" in ok["context"]
 
     with pytest.raises(Exception):
-        app._routes["/api/actions/{action}"]("lives_list")
+        _route(app, "/api/actions/{action}")("lives_list")
 
 
 def test_dashboard_secrets_stay_out_of_urls_errors_and_logs(
@@ -2336,7 +2363,7 @@ def test_dashboard_get_never_executes_any_action(
 ) -> None:
     monkeypatch.setenv("SINGULAR_DASHBOARD_ALLOW_UNAUTHENTICATED_ACTIONS", "1")
     app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
-    route = app._routes["/api/actions/{action}"]
+    route = _route(app, "/api/actions/{action}")
 
     for action in ("lives_list", "birth", "loop", "talk", "select"):
         with pytest.raises(Exception) as exc_info:
@@ -2383,7 +2410,7 @@ def test_dashboard_emergency_stop_action_writes_active_life_stop_signal(
     app = create_app(
         runs_dir=meta.path / "runs", psyche_file=meta.path / "mem" / "psyche.json"
     )
-    route = app._routes["/api/actions/{action}"]
+    route = _route(app, "/api/actions/{action}")
 
     with pytest.raises(Exception):
         route("emergency_stop", payload=json.dumps({"scope": "active_life"}))
@@ -2408,7 +2435,7 @@ def test_dashboard_emergency_stop_action_writes_active_life_stop_signal(
 def test_dashboard_actions_validation_robustness(tmp_path: Path) -> None:
     app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
 
-    route = app._routes["/api/actions/{action}"]
+    route = _route(app, "/api/actions/{action}")
 
     with pytest.raises(Exception):
         route("unknown", payload="{}")
@@ -2528,16 +2555,16 @@ def test_dashboard_registry_scope_aggregates_multiple_lives_and_can_filter_curre
     monkeypatch.setenv("SINGULAR_HOME", str(default_alpha))
 
     app = create_app(psyche_file=tmp_path / "psyche.json")
-    context = app._routes["/dashboard/context"]()
+    context = _route(app, "/dashboard/context")()
     assert context["singular_root"] == str(root_default)
     assert context["singular_home"] == str(default_alpha)
     assert context["registry_lives_count"] == 2
 
-    timeline_all = app._routes["/timeline"]()
+    timeline_all = _route(app, "/timeline")()
     assert timeline_all["count"] == 2
     assert {item["life"] for item in timeline_all["items"]} == {"alpha", "beta"}
 
-    timeline_current = app._routes["/timeline"](current_life_only=True)
+    timeline_current = _route(app, "/timeline")(current_life_only=True)
     assert timeline_current["count"] == 1
     assert timeline_current["items"][0]["life"] == "alpha"
 
@@ -2701,7 +2728,7 @@ def test_chat_get_reports_status_without_running_chat(
     monkeypatch.setenv("SINGULAR_DASHBOARD_ACTION_TOKEN", "secret")
 
     app = create_app(psyche_file=tmp_path / "psyche.json")
-    response = app._routes["/api/lives/{life}/chat"](life="alpha")
+    response = _route(app, "/api/lives/{life}/chat")(life="alpha")
 
     assert response["life"] == "alpha"
     assert response["available"] is True
@@ -2797,8 +2824,8 @@ def test_dashboard_context_exposes_degraded_dummy_diagnostic(tmp_path, monkeypat
     }
     monkeypatch.setattr(dashboard_module, "provider_diagnostics", lambda: diagnostic)
 
-    context = create_app(psyche_file=tmp_path / "psyche.json")._routes[
-        "/dashboard/context"
-    ]()
+    context = _route(
+        create_app(psyche_file=tmp_path / "psyche.json"), "/dashboard/context"
+    )()
 
     assert context["llm_providers"] == diagnostic

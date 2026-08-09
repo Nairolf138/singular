@@ -86,12 +86,15 @@ jobs:
           - integration: dashboard
             extra: dashboard
             tests: tests/test_dashboard.py tests/test_dashboard_smoke_e2e.py
+            fastapi-mode: real
           - integration: openai-provider
             extra: llm-openai
             tests: tests/providers/test_llm_openai.py
+            fastapi-mode: stub
           - integration: local-llm-provider
             extra: llm-local
             tests: tests/providers/test_llm_local.py
+            fastapi-mode: stub
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -101,7 +104,24 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install ".[test,${{ matrix.extra }}]"
+      - name: Verify dashboard uses the installed FastAPI dependency
+        if: matrix.integration == 'dashboard'
+        env:
+          SINGULAR_TEST_FASTAPI: ${{ matrix.fastapi-mode }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import fastapi
+
+          module_path = Path(fastapi.__file__).resolve()
+          stub_path = (Path.cwd() / "tests" / "fastapi_stub").resolve()
+          print(f"fastapi loaded from: {module_path}")
+          if module_path == stub_path or stub_path in module_path.parents:
+              raise SystemExit("dashboard integration loaded tests/fastapi_stub")
+          PY
       - name: Run optional integration contract
+        env:
+          SINGULAR_TEST_FASTAPI: ${{ matrix.fastapi-mode }}
         run: pytest -q ${{ matrix.tests }}
 
   sandbox-oci:
