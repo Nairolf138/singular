@@ -5,6 +5,66 @@ import singular.cli as cli
 from singular.lives import load_registry
 
 
+def test_autonomous_doctor_json_has_stable_order_and_blocked_exit(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path / "missing"))
+
+    exit_code = cli.main(["--format", "json", "doctor", "--autonomous"])
+
+    import json
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 2
+    assert payload["schema_version"] == 1
+    assert payload["status"] == "blocked"
+    assert [item["check_id"] for item in payload["checks"]] == [
+        "root_resolution",
+        "active_life",
+        "directory_permissions",
+        "systemd_consistency",
+        "provider_configured",
+        "model_available",
+        "minimal_generation",
+        "circuit_breaker",
+        "last_mutation",
+        "psyche_narrative_coherence",
+    ]
+    assert all("remediation_command" in item for item in payload["checks"])
+
+
+def test_autonomous_doctor_fully_ready(monkeypatch, tmp_path) -> None:
+    from singular.diagnostics import autonomous
+
+    monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
+    cli.main(["lives", "create", "--name", "Ready"])
+    home = Path(load_registry()["lives"][load_registry()["active"]].path)
+    (home / "mem" / "psyche.json").write_text('{"psyche_version": 4}')
+    (home / "mem" / "self_narrative.json").write_text('{"psyche_version": 4}')
+    run = home / "runs" / "ready"
+    run.mkdir(parents=True)
+    (run / "events.jsonl").write_text('{"event":"mutation.applied","ok":true}\n')
+    monkeypatch.setenv("LLM_PROVIDER", "local")
+    monkeypatch.setattr(
+        "singular.providers.doctor_providers",
+        lambda names: [{"ok": True, "llm_real": True, "reachable": True}],
+    )
+    monkeypatch.setattr(autonomous.shutil, "which", lambda _name: "/bin/systemctl")
+    monkeypatch.setattr(
+        autonomous.subprocess,
+        "run",
+        lambda *a, **k: types.SimpleNamespace(
+            returncode=0, stdout=f"{tmp_path} {home}"
+        ),
+    )
+
+    report = autonomous.autonomous_diagnostics()
+
+    assert report["status"] == "ready"
+    assert report["exit_code"] == 0
+    assert all(item["state"] == "ready" for item in report["checks"])
+
+
 def test_doctor_reports_status_and_powershell_fix(monkeypatch, capsys) -> None:
     scripts_dir = Path("/tmp/singular-user-scripts")
     monkeypatch.setattr(cli.sys, "executable", "/tmp/python/bin/python")
@@ -100,7 +160,9 @@ def test_doctor_fix_windows_user_path_is_idempotent(monkeypatch, capsys) -> None
     assert "déjà présent" in out
 
 
-def test_quickstart_creates_life_without_prompt_when_not_tty(monkeypatch, tmp_path) -> None:
+def test_quickstart_creates_life_without_prompt_when_not_tty(
+    monkeypatch, tmp_path
+) -> None:
     monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
 
