@@ -35,6 +35,8 @@ class Response:
 class TestClient:
     """Very small subset of the real TestClient API used in tests."""
 
+    __test__ = False
+
     def __init__(self, app: Any) -> None:
         self.app = app
 

@@ -63,10 +63,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install '.[test]'
+      - name: Collect mandatory tests
+        run: pytest --collect-only -m "not integration"
       # pytest.ini promotes DeprecationWarning to errors (with only narrowly
-      # scoped compatibility exclusions), so this is also the CI deprecation pass.
-      - name: Pytest with deprecation and global coverage guardrails
-        run: pytest -m "not integration" --cov=src/singular --cov-fail-under=85 --cov-report=term-missing --cov-report=xml:coverage.xml
+      # scoped compatibility exclusions). Keep this pass separate so collection,
+      # deprecations, and coverage failures have distinct log annotations.
+      - name: Pytest with deprecations as errors
+        run: pytest -m "not integration"
+      - name: Pytest with global coverage guardrails
+        run: pytest -m "not integration" -W default::DeprecationWarning --cov=src/singular --cov-fail-under=85 --cov-report=term-missing --cov-report=xml:coverage.xml
       - name: Validate critical modules coverage >= 90%
         run: |
           python scripts/check_coverage_thresholds.py \

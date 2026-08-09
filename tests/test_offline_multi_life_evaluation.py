@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
-from fastapi_stub import TestClient
+from fastapi.testclient import TestClient
 
 from singular.dashboard import create_app
 from singular.evaluation import run_multi_life_evaluation
