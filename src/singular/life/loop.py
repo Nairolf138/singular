@@ -69,6 +69,7 @@ from .death import DeathMonitor
 from .health import HealthTracker, ViabilityDriftDetector
 from singular.governance.policy import (
     MutationGovernancePolicy,
+    classify_governance_incident,
     classify_sandbox_error_type,
 )
 from singular.governance.values import load_value_weights
@@ -1592,6 +1593,13 @@ def run(
                     "critical" if path_classification.confirmed_escape else "medium"
                 )
             critical_sandbox_failure = sandbox_violation_severity == "critical"
+            sandbox_incident = (
+                classify_governance_incident(
+                    sandbox_violation_category, sandbox_violation_severity
+                )
+                if sandbox_violation_category is not None
+                else None
+            )
 
             previous_health = state.health_history[-1] if state.health_history else {}
             previous_health_score = float(
@@ -2381,6 +2389,8 @@ def run(
                 "sandbox_violation_category": sandbox_violation_category,
                 "sandbox_violation_severity": sandbox_violation_severity,
                 "sandbox_violation_global_recorded": record_global_sandbox_violation,
+                "sandbox_incident_scope": sandbox_incident.scope if sandbox_incident else None,
+                "sandbox_recovery_policy": sandbox_incident.recovery if sandbox_incident else None,
                 "dangerous_mutation_pattern": (
                     mutation_failed
                     and not base_failed
@@ -2425,7 +2435,7 @@ def run(
                 logger.log_interaction("sandbox_violation", **sandbox_diagnostic)
                 quarantine_triggered = (
                     skill_quarantine_failure
-                    and attempts >= max(SKILL_SANDBOX_QUARANTINE_THRESHOLD, 1)
+                    and base_failed
                 )
                 if quarantine_triggered:
                     reason = "consecutive_sandbox_failures"
