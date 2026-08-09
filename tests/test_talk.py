@@ -191,6 +191,34 @@ def test_talk_single_prompt(monkeypatch, tmp_path):
     assert outputs[-1] == expected
 
 
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Ce n'est pas urgent et il n'y a aucune erreur", (0.0, 0.0)),
+        ("This is not urgent, no error, thanks", (0.0, 0.45)),
+        ("superbe nowhere", (0.0, 0.0)),
+        ("Très urgent but really great", (0.675, 0.63)),
+    ],
+)
+def test_talk_persists_versioned_multilingual_signals(
+    monkeypatch, tmp_path, message, expected
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SINGULAR_HOME", raising=False)
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", lambda _name: None)
+    monkeypatch.setattr("builtins.print", lambda _message: None)
+
+    talk(prompt=message)
+
+    user = next(episode for episode in read_episodes() if episode.get("role") == "user")
+    signals = user["structured_signals"]
+    assert signals["contract_version"] == "interaction-signals/1.0"
+    assert (signals["urgency"], signals["satisfaction"]) == expected
+    assert "raw_observations" in signals
+    assert "interpretation" in signals
+    assert "psyche_deltas" in signals
+
+
 def _run_talk(monkeypatch, tmp_path, seed, run):
     subdir = tmp_path / f"{seed}_{run}"
     subdir.mkdir()
@@ -388,7 +416,9 @@ def test_talk_prompt_keeps_each_life_identity(monkeypatch, tmp_path, name):
     )
     captured = {}
     client = LLMProviderClient(
-        name="openai", generate=lambda prompt, timeout=8.0: captured.setdefault("prompt", prompt) and "ok"
+        name="openai",
+        generate=lambda prompt, timeout=8.0: captured.setdefault("prompt", prompt)
+        and "ok",
     )
     monkeypatch.setattr("singular.organisms.talk.load_llm_client", lambda _name: client)
     monkeypatch.setattr("builtins.print", lambda _msg: None)
@@ -396,13 +426,17 @@ def test_talk_prompt_keeps_each_life_identity(monkeypatch, tmp_path, name):
     talk(provider="openai", prompt="Qui es-tu ?", life_home=root)
 
     assert name in captured["prompt"]
-    assert all(other not in captured["prompt"] for other in {"Ada", "Bob", "Eve"} - {name})
+    assert all(
+        other not in captured["prompt"] for other in {"Ada", "Bob", "Eve"} - {name}
+    )
 
 
 def test_context_drops_whole_facts_but_never_safety_rule():
     result = _build_structured_context(
         [
-            ContextItem("identity", "fait critique indivisible", "identity:1", relevance=1),
+            ContextItem(
+                "identity", "fait critique indivisible", "identity:1", relevance=1
+            ),
             ContextItem("traits", "x" * 500, "trait:oversized", relevance=1),
             ContextItem("safety", "NE JAMAIS INVENTER", "policy:safety", critical=True),
         ],

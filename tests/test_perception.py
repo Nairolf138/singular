@@ -8,6 +8,62 @@ from singular.events import EventBus
 from singular.governance.policy import load_runtime_policy, save_runtime_policy
 from singular.perception import capture_signals, reset_perception_state
 from singular.memory import add_episode, read_episodes
+from singular.perception.interaction import (
+    CONTRACT_VERSION,
+    apply_psyche_deltas,
+    extract_structured_signals,
+)
+from singular.psyche import Psyche
+
+
+def test_dialogue_perception_handles_boundaries_accents_negations_and_mixed_language():
+    signals = extract_structured_signals(
+        "Très urgent, really great — mais pas urgent et aucune erreur; superbe."
+    )
+
+    assert signals["contract_version"] == CONTRACT_VERSION
+    assert signals["urgency"] > 0
+    assert signals["satisfaction"] > 0
+    assert signals["frustration"] == 0
+    matches = signals["raw_observations"]["matches"]
+    assert any(match["token"] == "urgent" and match["negated"] for match in matches)
+    assert any(match["token"] == "erreur" and match["negated"] for match in matches)
+    # Accidental substrings are not words: neither "superbe" nor "nowhere"
+    # may trigger "super" or "now".
+    accidental = extract_structured_signals("superbe nowhere planification")
+    assert accidental["satisfaction"] == 0
+    assert accidental["urgency"] == 0
+    assert accidental["theme"] == "general"
+
+
+def test_dialogue_perception_accumulates_before_applying_audited_delta(tmp_path):
+    state = tmp_path / "interaction.json"
+    psyche = Psyche()
+    first = extract_structured_signals("Merci, great work", state_path=state)
+    apply_psyche_deltas(psyche, first)
+    assert psyche.optimism == 0.5
+    optimism = next(
+        delta for delta in first["psyche_deltas"] if delta["trait"] == "optimism"
+    )
+    assert optimism["applied"] == 0
+    assert set(optimism) >= {"confidence", "justification", "source", "capped", "cap"}
+
+    second = extract_structured_signals("Thanks, parfait", state_path=state)
+    apply_psyche_deltas(psyche, second)
+    applied = next(
+        delta for delta in second["psyche_deltas"] if delta["trait"] == "optimism"
+    )
+    assert applied["applied"] > 0
+    assert applied["justification"] == "repeated_signal_threshold"
+    assert psyche.optimism > 0.5
+
+    marking = extract_structured_signals("A critical error was traumatic")
+    resilience = next(
+        delta for delta in marking["psyche_deltas"] if delta["trait"] == "resilience"
+    )
+    assert resilience["applied"] == -0.1
+    assert resilience["justification"] == "explicit_marking_event"
+    assert resilience["capped"] is True
 
 
 def test_capture_and_persist_signals(tmp_path, monkeypatch):
