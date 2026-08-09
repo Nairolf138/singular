@@ -244,9 +244,10 @@ class DashboardActionService:
                     "temperature": host_metrics.get("host_temperature_c"),
                     "disk": host_metrics.get("disk_used_percent"),
                 }
+                raw_metric_status_map = host_metrics.get("metric_status")
                 metric_status_map = (
-                    host_metrics.get("metric_status")
-                    if isinstance(host_metrics.get("metric_status"), dict)
+                    raw_metric_status_map
+                    if isinstance(raw_metric_status_map, dict)
                     else {}
                 )
                 metric_status_aliases = {
@@ -263,14 +264,14 @@ class DashboardActionService:
                         latest_statuses[metric_name] = status_payload
                         raw_value = status_payload.get("value", raw_value)
                     if isinstance(raw_value, (int, float)):
-                        value = float(raw_value)
-                        latest_values[metric_name] = value
+                        observed_value = float(raw_value)
+                        latest_values[metric_name] = observed_value
                         history_map[metric_name].append(
                             {
                                 "ts": ts if isinstance(ts, str) else None,
-                                "value": value,
+                                "value": observed_value,
                                 "risk": self._host_metric_risk(
-                                    metric_name, value, thresholds
+                                    metric_name, observed_value, thresholds
                                 ),
                             }
                         )
@@ -298,10 +299,9 @@ class DashboardActionService:
         global_status = "ok"
         for metric_name in ("cpu", "ram", "temperature", "disk"):
             value = latest_values[metric_name]
+            raw_status_payload = latest_statuses.get(metric_name)
             status_payload = (
-                latest_statuses.get(metric_name)
-                if isinstance(latest_statuses.get(metric_name), dict)
-                else {}
+                raw_status_payload if isinstance(raw_status_payload, dict) else {}
             )
             status = str(
                 (status_payload or {}).get("status")
@@ -636,7 +636,8 @@ class DashboardActionService:
             raise ValueError("no active life")
         registry = load_registry()
         active = registry.get("active")
-        lives = registry.get("lives") if isinstance(registry.get("lives"), dict) else {}
+        raw_lives = registry.get("lives")
+        lives = raw_lives if isinstance(raw_lives, dict) else {}
         metadata = lives.get(active) if isinstance(active, str) else None
         mem_dir = Path(life) / "mem"
         stop_path = mem_dir / "orchestrator.stop.json"

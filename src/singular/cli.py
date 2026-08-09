@@ -2567,19 +2567,19 @@ def main(argv: list[str] | None = None) -> int:
         if args.autonomous:
             from .diagnostics.autonomous import autonomous_diagnostics
 
-            report = autonomous_diagnostics(run_generation=args.generate)
+            diagnostic_report = autonomous_diagnostics(run_generation=args.generate)
             if args.output_format == "json":
-                print(json.dumps(report, ensure_ascii=False, indent=2))
+                print(json.dumps(diagnostic_report, ensure_ascii=False, indent=2))
             else:
-                print(f"Diagnostic autonomie: {report['status']}")
+                print(f"Diagnostic autonomie: {diagnostic_report['status']}")
                 print("check_id | sévérité | état | preuve | correction")
-                for check in report["checks"]:
+                for check in diagnostic_report["checks"]:
                     print(
                         f"{check['check_id']} | {check['severity']} | {check['state']} | "
                         f"{json.dumps(check['evidence'], ensure_ascii=False, sort_keys=True)} | "
                         f"{check['remediation_command'] or '-'}"
                     )
-            return int(report["exit_code"])
+            return diagnostic_report["exit_code"]
         _doctor(fix=args.fix)
         _doctor_providers()
 
@@ -2845,7 +2845,10 @@ def main(argv: list[str] | None = None) -> int:
             except (ValueError, TypeError) as exc:
                 print(f"Valeur invalide pour {args.key}: {exc}", file=sys.stderr)
                 return 1
-            policy = replace(policy, **{field_name: value})
+            # ``field_name`` is selected from the closed mapping above and the
+            # parser validates its corresponding runtime type before replace.
+            policy_update: dict[str, Any] = {field_name: value}
+            policy = replace(policy, **policy_update)
             try:
                 save_runtime_policy(policy)
             except PolicySchemaError as exc:

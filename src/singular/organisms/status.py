@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, TypedDict
 
 from ..life.health import detect_health_state
 from ..life.life_status import compute_life_status
@@ -45,7 +46,35 @@ def _fmt_number(value: object, unit: str = "") -> str:
     return "-"
 
 
-def _read_quest_status() -> dict[str, object]:
+class QuestStatus(TypedDict):
+    active: list[Any]
+    paused: list[Any]
+    completed: list[Any]
+
+
+class StatusPayload(TypedDict):
+    latest_run: str | None
+    last_execution_ms: float | None
+    success_rate: float | None
+    mutation_success_rate: float | None
+    mutation_count: int
+    invalid_lines: int
+    health: dict[str, Any] | None
+    life_status: dict[str, Any]
+    alerts: list[dict[str, Any]]
+    mood: str | None
+    traits: dict[str, float]
+    autonomy_metrics: dict[str, Any]
+    quests: QuestStatus
+    trajectory: dict[str, Any]
+    skills_lifecycle: dict[str, int]
+    daily_skills: dict[str, Any]
+    vital_timeline: dict[str, Any]
+    host_environment: dict[str, Any]
+    relationships: dict[str, Any]
+
+
+def _read_quest_status() -> QuestStatus:
     path = get_mem_dir() / "quests_state.json"
     if not path.exists():
         return {"active": [], "paused": [], "completed": []}
@@ -55,11 +84,12 @@ def _read_quest_status() -> dict[str, object]:
         return {"active": [], "paused": [], "completed": []}
     if not isinstance(payload, dict):
         return {"active": [], "paused": [], "completed": []}
-    active = payload.get("active") if isinstance(payload.get("active"), list) else []
-    paused = payload.get("paused") if isinstance(payload.get("paused"), list) else []
-    completed = (
-        payload.get("completed") if isinstance(payload.get("completed"), list) else []
-    )
+    raw_active = payload.get("active")
+    raw_paused = payload.get("paused")
+    raw_completed = payload.get("completed")
+    active = raw_active if isinstance(raw_active, list) else []
+    paused = raw_paused if isinstance(raw_paused, list) else []
+    completed = raw_completed if isinstance(raw_completed, list) else []
     return {"active": active, "paused": paused, "completed": completed[-20:]}
 
 
@@ -90,13 +120,11 @@ def _extract_objective_priorities(record: dict[str, object]) -> dict[str, float]
 def _build_trajectory_payload(
     *,
     records: list[dict[str, object]],
-    quests: dict[str, object],
+    quests: QuestStatus,
 ) -> dict[str, object]:
-    active = quests.get("active") if isinstance(quests.get("active"), list) else []
-    paused = quests.get("paused") if isinstance(quests.get("paused"), list) else []
-    completed = (
-        quests.get("completed") if isinstance(quests.get("completed"), list) else []
-    )
+    active = quests["active"]
+    paused = quests["paused"]
+    completed = quests["completed"]
 
     objective_status: dict[str, str] = {}
     for item in active:
@@ -162,12 +190,12 @@ def _build_trajectory_payload(
             record.get("self_narrative_event"), str
         ):
             continue
-        objective = record.get("objective")
-        if not isinstance(objective, str):
+        record_objective = record.get("objective")
+        if not isinstance(record_objective, str):
             continue
         narrative_links.append(
             {
-                "objective": objective,
+                "objective": record_objective,
                 "event": record.get("self_narrative_event", event),
                 "at": record.get("ts") if isinstance(record.get("ts"), str) else None,
                 "run": (
@@ -202,9 +230,9 @@ def _build_trajectory_payload(
     }
 
 
-def _read_skill_lifecycle_status() -> dict[str, object]:
+def _read_skill_lifecycle_status() -> dict[str, int]:
     skills = read_skills()
-    summary = {
+    summary: dict[str, int] = {
         "active": 0,
         "dormant": 0,
         "archived": 0,
@@ -229,7 +257,7 @@ def _read_skill_lifecycle_status() -> dict[str, object]:
 def status(*, verbose: bool = False, output_format: str = "plain") -> None:
     """Display basic metrics and current psyche state."""
 
-    payload: dict[str, object] = {
+    payload: StatusPayload = {
         "latest_run": None,
         "last_execution_ms": None,
         "success_rate": None,
@@ -374,15 +402,13 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             if verbose:
                 alerts = alerts_from_records(records)
                 payload["alerts"] = alerts
-    payload.setdefault("alerts", [])
-
     psyche = Psyche.load_state()
     mood = psyche.last_mood.value if psyche.last_mood else "neutral"
     payload["mood"] = mood
     payload["quests"] = _read_quest_status()
     payload["trajectory"] = _build_trajectory_payload(
         records=all_records if "all_records" in locals() else [],
-        quests=payload["quests"] if isinstance(payload["quests"], dict) else {},
+        quests=payload["quests"],
     )
     payload["skills_lifecycle"] = _read_skill_lifecycle_status()
     payload["life_status"] = {
@@ -412,15 +438,15 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         return
 
     if output_format == "table":
+        health = payload["health"]
         autonomy = (
             payload.get("autonomy_metrics")
             if isinstance(payload.get("autonomy_metrics"), dict)
             else {}
         )
+        raw_decision_quality = autonomy.get("decision_quality")
         decision_quality = (
-            autonomy.get("decision_quality")
-            if isinstance(autonomy.get("decision_quality"), dict)
-            else {}
+            raw_decision_quality if isinstance(raw_decision_quality, dict) else {}
         )
         run_rows = [
             ["Latest run", str(payload.get("latest_run") or "-")],
@@ -452,8 +478,8 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             [
                 "Health score",
                 (
-                    f"{payload['health']['score']}/100 ({payload['health']['trend']}, fenêtres {payload['health']['window']})"
-                    if isinstance(payload.get("health"), dict)
+                    f"{health['score']}/100 ({health['trend']}, fenêtres {health['window']})"
+                    if health is not None
                     else "-"
                 ),
             ],
@@ -644,10 +670,9 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             if isinstance(payload.get("autonomy_metrics"), dict)
             else {}
         )
+        raw_decision_quality = autonomy.get("decision_quality")
         decision_quality = (
-            autonomy.get("decision_quality")
-            if isinstance(autonomy.get("decision_quality"), dict)
-            else {}
+            raw_decision_quality if isinstance(raw_decision_quality, dict) else {}
         )
         print(f"Autonomy index: {_fmt_number(autonomy.get('autonomy_index'))}")
         print(f"Mutation viability: {_fmt_number(autonomy.get('mutation_viability'))}")
@@ -683,11 +708,8 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             if isinstance(payload.get("host_environment"), dict)
             else {}
         )
-        host_impact = (
-            host_environment.get("impact")
-            if isinstance(host_environment.get("impact"), dict)
-            else {}
-        )
+        raw_host_impact = host_environment.get("impact")
+        host_impact = raw_host_impact if isinstance(raw_host_impact, dict) else {}
         print(f"Impact environnement hôte: {host_impact.get('impact_level', 'low')}")
         print(f"Biais décisionnel hôte: {host_impact.get('decision_bias', 'balanced')}")
         causes = vital.get("causes")
@@ -732,23 +754,17 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         if isinstance(payload.get("relationships"), dict)
         else {}
     )
-    family = (
-        relationships.get("family")
-        if isinstance(relationships.get("family"), dict)
-        else {}
-    )
-    social = (
-        relationships.get("social")
-        if isinstance(relationships.get("social"), dict)
-        else {}
-    )
+    raw_family = relationships.get("family")
+    family = raw_family if isinstance(raw_family, dict) else {}
+    raw_social = relationships.get("social")
+    social = raw_social if isinstance(raw_social, dict) else {}
     print(f"Arbre familial: {len(family.get('nodes', []))} nœuds")
     print(f"Réseau social: {len(social.get('edges', []))} relations")
     print(f"Conflits actifs: {len(relationships.get('active_conflicts', []))}")
     quests = (
         payload.get("quests")
         if isinstance(payload.get("quests"), dict)
-        else {"active": [], "completed": []}
+        else {"active": [], "paused": [], "completed": []}
     )
     print(f"Quêtes actives: {len(quests.get('active', []))}")
     print(f"Quêtes terminées: {len(quests.get('completed', []))}")
