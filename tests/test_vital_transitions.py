@@ -1,4 +1,6 @@
-from singular.life.vital import compute_vital_timeline
+import pytest
+
+from singular.life.vital import VitalState, VitalStateMachine, compute_vital_timeline
 from singular.life.health import ViabilityDriftDetector
 
 
@@ -28,7 +30,7 @@ def test_vital_transition_to_declining_on_age_threshold() -> None:
         failure_streak=0,
         extinction_seen=False,
     )
-    assert payload["state"] == "declining"
+    assert payload["state"] == "at_risk"
     assert "age_decline_threshold" in payload["causes"]
 
 
@@ -51,11 +53,35 @@ def test_vital_transition_to_extinct_preempts_other_states() -> None:
         current_health=99.0,
         failure_rate=0.0,
         failure_streak=0,
-        extinction_seen=True,
+        extinction_seen=True, registry_status="extinct", extinction_duration=3,
     )
     assert payload["state"] == "extinct"
     assert payload["risk_level"] == "high"
-    assert payload["causes"] == ["extinction_observed"]
+    assert payload["causes"] == ["sustained_concordant_extinction_evidence"]
+
+
+@pytest.mark.parametrize("name", ["Ada", "Bob", "Eve"])
+def test_named_lives_follow_deterministic_audited_trajectory(name: str) -> None:
+    life = VitalStateMachine()
+    assert life.transition(VitalState.AT_RISK, cause=f"{name}:resource_loss") == VitalState.AT_RISK
+    assert life.transition(VitalState.CRITICAL, cause="sustained_failure") == VitalState.CRITICAL
+    life.record_rescue("recovery_quest")
+    life.record_rescue("healthy_checkpoint_search")
+    assert life.transition(VitalState.TERMINAL, cause="rescue_exhausted") == VitalState.TERMINAL
+    assert life.transition(VitalState.DEAD, cause="resources_exhausted") == VitalState.DEAD
+    assert life.transition(VitalState.EXTINCT, cause="concordant_evidence") == VitalState.EXTINCT
+    assert life.audit() == {
+        "root_cause": f"{name}:resource_loss",
+        "rescue_attempts": ["recovery_quest", "healthy_checkpoint_search"],
+        "last_irreversible_decision": "dead->extinct:concordant_evidence",
+    }
+
+
+def test_single_extinction_signal_is_not_irreversible() -> None:
+    payload = compute_vital_timeline(age=1, current_health=99, failure_rate=0,
+        failure_streak=0, extinction_seen=True, extinction_duration=99)
+    assert payload["state"] == "stable"
+    assert payload["extinction_evidence"]["confirmed"] is False
 
 
 def test_vital_reproduction_window_boundary_conditions() -> None:
