@@ -27,6 +27,9 @@ test = [
 yaml = ["pyyaml>=6.0,<7"]
 dashboard = [
     "fastapi>=0.110,<1",
+    # Starlette 0.36.x (allowed by FastAPI 0.110) is incompatible with httpx
+    # 0.28+, while newer allowed Starlette releases support httpx 0.27.
+    "httpx>=0.27,<0.28",
     "uvicorn>=0.29,<1",
     "websockets>=12,<16",
 ]
