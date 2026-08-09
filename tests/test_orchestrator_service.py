@@ -77,9 +77,7 @@ def test_orchestrator_sleep_consolidates_identity_memory(
     service = OrchestratorService(
         config=OrchestratorConfig(
             dry_run=True,
-            phase_behaviors={
-                "sommeil": {"allowed_actions": ["memory_consolidation"]}
-            },
+            phase_behaviors={"sommeil": {"allowed_actions": ["memory_consolidation"]}},
         ),
         bus=EventBus(),
     )
@@ -128,9 +126,7 @@ def test_orchestrator_sleep_retries_after_interrupted_consolidation(
     service = OrchestratorService(
         config=OrchestratorConfig(
             dry_run=True,
-            phase_behaviors={
-                "sommeil": {"allowed_actions": ["memory_consolidation"]}
-            },
+            phase_behaviors={"sommeil": {"allowed_actions": ["memory_consolidation"]}},
         ),
         bus=EventBus(),
     )
@@ -151,8 +147,7 @@ def test_orchestrator_sleep_retries_after_interrupted_consolidation(
     failed = next(
         item
         for item in persisted["last_events"]
-        if item.get("details", {}).get("event_type")
-        == "memory.consolidation_failed"
+        if item.get("details", {}).get("event_type") == "memory.consolidation_failed"
     )
     assert "InterruptedError" in failed["details"]["errors"][0]
     assert persisted["last_consolidated_episode_id"] is None
@@ -183,21 +178,31 @@ def test_orchestrator_detects_external_stimulus(monkeypatch, tmp_path: Path) -> 
     assert service._external_stimulus_detected() is True
 
 
-def test_recent_run_events_exclude_other_and_unattributed_lives(monkeypatch, tmp_path: Path) -> None:
+def test_recent_run_events_exclude_other_and_unattributed_lives(
+    monkeypatch, tmp_path: Path
+) -> None:
     life = tmp_path / "Ada"
     (life / "skills").mkdir(parents=True)
     (life / "runs").mkdir()
     monkeypatch.setenv("SINGULAR_HOME", str(life))
     events = life / "runs" / "mixed.jsonl"
     events.write_text(
-        '\n'.join(json.dumps(item) for item in (
-            {"life_id": "ADA", "summary": "ada"},
-            {"life_id": "Bob", "summary": "bob"},
-            {"summary": "ambiguous"},
-        )) + '\n', encoding="utf-8"
+        "\n".join(
+            json.dumps(item)
+            for item in (
+                {"life_id": "ADA", "summary": "ada"},
+                {"life_id": "Bob", "summary": "bob"},
+                {"summary": "ambiguous"},
+            )
+        )
+        + "\n",
+        encoding="utf-8",
     )
-    service = OrchestratorService(config=OrchestratorConfig(dry_run=True), bus=EventBus())
+    service = OrchestratorService(
+        config=OrchestratorConfig(dry_run=True), bus=EventBus()
+    )
     assert [item["summary"] for item in service._load_recent_run_events()] == ["ada"]
+
 
 def test_orchestrator_triggers_and_settles_quest(monkeypatch, tmp_path: Path) -> None:
     life = tmp_path / "life"
@@ -658,6 +663,48 @@ def test_orchestrator_introspection_frequency_uses_introspection_ticks(
     service.state.current_phase = LifecyclePhase.INTROSPECTION.value
     service.tick()
     assert len(events) == 1
+
+
+def test_introspection_generates_recovery_quest_but_stable_state_does_not(
+    monkeypatch, tmp_path: Path
+) -> None:
+    life = tmp_path / "life"
+    (life / "skills").mkdir(parents=True)
+    (life / "mem").mkdir(parents=True)
+    monkeypatch.setenv("SINGULAR_HOME", str(life))
+    service = OrchestratorService(
+        config=OrchestratorConfig(dry_run=True), bus=EventBus()
+    )
+
+    service.state.current_phase = LifecyclePhase.INTROSPECTION.value
+    service.tick()
+    assert (
+        not (life / "mem" / "quests_state.json").exists()
+        or not json.loads(
+            (life / "mem" / "quests_state.json").read_text(encoding="utf-8")
+        )["active"]
+    )
+
+    (life / "mem" / "episodic.jsonl").write_text(
+        "".join(
+            f'{{"event":"attempt-{index}","status":"failure"}}\n' for index in range(4)
+        ),
+        encoding="utf-8",
+    )
+    service.state.current_phase = LifecyclePhase.INTROSPECTION.value
+    service.tick()
+
+    state = json.loads((life / "mem" / "quests_state.json").read_text(encoding="utf-8"))
+    recovery = next(
+        item
+        for item in state["active"]
+        if item["name"] == "recover_execution_reliability"
+    )
+    assert recovery["id"] and recovery["priority"] > 0
+    assert recovery["origin"] == "intrinsic"
+    assert recovery["created_at"] and recovery["status"] == "active"
+    assert recovery["progress"] == 0.0
+    assert recovery["success_criterion"]["type"] == "recent_success"
 
 
 def test_run_life_daemon_resolves_life_and_writes_checkpoint_logs(

@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
+
+from singular.goals.quest_generation import GeneratedQuest
 
 from singular.life.quest import Spec, load as load_spec
 from singular.memory import _atomic_write_text, add_episode, get_mem_dir
@@ -23,6 +26,13 @@ class QuestRecord:
     completed_at: str | None = None
     reason: str | None = None
     history: list[dict[str, Any]] = field(default_factory=list)
+    id: str | None = None
+    priority: float = 0.0
+    context: str = ""
+    objective: str | None = None
+    created_at: str | None = None
+    progress: float = 0.0
+    success_criterion: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -30,6 +40,7 @@ class QuestRuntimeState:
     active: list[QuestRecord] = field(default_factory=list)
     paused: list[QuestRecord] = field(default_factory=list)
     completed: list[QuestRecord] = field(default_factory=list)
+    failed: list[QuestRecord] = field(default_factory=list)
     cooldowns: dict[str, str] = field(default_factory=dict)
 
 
@@ -49,24 +60,50 @@ class ObjectiveArbitrator:
         health_score: float | None,
         load_score: float | None,
     ) -> dict[str, float | str]:
-        reward_signal = float(len(spec.reward)) + float(spec.reward.get("psyche_energy", 0.0) or 0.0) / 15.0
-        penalty_signal = float(len(spec.penalty)) + abs(float(spec.penalty.get("psyche_energy", 0.0) or 0.0)) / 12.0
-        expected_utility = self._clamp((reward_signal + (0.2 if spec.origin == "intrinsic" else 0.1)) / (reward_signal + penalty_signal + 1.0))
+        reward_signal = (
+            float(len(spec.reward))
+            + float(spec.reward.get("psyche_energy", 0.0) or 0.0) / 15.0
+        )
+        penalty_signal = (
+            float(len(spec.penalty))
+            + abs(float(spec.penalty.get("psyche_energy", 0.0) or 0.0)) / 12.0
+        )
+        expected_utility = self._clamp(
+            (reward_signal + (0.2 if spec.origin == "intrinsic" else 0.1))
+            / (reward_signal + penalty_signal + 1.0)
+        )
 
         failures = sum(1 for event in record.history if event.get("to") == "failure")
         pauses = sum(1 for event in record.history if event.get("to") == "paused")
-        emotional_cost = self._clamp((failures * 0.35) + (pauses * 0.18) + (0.2 if record.reason == "timeout" else 0.0))
+        emotional_cost = self._clamp(
+            (failures * 0.35)
+            + (pauses * 0.18)
+            + (0.2 if record.reason == "timeout" else 0.0)
+        )
 
-        resources_score = self._clamp((resources.energy + resources.food + resources.warmth) / 300.0)
-        health_capacity = self._clamp(float(health_score if isinstance(health_score, (int, float)) else 100.0) / 100.0)
-        load_capacity = 1.0 - self._clamp(float(load_score if isinstance(load_score, (int, float)) else 0.0))
+        resources_score = self._clamp(
+            (resources.energy + resources.food + resources.warmth) / 300.0
+        )
+        health_capacity = self._clamp(
+            float(health_score if isinstance(health_score, (int, float)) else 100.0)
+            / 100.0
+        )
+        load_capacity = 1.0 - self._clamp(
+            float(load_score if isinstance(load_score, (int, float)) else 0.0)
+        )
         capacity = max(0.0, min(resources_score, health_capacity, load_capacity))
 
-        arbitration = (expected_utility * 0.55) + (capacity * 0.45) - (emotional_cost * 0.5)
+        arbitration = (
+            (expected_utility * 0.55) + (capacity * 0.45) - (emotional_cost * 0.5)
+        )
         transition = "keep"
         if record.status == "active":
             if capacity < 0.18 or arbitration < 0.05:
-                transition = "abandoned" if (emotional_cost > 0.78 or (pauses >= 2 and arbitration < 0.0)) else "paused"
+                transition = (
+                    "abandoned"
+                    if (emotional_cost > 0.78 or (pauses >= 2 and arbitration < 0.0))
+                    else "paused"
+                )
         elif record.status == "paused":
             if arbitration > 0.35 and capacity > 0.4:
                 transition = "resumed"
@@ -115,19 +152,56 @@ class QuestRuntime:
                 name = item.get("name")
                 status = item.get("status")
                 started_at = item.get("started_at")
-                if not all(isinstance(v, str) and v for v in (name, status, started_at)):
+                if not all(
+                    isinstance(v, str) and v for v in (name, status, started_at)
+                ):
                     continue
                 raw_origin = item.get("origin")
-                origin = raw_origin if raw_origin in {"intrinsic", "external"} else "external"
+                origin = (
+                    raw_origin
+                    if raw_origin in {"intrinsic", "external"}
+                    else "external"
+                )
                 out.append(
                     QuestRecord(
                         name=name,
                         status=status,
                         started_at=started_at,
                         origin=origin,
-                        completed_at=item.get("completed_at") if isinstance(item.get("completed_at"), str) else None,
-                        reason=item.get("reason") if isinstance(item.get("reason"), str) else None,
-                        history=item.get("history") if isinstance(item.get("history"), list) else [],
+                        completed_at=(
+                            item.get("completed_at")
+                            if isinstance(item.get("completed_at"), str)
+                            else None
+                        ),
+                        reason=(
+                            item.get("reason")
+                            if isinstance(item.get("reason"), str)
+                            else None
+                        ),
+                        history=(
+                            item.get("history")
+                            if isinstance(item.get("history"), list)
+                            else []
+                        ),
+                        id=item.get("id") if isinstance(item.get("id"), str) else None,
+                        priority=float(item.get("priority", 0.0) or 0.0),
+                        context=str(item.get("context", "")),
+                        objective=(
+                            item.get("objective")
+                            if isinstance(item.get("objective"), str)
+                            else None
+                        ),
+                        created_at=(
+                            item.get("created_at")
+                            if isinstance(item.get("created_at"), str)
+                            else started_at
+                        ),
+                        progress=float(item.get("progress", 0.0) or 0.0),
+                        success_criterion=(
+                            item.get("success_criterion")
+                            if isinstance(item.get("success_criterion"), dict)
+                            else {}
+                        ),
                     )
                 )
             return out
@@ -142,6 +216,7 @@ class QuestRuntime:
             active=_records(raw.get("active", [])),
             paused=_records(raw.get("paused", [])),
             completed=_records(raw.get("completed", [])),
+            failed=_records(raw.get("failed", [])),
             cooldowns=cooldowns,
         )
 
@@ -150,10 +225,171 @@ class QuestRuntime:
             "active": [asdict(item) for item in self.state.active],
             "paused": [asdict(item) for item in self.state.paused],
             "completed": [asdict(item) for item in self.state.completed[-200:]],
+            "failed": [asdict(item) for item in self.state.failed[-200:]],
             "cooldowns": self.state.cooldowns,
             "updated_at": self._now().isoformat(),
         }
-        _atomic_write_text(self.state_path, json.dumps(payload, ensure_ascii=False, indent=2))
+        _atomic_write_text(
+            self.state_path, json.dumps(payload, ensure_ascii=False, indent=2)
+        )
+
+    @staticmethod
+    def _generated_id(name: str, context: str) -> str:
+        return hashlib.sha256(f"{name}\0{context}".encode("utf-8")).hexdigest()[:24]
+
+    def reconcile_generated(
+        self,
+        quests: list[GeneratedQuest],
+        *,
+        context: str,
+        recent_successes: int,
+        max_active: int,
+        restrict_costly: bool = False,
+    ) -> dict[str, list[str]]:
+        """Persist generated quests and reconcile their lifecycle on every cycle."""
+
+        changed: dict[str, list[str]] = {
+            "created": [],
+            "paused": [],
+            "completed": [],
+            "failed": [],
+        }
+        candidates = {self._generated_id(q.name, context): q for q in quests}
+        for terminal_record in (*self.state.completed, *self.state.failed):
+            if terminal_record.id:
+                candidates.pop(terminal_record.id, None)
+        records = [*self.state.active, *self.state.paused]
+
+        for record in list(records):
+            if not record.id:
+                continue
+            if (
+                recent_successes > 0
+                and record.success_criterion.get("type") == "recent_success"
+            ):
+                source = (
+                    self.state.active
+                    if record in self.state.active
+                    else self.state.paused
+                )
+                source.remove(record)
+                previous = record.status
+                record.status = "completed"
+                record.progress = 1.0
+                record.completed_at = self._now().isoformat()
+                self._append_transition(
+                    record=record,
+                    from_status=previous,
+                    to_status="completed",
+                    reason="success_criterion_met",
+                )
+                self.state.completed.append(record)
+                changed["completed"].append(record.name)
+                candidates.pop(record.id, None)
+                continue
+            failure_limit = record.success_criterion.get("failure_limit")
+            if (
+                isinstance(failure_limit, int)
+                and recent_successes == 0
+                and recent_failures >= failure_limit
+            ):
+                source = (
+                    self.state.active
+                    if record in self.state.active
+                    else self.state.paused
+                )
+                source.remove(record)
+                previous = record.status
+                record.status = "failed"
+                record.reason = "failure_limit_reached"
+                self._append_transition(
+                    record=record,
+                    from_status=previous,
+                    to_status="failed",
+                    reason="failure_limit_reached",
+                )
+                self.state.failed.append(record)
+                changed["failed"].append(record.name)
+                candidates.pop(record.id, None)
+                continue
+            quest = candidates.pop(record.id, None)
+            if quest is not None:
+                record.priority = round(float(quest.priority), 3)
+                if (
+                    record in self.state.paused
+                    and len(self.state.active) < max_active
+                    and not (restrict_costly and quest.difficulty > 0.5)
+                ):
+                    self.state.paused.remove(record)
+                    record.status = "active"
+                    self._append_transition(
+                        record=record,
+                        from_status="paused",
+                        to_status="active",
+                        reason="active_quest_budget_available",
+                    )
+                    self.state.active.append(record)
+
+        eligible = [
+            q
+            for q in candidates.values()
+            if not (restrict_costly and q.difficulty > 0.5)
+        ]
+        eligible.sort(key=lambda q: q.priority, reverse=True)
+        capacity = max(0, max_active - len(self.state.active))
+        for quest in eligible[:capacity]:
+            now = self._now().isoformat()
+            record = QuestRecord(
+                id=self._generated_id(quest.name, context),
+                name=quest.name,
+                status="active",
+                started_at=now,
+                created_at=now,
+                origin=quest.origin,
+                priority=round(float(quest.priority), 3),
+                context=context,
+                objective=quest.objective,
+                progress=0.0,
+                success_criterion={
+                    "type": "recent_success",
+                    "minimum": 1,
+                    "failure_limit": 10,
+                },
+                history=[
+                    {
+                        "at": now,
+                        "from": "inactive",
+                        "to": "active",
+                        "reason": "generated_during_introspection",
+                    }
+                ],
+            )
+            self.state.active.append(record)
+            changed["created"].append(record.name)
+
+        generated_ids = {self._generated_id(q.name, context) for q in quests}
+        generated_active = sorted(
+            [r for r in self.state.active if r.id and r.id in generated_ids],
+            key=lambda r: r.priority,
+            reverse=True,
+        )
+        allowed_generated = max(
+            0, max_active - len([r for r in self.state.active if not r.id])
+        )
+        overflow = generated_active[allowed_generated:]
+        for record in overflow:
+            self.state.active.remove(record)
+            record.status = "paused"
+            self._append_transition(
+                record=record,
+                from_status="active",
+                to_status="paused",
+                reason="active_quest_budget",
+            )
+            self.state.paused.append(record)
+            changed["paused"].append(record.name)
+        self._save_state()
+        return changed
 
     def _append_transition(
         self,
@@ -229,7 +465,9 @@ class QuestRuntime:
             return float(value) <= float(trigger["lte"])
         if "contains" in trigger:
             needle = trigger.get("contains")
-            return isinstance(value, str) and isinstance(needle, str) and needle in value
+            return (
+                isinstance(value, str) and isinstance(needle, str) and needle in value
+            )
         return False
 
     def evaluate_triggers(self, signals: dict[str, Any]) -> list[str]:
@@ -269,7 +507,9 @@ class QuestRuntime:
             self._save_state()
         return activated
 
-    def _resource_criteria_met(self, criteria: dict[str, Any], rm: ResourceManager) -> bool:
+    def _resource_criteria_met(
+        self, criteria: dict[str, Any], rm: ResourceManager
+    ) -> bool:
         rules = criteria.get("resource_min")
         if not isinstance(rules, dict):
             return True
@@ -391,11 +631,15 @@ class QuestRuntime:
                 continue
             criteria = spec.success
             success = self._resource_criteria_met(criteria, resource_manager)
-            timeout = criteria.get("timeout_seconds") if isinstance(criteria, dict) else None
+            timeout = (
+                criteria.get("timeout_seconds") if isinstance(criteria, dict) else None
+            )
             timed_out = False
             if isinstance(timeout, (int, float)):
                 started = self._parse_iso(record.started_at)
-                if started is not None and (self._now() - started).total_seconds() > float(timeout):
+                if started is not None and (
+                    self._now() - started
+                ).total_seconds() > float(timeout):
                     timed_out = True
 
             if success:
