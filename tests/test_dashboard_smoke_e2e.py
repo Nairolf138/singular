@@ -68,6 +68,7 @@ def dashboard_browser_url(tmp_path: Path) -> str:
         thread.join(timeout=5)
 
 
+@pytest.mark.integration
 def test_dashboard_browser_remains_responsive_when_backends_fail(
     dashboard_browser_url: str,
 ) -> None:

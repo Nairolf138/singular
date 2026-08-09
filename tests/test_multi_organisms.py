@@ -3,7 +3,7 @@ import json
 import random
 from pathlib import Path
 
-from fastapi_stub import TestClient
+from fastapi.testclient import TestClient
 
 import singular.life.loop as life_loop
 from singular.dashboard import create_app

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi_stub import TestClient
+from fastapi.testclient import TestClient
 
 from singular.dashboard import create_app
 from singular.environment import sim_world
