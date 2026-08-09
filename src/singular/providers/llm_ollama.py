@@ -6,6 +6,8 @@ import ipaddress
 import json
 import os
 import socket
+import shutil
+import subprocess
 import time
 from typing import Any
 from urllib.parse import urlparse
@@ -49,7 +51,9 @@ def _host() -> str:
 
 
 def _network_policy() -> str:
-    policy = (os.getenv("OLLAMA_NETWORK_POLICY") or DEFAULT_NETWORK_POLICY).strip().lower()
+    policy = (
+        (os.getenv("OLLAMA_NETWORK_POLICY") or DEFAULT_NETWORK_POLICY).strip().lower()
+    )
     aliases = {"strict": "local", "none": "disabled", "off": "disabled"}
     policy = aliases.get(policy, policy)
     if policy not in {"disabled", "local", "unrestricted"}:
@@ -75,11 +79,17 @@ def _validate_network_target(url: str) -> None:
     try:
         addresses = {
             item[4][0]
-            for item in socket.getaddrinfo(parsed.hostname, parsed.port, type=socket.SOCK_STREAM)
+            for item in socket.getaddrinfo(
+                parsed.hostname, parsed.port, type=socket.SOCK_STREAM
+            )
         }
     except socket.gaierror as exc:
-        raise ProviderMisconfiguredError("OLLAMA_HOST could not be resolved locally") from exc
-    if not addresses or any(not ipaddress.ip_address(address).is_loopback for address in addresses):
+        raise ProviderMisconfiguredError(
+            "OLLAMA_HOST could not be resolved locally"
+        ) from exc
+    if not addresses or any(
+        not ipaddress.ip_address(address).is_loopback for address in addresses
+    ):
         raise ProviderMisconfiguredError(
             "OLLAMA_HOST must resolve only to loopback addresses in local mode"
         )
@@ -90,7 +100,11 @@ def _model() -> str:
 
 
 def _embed_model() -> str:
-    return (os.getenv("OLLAMA_EMBED_MODEL") or "").strip() or _model() or DEFAULT_OLLAMA_EMBED_MODEL
+    return (
+        (os.getenv("OLLAMA_EMBED_MODEL") or "").strip()
+        or _model()
+        or DEFAULT_OLLAMA_EMBED_MODEL
+    )
 
 
 def _filter(text: str) -> str:
@@ -102,7 +116,9 @@ def _filter(text: str) -> str:
 def _post_json(path: str, payload: dict[str, Any], *, timeout: float) -> dict[str, Any]:
     url = f"{_host()}{path}"
     data = json.dumps(payload).encode("utf-8")
-    request = Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
+    request = Request(
+        url, data=data, headers={"Content-Type": "application/json"}, method="POST"
+    )
     try:
         with _urlopen(request, timeout=timeout) as response:
             _validate_network_target(response.geturl())
@@ -113,7 +129,9 @@ def _post_json(path: str, payload: dict[str, Any], *, timeout: float) -> dict[st
         raise ProviderTimeoutError("Ollama request timed out") from exc
     except HTTPError as exc:
         message = exc.reason or exc.read().decode("utf-8", errors="replace")
-        raise ProviderExecutionError(f"Ollama HTTP error {exc.code}: {message}") from exc
+        raise ProviderExecutionError(
+            f"Ollama HTTP error {exc.code}: {message}"
+        ) from exc
     except URLError as exc:
         reason = getattr(exc, "reason", exc)
         if isinstance(reason, TimeoutError | socket.timeout):
@@ -131,6 +149,183 @@ def _post_json(path: str, payload: dict[str, Any], *, timeout: float) -> dict[st
     return parsed
 
 
+def _get_json(path: str, *, timeout: float) -> dict[str, Any]:
+    """Read an Ollama API object while preserving the provider error taxonomy."""
+
+    request = Request(f"{_host()}{path}", method="GET")
+    try:
+        with _urlopen(request, timeout=timeout) as response:
+            _validate_network_target(response.geturl())
+            raw = response.read().decode("utf-8")
+    except (TimeoutError, socket.timeout) as exc:
+        raise ProviderTimeoutError("Ollama request timed out") from exc
+    except URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        if isinstance(reason, (TimeoutError, socket.timeout)):
+            raise ProviderTimeoutError("Ollama request timed out") from exc
+        raise ProviderUnavailableError("Unable to connect to Ollama") from exc
+    except OSError as exc:
+        raise ProviderUnavailableError("Unable to connect to Ollama") from exc
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ProviderExecutionError("Ollama response is not valid JSON") from exc
+    if not isinstance(result, dict):
+        raise ProviderExecutionError("Ollama response schema error: expected object")
+    return result
+
+
+def available_models(*, timeout: float = 2.0) -> list[str]:
+    """Return model names advertised by ``/api/tags``."""
+
+    models = _get_json("/api/tags", timeout=timeout).get("models")
+    if not isinstance(models, list):
+        raise ProviderExecutionError("Ollama response schema error: missing models")
+    return [
+        item["name"]
+        for item in models
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    ]
+
+
+def setup_status(
+    *, model: str | None = None, pull: bool = False, timeout: float = 120.0
+) -> dict[str, object]:
+    """Inspect, optionally install, and validate one Ollama model.
+
+    This is deliberately separate from ``generate``: normal conversation never
+    invokes the Ollama executable and therefore never downloads a model.
+    """
+
+    selected = (model or _model()).strip()
+    pull_command = f"ollama pull {selected}"
+    try:
+        models = available_models(timeout=min(timeout, 5.0))
+    except ProviderTimeoutError:
+        return {
+            "ok": False,
+            "state": "timeout",
+            "model": selected,
+            "remediation": "ollama serve",
+        }
+    except ProviderUnavailableError:
+        return {
+            "ok": False,
+            "state": "service_stopped",
+            "model": selected,
+            "remediation": "ollama serve",
+        }
+    except ProviderExecutionError:
+        return {
+            "ok": False,
+            "state": "invalid_generation",
+            "model": selected,
+            "remediation": "ollama serve",
+        }
+
+    aliases = {name for name in models} | {
+        name.removesuffix(":latest") for name in models
+    }
+    if selected not in aliases:
+        if not pull:
+            return {
+                "ok": False,
+                "state": "model_missing",
+                "model": selected,
+                "models": models,
+                "remediation": pull_command,
+            }
+        executable = shutil.which("ollama")
+        if executable is None:
+            return {
+                "ok": False,
+                "state": "command_missing",
+                "model": selected,
+                "models": models,
+                "remediation": "curl -fsSL https://ollama.com/install.sh | sh",
+            }
+        try:
+            completed = subprocess.run(
+                [executable, "pull", selected], check=False, timeout=timeout
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "ok": False,
+                "state": "timeout",
+                "model": selected,
+                "models": models,
+                "remediation": pull_command,
+            }
+        if completed.returncode != 0:
+            return {
+                "ok": False,
+                "state": "download_incomplete",
+                "model": selected,
+                "models": models,
+                "remediation": pull_command,
+            }
+        try:
+            models = available_models(timeout=min(timeout, 5.0))
+        except (ProviderTimeoutError, ProviderUnavailableError, ProviderExecutionError):
+            return {
+                "ok": False,
+                "state": "download_incomplete",
+                "model": selected,
+                "models": models,
+                "remediation": pull_command,
+            }
+        aliases = set(models) | {name.removesuffix(":latest") for name in models}
+        if selected not in aliases:
+            return {
+                "ok": False,
+                "state": "download_incomplete",
+                "model": selected,
+                "models": models,
+                "remediation": pull_command,
+            }
+
+    previous = os.environ.get("OLLAMA_MODEL")
+    os.environ["OLLAMA_MODEL"] = selected
+    try:
+        reply = generate("Réponds uniquement: ok", timeout=min(timeout, 8.0))
+    except ProviderTimeoutError:
+        return {
+            "ok": False,
+            "state": "timeout",
+            "model": selected,
+            "models": models,
+            "remediation": f"ollama run {selected}",
+        }
+    except (ProviderExecutionError, ProviderUnavailableError):
+        return {
+            "ok": False,
+            "state": "invalid_generation",
+            "model": selected,
+            "models": models,
+            "remediation": f"ollama run {selected}",
+        }
+    finally:
+        if previous is None:
+            os.environ.pop("OLLAMA_MODEL", None)
+        else:
+            os.environ["OLLAMA_MODEL"] = previous
+    if not reply.strip():
+        return {
+            "ok": False,
+            "state": "invalid_generation",
+            "model": selected,
+            "models": models,
+            "remediation": f"ollama run {selected}",
+        }
+    return {
+        "ok": True,
+        "state": "ready",
+        "model": selected,
+        "models": models,
+        "remediation": f"OLLAMA_MODEL={selected} singular talk",
+    }
+
+
 def generate(prompt: str, *, timeout: float = 8.0) -> str:
     """Generate a reply with Ollama's local ``/api/generate`` endpoint."""
 
@@ -145,7 +340,9 @@ def generate(prompt: str, *, timeout: float = 8.0) -> str:
 
     text = response.get("response")
     if not isinstance(text, str):
-        raise ProviderExecutionError("Ollama response schema error: missing response text")
+        raise ProviderExecutionError(
+            "Ollama response schema error: missing response text"
+        )
 
     filtered = _filter(text)
     LAST_METRICS.input_tokens = len(prompt.split())
@@ -168,16 +365,28 @@ def embed(text: str, *, timeout: float = 8.0) -> list[float]:
     try:
         return [float(value) for value in values]
     except (TypeError, ValueError) as exc:
-        raise ProviderExecutionError("Ollama response schema error: invalid embedding values") from exc
+        raise ProviderExecutionError(
+            "Ollama response schema error: invalid embedding values"
+        ) from exc
 
 
 def healthcheck() -> dict[str, object]:
     """Return provider configuration and whether the local Ollama API responds."""
 
     try:
-        _post_json("/api/generate", {"model": _model(), "prompt": "", "stream": False}, timeout=1.0)
+        _post_json(
+            "/api/generate",
+            {"model": _model(), "prompt": "", "stream": False},
+            timeout=1.0,
+        )
     except Exception as exc:  # healthchecks report instead of raising
-        return {"ok": False, "provider": "ollama", "host": _host(), "model": _model(), "error": str(exc)}
+        return {
+            "ok": False,
+            "provider": "ollama",
+            "host": _host(),
+            "model": _model(),
+            "error": str(exc),
+        }
     return {"ok": True, "provider": "ollama", "host": _host(), "model": _model()}
 
 

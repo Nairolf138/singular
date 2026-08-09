@@ -830,7 +830,7 @@ Paths below are relative to the root or `SINGULAR_HOME`. Always back up before d
 <!-- cli-command: config providers -->
 ## `config providers`
 
-**Syntax :** `singular config providers [-h] {doctor} ...`
+**Syntax :** `singular config providers [-h] {doctor,setup} ...`
 
 **Arguments and defaults :** Aucune / None.
 
@@ -1483,3 +1483,24 @@ Paths below are relative to the root or `SINGULAR_HOME`. Always back up before d
 ## Aliases and help
 
 `veille` is an exact alias of `watch`; `talk --live` is a deprecated alias for `talk --life`; `birth` can be disabled with `SINGULAR_ENABLE_BIRTH_ALIAS=0`. `singular <command> --help` remains the executable source for metavar details.
+
+<!-- cli-command: config providers setup -->
+## `config providers setup`
+
+**Syntax :** `singular config providers setup [-h] [--model MODEL] [--non-interactive] [--pull] [--timeout TIMEOUT] {ollama}`
+
+**Arguments and defaults :** provider `ollama` (required); `--model` (`OLLAMA_MODEL`, then provider default); `--non-interactive` (`false`); `--pull` (`false`); `--timeout` (`120.0`).
+
+**Prerequisites :** A reachable `ollama serve`; automated installation must explicitly combine `--non-interactive --pull`.
+
+**Target root and life :** No root or life; only the service selected by `OLLAMA_HOST`.
+
+**Files read or written :** No Singular file; Ollama manages downloaded model data.
+
+**Side effects :** Lists models, optionally runs `ollama pull`, and validates a minimal generation. `talk` never downloads models.
+
+**Minimal example :** `singular config providers setup ollama`
+
+**Advanced example :** `singular config providers setup ollama --non-interactive --pull --model llama3.2`
+
+**Common errors :** `service_stopped`, `command_missing`, `model_missing`, `download_incomplete`, `timeout`, or `invalid_generation`; every failure includes remediation.

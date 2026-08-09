@@ -909,6 +909,35 @@ def _doctor_providers(
     return exit_code
 
 
+def _setup_ollama_provider(
+    *, model: str | None, non_interactive: bool, pull: bool, timeout: float
+) -> int:
+    """Guide an explicit Ollama installation; never called by ``talk``."""
+
+    from .providers import llm_ollama
+
+    selected = (model or llm_ollama._model()).strip()
+    result = llm_ollama.setup_status(model=selected, pull=False, timeout=timeout)
+    models = result.get("models")
+    if isinstance(models, list):
+        print("Modèles Ollama disponibles: " + (", ".join(models) or "(aucun)"))
+
+    should_pull = pull
+    if result.get("state") == "model_missing" and not pull and not non_interactive:
+        answer = input(f"Télécharger le modèle {selected} ? [o/N] ")
+        should_pull = answer.strip().lower() in {"o", "oui", "y", "yes"}
+    if result.get("state") == "model_missing" and should_pull:
+        result = llm_ollama.setup_status(model=selected, pull=True, timeout=timeout)
+
+    state = str(result.get("state", "invalid_generation"))
+    if result.get("ok"):
+        print(f"✅ Ollama prêt: modèle={selected}; génération minimale validée.")
+        return 0
+    print(f"❌ Configuration Ollama: {state}.", file=sys.stderr)
+    print(f"Remédiation: {result.get('remediation')}", file=sys.stderr)
+    return 1
+
+
 _POLICY_SETTERS: dict[str, tuple[str, str]] = {
     "memory.preserve_threshold": ("float", "memory_preserve_threshold"),
     "forgetting.enabled": ("bool", "forgetting_enabled"),
@@ -1684,6 +1713,27 @@ def _build_parser() -> argparse.ArgumentParser:
     providers_doctor_parser.add_argument(
         "--credentials-file", help="Fichier d'identifiants séparé"
     )
+    providers_setup_parser = config_providers_subparsers.add_parser(
+        "setup", help="Préparer et valider un provider"
+    )
+    providers_setup_parser.add_argument("provider", choices=("ollama",))
+    providers_setup_parser.add_argument(
+        "--model", help="Modèle Ollama (défaut: OLLAMA_MODEL puis défaut provider)"
+    )
+    providers_setup_parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Ne jamais demander de confirmation",
+    )
+    providers_setup_parser.add_argument(
+        "--pull", action="store_true", help="Autoriser explicitement le téléchargement"
+    )
+    providers_setup_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=120.0,
+        help="Timeout HTTP/téléchargement en secondes",
+    )
     config_root_parser = config_subparsers.add_parser(
         "root", help="Configurer le root de registre persistant"
     )
@@ -2369,6 +2419,13 @@ def main(argv: list[str] | None = None) -> int:
                     ollama_model=args.ollama_model,
                     api_key=args.api_key,
                     credentials_file=args.credentials_file,
+                )
+            if args.config_providers_command == "setup":
+                return _setup_ollama_provider(
+                    model=args.model,
+                    non_interactive=args.non_interactive,
+                    pull=args.pull,
+                    timeout=args.timeout,
                 )
         if args.config_command == "root":
             if args.config_root_command == "set":

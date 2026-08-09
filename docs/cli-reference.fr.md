@@ -830,7 +830,7 @@ Les chemins ci-dessous sont relatifs au root ou à `SINGULAR_HOME`. Toujours sau
 <!-- cli-command: config providers -->
 ## `config providers`
 
-**Syntaxe :** `singular config providers [-h] {doctor} ...`
+**Syntaxe :** `singular config providers [-h] {doctor,setup} ...`
 
 **Arguments et défauts :** Aucune / None.
 
@@ -1395,6 +1395,27 @@ Les chemins ci-dessous sont relatifs au root ou à `SINGULAR_HOME`. Toujours sau
 **Exemple avancé :** `singular --root /srv/singular --life ada --format json ecosystem run --life ada --budget-seconds 10`
 
 **Erreurs usuelles :** Vie/provider/config absent, budget/intervalle invalide, capteur indisponible, trop d'erreurs daemon.
+
+<!-- cli-command: config providers setup -->
+## `config providers setup`
+
+**Syntaxe :** `singular config providers setup [-h] [--model MODEL] [--non-interactive] [--pull] [--timeout TIMEOUT] {ollama}`
+
+**Arguments et défauts :** provider `ollama` (requis); `--model` (`OLLAMA_MODEL`, sinon le défaut du provider); `--non-interactive` (`false`); `--pull` (`false`); `--timeout` (`120.0`).
+
+**Prérequis :** service `ollama serve` joignable. La commande affiche `/api/tags`, demande confirmation avant `ollama pull`, puis effectue une génération minimale. `--non-interactive --pull` convient aux installations automatisées; sans `--pull`, le mode non interactif ne télécharge rien.
+
+**Root et vie ciblés :** Aucun root ni vie; utilise uniquement le service défini par `OLLAMA_HOST`.
+
+**Fichiers lus ou écrits :** Aucun fichier Singular; Ollama stocke le modèle téléchargé dans son propre espace.
+
+**Effets de bord :** le téléchargement n'est possible que dans cette action explicite et après confirmation ou `--pull`; `singular talk` ne télécharge jamais de modèle.
+
+**Exemple minimal :** `singular config providers setup ollama`
+
+**Exemple avancé :** `singular config providers setup ollama --non-interactive --pull --model llama3.2`
+
+**Erreurs usuelles :** `service_stopped`, `command_missing`, `model_missing`, `download_incomplete`, `timeout`, `invalid_generation`. Chaque sortie inclut `Remédiation:` avec la commande à exécuter.
 
 <!-- cli-command: beliefs -->
 ## `beliefs`
