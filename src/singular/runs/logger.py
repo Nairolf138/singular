@@ -13,6 +13,7 @@ from pathlib import Path
 import json
 import logging
 import os
+from uuid import uuid4
 from typing import Any, Mapping
 
 from ..storage_retention import run_retention_service
@@ -83,6 +84,7 @@ def log_provider_event(
     active_provider: str | None = None,
     life_root: Path | str | None = None,
     context_metrics: Mapping[str, Any] | None = None,
+    correlation_id: str | None = None,
 ) -> None:
     """Emit a structured provider log entry."""
 
@@ -94,6 +96,7 @@ def log_provider_event(
         "fallback": fallback,
         "error_category": error_category,
         "llm_real": llm_real,
+        "correlation_id": correlation_id or uuid4().hex,
     }
     if context_metrics is not None:
         # Metrics contain only sizes, counts and opaque provenance identifiers;
@@ -140,8 +143,10 @@ class RunLogger:
     psyche: Psyche = field(default_factory=Psyche.load_state)
     reputation_update_every: int = DEFAULT_REPUTATION_UPDATE_EVERY
     life_id: str | None = None
+    correlation_id: str | None = None
 
     def __post_init__(self) -> None:
+        self.correlation_id = self.correlation_id or uuid4().hex
         self.root = (
             Path(self.root)
             if self.root is not None
@@ -314,6 +319,7 @@ class RunLogger:
         return {name: dict(stats) for name, stats in self._skill_reputation.items()}
 
     def _write_record(self, record: dict[str, Any]) -> None:
+        record.setdefault("correlation_id", self.correlation_id)
         record["life_id"] = canonical_life_id(record.get("life_id") or self.life_id or "default")
         self._file.write(json.dumps(record) + "\n")
         self._file.flush()
@@ -321,6 +327,7 @@ class RunLogger:
         self._runs_repository.add_event(self.run_id, record)
 
     def _write_event(self, event_type: str, payload: dict[str, Any], ts: str) -> None:
+        payload.setdefault("correlation_id", self.correlation_id)
         payload["life_id"] = canonical_life_id(payload.get("life_id") or self.life_id or "default")
         event = {
             "version": EVENT_SCHEMA_VERSION,
@@ -361,6 +368,7 @@ class RunLogger:
                 "energy": energy,
             },
             "success": success,
+            "correlation_id": self.correlation_id,
         }
         self._consciousness_file.write(json.dumps(record) + "\n")
         self._consciousness_file.flush()

@@ -357,6 +357,9 @@ def talk(
         self_narrative_summary: str,
         self_narrative_version: int,
     ) -> str:
+        # One identifier joins the human turn, every provider attempt, the
+        # resulting narrative evidence and the causal trace.
+        correlation_id = uuid4().hex
         user_signals = extract_structured_signals(
             user_input, state_path=mem_dir / "interaction_perception.json"
         )
@@ -504,6 +507,7 @@ def talk(
             active_provider=active_provider,
             life_root=life_root,
             context_metrics=context_result.metrics,
+            correlation_id=correlation_id,
         )
 
         parts = [reply]
@@ -525,6 +529,7 @@ def talk(
         add_episode(
             {
                 "role": "assistant",
+                "correlation_id": correlation_id,
                 "life_id": life_id,
                 "text": response,
                 "raw_reply": reply,
@@ -564,6 +569,7 @@ def talk(
             {
                 "ts": datetime.now(timezone.utc).isoformat(),
                 "trace_id": uuid4().hex,
+                "correlation_id": correlation_id,
                 "pipeline": "interaction.talk",
                 "input": {
                     "kind": "human_message",
@@ -608,7 +614,8 @@ def talk(
         psyche.gain()
         identity_sync.apply_event(
             {
-                "event_id": f"conversation-{uuid4()}",
+                "event_id": f"conversation-{correlation_id}",
+                "correlation_id": correlation_id,
                 "source": "organisms.talk",
                 "type": "conversation",
                 "summary": "Interaction utilisateur traitée",

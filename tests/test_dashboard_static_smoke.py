@@ -20,6 +20,17 @@ AUDITED_JS = [
 CANONICAL_BRANDING = Path("docs/assets/branding")
 
 
+def test_timeline_static_exposes_correlation_navigation() -> None:
+    timeline = (DASHBOARD_STATIC / "render-timeline.js").read_text(encoding="utf-8")
+    conversations = (DASHBOARD_STATIC / "render-conversations.js").read_text(encoding="utf-8")
+    template = DASHBOARD_TEMPLATE.read_text(encoding="utf-8")
+    assert "correlation_id" in timeline
+    assert "Mutation déclenchante" in timeline
+    assert "timeline-path" in timeline
+    assert all(label in conversations for label in ("données absentes", "sain", "mode dégradé", "bloqué"))
+    assert "cause, décision, conséquence, vie, action corrective" in template
+
+
 @pytest.mark.parametrize(
     ("canonical_name", "dashboard_name"),
     [

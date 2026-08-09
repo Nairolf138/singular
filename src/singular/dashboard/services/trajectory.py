@@ -102,6 +102,34 @@ def build_trajectory(
             }
         )
 
+    # Correlation IDs are deliberately the primary join key: a breaker alert
+    # can therefore lead to its sandbox cause, mutation and impacted path even
+    # when these were emitted by different subsystems.
+    correlated: dict[str, list[dict[str, object]]] = {}
+    for record in records:
+        correlation_id = record.get("correlation_id")
+        if not isinstance(correlation_id, str) or not correlation_id:
+            continue
+        event = record.get("event") or record.get("event_type") or (
+            "mutation" if any(key in record for key in ("op", "operator", "diff")) else "record"
+        )
+        item = {
+            "correlation_id": correlation_id,
+            "timestamp": record.get("ts", record.get("timestamp")),
+            "event": event,
+            "cause": record.get("initial_cause", record.get("category", record.get("source_error_type"))),
+            "decision": record.get("decision_reason", record.get("reason", record.get("accepted"))),
+            "consequence": record.get("human_summary", record.get("result", record.get("self_narrative_event"))),
+            "life": record.get("life_id", record.get("life", record.get("organism"))),
+            "corrective_action": record.get("corrective_action"),
+            "mutation": record.get("operator", record.get("op")),
+            "path": record.get("impacted_file", record.get("path")),
+            "run": record_run_id(record),
+        }
+        correlated.setdefault(correlation_id, []).append(item)
+    chronology = [item for group in correlated.values() for item in group]
+    chronology.sort(key=lambda item: str(item.get("timestamp") or ""))
+
     return {
         "objectives": {
             "counts": {
@@ -115,4 +143,6 @@ def build_trajectory(
         },
         "priority_changes": priority_changes[-40:],
         "objective_narrative_links": links[-40:],
+        "causal_chronology": chronology[-100:],
+        "correlations": {key: value for key, value in correlated.items()},
     }

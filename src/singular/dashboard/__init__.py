@@ -568,6 +568,12 @@ def create_app(
             "cooldown_seconds": record.get("cooldown_seconds"),
             "open_until": record.get("open_until"),
             "corrective_action": record.get("corrective_action"),
+            "correlation_id": record.get("correlation_id"),
+            "cause": record.get("initial_cause", record.get("category", record.get("source_error_type"))),
+            "decision": record.get("decision_reason", record.get("reason")),
+            "consequence": record.get("human_summary", record.get("result")),
+            "life": _record_life(record),
+            "mutation_path": record.get("impacted_file", record.get("path")),
             "last_sandbox_diagnostics": record.get("last_sandbox_diagnostics"),
         }
 

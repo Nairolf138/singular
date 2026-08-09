@@ -9,7 +9,22 @@ from fastapi_stub import TestClient
 
 import singular.dashboard as dashboard_module
 from singular.dashboard import create_app, run
+from singular.dashboard.services.trajectory import build_trajectory
 from singular.lives import LifeMetadata, create_life
+
+
+def test_trajectory_contract_joins_records_by_correlation_id(tmp_path: Path) -> None:
+    records = [
+        {"ts": "2026-08-09T10:00:00+00:00", "event": "sandbox_violation", "correlation_id": "corr-1", "category": "forbidden_name", "life_id": "life-a"},
+        {"ts": "2026-08-09T10:00:01+00:00", "event": "mutation", "correlation_id": "corr-1", "op": "replace", "impacted_file": "skills/a.py", "accepted": False},
+        {"ts": "2026-08-09T10:00:02+00:00", "event": "governance.circuit_breaker_opened", "correlation_id": "corr-1", "corrective_action": "halt mutations"},
+    ]
+    payload = build_trajectory(records, tmp_path / "missing.json", lambda _: "run-a")
+    assert [item["event"] for item in payload["correlations"]["corr-1"]] == [
+        "sandbox_violation", "mutation", "governance.circuit_breaker_opened"
+    ]
+    assert payload["correlations"]["corr-1"][1]["path"] == "skills/a.py"
+    assert payload["causal_chronology"][2]["corrective_action"] == "halt mutations"
 
 
 def _receive_with_timeout(ws: TestClient._WSConnection, timeout: float = 2.0) -> dict[str, object]:
