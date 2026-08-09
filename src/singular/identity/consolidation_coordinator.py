@@ -10,7 +10,6 @@ from typing import Any, Callable
 
 from ..io_utils import atomic_write_text
 
-
 STAGES = (
     "semantic_memory",
     "autobiographical_memory",
@@ -62,40 +61,101 @@ class ConsolidationCoordinator:
         return value
 
     @staticmethod
-    def _stage_items(stage: str, episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _stage_items(
+        stage: str, episodes: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         keys = {
             "semantic_memory": ("user_fact", "preference", "constraint", "fact"),
-            "autobiographical_memory": ("user_fact", "autobiographical_fact", "achievement", "failure", "embodied_outcome"),
-            "metacognitive_self_model": ("strategy", "error", "bias", "failure_condition"),
+            "autobiographical_memory": (
+                "user_fact",
+                "autobiographical_fact",
+                "achievement",
+                "failure",
+                "embodied_outcome",
+            ),
+            "metacognitive_self_model": (
+                "strategy",
+                "error",
+                "bias",
+                "failure_condition",
+            ),
             "models_of_others": ("individual_id", "other_id", "person"),
-            "probabilistic_beliefs": ("belief", "hypothesis", "success", "reward", "embodied_outcome"),
+            "probabilistic_beliefs": (
+                "belief",
+                "hypothesis",
+                "success",
+                "reward",
+                "embodied_outcome",
+            ),
             "imitation_learning": ("demonstration", "observations", "actions", "skill"),
-            "narrative_projection": ("narrative", "heading", "achievement", "failure", "embodied_outcome"),
+            "narrative_projection": (
+                "narrative",
+                "heading",
+                "achievement",
+                "failure",
+                "embodied_outcome",
+            ),
         }[stage]
         return [episode for episode in episodes if any(key in episode for key in keys)]
 
-    def _apply_stage(self, stage: str, episodes: list[dict[str, Any]]) -> dict[str, int]:
+    def _apply_stage(
+        self, stage: str, episodes: list[dict[str, Any]]
+    ) -> dict[str, int]:
         catalogue = self._read(self.catalogue_path, {})
         if not isinstance(catalogue, dict):
             catalogue = {}
-        counts = {key: 0 for key in ("seen", "reinforced", "merged", "demoted", "forgotten", "rejected")}
+        counts = {
+            key: 0
+            for key in (
+                "seen",
+                "reinforced",
+                "merged",
+                "demoted",
+                "forgotten",
+                "rejected",
+            )
+        }
         items = self._stage_items(stage, episodes)
         counts["seen"] = len(items)
         now = _now()
         for episode in items:
-            provenance = str(episode.get("trace_id") or episode.get("id") or episode.get("event_id") or _key(episode))
+            provenance = str(
+                episode.get("trace_id")
+                or episode.get("id")
+                or episode.get("event_id")
+                or _key(episode)
+            )
             content = next(
-                (episode[key] for key in (
-                    "value", "user_fact", "autobiographical_fact", "preference",
-                    "constraint", "belief", "hypothesis", "narrative", "heading",
-                    "strategy", "error", "bias", "skill", "individual_id",
-                    "other_id", "person",
-                ) if episode.get(key) is not None),
+                (
+                    episode[key]
+                    for key in (
+                        "value",
+                        "user_fact",
+                        "autobiographical_fact",
+                        "preference",
+                        "constraint",
+                        "belief",
+                        "hypothesis",
+                        "narrative",
+                        "heading",
+                        "strategy",
+                        "error",
+                        "bias",
+                        "skill",
+                        "individual_id",
+                        "other_id",
+                        "person",
+                    )
+                    if episode.get(key) is not None
+                ),
                 episode.get("summary", episode),
             )
             normalized = str(content).strip().casefold()
             item_id = _key([stage, normalized])
-            critical = bool(episode.get("critical") or episode.get("importance") in {"critical", "high"})
+            critical = bool(
+                episode.get("critical")
+                or episode.get("importance") in {"critical", "high"}
+            )
             existing = catalogue.get(item_id)
             if isinstance(existing, dict):
                 if provenance in existing.get("provenance", []):
@@ -107,10 +167,17 @@ class ConsolidationCoordinator:
                 existing["status"] = "active"
                 counts["reinforced"] += 1
             else:
-                opposite = normalized.removeprefix("not ") if normalized.startswith("not ") else "not " + normalized
+                opposite = (
+                    normalized.removeprefix("not ")
+                    if normalized.startswith("not ")
+                    else "not " + normalized
+                )
                 contradictions = [
-                    key for key, row in catalogue.items()
-                    if isinstance(row, dict) and row.get("stage") == stage and row.get("normalized") == opposite
+                    key
+                    for key, row in catalogue.items()
+                    if isinstance(row, dict)
+                    and row.get("stage") == stage
+                    and row.get("normalized") == opposite
                 ]
                 rejected = False
                 for conflict_id in contradictions:
@@ -122,27 +189,44 @@ class ConsolidationCoordinator:
                         conflict["status"] = "demoted"
                         counts["demoted"] += 1
                 catalogue[item_id] = {
-                    "stage": stage, "content": content, "normalized": normalized,
-                    "provenance": [provenance], "mentions": 1, "critical": critical,
+                    "stage": stage,
+                    "content": content,
+                    "normalized": normalized,
+                    "provenance": [provenance],
+                    "mentions": 1,
+                    "critical": critical,
                     "status": "rejected" if rejected else "active",
                     "obsolete": bool(episode.get("obsolete")),
                     "first_seen": str(episode.get("ts") or now),
-                    "last_seen": str(episode.get("ts") or now), "contradicts": contradictions,
-                    "trace_id": episode.get("trace_id"), "objective": episode.get("objective"),
-                    "result": episode.get("result"), "confidence": episode.get("confidence"),
+                    "last_seen": str(episode.get("ts") or now),
+                    "contradicts": contradictions,
+                    "trace_id": episode.get("trace_id"),
+                    "objective": episode.get("objective"),
+                    "result": episode.get("result"),
+                    "confidence": episode.get("confidence"),
                     "importance": episode.get("importance"),
                 }
                 counts["rejected"] += int(rejected)
         # Obsolete evidence can leave active memory, but critical records and the
         # audit entry itself are immutable retention invariants.
         for row in catalogue.values():
-            if not isinstance(row, dict) or row.get("stage") != stage or row.get("critical"):
+            if (
+                not isinstance(row, dict)
+                or row.get("stage") != stage
+                or row.get("critical")
+            ):
                 continue
             if row.get("obsolete") and row.get("status") != "forgotten":
                 row["status"] = "forgotten"
                 counts["forgotten"] += 1
         self._write(self.catalogue_path, catalogue)
-        projection = [row for row in catalogue.values() if isinstance(row, dict) and row.get("stage") == stage and row.get("status") not in {"forgotten", "rejected"}]
+        projection = [
+            row
+            for row in catalogue.values()
+            if isinstance(row, dict)
+            and row.get("stage") == stage
+            and row.get("status") not in {"forgotten", "rejected"}
+        ]
         self._write(self.mem_dir / f"consolidated_{stage}.json", projection)
         return counts
 
@@ -160,26 +244,51 @@ class ConsolidationCoordinator:
             state["pending_episodes"] = episodes
             self._write(self.state_path, state)
         elif isinstance(state.get("pending_episodes"), list):
-            episodes = [row for row in state["pending_episodes"] if isinstance(row, dict)]
+            episodes = [
+                row for row in state["pending_episodes"] if isinstance(row, dict)
+            ]
         batch = _key([_key(episode) for episode in episodes])
-        totals = {key: 0 for key in ("seen", "reinforced", "merged", "demoted", "forgotten", "rejected")}
+        totals = {
+            key: 0
+            for key in (
+                "seen",
+                "reinforced",
+                "merged",
+                "demoted",
+                "forgotten",
+                "rejected",
+            )
+        }
         errors: list[dict[str, str]] = []
         results: dict[str, Any] = {}
         for stage in STAGES:
             checkpoint = state["stages"].get(stage, {})
-            if checkpoint.get("cursor") == batch and checkpoint.get("status") == "completed":
+            if (
+                checkpoint.get("cursor") == batch
+                and checkpoint.get("status") == "completed"
+            ):
                 result = checkpoint.get("result", {})
             else:
                 try:
                     result = self._apply_stage(stage, episodes)
-                    state["stages"][stage] = {"cursor": batch, "status": "completed", "result": result, "completed_at": _now()}
+                    state["stages"][stage] = {
+                        "cursor": batch,
+                        "status": "completed",
+                        "result": result,
+                        "completed_at": _now(),
+                    }
                     self._write(self.state_path, state)  # commit each stage separately
                     if after_stage:
                         after_stage(stage)
                 except Exception as exc:  # retain earlier commits and continue
                     error = {"stage": stage, "error": f"{type(exc).__name__}: {exc}"}
                     errors.append(error)
-                    state["stages"][stage] = {"cursor": batch, "status": "failed", "result": {}, **error}
+                    state["stages"][stage] = {
+                        "cursor": batch,
+                        "status": "failed",
+                        "result": {},
+                        **error,
+                    }
                     self._write(self.state_path, state)
                     continue
             results[stage] = result

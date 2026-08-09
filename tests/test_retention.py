@@ -68,7 +68,9 @@ def _create_runs_fixture(root: Path, now: datetime) -> dict[str, Path]:
         }
         for index in range(120)
     ]
-    episodic.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    episodic.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+    )
 
     return {
         "runs": runs,
@@ -98,7 +100,9 @@ def test_retention_purge_by_quantity(tmp_path: Path) -> None:
     assert fixture["old"].exists()
     assert not fixture["ancient"].exists()
     assert fixture["active_old"].exists()
-    assert any(d.run_id == "run-ancient" and d.reason == "max_runs" for d in report.decisions)
+    assert any(
+        d.run_id == "run-ancient" and d.reason == "max_runs" for d in report.decisions
+    )
 
 
 def test_retention_purge_by_age(tmp_path: Path) -> None:
@@ -118,7 +122,10 @@ def test_retention_purge_by_age(tmp_path: Path) -> None:
     assert fixture["old"].exists()
     assert not fixture["ancient"].exists()
     assert fixture["active_old"].exists()
-    assert any(d.run_id == "run-ancient" and d.reason == "max_run_age_days" for d in report.decisions)
+    assert any(
+        d.run_id == "run-ancient" and d.reason == "max_run_age_days"
+        for d in report.decisions
+    )
 
 
 def test_retention_purge_by_size_budget(tmp_path: Path) -> None:
@@ -221,7 +228,9 @@ def test_retention_is_idempotent_across_two_runs(tmp_path: Path, monkeypatch) ->
 def test_retention_dry_run_has_no_side_effects(tmp_path: Path, monkeypatch) -> None:
     now = datetime(2026, 4, 15, tzinfo=timezone.utc)
     fixture = _create_runs_fixture(tmp_path, now)
-    before_listing = sorted(str(path.relative_to(tmp_path)) for path in tmp_path.rglob("*"))
+    before_listing = sorted(
+        str(path.relative_to(tmp_path)) for path in tmp_path.rglob("*")
+    )
     before_runs_size = _tree_size_bytes(fixture["runs"])
 
     monkeypatch.setenv("SINGULAR_RETENTION_MAX_RUNS", "1")
@@ -233,7 +242,9 @@ def test_retention_dry_run_has_no_side_effects(tmp_path: Path, monkeypatch) -> N
         enforce_minimum_interval=False,
     )
 
-    after_listing = sorted(str(path.relative_to(tmp_path)) for path in tmp_path.rglob("*"))
+    after_listing = sorted(
+        str(path.relative_to(tmp_path)) for path in tmp_path.rglob("*")
+    )
     after_runs_size = _tree_size_bytes(fixture["runs"])
 
     assert outcome.executed is True

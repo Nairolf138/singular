@@ -17,7 +17,9 @@ ARTIFACTS_DIR = _BASE_DIR / "runs" / "artifacts"
 
 
 def _ensure_dir(directory: Path | None = None) -> Path:
-    directory = directory or Path(os.environ.get("SINGULAR_HOME", ".")) / "runs" / "artifacts"
+    directory = (
+        directory or Path(os.environ.get("SINGULAR_HOME", ".")) / "runs" / "artifacts"
+    )
     directory.mkdir(parents=True, exist_ok=True)
     return directory
 
@@ -80,7 +82,9 @@ def create_text_art(
 ) -> Path:
     """Create a text artifact and save accompanying metadata."""
 
-    directory = directory or Path(os.environ.get("SINGULAR_HOME", ".")) / "runs" / "artifacts"
+    directory = (
+        directory or Path(os.environ.get("SINGULAR_HOME", ".")) / "runs" / "artifacts"
+    )
     path = save_text(name, text, directory)
     _save_metadata(path, mood, resources)
     return path
@@ -98,7 +102,9 @@ def create_ascii_drawing(
 ) -> Path:
     """Create a simple ASCII drawing and save accompanying metadata."""
 
-    directory = directory or Path(os.environ.get("SINGULAR_HOME", ".")) / "runs" / "artifacts"
+    directory = (
+        directory or Path(os.environ.get("SINGULAR_HOME", ".")) / "runs" / "artifacts"
+    )
     path = save_drawing(name, width, height, char, directory)
     _save_metadata(path, mood, resources)
     return path
@@ -114,7 +120,9 @@ def create_simple_melody(
 ) -> Path:
     """Create a simple melody and save accompanying metadata."""
 
-    directory = directory or Path(os.environ.get("SINGULAR_HOME", ".")) / "runs" / "artifacts"
+    directory = (
+        directory or Path(os.environ.get("SINGULAR_HOME", ".")) / "runs" / "artifacts"
+    )
     path = save_music(name, notes, directory)
     _save_metadata(path, mood, resources)
     return path

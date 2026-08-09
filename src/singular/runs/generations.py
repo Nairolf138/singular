@@ -125,13 +125,17 @@ def record_generation(
     return payload
 
 
-def rollback_generation(generation_id: int, *, base_dir: Path | None = None) -> dict[str, Any]:
+def rollback_generation(
+    generation_id: int, *, base_dir: Path | None = None
+) -> dict[str, Any]:
     """Atomically rollback the skill file to a stable generation snapshot."""
 
     root = Path(base_dir) if base_dir is not None else get_base_dir()
     generations_path = get_generations_path(root)
     items = _read_jsonl(generations_path)
-    generation = next((item for item in items if item.get("generation_id") == generation_id), None)
+    generation = next(
+        (item for item in items if item.get("generation_id") == generation_id), None
+    )
     if generation is None:
         raise ValueError(f"generation_not_found:{generation_id}")
     if not generation.get("stable"):
@@ -147,7 +151,9 @@ def rollback_generation(generation_id: int, *, base_dir: Path | None = None) -> 
 
     target.parent.mkdir(parents=True, exist_ok=True)
     content = snapshot.read_text(encoding="utf-8")
-    fd, tmp_name = tempfile.mkstemp(prefix=target.name, suffix=".tmp", dir=target.parent)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=target.name, suffix=".tmp", dir=target.parent
+    )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as tmp:
             tmp.write(content)

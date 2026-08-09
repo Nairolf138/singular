@@ -36,7 +36,9 @@ def host_metrics_file() -> Path:
 
 
 def _retention_samples() -> int:
-    raw = os.getenv("SINGULAR_HOST_METRICS_RETENTION_SAMPLES", str(_DEFAULT_RETENTION_SAMPLES))
+    raw = os.getenv(
+        "SINGULAR_HOST_METRICS_RETENTION_SAMPLES", str(_DEFAULT_RETENTION_SAMPLES)
+    )
     try:
         value = int(raw)
     except ValueError:
@@ -75,7 +77,9 @@ def _extract_metric_value(metrics: dict[str, Any], key: str) -> float | None:
     return _safe_float(raw)
 
 
-def _extract_metric_snapshot(metrics: dict[str, Any], key: str) -> dict[str, Any] | None:
+def _extract_metric_snapshot(
+    metrics: dict[str, Any], key: str
+) -> dict[str, Any] | None:
     candidate = metrics.get(key)
     if not isinstance(candidate, dict):
         return None
@@ -191,7 +195,9 @@ def compute_host_metrics_aggregates(
         mean_all = _mean(values)
         variances[key] = _variance(values, mean_all)
         rolling_means[key] = {
-            str(window): _mean(values[-window:]) for window in windows if len(values) >= 1
+            str(window): _mean(values[-window:])
+            for window in windows
+            if len(values) >= 1
         }
 
     return {
@@ -216,17 +222,41 @@ def summarize_environmental_impact(aggregates: dict[str, Any] | None) -> dict[st
         }
     rolling = aggregates.get("rolling_means", {})
     variance = aggregates.get("variance", {})
-    cpu_20 = _safe_float(((rolling.get("cpu_percent") or {}).get("20"))) if isinstance(rolling, dict) else None
-    ram_20 = _safe_float(((rolling.get("ram_used_percent") or {}).get("20"))) if isinstance(rolling, dict) else None
-    temp_20 = _safe_float(((rolling.get("host_temperature_c") or {}).get("20"))) if isinstance(rolling, dict) else None
+    cpu_20 = (
+        _safe_float(((rolling.get("cpu_percent") or {}).get("20")))
+        if isinstance(rolling, dict)
+        else None
+    )
+    ram_20 = (
+        _safe_float(((rolling.get("ram_used_percent") or {}).get("20")))
+        if isinstance(rolling, dict)
+        else None
+    )
+    temp_20 = (
+        _safe_float(((rolling.get("host_temperature_c") or {}).get("20")))
+        if isinstance(rolling, dict)
+        else None
+    )
     cpu_pressure = max(0.0, min((cpu_20 or 0.0) / 100.0, 1.0))
     ram_pressure = max(0.0, min((ram_20 or 0.0) / 100.0, 1.0))
     thermal_pressure = max(0.0, min((temp_20 or 0.0) / 95.0, 1.0))
-    pressure_score = (cpu_pressure * 0.45) + (ram_pressure * 0.35) + (thermal_pressure * 0.2)
+    pressure_score = (
+        (cpu_pressure * 0.45) + (ram_pressure * 0.35) + (thermal_pressure * 0.2)
+    )
 
-    cpu_var = _safe_float((variance or {}).get("cpu_percent")) if isinstance(variance, dict) else None
-    ram_var = _safe_float((variance or {}).get("ram_used_percent")) if isinstance(variance, dict) else None
-    variance_score = max(0.0, min((((cpu_var or 0.0) / 400.0) + ((ram_var or 0.0) / 400.0)) / 2.0, 1.0))
+    cpu_var = (
+        _safe_float((variance or {}).get("cpu_percent"))
+        if isinstance(variance, dict)
+        else None
+    )
+    ram_var = (
+        _safe_float((variance or {}).get("ram_used_percent"))
+        if isinstance(variance, dict)
+        else None
+    )
+    variance_score = max(
+        0.0, min((((cpu_var or 0.0) / 400.0) + ((ram_var or 0.0) / 400.0)) / 2.0, 1.0)
+    )
 
     if pressure_score >= 0.8:
         level = "critical"

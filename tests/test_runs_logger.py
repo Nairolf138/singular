@@ -20,9 +20,7 @@ def test_default_root_uses_singular_home_at_construction_time(
     assert (home / "runs" / "late-home").is_dir()
 
 
-def test_default_root_follows_two_successive_lives(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_default_root_follows_two_successive_lives(tmp_path: Path, monkeypatch) -> None:
     homes = [tmp_path / "life-a", tmp_path / "life-b"]
 
     for index, home in enumerate(homes):

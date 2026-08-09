@@ -30,18 +30,31 @@ def test_load_creates_default_file_when_missing(tmp_path: Path) -> None:
     }
 
 
-def test_contaminated_timeline_rebuilds_ada_bob_and_eve_separately(tmp_path: Path) -> None:
+def test_contaminated_timeline_rebuilds_ada_bob_and_eve_separately(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "shared.json"
     for life, claim in (("Ada", "succès"), ("Bob", "échec"), ("Eve", "incident")):
         own = tmp_path / f"{life}.json"
-        project_event({"event_type": "incident", "event_id": life, "summary": claim}, own, life_id=life)
-        with path.with_name("shared.timeline.jsonl").open("a", encoding="utf-8") as target:
-            target.write(own.with_name(f"{life}.timeline.jsonl").read_text(encoding="utf-8"))
+        project_event(
+            {"event_type": "incident", "event_id": life, "summary": claim},
+            own,
+            life_id=life,
+        )
+        with path.with_name("shared.timeline.jsonl").open(
+            "a", encoding="utf-8"
+        ) as target:
+            target.write(
+                own.with_name(f"{life}.timeline.jsonl").read_text(encoding="utf-8")
+            )
 
     report = diagnose_timeline(path)
     assert report["contaminated"] is True
     assert set(report["lives"]) == {"ada", "bob", "eve"}
-    rebuilt = {life: rebuild_from_timeline(path, life_id=life, persist=False) for life in report["lives"]}
+    rebuilt = {
+        life: rebuild_from_timeline(path, life_id=life, persist=False)
+        for life in report["lives"]
+    }
     assert {entry.summary for entry in rebuilt["ada"].entries} == {"succès"}
     assert {entry.summary for entry in rebuilt["bob"].entries} == {"échec"}
     assert {entry.summary for entry in rebuilt["eve"].entries} == {"incident"}

@@ -570,7 +570,9 @@ def create_app(
             "open_until": record.get("open_until"),
             "corrective_action": record.get("corrective_action"),
             "correlation_id": record.get("correlation_id"),
-            "cause": record.get("initial_cause", record.get("category", record.get("source_error_type"))),
+            "cause": record.get(
+                "initial_cause", record.get("category", record.get("source_error_type"))
+            ),
             "decision": record.get("decision_reason", record.get("reason")),
             "consequence": record.get("human_summary", record.get("result")),
             "life": _record_life(record),
@@ -802,7 +804,9 @@ def create_app(
             "events": events[-10:],
         }
 
-    def _summarize_viability_governance(records: list[dict[str, object]]) -> dict[str, object]:
+    def _summarize_viability_governance(
+        records: list[dict[str, object]],
+    ) -> dict[str, object]:
         """Expose the latest preventive drift state separately from sandbox policy."""
         names = {
             "governance.viability_drift_detected",
@@ -1069,9 +1073,7 @@ def create_app(
                     "decision": (
                         "accepted"
                         if accepted is True
-                        else "rejected"
-                        if accepted is False
-                        else record.get("decision")
+                        else "rejected" if accepted is False else record.get("decision")
                     ),
                     "reason": record.get("decision_reason", record.get("reason")),
                     "operator": record.get("operator", record.get("op")),
@@ -1406,11 +1408,7 @@ def create_app(
             if isinstance(payload, dict)
         ]
         selected_row = next(
-            (
-                row
-                for row in comparison_rows
-                if row.get("life") == selected_life_id
-            ),
+            (row for row in comparison_rows if row.get("life") == selected_life_id),
             None,
         )
         selected_life = (
@@ -1509,7 +1507,8 @@ def create_app(
         }
 
     def _summarize_cockpit_essential(
-        current_life_only: bool = False, selected_life_id: str | None = None,
+        current_life_only: bool = False,
+        selected_life_id: str | None = None,
     ) -> dict[str, object]:
         cockpit = _summarize_cockpit(
             current_life_only=current_life_only, selected_life_id=selected_life_id
@@ -1907,17 +1906,21 @@ def create_app(
                 "current_state": current_state,
                 "recent_evolution": trend,
                 "dominant_need": need,
-                "active_objective": str(active_objectives[0])
-                if active_objectives
-                else "Aucun objectif actif",
+                "active_objective": (
+                    str(active_objectives[0])
+                    if active_objectives
+                    else "Aucun objectif actif"
+                ),
                 "last_decision": decision,
                 "last_action": action,
                 "observed_consequence": consequence,
                 "memorized_change": remembered,
                 "primary_alert": alert_label,
-                "recommended_next_action": recommendations[0]
-                if recommendations
-                else "Poursuivre l’observation",
+                "recommended_next_action": (
+                    recommendations[0]
+                    if recommendations
+                    else "Poursuivre l’observation"
+                ),
             },
             "evidence": evidence,
             "technical": {
@@ -2054,15 +2057,21 @@ def create_app(
         current_life_only: bool = False, life_id: str | None = None
     ) -> dict[str, object]:
         if life_id is not None and _resolve_life_entry(life_id)[0] is None:
-            raise HTTPException(status_code=404, detail="life_id is not a registry entry")
-        return _summarize_cockpit(current_life_only=current_life_only, selected_life_id=life_id)
+            raise HTTPException(
+                status_code=404, detail="life_id is not a registry entry"
+            )
+        return _summarize_cockpit(
+            current_life_only=current_life_only, selected_life_id=life_id
+        )
 
     @app.get("/api/cockpit/essential")
     def read_cockpit_essential(
         current_life_only: bool = False, life_id: str | None = None
     ) -> dict[str, object]:
         if life_id is not None and _resolve_life_entry(life_id)[0] is None:
-            raise HTTPException(status_code=404, detail="life_id is not a registry entry")
+            raise HTTPException(
+                status_code=404, detail="life_id is not a registry entry"
+            )
         return _summarize_cockpit_essential(
             current_life_only=current_life_only, selected_life_id=life_id
         )
@@ -2350,7 +2359,9 @@ def create_app(
         life_id: str | None = None,
     ) -> dict[str, object]:
         if life_id is not None and _resolve_life_entry(life_id)[0] is None:
-            raise HTTPException(status_code=404, detail="life_id is not a registry entry")
+            raise HTTPException(
+                status_code=404, detail="life_id is not a registry entry"
+            )
         compare_set: set[str] | None = None
         if isinstance(compare_lives, str) and compare_lives.strip():
             compare_set = {
@@ -2366,7 +2377,9 @@ def create_app(
         comparison, life_identities = normalize_life_metrics(
             comparison,
             selected_life_id=life_id,
-            registry_active_life_id=active_life if isinstance(active_life, str) else None,
+            registry_active_life_id=(
+                active_life if isinstance(active_life, str) else None
+            ),
         )
         metrics_contract = _build_metrics_contract(comparison)
         base_rows = [

@@ -72,8 +72,6 @@ def get_psyche_file() -> Path:
     return get_mem_dir() / "psyche.json"
 
 
-
-
 def _atomic_write_text(path: Path, data: str) -> None:
     """Backward-compatible alias for shared atomic text writes."""
 
@@ -84,6 +82,7 @@ def _append_jsonl_line(path: Path, payload: dict[str, Any]) -> None:
     """Backward-compatible alias for shared locked JSONL appends."""
 
     append_jsonl_line(path, payload, with_lock=True)
+
 
 def append_jsonl_line_safe(
     path: Path | str,
@@ -121,9 +120,7 @@ def get_memory_layer_service(root: Path | str | None = None) -> MemoryLayerServi
     global _MEMORY_LAYER_SERVICE, _MEMORY_LAYER_SERVICE_ROOT
     root = (Path(root) if root is not None else get_memory_layers_dir()).resolve()
     if _MEMORY_LAYER_SERVICE is None or _MEMORY_LAYER_SERVICE_ROOT != root:
-        _MEMORY_LAYER_SERVICE = MemoryLayerService(
-            build_backend(root=root)
-        )
+        _MEMORY_LAYER_SERVICE = MemoryLayerService(build_backend(root=root))
         _MEMORY_LAYER_SERVICE_ROOT = root
     return _MEMORY_LAYER_SERVICE
 
@@ -233,7 +230,16 @@ def read_episodes(path: Path | str | None = None) -> list[dict[str, Any]]:
 
 def _episode_search_text(episode: Mapping[str, Any]) -> str:
     parts: list[str] = []
-    for key in ("text", "summary", "message", "event", "event_type", "objective", "skill", "op"):
+    for key in (
+        "text",
+        "summary",
+        "message",
+        "event",
+        "event_type",
+        "objective",
+        "skill",
+        "op",
+    ):
         value = episode.get(key)
         if isinstance(value, str):
             parts.append(value)
@@ -243,7 +249,9 @@ def _episode_search_text(episode: Mapping[str, Any]) -> str:
     return " ".join(parts).lower()
 
 
-def summarize_episode_for_recall(episode: Mapping[str, Any], *, max_chars: int = 160) -> str:
+def summarize_episode_for_recall(
+    episode: Mapping[str, Any], *, max_chars: int = 160
+) -> str:
     """Return a short human-readable summary for a recalled episode."""
 
     text = None
@@ -270,7 +278,9 @@ def recall_relevant_episodes(
     """Retrieve recent episodic memories matching themes or objectives."""
 
     terms = {str(term).strip().lower() for term in (themes or []) if str(term).strip()}
-    terms.update(str(term).strip().lower() for term in (objectives or []) if str(term).strip())
+    terms.update(
+        str(term).strip().lower() for term in (objectives or []) if str(term).strip()
+    )
     if not terms:
         return []
     episodes = read_episodes(path)
@@ -289,9 +299,11 @@ def recall_relevant_episodes(
                 "ts": episode.get("ts"),
                 "event": episode.get("event"),
                 "role": episode.get("role"),
-                "theme": (episode.get("structured_signals") or {}).get("theme")
-                if isinstance(episode.get("structured_signals"), Mapping)
-                else None,
+                "theme": (
+                    (episode.get("structured_signals") or {}).get("theme")
+                    if isinstance(episode.get("structured_signals"), Mapping)
+                    else None
+                ),
                 "summary": summarize_episode_for_recall(episode),
             }
         )
@@ -300,12 +312,19 @@ def recall_relevant_episodes(
     return recalled
 
 
-def format_recalled_memories(memories: Iterable[Mapping[str, Any]], *, max_chars: int = 360) -> str:
+def format_recalled_memories(
+    memories: Iterable[Mapping[str, Any]], *, max_chars: int = 360
+) -> str:
     """Format recalled memories as a compact prompt fragment."""
 
     fragments = []
     for memory in memories:
-        label = memory.get("theme") or memory.get("event") or memory.get("role") or "episode"
+        label = (
+            memory.get("theme")
+            or memory.get("event")
+            or memory.get("role")
+            or "episode"
+        )
         fragments.append(f"- {label}: {memory.get('summary', '')}")
     text = " ".join(fragments) if fragments else "aucun souvenir pertinent"
     if len(text) <= max_chars:
@@ -442,7 +461,9 @@ def _normalize_skill_entry(entry: Any) -> dict[str, Any]:
         entry = {}
     score = float(entry.get("score", 0.0))
     metrics = entry.get("metrics") if isinstance(entry.get("metrics"), dict) else {}
-    lifecycle = entry.get("lifecycle") if isinstance(entry.get("lifecycle"), dict) else {}
+    lifecycle = (
+        entry.get("lifecycle") if isinstance(entry.get("lifecycle"), dict) else {}
+    )
     entry["score"] = score
     entry["metrics"] = {
         "usage_count": int(metrics.get("usage_count", 0) or 0),
@@ -527,7 +548,9 @@ def apply_skill_maintenance(
         last_used_raw = entry["metrics"].get("last_used_at")
         if isinstance(last_used_raw, str):
             try:
-                last_used_at = datetime.fromisoformat(last_used_raw.replace("Z", "+00:00"))
+                last_used_at = datetime.fromisoformat(
+                    last_used_raw.replace("Z", "+00:00")
+                )
             except ValueError:
                 last_used_at = None
         else:
@@ -604,7 +627,9 @@ def controlled_delete_skill(
     if skill not in skills:
         raise KeyError(f"unknown skill: {skill}")
     entry = _normalize_skill_entry(skills[skill])
-    snapshots = Path(snapshots_dir) if snapshots_dir is not None else get_skill_snapshots_dir()
+    snapshots = (
+        Path(snapshots_dir) if snapshots_dir is not None else get_skill_snapshots_dir()
+    )
     snapshots.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     snapshot_path = snapshots / f"{skill}-{ts}.json"

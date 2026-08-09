@@ -13,7 +13,9 @@ def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
             file.write(json.dumps(row) + "\n")
 
 
-def test_replay_session_returns_zero_when_lineage_is_consistent(tmp_path: Path, capsys) -> None:
+def test_replay_session_returns_zero_when_lineage_is_consistent(
+    tmp_path: Path, capsys
+) -> None:
     log_path = tmp_path / "audit.jsonl"
     _write_jsonl(
         log_path,
@@ -83,4 +85,3 @@ def test_replay_session_detects_missing_result(tmp_path: Path) -> None:
 
     code = main([str(log_path), "--session-id", "s1"])
     assert code == 3
-

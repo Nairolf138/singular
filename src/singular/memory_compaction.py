@@ -12,7 +12,6 @@ from typing import Any
 
 from .io_utils import atomic_write_text, file_lock
 
-
 UTC = timezone.utc
 
 
@@ -99,16 +98,20 @@ def compact_episodic_jsonl(
         chunk_size = max(1, snapshot_chunk_size)
         for offset in range(0, len(historical), chunk_size):
             chunk = historical[offset : offset + chunk_size]
-            ts_values = [dt for entry in chunk if (dt := _parse_ts(entry.get("ts"))) is not None]
+            ts_values = [
+                dt for entry in chunk if (dt := _parse_ts(entry.get("ts"))) is not None
+            ]
             event_kinds: dict[str, int] = defaultdict(int)
             for entry in chunk:
                 kind = entry.get("event") or entry.get("event_type") or "unknown"
                 event_kinds[str(kind)] += 1
 
-            examples = [_extract_text(item) for item in chunk[: max(1, max_examples_per_snapshot)]]
+            examples = [
+                _extract_text(item)
+                for item in chunk[: max(1, max_examples_per_snapshot)]
+            ]
             canonical = "\n".join(
-                json.dumps(item, ensure_ascii=False, sort_keys=True)
-                for item in chunk
+                json.dumps(item, ensure_ascii=False, sort_keys=True) for item in chunk
             )
             digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
             snapshot_payload = {
@@ -131,7 +134,10 @@ def compact_episodic_jsonl(
                 f"episodic-{generated_at.replace(':', '').replace('+', '_')}"
                 f"-{offset:08d}-{offset + len(chunk) - 1:08d}.json"
             )
-            atomic_write_text(snapshot_path, json.dumps(snapshot_payload, ensure_ascii=False, indent=2))
+            atomic_write_text(
+                snapshot_path,
+                json.dumps(snapshot_payload, ensure_ascii=False, indent=2),
+            )
             snapshot_refs.append(
                 {
                     "snapshot": str(snapshot_path.relative_to(root.parent)),
@@ -253,7 +259,9 @@ def compact_generations_jsonl(
         rejected_aggregate: dict[tuple[str, str], dict[str, Any]] = {}
         for row in old_rejected:
             skill = str(row.get("skill", "unknown"))
-            mutation = row.get("mutation") if isinstance(row.get("mutation"), dict) else {}
+            mutation = (
+                row.get("mutation") if isinstance(row.get("mutation"), dict) else {}
+            )
             operator = str(mutation.get("operator", "unknown"))
             key = (skill, operator)
             slot = rejected_aggregate.setdefault(
@@ -274,15 +282,25 @@ def compact_generations_jsonl(
                 base = 0.0
                 new = 0.0
             slot["count"] += 1
-            slot["score_delta_sum"] += (new - base)
+            slot["score_delta_sum"] += new - base
 
         compacted_rows: list[dict[str, Any]] = []
         compacted_rows.extend(recent_rows)
         compacted_rows.extend(_audit_projection(item) for item in old_accepted)
         compacted_rows.extend(_audit_projection(item) for item in sampled_rejected)
         compacted_rows.extend(
-            {**value, "score_delta_avg": (value["score_delta_sum"] / value["count"]) if value["count"] else 0.0}
-            for value in sorted(rejected_aggregate.values(), key=lambda v: (str(v["skill"]), str(v["operator"])))
+            {
+                **value,
+                "score_delta_avg": (
+                    (value["score_delta_sum"] / value["count"])
+                    if value["count"]
+                    else 0.0
+                ),
+            }
+            for value in sorted(
+                rejected_aggregate.values(),
+                key=lambda v: (str(v["skill"]), str(v["operator"])),
+            )
         )
         compacted_rows.append(
             {

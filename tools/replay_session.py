@@ -43,7 +43,9 @@ def _lineage_report(events: list[dict[str, Any]]) -> list[str]:
     for (event_id, action_id), rows in by_action.items():
         categories = {str(item.get("category")) for item in rows}
         if "action" not in categories:
-            issues.append(f"event_id={event_id}, action_id={action_id}: result without action")
+            issues.append(
+                f"event_id={event_id}, action_id={action_id}: result without action"
+            )
 
     return sorted(set(issues))
 
@@ -55,7 +57,9 @@ def _print_timeline(events: list[dict[str, Any]], verbose: bool) -> None:
         event_id = row.get("event_id", "-")
         intent_id = row.get("intent_id", "-")
         action_id = row.get("action_id", "-")
-        print(f"[{index:04d}] {ts} | {category:<8} | event={event_id} intent={intent_id} action={action_id}")
+        print(
+            f"[{index:04d}] {ts} | {category:<8} | event={event_id} intent={intent_id} action={action_id}"
+        )
         if verbose:
             print(json.dumps(row.get("data", {}), ensure_ascii=False, indent=2))
 

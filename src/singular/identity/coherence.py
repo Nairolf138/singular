@@ -32,7 +32,11 @@ class IdentityInvariants:
     def from_payload(cls, payload: dict[str, Any]) -> "IdentityInvariants":
         return cls(
             life_name=str(payload.get("life_name", "")).strip(),
-            cardinal_values=tuple(_normalize_token(value) for value in payload.get("cardinal_values", []) if str(value).strip()),
+            cardinal_values=tuple(
+                _normalize_token(value)
+                for value in payload.get("cardinal_values", [])
+                if str(value).strip()
+            ),
             long_term_commitments=tuple(
                 _normalize_token(value)
                 for value in payload.get("long_term_commitments", [])
@@ -123,10 +127,17 @@ class IdentityCoherenceGuard:
                 low, high = self.change_policy.plastic_bounds
                 requested = max(low, min(high, requested))
                 delta = requested - old
-                if abs(delta) >= self.change_policy.important_delta and len(independent) < self.change_policy.independent_evidence_required:
+                if (
+                    abs(delta) >= self.change_policy.important_delta
+                    and len(independent)
+                    < self.change_policy.independent_evidence_required
+                ):
                     accepted = False
                     reasons.append("important_change_requires_independent_evidence")
-                value = old + max(-self.change_policy.max_delta, min(self.change_policy.max_delta, delta))
+                value = old + max(
+                    -self.change_policy.max_delta,
+                    min(self.change_policy.max_delta, delta),
+                )
                 value = max(low, min(high, value))
                 if accepted and value != requested:
                     reasons.append("rate_limited")
@@ -137,14 +148,25 @@ class IdentityCoherenceGuard:
             accepted = False
             reasons.append("unknown_identity_category")
         status = "applied" if accepted else "review"
-        append_jsonl_line(self.audit_path, {
-            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "kind": "identity_change", "category": category, "status": status,
-            "accepted": accepted, "before": current, "requested": proposed,
-            "value": value if accepted else current, "cause": cause,
-            "evidence": independent, "reasons": reasons,
-        })
-        return IdentityChangeDecision(category, status, accepted, value if accepted else current, tuple(reasons))
+        append_jsonl_line(
+            self.audit_path,
+            {
+                "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "kind": "identity_change",
+                "category": category,
+                "status": status,
+                "accepted": accepted,
+                "before": current,
+                "requested": proposed,
+                "value": value if accepted else current,
+                "cause": cause,
+                "evidence": independent,
+                "reasons": reasons,
+            },
+        )
+        return IdentityChangeDecision(
+            category, status, accepted, value if accepted else current, tuple(reasons)
+        )
 
     def evaluate_decision(
         self,
@@ -183,16 +205,20 @@ class IdentityCoherenceGuard:
     def _check_invariants(self, decision: dict[str, Any]) -> list[str]:
         violations: list[str] = []
         proposed_name = str(decision.get("life_name", "")).strip()
-        if proposed_name and self.invariants.life_name and proposed_name != self.invariants.life_name:
+        if (
+            proposed_name
+            and self.invariants.life_name
+            and proposed_name != self.invariants.life_name
+        ):
             violations.append("life_name_mismatch")
 
         decision_values = {
-            _normalize_token(v)
-            for v in decision.get("values", [])
-            if str(v).strip()
+            _normalize_token(v) for v in decision.get("values", []) if str(v).strip()
         }
         missing_values = [
-            value for value in self.invariants.cardinal_values if value not in decision_values
+            value
+            for value in self.invariants.cardinal_values
+            if value not in decision_values
         ]
         if missing_values:
             violations.append("cardinal_values_missing:" + ",".join(missing_values))
@@ -213,7 +239,9 @@ class IdentityCoherenceGuard:
                 violations.append(f"long_term_commitment_negated:{commitment}")
         return violations
 
-    def _audit_if_needed(self, *, decision: dict[str, Any], record: CoherenceDecision) -> None:
+    def _audit_if_needed(
+        self, *, decision: dict[str, Any], record: CoherenceDecision
+    ) -> None:
         if record.status == "allowed":
             return
         append_jsonl_line(
@@ -239,9 +267,15 @@ def detect_contradictions(
     """Detect proposition-level contradictions across beliefs, goals, and history."""
 
     statements: list[tuple[str, str, bool, str]] = []
-    statements.extend(_extract_statements("belief", beliefs, ("hypothesis", "statement", "name")))
-    statements.extend(_extract_statements("goal", goals, ("name", "objective", "summary")))
-    statements.extend(_extract_statements("history", history, ("summary", "event", "note")))
+    statements.extend(
+        _extract_statements("belief", beliefs, ("hypothesis", "statement", "name"))
+    )
+    statements.extend(
+        _extract_statements("goal", goals, ("name", "objective", "summary"))
+    )
+    statements.extend(
+        _extract_statements("history", history, ("summary", "event", "note"))
+    )
 
     by_canonical: dict[str, list[tuple[str, str, bool]]] = {}
     for source, text, positive, canonical in statements:

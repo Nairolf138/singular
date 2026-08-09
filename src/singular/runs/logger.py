@@ -104,7 +104,11 @@ def log_provider_event(
         payload["context_metrics"] = dict(context_metrics)
     _provider_logger.info("provider_call", extra={"payload": payload})
     try:
-        root = Path(life_root) if life_root is not None else Path(os.environ.get("SINGULAR_HOME", "."))
+        root = (
+            Path(life_root)
+            if life_root is not None
+            else Path(os.environ.get("SINGULAR_HOME", "."))
+        )
         ProviderEventsRepository(SQLiteStorage(StorageConfig(root=root))).add(payload)
     except Exception:
         _provider_logger.debug("provider_event_sqlite_persist_failed", exc_info=True)
@@ -163,7 +167,9 @@ class RunLogger:
             json.dumps(
                 {
                     "run_id": self.run_id,
-                    "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    "started_at": datetime.now(timezone.utc).isoformat(
+                        timespec="seconds"
+                    ),
                 }
             ),
             encoding="utf-8",
@@ -320,7 +326,9 @@ class RunLogger:
 
     def _write_record(self, record: dict[str, Any]) -> None:
         record.setdefault("correlation_id", self.correlation_id)
-        record["life_id"] = canonical_life_id(record.get("life_id") or self.life_id or "default")
+        record["life_id"] = canonical_life_id(
+            record.get("life_id") or self.life_id or "default"
+        )
         self._file.write(json.dumps(record) + "\n")
         self._file.flush()
         os.fsync(self._file.fileno())
@@ -328,7 +336,9 @@ class RunLogger:
 
     def _write_event(self, event_type: str, payload: dict[str, Any], ts: str) -> None:
         payload.setdefault("correlation_id", self.correlation_id)
-        payload["life_id"] = canonical_life_id(payload.get("life_id") or self.life_id or "default")
+        payload["life_id"] = canonical_life_id(
+            payload.get("life_id") or self.life_id or "default"
+        )
         event = {
             "version": EVENT_SCHEMA_VERSION,
             "event_type": event_type,

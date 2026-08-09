@@ -21,14 +21,23 @@ class StaticAudioProvider(AudioBlockProvider):
 
 
 class DummyTranscriber:
-    runtime = WhisperRuntime(device="cpu", model_size="tiny", backend="whisper", fallback_applied=True)
+    runtime = WhisperRuntime(
+        device="cpu", model_size="tiny", backend="whisper", fallback_applied=True
+    )
 
     def transcribe(self, blocks):
         start = blocks[0].started_at
         end = blocks[-1].started_at + blocks[-1].duration_s
         return {
             "text": "bonjour le monde",
-            "segments": [{"start": 0.0, "end": round(end - start, 3), "text": "bonjour le monde", "confidence": 0.86}],
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": round(end - start, 3),
+                    "text": "bonjour le monde",
+                    "confidence": 0.86,
+                }
+            ],
             "confidence": 0.86,
             "status": "ok",
             "runtime": self.runtime.__dict__,

@@ -43,9 +43,21 @@ def build_trajectory(
         except json.JSONDecodeError:
             quests_data = {}
         if isinstance(quests_data, dict):
-            active = quests_data.get("active") if isinstance(quests_data.get("active"), list) else []
-            paused = quests_data.get("paused") if isinstance(quests_data.get("paused"), list) else []
-            completed = quests_data.get("completed") if isinstance(quests_data.get("completed"), list) else []
+            active = (
+                quests_data.get("active")
+                if isinstance(quests_data.get("active"), list)
+                else []
+            )
+            paused = (
+                quests_data.get("paused")
+                if isinstance(quests_data.get("paused"), list)
+                else []
+            )
+            completed = (
+                quests_data.get("completed")
+                if isinstance(quests_data.get("completed"), list)
+                else []
+            )
 
     objective_status: dict[str, str] = {}
     for item in active:
@@ -83,12 +95,21 @@ def build_trajectory(
                 previous[objective] = new_value
 
     links: list[dict[str, object]] = []
-    major_events = {"death", "interaction", "quest", "quest_triggered", "quest_resolved", "consciousness"}
+    major_events = {
+        "death",
+        "interaction",
+        "quest",
+        "quest_triggered",
+        "quest_resolved",
+        "consciousness",
+    }
     for record in records:
         event = record.get("event")
         if not isinstance(event, str):
             continue
-        if event not in major_events and not isinstance(record.get("self_narrative_event"), str):
+        if event not in major_events and not isinstance(
+            record.get("self_narrative_event"), str
+        ):
             continue
         objective = record.get("objective")
         if not isinstance(objective, str):
@@ -110,16 +131,29 @@ def build_trajectory(
         correlation_id = record.get("correlation_id")
         if not isinstance(correlation_id, str) or not correlation_id:
             continue
-        event = record.get("event") or record.get("event_type") or (
-            "mutation" if any(key in record for key in ("op", "operator", "diff")) else "record"
+        event = (
+            record.get("event")
+            or record.get("event_type")
+            or (
+                "mutation"
+                if any(key in record for key in ("op", "operator", "diff"))
+                else "record"
+            )
         )
         item = {
             "correlation_id": correlation_id,
             "timestamp": record.get("ts", record.get("timestamp")),
             "event": event,
-            "cause": record.get("initial_cause", record.get("category", record.get("source_error_type"))),
-            "decision": record.get("decision_reason", record.get("reason", record.get("accepted"))),
-            "consequence": record.get("human_summary", record.get("result", record.get("self_narrative_event"))),
+            "cause": record.get(
+                "initial_cause", record.get("category", record.get("source_error_type"))
+            ),
+            "decision": record.get(
+                "decision_reason", record.get("reason", record.get("accepted"))
+            ),
+            "consequence": record.get(
+                "human_summary",
+                record.get("result", record.get("self_narrative_event")),
+            ),
             "life": record.get("life_id", record.get("life", record.get("organism"))),
             "corrective_action": record.get("corrective_action"),
             "mutation": record.get("operator", record.get("op")),
@@ -133,13 +167,31 @@ def build_trajectory(
     return {
         "objectives": {
             "counts": {
-                "in_progress": sum(1 for status in objective_status.values() if status == "in_progress"),
-                "abandoned": sum(1 for status in objective_status.values() if status == "abandoned"),
-                "completed": sum(1 for status in objective_status.values() if status == "completed"),
+                "in_progress": sum(
+                    1 for status in objective_status.values() if status == "in_progress"
+                ),
+                "abandoned": sum(
+                    1 for status in objective_status.values() if status == "abandoned"
+                ),
+                "completed": sum(
+                    1 for status in objective_status.values() if status == "completed"
+                ),
             },
-            "in_progress": [name for name, status in objective_status.items() if status == "in_progress"],
-            "abandoned": [name for name, status in objective_status.items() if status == "abandoned"],
-            "completed": [name for name, status in objective_status.items() if status == "completed"],
+            "in_progress": [
+                name
+                for name, status in objective_status.items()
+                if status == "in_progress"
+            ],
+            "abandoned": [
+                name
+                for name, status in objective_status.items()
+                if status == "abandoned"
+            ],
+            "completed": [
+                name
+                for name, status in objective_status.items()
+                if status == "completed"
+            ],
         },
         "priority_changes": priority_changes[-40:],
         "objective_narrative_links": links[-40:],

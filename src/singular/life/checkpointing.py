@@ -47,7 +47,9 @@ def _checkpoint_from_data(data: Mapping[str, object]) -> Checkpoint:
     defaults = asdict(Checkpoint())
     payload = {**defaults, **migrated}
     allowed_keys = set(Checkpoint.__dataclass_fields__)
-    filtered_payload = {key: value for key, value in payload.items() if key in allowed_keys}
+    filtered_payload = {
+        key: value for key, value in payload.items() if key in allowed_keys
+    }
     return Checkpoint(**filtered_payload)
 
 
@@ -62,7 +64,9 @@ def load_checkpoint(path: Path) -> Checkpoint:
         else:
             if isinstance(data, Mapping):
                 return _checkpoint_from_data(data)
-            log.warning("failed to load checkpoint from %s: root must be an object", path)
+            log.warning(
+                "failed to load checkpoint from %s: root must be an object", path
+            )
     return Checkpoint()
 
 

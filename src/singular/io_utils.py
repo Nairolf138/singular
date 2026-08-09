@@ -92,7 +92,9 @@ def _replace_with_retry(source: str, destination: Path) -> None:
     """Replace ``destination`` with ``source``, retrying transient Windows lock errors."""
 
     max_attempts = (
-        _WINDOWS_REPLACE_MAX_ATTEMPTS if _is_windows() else _DEFAULT_REPLACE_MAX_ATTEMPTS
+        _WINDOWS_REPLACE_MAX_ATTEMPTS
+        if _is_windows()
+        else _DEFAULT_REPLACE_MAX_ATTEMPTS
     )
     delay_seconds = _DEFAULT_REPLACE_INITIAL_DELAY_SECONDS
     max_delay_seconds = (

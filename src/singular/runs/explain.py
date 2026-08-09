@@ -6,9 +6,15 @@ from __future__ import annotations
 def _score_impact(score_base: float, score_new: float) -> tuple[str, str]:
     delta = score_new - score_base
     if delta < 0:
-        return ("amélioration", f"score {score_base:.3f} → {score_new:.3f} ({delta:.3f})")
+        return (
+            "amélioration",
+            f"score {score_base:.3f} → {score_new:.3f} ({delta:.3f})",
+        )
     if delta > 0:
-        return ("régression", f"score {score_base:.3f} → {score_new:.3f} (+{delta:.3f})")
+        return (
+            "régression",
+            f"score {score_base:.3f} → {score_new:.3f} (+{delta:.3f})",
+        )
     return ("stable", f"score inchangé ({score_new:.3f})")
 
 
@@ -50,7 +56,9 @@ def summarize_mutation(
         else:
             reason = "rejetée (n'apporte pas de gain mesurable)"
 
-    changed_lines = max(0, sum(1 for line in diff.splitlines() if line.startswith(("+", "-"))) - 2)
+    changed_lines = max(
+        0, sum(1 for line in diff.splitlines() if line.startswith(("+", "-"))) - 2
+    )
 
     return (
         f"op={operator}; fichier={impacted_file}; {reason}; "

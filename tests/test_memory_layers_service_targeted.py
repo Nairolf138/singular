@@ -12,10 +12,16 @@ from singular.memory_layers.service import MemoryLayerService
 def _read_jsonl(path):
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
-def test_memory_backend_put_is_atomic_and_recovers_after_replace_error(isolated_memory, monkeypatch) -> None:
+def test_memory_backend_put_is_atomic_and_recovers_after_replace_error(
+    isolated_memory, monkeypatch
+) -> None:
     _service, backend, memory_dir = isolated_memory
     backend.put("short_term", MemoryRecord(id="existing", text="old"))
     before = (memory_dir / "short_term.jsonl").read_text(encoding="utf-8")
@@ -67,7 +73,9 @@ def test_backend_deduplicates_records_by_id(isolated_memory) -> None:
     assert rows[0]["metadata"]["v"] == 2
 
 
-def test_service_recovers_after_backend_error_on_next_ingest(tmp_path, monkeypatch) -> None:
+def test_service_recovers_after_backend_error_on_next_ingest(
+    tmp_path, monkeypatch
+) -> None:
     backend = LocalJsonMemoryBackend(tmp_path)
     service = MemoryLayerService(backend, short_term_window=5, consolidate_every=10)
     calls = {"count": 0}
@@ -90,7 +98,9 @@ def test_service_recovers_after_backend_error_on_next_ingest(tmp_path, monkeypat
     assert rows[0]["text"] == "recovered"
 
 
-def test_service_extracts_semantic_facts_and_enforces_short_term_window(isolated_memory) -> None:
+def test_service_extracts_semantic_facts_and_enforces_short_term_window(
+    isolated_memory,
+) -> None:
     service, _backend, memory_dir = isolated_memory
     service.short_term_window = 2
 

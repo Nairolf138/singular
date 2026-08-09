@@ -125,7 +125,9 @@ def test_internal_policy_denials_do_not_open_global_breaker(tmp_path: Path) -> N
     assert decision.allowed is True
 
 
-def test_incident_scopes_only_allow_global_escape_to_open_breaker(tmp_path: Path) -> None:
+def test_incident_scopes_only_allow_global_escape_to_open_breaker(
+    tmp_path: Path,
+) -> None:
     policy = MutationGovernancePolicy(
         circuit_breaker_category_thresholds={"confirmed_root_escape": 1},
         circuit_state_file=tmp_path / "mem" / "governance_circuit.json",

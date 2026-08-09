@@ -54,7 +54,11 @@ class ViabilityDriftDetector:
         raw = state.get("samples", [])
         if isinstance(raw, list):
             detector.samples = [
-                {str(k): float(v) for k, v in item.items() if isinstance(v, (int, float))}
+                {
+                    str(k): float(v)
+                    for k, v in item.items()
+                    if isinstance(v, (int, float))
+                }
                 for item in raw[-detector.config.long_window :]
                 if isinstance(item, Mapping)
             ]
@@ -82,12 +86,20 @@ class ViabilityDriftDetector:
         # licence to select an organism whose direct health is critical.
         health = _clamp(float(item.get("health", 1.0)))
         risk = _clamp(float(item.get("risk", 0.0)))
-        if health <= self.config.critical_score or risk >= 1.0 - self.config.critical_score:
+        if (
+            health <= self.config.critical_score
+            or risk >= 1.0 - self.config.critical_score
+        ):
             score = min(score, self.config.critical_score)
         return score
 
-    def observe(self, metrics: Mapping[str, float]) -> tuple[ViabilityAction, str | None]:
-        normalized = {key: _clamp(float(metrics.get(key, 0.0))) for key in (*self._BENEFICIAL, *self._ADVERSE)}
+    def observe(
+        self, metrics: Mapping[str, float]
+    ) -> tuple[ViabilityAction, str | None]:
+        normalized = {
+            key: _clamp(float(metrics.get(key, 0.0)))
+            for key in (*self._BENEFICIAL, *self._ADVERSE)
+        }
         normalized["score"] = self._score(normalized)
         self.samples.append(normalized)
         self.samples = self.samples[-self.config.long_window :]
@@ -103,7 +115,10 @@ class ViabilityDriftDetector:
         drift = long_score - short_score
         degrading = drift >= self.config.drift_threshold and medium_score < long_score
         critical = short_score <= self.config.critical_score
-        recovering = abs(short_score - long_score) <= self.config.recovery_threshold and short_score > self.config.critical_score
+        recovering = (
+            abs(short_score - long_score) <= self.config.recovery_threshold
+            and short_score > self.config.critical_score
+        )
 
         if degrading or critical:
             self.degraded_cycles += 1
@@ -118,7 +133,10 @@ class ViabilityDriftDetector:
         elif recovering:
             self.stable_cycles += 1
             self.degraded_cycles = 0
-            if self.stable_cycles >= self.config.stable_cycles and self.action != "normal":
+            if (
+                self.stable_cycles >= self.config.stable_cycles
+                and self.action != "normal"
+            ):
                 self.action = "normal"
                 self.stable_cycles = 0
                 return self.action, "recovered"
@@ -133,7 +151,11 @@ class ViabilityDriftDetector:
         return {
             "state": self.action,
             "mutations_enabled": self.action in {"normal", "throttled"},
-            "mutation_interval": 2 if self.action == "throttled" else (1 if self.action == "normal" else None),
+            "mutation_interval": (
+                2
+                if self.action == "throttled"
+                else (1 if self.action == "normal" else None)
+            ),
             "degraded_cycles": self.degraded_cycles,
             "stable_cycles": self.stable_cycles,
             "samples": len(self.samples),
@@ -227,7 +249,9 @@ class HealthTracker:
             )
 
         acceptance_rate = (
-            self.accepted_count / self.total_iterations if self.total_iterations else 0.0
+            self.accepted_count / self.total_iterations
+            if self.total_iterations
+            else 0.0
         )
         sandbox_stability = 1.0 - (
             self.sandbox_failures / self.sandbox_checks if self.sandbox_checks else 0.0

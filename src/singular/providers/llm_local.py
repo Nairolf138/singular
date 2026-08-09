@@ -6,7 +6,12 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 import time
 from typing import Any
 
-from . import ProviderExecutionError, ProviderMetrics, ProviderTimeoutError, ProviderUnavailableError
+from . import (
+    ProviderExecutionError,
+    ProviderMetrics,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+)
 
 MAX_RETRIES = 1
 

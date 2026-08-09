@@ -108,7 +108,6 @@ class AgentMessage:
         )
 
 
-
 @dataclass(slots=True)
 class HelpRequest:
     """Typed request for assistance that can be serialized as AgentMessage."""
@@ -180,9 +179,13 @@ class TaskOffer:
     @classmethod
     def from_message(cls, message: AgentMessage) -> "TaskOffer":
         metadata = dict(message.payload.get("metadata", {}))
-        skill = str(metadata.get("skill") or message.payload.get("skill") or message.task)
+        skill = str(
+            metadata.get("skill") or message.payload.get("skill") or message.task
+        )
         return cls(
-            helper_id=str(message.agent_id or message.payload.get("helper_life") or "unknown"),
+            helper_id=str(
+                message.agent_id or message.payload.get("helper_life") or "unknown"
+            ),
             receiver_id=(
                 str(message.payload["receiver_id"])
                 if message.payload.get("receiver_id") is not None
@@ -216,6 +219,7 @@ class TaskOffer:
             version=2,
         )
 
+
 def _validate_payload_schema(
     payload: dict[str, Any],
     version: int,
@@ -234,7 +238,9 @@ def _validate_payload_schema(
             raise ValueError(f"invalid type for '{field_name}'")
 
 
-def validate_message_schema(payload: dict[str, Any], *, version: int | None = None) -> None:
+def validate_message_schema(
+    payload: dict[str, Any], *, version: int | None = None
+) -> None:
     """Validate payload shape and compatible protocol versions.
 
     Version 2 extends v1 with a generic ``payload`` map and keeps backward
@@ -438,7 +444,9 @@ class HelpExchangeCoordinator:
 
     def register_outcome(self, *, life_id: str, task: str, success: bool) -> None:
         key = (life_id, task)
-        bucket = self._outcomes.setdefault(key, deque(maxlen=max(1, self.success_window)))
+        bucket = self._outcomes.setdefault(
+            key, deque(maxlen=max(1, self.success_window))
+        )
         bucket.append(1 if success else 0)
 
     def success_rate(self, *, life_id: str, task: str) -> float:
@@ -447,7 +455,9 @@ class HelpExchangeCoordinator:
             return 0.0
         return sum(bucket) / len(bucket)
 
-    def emit_help_requested(self, *, requester_life: str, task: str, attempts: int) -> None:
+    def emit_help_requested(
+        self, *, requester_life: str, task: str, attempts: int
+    ) -> None:
         payload = build_help_event_payload(
             requester_life=requester_life,
             helper_life=None,
@@ -499,7 +509,9 @@ class HelpExchangeCoordinator:
         )
         if not social_gate.allowed:
             return HelpTransferResult(
-                status="blocked" if social_gate.level == "blocked" else "review_required",
+                status=(
+                    "blocked" if social_gate.level == "blocked" else "review_required"
+                ),
                 decision=social_gate.level,
                 requester_before=requester_before,
                 requester_after=requester_before,
@@ -609,7 +621,10 @@ class HelpExchangeCoordinator:
             AgentMessage(
                 intent=HELP_COMPLETED,
                 task=task,
-                evidence=[f"requester_gain:{requester_gain:.3f}", f"helper_gain:{helper_gain:.3f}"],
+                evidence=[
+                    f"requester_gain:{requester_gain:.3f}",
+                    f"helper_gain:{helper_gain:.3f}",
+                ],
                 confidence=1.0,
                 agent_id=helper_life,
                 payload=completed_payload,

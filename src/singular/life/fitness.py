@@ -32,14 +32,24 @@ def _load_simple_yaml(path: Path) -> dict[str, object]:
         try:
             parsed: object = float(scalar) if "." in scalar else int(scalar)
         except ValueError:
-            parsed = scalar.lower() == "true" if scalar.lower() in {"true", "false"} else scalar
+            parsed = (
+                scalar.lower() == "true"
+                if scalar.lower() in {"true", "false"}
+                else scalar
+            )
         parent[key] = parsed
     return root
 
 
 COMPONENTS = (
-    "functional_gain", "health", "vital_risk", "resources",
-    "sandbox_stability", "cost", "quest_progress", "identity_continuity",
+    "functional_gain",
+    "health",
+    "vital_risk",
+    "resources",
+    "sandbox_stability",
+    "cost",
+    "quest_progress",
+    "identity_continuity",
     "useful_skills_retention",
 )
 
@@ -66,8 +76,10 @@ class FitnessDecision:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "accepted": self.accepted, "useful": self.useful,
-            "durably_viable": self.viable, "fitness_before": self.fitness_before,
+            "accepted": self.accepted,
+            "useful": self.useful,
+            "durably_viable": self.viable,
+            "fitness_before": self.fitness_before,
             "fitness_after": self.fitness_after,
             "fitness_components_before": self.components_before,
             "fitness_components": self.components_after,
@@ -85,7 +97,9 @@ def load_lifecycle_fitness_config(path: Path | None = None) -> LifecycleFitnessC
     else:
         raw = _load_simple_yaml(path)
     section = raw.get("mutation_fitness", {})
-    weights = {name: float(section.get("weights", {}).get(name, 0.0)) for name in COMPONENTS}
+    weights = {
+        name: float(section.get("weights", {}).get(name, 0.0)) for name in COMPONENTS
+    }
     observation = section.get("observation", {})
     thresholds = section.get("thresholds", {})
     return LifecycleFitnessConfig(
@@ -97,8 +111,11 @@ def load_lifecycle_fitness_config(path: Path | None = None) -> LifecycleFitnessC
 
 
 def evaluate_mutation_fitness(
-    before: Mapping[str, float], after: Mapping[str, float], config: LifecycleFitnessConfig,
-    *, observations: int,
+    before: Mapping[str, float],
+    after: Mapping[str, float],
+    config: LifecycleFitnessConfig,
+    *,
+    observations: int,
 ) -> FitnessDecision:
     """Compare a candidate with its immutable pre-mutation snapshot.
 
@@ -122,8 +139,13 @@ def evaluate_mutation_fitness(
         reasons.append("combined_fitness_below_threshold")
     viable = vital_regression <= config.maximum_vital_regression
     return FitnessDecision(
-        accepted=not reasons, useful=a["functional_gain"] > b["functional_gain"],
-        viable=viable, fitness_before=score_before, fitness_after=score_after,
-        components_before=b, components_after=a,
-        rejection_reasons=tuple(reasons), observations=observations,
+        accepted=not reasons,
+        useful=a["functional_gain"] > b["functional_gain"],
+        viable=viable,
+        fitness_before=score_before,
+        fitness_after=score_after,
+        components_before=b,
+        components_after=a,
+        rejection_reasons=tuple(reasons),
+        observations=observations,
     )

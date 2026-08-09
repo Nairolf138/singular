@@ -279,8 +279,12 @@ def test_clone_life_applies_inheritance_policy_and_logs_transfers(
     source_mem = source.path / "mem"
     source_skills = source.path / "skills"
     source_skills.mkdir(parents=True, exist_ok=True)
-    (source_skills / "kept.py").write_text("def run(context=None):\n    return {'ok': True}\n", encoding="utf-8")
-    (source_skills / "dropped.py").write_text("def run(context=None):\n    return {'ok': True}\n", encoding="utf-8")
+    (source_skills / "kept.py").write_text(
+        "def run(context=None):\n    return {'ok': True}\n", encoding="utf-8"
+    )
+    (source_skills / "dropped.py").write_text(
+        "def run(context=None):\n    return {'ok': True}\n", encoding="utf-8"
+    )
 
     (source_mem / "skills.json").write_text(
         json.dumps(
@@ -306,26 +310,38 @@ def test_clone_life_applies_inheritance_policy_and_logs_transfers(
     clone_mem = clone.path / "mem"
     clone_skills = clone.path / "skills"
 
-    inherited_skills = json.loads((clone_mem / "skills.json").read_text(encoding="utf-8"))
+    inherited_skills = json.loads(
+        (clone_mem / "skills.json").read_text(encoding="utf-8")
+    )
     assert list(inherited_skills) == ["kept"]
     assert (clone_skills / "kept.py").exists()
     assert not (clone_skills / "dropped.py").exists()
 
-    memory_summary = json.loads((clone_mem / "legacy_memory_summary.json").read_text(encoding="utf-8"))
+    memory_summary = json.loads(
+        (clone_mem / "legacy_memory_summary.json").read_text(encoding="utf-8")
+    )
     assert len(memory_summary) == 1
     assert memory_summary[0]["event"] == "quest"
 
-    lessons = json.loads((clone_mem / "legacy_lessons.json").read_text(encoding="utf-8"))
+    lessons = json.loads(
+        (clone_mem / "legacy_lessons.json").read_text(encoding="utf-8")
+    )
     assert lessons["success_count"] == 1
     assert lessons["failure_count"] == 0
 
-    inheritance = json.loads((clone_mem / "inheritance_policy.json").read_text(encoding="utf-8"))
+    inheritance = json.loads(
+        (clone_mem / "inheritance_policy.json").read_text(encoding="utf-8")
+    )
     assert "inheritance_policy" in inheritance
     assert inheritance["inherited_from"] == source.slug
 
     journal_path = tmp_path / "mem" / "legacy_transfers.jsonl"
     assert journal_path.exists()
-    journal_lines = [json.loads(line) for line in journal_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    journal_lines = [
+        json.loads(line)
+        for line in journal_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     assert len(journal_lines) == 3
     assert all(item["source"] == source.slug for item in journal_lines)
     assert all(item["target"] == clone.slug for item in journal_lines)

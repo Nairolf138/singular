@@ -106,20 +106,28 @@ def _load_yaml_mapping(path: Path) -> Mapping[str, Any]:
     return payload
 
 
-def _coerce_percent(payload: Mapping[str, Any], key: str, *, min_v: float = 0.0, max_v: float = 100.0) -> float:
+def _coerce_percent(
+    payload: Mapping[str, Any], key: str, *, min_v: float = 0.0, max_v: float = 100.0
+) -> float:
     if key not in payload:
         raise HostSensorsConfigError(f"missing required key: {key}")
     raw = payload[key]
     try:
         value = float(raw)
     except (TypeError, ValueError) as exc:
-        raise HostSensorsConfigError(f"invalid numeric value for {key}: {raw!r}") from exc
+        raise HostSensorsConfigError(
+            f"invalid numeric value for {key}: {raw!r}"
+        ) from exc
     if value < min_v or value > max_v:
-        raise HostSensorsConfigError(f"value for {key} must be within [{min_v}, {max_v}]")
+        raise HostSensorsConfigError(
+            f"value for {key} must be within [{min_v}, {max_v}]"
+        )
     return value
 
 
-def _validate_threshold_order(low: float, high: float, *, low_name: str, high_name: str) -> None:
+def _validate_threshold_order(
+    low: float, high: float, *, low_name: str, high_name: str
+) -> None:
     if low >= high:
         raise HostSensorsConfigError(f"{low_name} must be < {high_name}")
 
@@ -161,8 +169,12 @@ def validate_host_sensors_payload(payload: Mapping[str, Any]) -> HostSensorThres
     cpu_critical = _coerce_percent(cpu, "critical_percent")
     ram_warning = _coerce_percent(ram, "warning_percent")
     ram_critical = _coerce_percent(ram, "critical_percent")
-    temperature_warning = _coerce_percent(temperature, "warning_c", min_v=-50.0, max_v=200.0)
-    temperature_critical = _coerce_percent(temperature, "critical_c", min_v=-50.0, max_v=200.0)
+    temperature_warning = _coerce_percent(
+        temperature, "warning_c", min_v=-50.0, max_v=200.0
+    )
+    temperature_critical = _coerce_percent(
+        temperature, "critical_c", min_v=-50.0, max_v=200.0
+    )
     disk_critical = _coerce_percent(disk, "critical_percent")
 
     _validate_threshold_order(
@@ -243,9 +255,13 @@ def load_host_sensor_thresholds(path: Path | None = None) -> HostSensorThreshold
         try:
             override_payload = json.loads(overrides_raw)
         except json.JSONDecodeError as exc:
-            raise HostSensorsConfigError(f"invalid JSON in {ENV_HOST_SENSORS_OVERRIDES}") from exc
+            raise HostSensorsConfigError(
+                f"invalid JSON in {ENV_HOST_SENSORS_OVERRIDES}"
+            ) from exc
         if not isinstance(override_payload, Mapping):
-            raise HostSensorsConfigError(f"{ENV_HOST_SENSORS_OVERRIDES} must contain a JSON mapping")
+            raise HostSensorsConfigError(
+                f"{ENV_HOST_SENSORS_OVERRIDES} must contain a JSON mapping"
+            )
         base_payload = _merge_nested(base_payload, dict(override_payload))
 
     return validate_host_sensors_payload(base_payload)

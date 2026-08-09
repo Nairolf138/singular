@@ -16,7 +16,6 @@ from ..meta.dsl import MetaSpec, ALLOWED_MUTABLE_SURFACES
 from ..meta.evolve import propose_mutation as mutate_meta
 from ..meta.phantom import replay_snapshots
 
-
 META_MUTATION_LOG = Path("life/meta_mutation_log")
 
 
@@ -105,7 +104,10 @@ def run(
                 _validate_meta_invariants(proposed, baseline)
                 # 3) rollback automatic via baseline retained unless promoted
                 # 4) conditional promotion
-                if proposed.population_cap >= baseline.population_cap and sandbox_metrics["safety"] >= 0:
+                if (
+                    proposed.population_cap >= baseline.population_cap
+                    and sandbox_metrics["safety"] >= 0
+                ):
                     meta = proposed
                     result = "promoted"
                     impact = "potential long-term exploration gain"
@@ -113,7 +115,9 @@ def run(
                 else:
                     logger.log({"event": "meta_rejected", "generation": gen})
             except Exception as exc:
-                logger.log({"event": "meta_rollback", "generation": gen, "error": str(exc)})
+                logger.log(
+                    {"event": "meta_rollback", "generation": gen, "error": str(exc)}
+                )
             _append_meta_mutation(
                 {
                     "generation": gen,

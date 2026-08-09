@@ -13,7 +13,11 @@ from singular.runs.generations import get_generations_path, record_generation
 
 
 def _read_jsonl(path: Path) -> list[dict]:
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
 
 
 def test_generation_timestamp_is_timezone_aware_without_deprecation_warning(
@@ -43,7 +47,9 @@ def test_generation_timestamp_is_timezone_aware_without_deprecation_warning(
     assert timestamp.utcoffset() == timezone.utc.utcoffset(timestamp)
 
 
-def test_generation_registry_stays_coherent_with_run_events(tmp_path: Path, monkeypatch) -> None:
+def test_generation_registry_stays_coherent_with_run_events(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir(parents=True, exist_ok=True)
@@ -75,7 +81,9 @@ def test_generation_registry_stays_coherent_with_run_events(tmp_path: Path, monk
     assert candidate_paths
     events_path = max(candidate_paths, key=lambda p: p.stat().st_mtime)
     events = _read_jsonl(events_path)
-    mutation_events = [entry for entry in events if entry.get("event_type") == "mutation"]
+    mutation_events = [
+        entry for entry in events if entry.get("event_type") == "mutation"
+    ]
     assert mutation_events
     mutation_payload = mutation_events[-1]["payload"]
 
@@ -84,7 +92,9 @@ def test_generation_registry_stays_coherent_with_run_events(tmp_path: Path, monk
     assert generation["score"]["new"] == mutation_payload["score_new"]
 
 
-def test_cli_rollback_generation_restores_stable_snapshot(tmp_path: Path, monkeypatch) -> None:
+def test_cli_rollback_generation_restores_stable_snapshot(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setenv("SINGULAR_ROOT", str(tmp_path))
     metadata = bootstrap_life("Rollback Life")
     monkeypatch.setenv("SINGULAR_HOME", str(metadata.path))
@@ -112,15 +122,17 @@ def test_cli_rollback_generation_restores_stable_snapshot(tmp_path: Path, monkey
 
     skill_path.write_text("def f():\n    return 999\n", encoding="utf-8")
 
-    exit_code = cli.main([
-        "--root",
-        str(tmp_path),
-        "--life",
-        metadata.slug,
-        "rollback",
-        "--generation",
-        str(generation["generation_id"]),
-    ])
+    exit_code = cli.main(
+        [
+            "--root",
+            str(tmp_path),
+            "--life",
+            metadata.slug,
+            "rollback",
+            "--generation",
+            str(generation["generation_id"]),
+        ]
+    )
 
     assert exit_code == 0
     assert "return 2" in skill_path.read_text(encoding="utf-8")

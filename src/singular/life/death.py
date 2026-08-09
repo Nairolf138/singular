@@ -40,7 +40,9 @@ class DeathMonitor:
         assert self.homeostasis_history is not None
         self.homeostasis_history.append(bool(homeostasis_viable))
         if len(self.homeostasis_history) == self.homeostasis_history.maxlen:
-            viable_ratio = sum(1 for v in self.homeostasis_history if v) / len(self.homeostasis_history)
+            viable_ratio = sum(1 for v in self.homeostasis_history if v) / len(
+                self.homeostasis_history
+            )
             if viable_ratio < self.homeostasis_viability_min_ratio:
                 return True, "homeostasis collapse"
 

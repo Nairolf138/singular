@@ -49,7 +49,13 @@ class ResourceManager:
                 data = json.loads(self.path.read_text(encoding="utf-8"))
             except Exception:
                 return
-            for field in ("energy", "food", "warmth", "ecological_debt", "relational_debt"):
+            for field in (
+                "energy",
+                "food",
+                "warmth",
+                "ecological_debt",
+                "relational_debt",
+            ):
                 if field in data:
                     setattr(self, field, float(data[field]))
 
@@ -133,8 +139,12 @@ class ResourceManager:
         rel_norm = 0.0
         delayed_risk = 0.0
         if isinstance(dynamics, dict):
-            eco_norm = max(0.0, min(1.0, float(dynamics.get("ecological_debt", 0.0)) / 100.0))
-            rel_norm = max(0.0, min(1.0, float(dynamics.get("relational_debt", 0.0)) / 100.0))
+            eco_norm = max(
+                0.0, min(1.0, float(dynamics.get("ecological_debt", 0.0)) / 100.0)
+            )
+            rel_norm = max(
+                0.0, min(1.0, float(dynamics.get("relational_debt", 0.0)) / 100.0)
+            )
         if isinstance(signals, dict):
             delayed_risk = max(0.0, min(1.0, float(signals.get("delayed_risk", 0.0))))
 
@@ -173,11 +183,21 @@ class ResourceManager:
                 "trace_id": uuid4().hex,
                 "pipeline": "environment.resource_manager",
                 "input": {"kind": "world_event", "temperature_c": temp},
-                "decision": {"temperature_delta_from_neutral": round(diff, 3), "selected": decision},
-                "action": {"kind": decision, "warmth_before": round(before, 3), "warmth_after": round(after, 3)},
+                "decision": {
+                    "temperature_delta_from_neutral": round(diff, 3),
+                    "selected": decision,
+                },
+                "action": {
+                    "kind": decision,
+                    "warmth_before": round(before, 3),
+                    "warmth_after": round(after, 3),
+                },
                 "result": {
                     "gain_loss": delta,
-                    "objective_impact": {"objective": "homeostasis.warmth", "impact": delta},
+                    "objective_impact": {
+                        "objective": "homeostasis.warmth",
+                        "impact": delta,
+                    },
                 },
             }
         )
@@ -212,7 +232,10 @@ class ResourceManager:
             return CapabilityStatus.UNSTABLE
         if self.food < self.minimum_viable_food:
             return CapabilityStatus.STARVING
-        if self.energy < self.minimum_viable_energy or self.warmth < self.minimum_viable_warmth:
+        if (
+            self.energy < self.minimum_viable_energy
+            or self.warmth < self.minimum_viable_warmth
+        ):
             return CapabilityStatus.FATIGUED
         return CapabilityStatus.VIABLE
 
@@ -220,7 +243,9 @@ class ResourceManager:
         state = self.viability_state()
         if state in {CapabilityStatus.STARVING, CapabilityStatus.UNSTABLE}:
             return False, state
-        if capability == "mutation" and self.energy < (self.minimum_viable_energy + 4.0):
+        if capability == "mutation" and self.energy < (
+            self.minimum_viable_energy + 4.0
+        ):
             return False, CapabilityStatus.FATIGUED
         return True, state
 

@@ -33,7 +33,9 @@ def _send_messages_worker(path: str, start: int, count: int) -> None:
         )
 
 
-def _append_collective_worker(root: str, namespace: str, start: int, count: int) -> None:
+def _append_collective_worker(
+    root: str, namespace: str, start: int, count: int
+) -> None:
     memory = CollectiveMemory(Path(root), namespace)
     for idx in range(start, start + count):
         memory.append({"kind": "mp", "id": idx})
@@ -334,7 +336,9 @@ def test_atomic_write_text_flushes_and_fsyncs_and_creates_parent(
         unlink_calls.append(path)
         raise FileNotFoundError
 
-    monkeypatch.setattr(protocol_module.tempfile, "NamedTemporaryFile", _fake_named_tempfile)
+    monkeypatch.setattr(
+        protocol_module.tempfile, "NamedTemporaryFile", _fake_named_tempfile
+    )
     monkeypatch.setattr(protocol_module.os, "fsync", fsync_mock)
     monkeypatch.setattr(protocol_module.os, "replace", replace_mock)
     monkeypatch.setattr(protocol_module.os, "unlink", _fake_unlink)

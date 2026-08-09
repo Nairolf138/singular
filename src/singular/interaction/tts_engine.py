@@ -50,7 +50,9 @@ class Prosody:
         return Prosody(
             rate=max(bounds.min_rate, min(bounds.max_rate, self.rate)),
             pitch=max(bounds.min_pitch, min(bounds.max_pitch, self.pitch)),
-            intensity=max(bounds.min_intensity, min(bounds.max_intensity, self.intensity)),
+            intensity=max(
+                bounds.min_intensity, min(bounds.max_intensity, self.intensity)
+            ),
         )
 
 

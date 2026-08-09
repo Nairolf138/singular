@@ -39,15 +39,23 @@ def _is_proactive_record(record: dict[str, Any]) -> bool:
     if isinstance(proactive, bool):
         return proactive
     event = record.get("event")
-    return event in {"mutation", "interaction", "test_coevolution"} or "score_new" in record
+    return (
+        event in {"mutation", "interaction", "test_coevolution"}
+        or "score_new" in record
+    )
 
 
 def _is_voluntary_budget_record(record: dict[str, Any]) -> bool:
     event = str(record.get("event", "")).strip().lower()
-    return record.get("voluntary_budget") is True or event in {"loop.budget_exhausted", "daemon.budget_exhausted"}
+    return record.get("voluntary_budget") is True or event in {
+        "loop.budget_exhausted",
+        "daemon.budget_exhausted",
+    }
 
 
-def compute_autonomy_metrics(records: list[dict[str, Any]]) -> dict[str, float | dict[str, float] | None]:
+def compute_autonomy_metrics(
+    records: list[dict[str, Any]],
+) -> dict[str, float | dict[str, float] | None]:
     """Compute autonomy-oriented metrics from run records.
 
     ``autonomy_index`` deliberately excludes voluntary wall-clock budget markers so
@@ -55,9 +63,15 @@ def compute_autonomy_metrics(records: list[dict[str, Any]]) -> dict[str, float |
     loss of autonomy or death.
     """
 
-    effective_records = [record for record in records if not _is_voluntary_budget_record(record)]
-    action_records = [record for record in effective_records if _is_action_record(record)]
-    proactive_records = [record for record in action_records if _is_proactive_record(record)]
+    effective_records = [
+        record for record in records if not _is_voluntary_budget_record(record)
+    ]
+    action_records = [
+        record for record in effective_records if _is_action_record(record)
+    ]
+    proactive_records = [
+        record for record in action_records if _is_proactive_record(record)
+    ]
     proactive_rate = (
         len(proactive_records) / len(action_records) if action_records else None
     )
@@ -79,7 +93,9 @@ def compute_autonomy_metrics(records: list[dict[str, Any]]) -> dict[str, float |
     reference = score_series if score_series else health_scores
     long_term_stability = None
     if len(reference) >= 2:
-        deltas = [abs(reference[idx] - reference[idx - 1]) for idx in range(1, len(reference))]
+        deltas = [
+            abs(reference[idx] - reference[idx - 1]) for idx in range(1, len(reference))
+        ]
         avg_delta = mean(deltas) if deltas else 0.0
         long_term_stability = max(0.0, min(1.0, 1.0 - (avg_delta / 10.0)))
 
@@ -162,9 +178,19 @@ def compute_autonomy_metrics(records: list[dict[str, Any]]) -> dict[str, float |
     if resource_costs and total_positive_gain > 0:
         resource_cost_per_gain = sum(resource_costs) / total_positive_gain
 
-    autonomy_components = [value for value in (proactive_rate, long_term_stability, acceptance_rate) if value is not None]
-    autonomy_index = round((sum(autonomy_components) / len(autonomy_components)) * 100.0, 1) if autonomy_components else None
-    mutation_viability = round((acceptance_rate or 0.0) * 100.0, 1) if decisions else None
+    autonomy_components = [
+        value
+        for value in (proactive_rate, long_term_stability, acceptance_rate)
+        if value is not None
+    ]
+    autonomy_index = (
+        round((sum(autonomy_components) / len(autonomy_components)) * 100.0, 1)
+        if autonomy_components
+        else None
+    )
+    mutation_viability = (
+        round((acceptance_rate or 0.0) * 100.0, 1) if decisions else None
+    )
 
     return {
         "autonomy_index": autonomy_index,
@@ -181,5 +207,7 @@ def compute_autonomy_metrics(records: list[dict[str, Any]]) -> dict[str, float |
         },
         "perception_to_action_latency_ms": perception_to_action_latency_ms,
         "resource_cost_per_gain": resource_cost_per_gain,
-        "mean_score_gain": (total_gain / len(action_records) if action_records else None),
+        "mean_score_gain": (
+            total_gain / len(action_records) if action_records else None
+        ),
     }

@@ -71,7 +71,12 @@ LEGACY_STATUS_CONVERSIONS: dict[str, dict[str, str | None]] = {
 }
 
 OPERATOR_ACTIONS: tuple[str, ...] = (
-    "archive", "talk", "emergency_stop", "lives_use", "memorial", "clone"
+    "archive",
+    "talk",
+    "emergency_stop",
+    "lives_use",
+    "memorial",
+    "clone",
 )
 _RUNNABLE_OPERATOR_ACTIONS = frozenset({"archive", "talk", "emergency_stop"})
 

@@ -93,7 +93,9 @@ class MoralDecisionEngine:
         action = _coerce_action(action)
         consequences = tuple(_coerce(Consequence, item) for item in consequences)
         parties = tuple(_coerce(AffectedParty, item) for item in affected_parties)
-        commitments = tuple(_coerce(IdentityCommitment, item) for item in identity_commitments)
+        commitments = tuple(
+            _coerce(IdentityCommitment, item) for item in identity_commitments
+        )
         uncertainty = _unit(uncertainty)
         party_by_id = {party.identifier: party for party in parties}
 
@@ -112,24 +114,33 @@ class MoralDecisionEngine:
             benefit_total += expected_benefit
             if expected_harm:
                 threatened.update(effect.values)
-                harms.append({
-                    "description": effect.description,
-                    "affected_party": effect.affected_party,
-                    "expected_harm": round(expected_harm, 6),
-                    "irreversible": effect.irreversible,
-                    "violates_rights": effect.violates_rights,
-                })
+                harms.append(
+                    {
+                        "description": effect.description,
+                        "affected_party": effect.affected_party,
+                        "expected_harm": round(expected_harm, 6),
+                        "irreversible": effect.irreversible,
+                        "violates_rights": effect.violates_rights,
+                    }
+                )
             if expected_benefit:
                 supported.update(effect.values)
             if effect.violates_rights:
                 rights_risk += exposure
                 veto_reasons.append(f"violation des droits: {effect.description}")
-            if effect.irreversible and _unit(effect.harm) >= self.catastrophic_harm_threshold:
-                veto_reasons.append(f"préjudice grave et irréversible: {effect.description}")
+            if (
+                effect.irreversible
+                and _unit(effect.harm) >= self.catastrophic_harm_threshold
+            ):
+                veto_reasons.append(
+                    f"préjudice grave et irréversible: {effect.description}"
+                )
 
         for commitment in commitments:
             if commitment.absolute and commitment.value in threatened:
-                veto_reasons.append(f"engagement identitaire absolu menacé: {commitment.value}")
+                veto_reasons.append(
+                    f"engagement identitaire absolu menacé: {commitment.value}"
+                )
 
         conflicts = tuple(sorted(supported & threatened))
         # Uncertainty is a precautionary cost rather than invented evidence of harm.
@@ -138,13 +149,19 @@ class MoralDecisionEngine:
             "beneficence": round(min(1.0, benefit_total), 6),
             "non_maleficence": round(max(0.0, 1.0 - min(1.0, harm_total)), 6),
             "rights_and_consent": round(max(0.0, 1.0 - min(1.0, rights_risk)), 6),
-            "identity_coherence": round(_identity_score(commitments, supported, threatened), 6),
+            "identity_coherence": round(
+                _identity_score(commitments, supported, threatened), 6
+            ),
             "certainty": round(1.0 - uncertainty, 6),
-            "overall": round(max(-1.0, min(1.0, benefit_total - harm_total - precaution)), 6),
+            "overall": round(
+                max(-1.0, min(1.0, benefit_total - harm_total - precaution)), 6
+            ),
         }
         veto = bool(veto_reasons)
         conditions = _alternative_conditions(harms, uncertainty, conflicts)
-        explanation = _explain(action, scores, conflicts, harms, veto_reasons, uncertainty)
+        explanation = _explain(
+            action, scores, conflicts, harms, veto_reasons, uncertainty
+        )
         decision = MoralDecision(
             action=action,
             scores=scores,
@@ -187,24 +204,48 @@ def _coerce(cls: type, value: Any) -> Any:
     return value if isinstance(value, cls) else cls(**dict(value))
 
 
-def _identity_score(commitments: tuple[IdentityCommitment, ...], supported: set[str], threatened: set[str]) -> float:
+def _identity_score(
+    commitments: tuple[IdentityCommitment, ...],
+    supported: set[str],
+    threatened: set[str],
+) -> float:
     if not commitments:
         return 1.0
     total = sum(max(0.0, item.weight) for item in commitments) or 1.0
-    score = sum(max(0.0, item.weight) * (1 if item.value in supported else -1 if item.value in threatened else 0) for item in commitments)
+    score = sum(
+        max(0.0, item.weight)
+        * (1 if item.value in supported else -1 if item.value in threatened else 0)
+        for item in commitments
+    )
     return max(0.0, min(1.0, 0.5 + score / (2 * total)))
 
 
-def _alternative_conditions(harms: list[dict[str, Any]], uncertainty: float, conflicts: tuple[str, ...]) -> tuple[str, ...]:
-    conditions = [f"réduire ou obtenir le consentement de {item['affected_party']}" for item in harms]
+def _alternative_conditions(
+    harms: list[dict[str, Any]], uncertainty: float, conflicts: tuple[str, ...]
+) -> tuple[str, ...]:
+    conditions = [
+        f"réduire ou obtenir le consentement de {item['affected_party']}"
+        for item in harms
+    ]
     if uncertainty >= 0.6:
-        conditions.append("obtenir des informations supplémentaires ou rendre l'action réversible")
+        conditions.append(
+            "obtenir des informations supplémentaires ou rendre l'action réversible"
+        )
     if conflicts:
-        conditions.append("préserver explicitement les valeurs en conflit: " + ", ".join(conflicts))
+        conditions.append(
+            "préserver explicitement les valeurs en conflit: " + ", ".join(conflicts)
+        )
     return tuple(dict.fromkeys(conditions))
 
 
-def _explain(action: MoralAction, scores: Mapping[str, float], conflicts: tuple[str, ...], harms: list[dict[str, Any]], veto: list[str], uncertainty: float) -> str:
+def _explain(
+    action: MoralAction,
+    scores: Mapping[str, float],
+    conflicts: tuple[str, ...],
+    harms: list[dict[str, Any]],
+    veto: list[str],
+    uncertainty: float,
+) -> str:
     outcome = "veto" if veto else "acceptable sous réserve"
     details = f"{len(harms)} préjudice(s) anticipé(s), incertitude {uncertainty:.2f}"
     conflict_text = f", conflit: {', '.join(conflicts)}" if conflicts else ""

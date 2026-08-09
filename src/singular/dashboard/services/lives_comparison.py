@@ -10,7 +10,6 @@ from singular.life.life_status import (
     operator_action_capabilities,
 )
 
-
 _RECENT_ACTIVITY_EVENTS = {
     "mutation",
     "interaction",
@@ -27,48 +26,95 @@ _DECISION_EVENTS = {"decision", "consciousness", "plan", "evaluate"}
 _ACTION_EVENTS = {"action", "mutation", "interaction", "act", "execute"}
 _INTERACTION_EVENTS = {"interaction", "conversation", "talk", "message"}
 _OBJECTIVE_EVENTS = {"quest", "quest_triggered", "objective", "goal"}
-_PROGRESS_EVENTS = {"quest_resolved", "objective_progress", "objective_completed", "goal_progress"}
+_PROGRESS_EVENTS = {
+    "quest_resolved",
+    "objective_progress",
+    "objective_completed",
+    "goal_progress",
+}
 
 _SERIES_METRICS = (
-    "health", "energy", "mood", "autonomy", "liveliness", "objectives",
-    "interactions", "accepted_mutations", "failures",
+    "health",
+    "energy",
+    "mood",
+    "autonomy",
+    "liveliness",
+    "objectives",
+    "interactions",
+    "accepted_mutations",
+    "failures",
 )
 
 _LIVENESS_FORMULA_VERSION = "liveness-v1.0"
 
 
-def _data_freshness(records: list[dict[str, object]], reference: datetime) -> dict[str, object]:
-    timestamps = [parsed for record in records if (parsed := parse_ts(record.get("ts"))) is not None]
+def _data_freshness(
+    records: list[dict[str, object]], reference: datetime
+) -> dict[str, object]:
+    timestamps = [
+        parsed
+        for record in records
+        if (parsed := parse_ts(record.get("ts"))) is not None
+    ]
     if not timestamps:
         return {"last_observation_at": None, "age_seconds": None, "status": "missing"}
     latest = max(timestamps)
     age_seconds = max(0, int((reference - latest).total_seconds()))
-    status = "fresh" if age_seconds <= 86_400 else "stale" if age_seconds <= 604_800 else "expired"
-    return {"last_observation_at": latest.isoformat(), "age_seconds": age_seconds, "status": status}
+    status = (
+        "fresh"
+        if age_seconds <= 86_400
+        else "stale" if age_seconds <= 604_800 else "expired"
+    )
+    return {
+        "last_observation_at": latest.isoformat(),
+        "age_seconds": age_seconds,
+        "status": status,
+    }
 
 
 def _component_recommendations(components: dict[str, dict[str, object]]) -> list[str]:
     """Return actions tied to an observed deficient component, never generic alerts."""
     recommendations: list[str] = []
     if float(components["interactions"]["score"]) == 0.0:
-        recommendations.append("Initier un échange ciblé : aucune interaction observée depuis 7 jours.")
+        recommendations.append(
+            "Initier un échange ciblé : aucune interaction observée depuis 7 jours."
+        )
     if float(components["recent_activity"]["score"]) == 0.0:
-        recommendations.append("Planifier une action concrète : aucune activité qualifiante observée depuis 24 h.")
+        recommendations.append(
+            "Planifier une action concrète : aucune activité qualifiante observée depuis 24 h."
+        )
     if not components["perception_decision_action_loop"]["completed"]:
-        recommendations.append("Exécuter une boucle perception → décision → action : aucune boucle complète observée sur 48 h.")
+        recommendations.append(
+            "Exécuter une boucle perception → décision → action : aucune boucle complète observée sur 48 h."
+        )
     objectives = components["active_objectives_progress"]
-    if int(objectives["active_objectives"]) > 0 and int(objectives["progress_events"]) == 0:
-        recommendations.append("Faire progresser un objectif actif : aucun événement de progression n'est observé.")
+    if (
+        int(objectives["active_objectives"]) > 0
+        and int(objectives["progress_events"]) == 0
+    ):
+        recommendations.append(
+            "Faire progresser un objectif actif : aucun événement de progression n'est observé."
+        )
     return recommendations
 
 
 def build_life_timeseries(
-    records: list[dict[str, object]], *, life: str, time_window: str = "24h",
-    resolution: str = "hour", limit: int = 500, mutation_index: int | None = None,
+    records: list[dict[str, object]],
+    *,
+    life: str,
+    time_window: str = "24h",
+    resolution: str = "hour",
+    limit: int = 500,
+    mutation_index: int | None = None,
     record_run_id: Callable[[dict[str, object]], str] = lambda _: "unknown",
 ) -> dict[str, object]:
     """Build a bounded, bucketed chronology while retaining source evidence links."""
-    windows = {"24h": timedelta(hours=24), "7d": timedelta(days=7), "30d": timedelta(days=30), "all": None}
+    windows = {
+        "24h": timedelta(hours=24),
+        "7d": timedelta(days=7),
+        "30d": timedelta(days=30),
+        "all": None,
+    }
     resolutions = {"raw": None, "hour": timedelta(hours=1), "day": timedelta(days=1)}
     if time_window not in windows:
         raise ValueError("time_window must be one of: 24h, 7d, 30d, all")
@@ -77,9 +123,18 @@ def build_life_timeseries(
     if not 1 <= limit <= 1000:
         raise ValueError("limit must be between 1 and 1000")
 
-    dated = [(ts, rec) for rec in records if (ts := parse_ts(rec.get("ts"))) is not None]
+    dated = [
+        (ts, rec) for rec in records if (ts := parse_ts(rec.get("ts"))) is not None
+    ]
     dated.sort(key=lambda item: item[0])
-    mutation_rows = [(ts, rec) for ts, rec in dated if any(k in rec for k in ("accepted", "ok", "score_base", "score_new", "operator", "op"))]
+    mutation_rows = [
+        (ts, rec)
+        for ts, rec in dated
+        if any(
+            k in rec
+            for k in ("accepted", "ok", "score_base", "score_new", "operator", "op")
+        )
+    ]
     mutation_indexes = {id(rec): index for index, (_, rec) in enumerate(mutation_rows)}
     pivot = None
     if mutation_index is not None:
@@ -107,52 +162,112 @@ def build_life_timeseries(
             bucket_ts = ts.replace(minute=0, second=0, microsecond=0)
         elif step == timedelta(days=1):
             bucket_ts = ts.replace(hour=0, minute=0, second=0, microsecond=0)
-        key = (bucket_ts.isoformat() if step else ts.isoformat())
-        bucket = buckets.setdefault(key, {"timestamp": key, "values": {metric: [] for metric in _SERIES_METRICS}, "events": [], "proofs": []})
+        key = bucket_ts.isoformat() if step else ts.isoformat()
+        bucket = buckets.setdefault(
+            key,
+            {
+                "timestamp": key,
+                "values": {metric: [] for metric in _SERIES_METRICS},
+                "events": [],
+                "proofs": [],
+            },
+        )
         values = bucket["values"]
         assert isinstance(values, dict)
         event = _normalized_event(rec)
-        accepted = rec.get("accepted") if isinstance(rec.get("accepted"), bool) else rec.get("ok")
+        accepted = (
+            rec.get("accepted")
+            if isinstance(rec.get("accepted"), bool)
+            else rec.get("ok")
+        )
         samples = {
-            "health": number(rec, "health", "health_score"), "energy": number(rec, "energy"),
-            "mood": number(rec, "mood", "humeur"), "autonomy": number(rec, "autonomy", "autonomy_index"),
+            "health": number(rec, "health", "health_score"),
+            "energy": number(rec, "energy"),
+            "mood": number(rec, "mood", "humeur"),
+            "autonomy": number(rec, "autonomy", "autonomy_index"),
             "liveliness": number(rec, "liveliness", "liveness", "vivacity"),
             "objectives": number(rec, "objectives", "objectives_count"),
             "interactions": 1.0 if event in _INTERACTION_EVENTS else None,
             "accepted_mutations": 1.0 if accepted is True else None,
-            "failures": 1.0 if accepted is False or event in {"failure", "error", "mutation_failed"} else None,
+            "failures": (
+                1.0
+                if accepted is False or event in {"failure", "error", "mutation_failed"}
+                else None
+            ),
         }
         for metric, value in samples.items():
             if value is not None:
                 values[metric].append(value)
         run_id = record_run_id(rec)
-        proof = {"timestamp": ts.isoformat(), "event": event or "observation", "run_id": run_id,
-                 "href": f"/api/runs/{quote(run_id, safe='')}/timeline?page=1&page_size=120"}
+        proof = {
+            "timestamp": ts.isoformat(),
+            "event": event or "observation",
+            "run_id": run_id,
+            "href": f"/api/runs/{quote(run_id, safe='')}/timeline?page=1&page_size=120",
+        }
         bucket["proofs"].append(proof)
-        notable = event in (_OBJECTIVE_EVENTS | _PROGRESS_EVENTS | _INTERACTION_EVENTS | {"mutation", "death", "birth", "skill_acquired", "skill_lost"})
-        if notable or any(key in rec for key in ("objective", "skill", "accepted", "ok")):
-            bucket["events"].append({**proof, "objective": rec.get("objective"), "skill": rec.get("skill"), "accepted": accepted,
-                                     "mutation_index": mutation_indexes.get(id(rec))})
+        notable = event in (
+            _OBJECTIVE_EVENTS
+            | _PROGRESS_EVENTS
+            | _INTERACTION_EVENTS
+            | {"mutation", "death", "birth", "skill_acquired", "skill_lost"}
+        )
+        if notable or any(
+            key in rec for key in ("objective", "skill", "accepted", "ok")
+        ):
+            bucket["events"].append(
+                {
+                    **proof,
+                    "objective": rec.get("objective"),
+                    "skill": rec.get("skill"),
+                    "accepted": accepted,
+                    "mutation_index": mutation_indexes.get(id(rec)),
+                }
+            )
 
     points = list(buckets.values())[-limit:]
     for point in points:
         values = point["values"]
         for metric, samples in values.items():
-            values[metric] = (round(sum(samples) / len(samples), 3) if samples and metric not in {"interactions", "accepted_mutations", "failures"} else sum(samples)) if samples else None
+            values[metric] = (
+                (
+                    round(sum(samples) / len(samples), 3)
+                    if samples
+                    and metric not in {"interactions", "accepted_mutations", "failures"}
+                    else sum(samples)
+                )
+                if samples
+                else None
+            )
     comparison = None
     if pivot is not None:
         before = [p for p in points if parse_ts(p["timestamp"]) < pivot]
         after = [p for p in points if parse_ts(p["timestamp"]) >= pivot]
-        comparison = {"mutation_index": mutation_index, "pivot": pivot.isoformat(), "before": _series_averages(before), "after": _series_averages(after)}
-    return {"life": life, "window": time_window, "resolution": resolution, "limit": limit,
-            "count": len(points), "truncated": len(buckets) > limit, "metrics": list(_SERIES_METRICS),
-            "points": points, "mutation_comparison": comparison}
+        comparison = {
+            "mutation_index": mutation_index,
+            "pivot": pivot.isoformat(),
+            "before": _series_averages(before),
+            "after": _series_averages(after),
+        }
+    return {
+        "life": life,
+        "window": time_window,
+        "resolution": resolution,
+        "limit": limit,
+        "count": len(points),
+        "truncated": len(buckets) > limit,
+        "metrics": list(_SERIES_METRICS),
+        "points": points,
+        "mutation_comparison": comparison,
+    }
 
 
 def _series_averages(points: list[dict[str, object]]) -> dict[str, float | None]:
     result: dict[str, float | None] = {}
     for metric in _SERIES_METRICS:
-        values = [p["values"][metric] for p in points if p["values"].get(metric) is not None]
+        values = [
+            p["values"][metric] for p in points if p["values"].get(metric) is not None
+        ]
         result[metric] = round(sum(values) / len(values), 3) if values else None
     return result
 
@@ -233,8 +348,12 @@ def _is_voluntary_budget_record(record: dict[str, object]) -> bool:
 
 def compute_mutation_viability(records: list[dict[str, object]]) -> dict[str, object]:
     mutation_records = [
-        record for record in records
-        if any(key in record for key in ("score_base", "score_new", "accepted", "ok", "operator", "op"))
+        record
+        for record in records
+        if any(
+            key in record
+            for key in ("score_base", "score_new", "accepted", "ok", "operator", "op")
+        )
     ]
     decided = []
     useful = 0
@@ -256,19 +375,36 @@ def compute_mutation_viability(records: list[dict[str, object]]) -> dict[str, ob
             and float(score_new) < float(score_base)
         )
         health = record.get("health")
-        has_health = isinstance(health, dict) and isinstance(health.get("score"), (int, float))
+        has_health = isinstance(health, dict) and isinstance(
+            health.get("score"), (int, float)
+        )
         explicitly_useful = record.get("useful")
         durably_viable = record.get("durably_viable")
         if accepted is True and durably_viable is not False:
             viable += 1
-        if accepted is True and (explicitly_useful is True or (explicitly_useful is None and (improved or has_health))):
+        if accepted is True and (
+            explicitly_useful is True
+            or (explicitly_useful is None and (improved or has_health))
+        ):
             useful += 1
     score = None
     if mutation_records:
-        acceptance = sum(1 for value in decided if value) / len(decided) if decided else 0.0
+        acceptance = (
+            sum(1 for value in decided if value) / len(decided) if decided else 0.0
+        )
         usefulness = useful / len(mutation_records)
         failure_penalty = failures / len(mutation_records)
-        score = round(max(0.0, min(1.0, (acceptance * 0.5) + (usefulness * 0.5) - (failure_penalty * 0.25))) * 100.0, 1)
+        score = round(
+            max(
+                0.0,
+                min(
+                    1.0,
+                    (acceptance * 0.5) + (usefulness * 0.5) - (failure_penalty * 0.25),
+                ),
+            )
+            * 100.0,
+            1,
+        )
     return {
         "score": score,
         "mutation_count": len(mutation_records),
@@ -286,18 +422,35 @@ def compute_liveness_index(
 ) -> dict[str, object]:
     reference = now or datetime.now(timezone.utc)
     sorted_records = sorted(records, key=lambda rec: str(rec.get("ts", "")))
-    autonomy_records = [record for record in sorted_records if not _is_voluntary_budget_record(record)]
+    autonomy_records = [
+        record for record in sorted_records if not _is_voluntary_budget_record(record)
+    ]
     budgeted_periods_ignored = len(sorted_records) - len(autonomy_records)
     recent_cutoff = reference - timedelta(hours=24)
     loop_cutoff = reference - timedelta(hours=48)
     interaction_cutoff = reference - timedelta(days=7)
 
     component_details: dict[str, dict[str, object]] = {
-        "recent_activity": {"score": 0.0, "count": 0, "cutoff": recent_cutoff.isoformat()},
-        "perception_decision_action_loop": {"score": 0.0, "completed": False, "window_hours": 48},
-        "active_objectives_progress": {"score": 0.0, "active_objectives": 0, "progress_events": 0},
+        "recent_activity": {
+            "score": 0.0,
+            "count": 0,
+            "cutoff": recent_cutoff.isoformat(),
+        },
+        "perception_decision_action_loop": {
+            "score": 0.0,
+            "completed": False,
+            "window_hours": 48,
+        },
+        "active_objectives_progress": {
+            "score": 0.0,
+            "active_objectives": 0,
+            "progress_events": 0,
+        },
         "interactions": {"score": 0.0, "count": 0, "window_days": 7},
-        "validated_internal_modifications": {"score": 0.0, "accepted_useful_changes": 0},
+        "validated_internal_modifications": {
+            "score": 0.0,
+            "accepted_useful_changes": 0,
+        },
     }
     proofs: list[dict[str, object]] = []
 
@@ -309,7 +462,8 @@ def compute_liveness_index(
             continue
         event_name = _normalized_event(record)
         has_concrete_mutation = any(
-            key in record for key in ("score_base", "score_new", "accepted", "ok", "operator", "op")
+            key in record
+            for key in ("score_base", "score_new", "accepted", "ok", "operator", "op")
         )
         if event_name in _RECENT_ACTIVITY_EVENTS or has_concrete_mutation:
             recent_activity_count += 1
@@ -337,7 +491,8 @@ def compute_liveness_index(
             continue
         event_name = _normalized_event(record)
         if perception_ts is None and (
-            event_name in _PERCEPTION_EVENTS or isinstance(record.get("perception_summary"), str)
+            event_name in _PERCEPTION_EVENTS
+            or isinstance(record.get("perception_summary"), str)
         ):
             perception_ts = ts
             proofs.append(
@@ -349,10 +504,15 @@ def compute_liveness_index(
                 }
             )
             continue
-        if perception_ts is not None and decision_ts is None and ts >= perception_ts and (
-            event_name in _DECISION_EVENTS
-            or isinstance(record.get("decision_reason"), str)
-            or isinstance(record.get("justification"), str)
+        if (
+            perception_ts is not None
+            and decision_ts is None
+            and ts >= perception_ts
+            and (
+                event_name in _DECISION_EVENTS
+                or isinstance(record.get("decision_reason"), str)
+                or isinstance(record.get("justification"), str)
+            )
         ):
             decision_ts = ts
             proofs.append(
@@ -379,9 +539,13 @@ def compute_liveness_index(
                     }
                 )
                 break
-    loop_completed = perception_ts is not None and decision_ts is not None and action_ts is not None
+    loop_completed = (
+        perception_ts is not None and decision_ts is not None and action_ts is not None
+    )
     component_details["perception_decision_action_loop"]["completed"] = loop_completed
-    component_details["perception_decision_action_loop"]["score"] = 1.0 if loop_completed else 0.0
+    component_details["perception_decision_action_loop"]["score"] = (
+        1.0 if loop_completed else 0.0
+    )
 
     # 3) Active objectives with progress
     active_objectives_count = 0
@@ -399,7 +563,13 @@ def compute_liveness_index(
         explicit_progress = event_name in _PROGRESS_EVENTS
         status = record.get("status")
         if not explicit_progress and isinstance(status, str):
-            explicit_progress = status.strip().lower() in {"in_progress", "progress", "done", "completed", "success"}
+            explicit_progress = status.strip().lower() in {
+                "in_progress",
+                "progress",
+                "done",
+                "completed",
+                "success",
+            }
         progress_value = record.get("progress")
         if not explicit_progress and isinstance(progress_value, (int, float)):
             explicit_progress = float(progress_value) > 0
@@ -415,8 +585,12 @@ def compute_liveness_index(
             )
     if active_objectives_count > 0 and objective_progress_count > 0:
         component_details["active_objectives_progress"]["score"] = 1.0
-    component_details["active_objectives_progress"]["active_objectives"] = active_objectives_count
-    component_details["active_objectives_progress"]["progress_events"] = objective_progress_count
+    component_details["active_objectives_progress"][
+        "active_objectives"
+    ] = active_objectives_count
+    component_details["active_objectives_progress"][
+        "progress_events"
+    ] = objective_progress_count
 
     # 4) Interactions
     interaction_count = 0
@@ -478,9 +652,9 @@ def compute_liveness_index(
                 "event": _normalized_event(record) or "mutation",
             }
         )
-    component_details["validated_internal_modifications"]["accepted_useful_changes"] = (
-        accepted_useful_modifications
-    )
+    component_details["validated_internal_modifications"][
+        "accepted_useful_changes"
+    ] = accepted_useful_modifications
     if accepted_useful_modifications >= 1:
         component_details["validated_internal_modifications"]["score"] = 1.0
 
@@ -504,28 +678,77 @@ def compute_liveness_index(
 
     sorted_proofs = sorted(
         proofs,
-        key=lambda item: parse_ts(item.get("ts")) or datetime.min.replace(tzinfo=timezone.utc),
+        key=lambda item: parse_ts(item.get("ts"))
+        or datetime.min.replace(tzinfo=timezone.utc),
         reverse=True,
     )
-    missing_data = [name for name, detail in component_details.items() if float(detail["score"]) == 0.0]
+    missing_data = [
+        name
+        for name, detail in component_details.items()
+        if float(detail["score"]) == 0.0
+    ]
     freshness = _data_freshness(sorted_records, reference)
     observed_components = len(component_details) - len(missing_data)
     confidence = round(observed_components / len(component_details), 2)
     liveness_diagnostic = {
         "formula_version": _LIVENESS_FORMULA_VERSION,
         "formula": "100 × (activité + boucle PDA + objectifs/progrès + interactions + modifications validées) / 5",
-        "unit": "points sur 100", "window": {"recent_activity_hours": 24, "pda_loop_hours": 48, "interactions_days": 7, "objectives": "historique disponible", "modifications": "historique disponible"},
-        "components": component_details, "freshness": freshness,
-        "confidence": {"level": "high" if confidence >= .8 else "medium" if confidence >= .4 else "low", "score": confidence, "basis": f"{observed_components}/5 composantes étayées"},
-        "missing_data": missing_data, "proofs": sorted_proofs[:5], "recommendations": _component_recommendations(component_details),
+        "unit": "points sur 100",
+        "window": {
+            "recent_activity_hours": 24,
+            "pda_loop_hours": 48,
+            "interactions_days": 7,
+            "objectives": "historique disponible",
+            "modifications": "historique disponible",
+        },
+        "components": component_details,
+        "freshness": freshness,
+        "confidence": {
+            "level": (
+                "high"
+                if confidence >= 0.8
+                else "medium" if confidence >= 0.4 else "low"
+            ),
+            "score": confidence,
+            "basis": f"{observed_components}/5 composantes étayées",
+        },
+        "missing_data": missing_data,
+        "proofs": sorted_proofs[:5],
+        "recommendations": _component_recommendations(component_details),
     }
-    autonomy_diagnostic = {**liveness_diagnostic, "formula_version": "autonomy-v1.0", "formula": "indice de vivacité recalculé après exclusion des arrêts volontaires de budget", "excluded_records": budgeted_periods_ignored}
-    mutation_missing = [] if mutation_viability["mutation_count"] else ["mutations décidées", "changements utiles validés"]
+    autonomy_diagnostic = {
+        **liveness_diagnostic,
+        "formula_version": "autonomy-v1.0",
+        "formula": "indice de vivacité recalculé après exclusion des arrêts volontaires de budget",
+        "excluded_records": budgeted_periods_ignored,
+    }
+    mutation_missing = (
+        []
+        if mutation_viability["mutation_count"]
+        else ["mutations décidées", "changements utiles validés"]
+    )
     mutation_diagnostic = {
-        "formula_version": "mutation-viability-v1.0", "formula": "100 × clamp(0, 1, 0,5 × acceptation + 0,5 × utilité − 0,25 × échecs)", "unit": "points sur 100", "window": "historique disponible",
-        "components": mutation_viability, "freshness": freshness,
-        "confidence": {"level": "high" if mutation_viability["mutation_count"] >= 10 else "medium" if mutation_viability["mutation_count"] >= 3 else "low", "sample_size": mutation_viability["mutation_count"]},
-        "missing_data": mutation_missing, "proofs": [proof for proof in sorted_proofs if proof["component"] == "validated_internal_modifications"], "recommendations": [],
+        "formula_version": "mutation-viability-v1.0",
+        "formula": "100 × clamp(0, 1, 0,5 × acceptation + 0,5 × utilité − 0,25 × échecs)",
+        "unit": "points sur 100",
+        "window": "historique disponible",
+        "components": mutation_viability,
+        "freshness": freshness,
+        "confidence": {
+            "level": (
+                "high"
+                if mutation_viability["mutation_count"] >= 10
+                else "medium" if mutation_viability["mutation_count"] >= 3 else "low"
+            ),
+            "sample_size": mutation_viability["mutation_count"],
+        },
+        "missing_data": mutation_missing,
+        "proofs": [
+            proof
+            for proof in sorted_proofs
+            if proof["component"] == "validated_internal_modifications"
+        ],
+        "recommendations": [],
     }
     return {
         "index": index,
@@ -534,7 +757,11 @@ def compute_liveness_index(
         "mutation_viability": mutation_viability,
         "components": component_details,
         "proofs": sorted_proofs[:5],
-        "indices": {"liveness": liveness_diagnostic, "autonomy": autonomy_diagnostic, "mutation_viability": mutation_diagnostic},
+        "indices": {
+            "liveness": liveness_diagnostic,
+            "autonomy": autonomy_diagnostic,
+            "mutation_viability": mutation_diagnostic,
+        },
         "recommendations": liveness_diagnostic["recommendations"],
     }
 
@@ -551,7 +778,9 @@ def aggregate_lives(
     as_float: Callable[[object], float | None],
     alerts_from_records: Callable[[list[dict[str, object]]], list[dict[str, object]]],
     compute_vital_timeline: Callable[..., dict[str, object]],
-    registry_life_meta: Callable[[str, dict[str, object]], tuple[str | None, dict[str, object] | None]],
+    registry_life_meta: Callable[
+        [str, dict[str, object]], tuple[str | None, dict[str, object] | None]
+    ],
 ) -> tuple[dict[str, dict[str, object]], dict[str, object]]:
     active_life = registry.get("active")
     registry_lives = registry.get("lives")
@@ -586,11 +815,16 @@ def aggregate_lives(
             if isinstance(name_value, str) and name_value:
                 display_name = name_value
         else:
-            registry_status = normalize_life_status(getattr(raw_meta, "status", "active"))
+            registry_status = normalize_life_status(
+                getattr(raw_meta, "status", "active")
+            )
             name_value = getattr(raw_meta, "name", None)
             if isinstance(name_value, str) and name_value:
                 display_name = name_value
-        is_selected = isinstance(active_life, str) and active_life in {slug, display_name}
+        is_selected = isinstance(active_life, str) and active_life in {
+            slug,
+            display_name,
+        }
         is_extinct = _status_is_dead(registry_status)
         is_terminated = _status_is_terminated(registry_status)
         comparison[slug] = {
@@ -631,7 +865,13 @@ def aggregate_lives(
             ),
             "life_liveness_index": 0.0,
             "autonomy_index": 0.0,
-            "mutation_viability": {"score": None, "mutation_count": 0, "accepted_count": 0, "rejected_count": 0, "accepted_useful_changes": 0},
+            "mutation_viability": {
+                "score": None,
+                "mutation_count": 0,
+                "accepted_count": 0,
+                "rejected_count": 0,
+                "accepted_useful_changes": 0,
+            },
             "life_liveness_components": {
                 "recent_activity": {"score": 0.0, "count": 0},
                 "perception_decision_action_loop": {"score": 0.0, "completed": False},
@@ -691,7 +931,11 @@ def aggregate_lives(
             (new for _, new in reversed(score_points) if new is not None), None
         )
         progression_slope = None
-        if first_base is not None and last_new is not None and len(mutation_records) > 1:
+        if (
+            first_base is not None
+            and last_new is not None
+            and len(mutation_records) > 1
+        ):
             progression_slope = (first_base - last_new) / (len(mutation_records) - 1)
 
         failure_rate = None
@@ -704,7 +948,11 @@ def aggregate_lives(
             evolution_speed = sum(ms_points) / len(ms_points)
 
         last_timestamp = next(
-            (str(rec.get("ts")) for rec in reversed(all_records) if isinstance(rec.get("ts"), str)),
+            (
+                str(rec.get("ts"))
+                for rec in reversed(all_records)
+                if isinstance(rec.get("ts"), str)
+            ),
             None,
         )
         last_event = next(
@@ -723,13 +971,19 @@ def aggregate_lives(
             registry_status = normalize_life_status(raw_meta.get("status", "active"))
         elif slug is not None:
             registry_meta = registry_lives.get(slug)
-            registry_status = normalize_life_status(getattr(registry_meta, "status", "active"))
+            registry_status = normalize_life_status(
+                getattr(registry_meta, "status", "active")
+            )
         if registry_status == "unknown" and life_name in comparison:
-            registry_status = str(comparison[life_name].get("registry_status", "unknown"))
+            registry_status = str(
+                comparison[life_name].get("registry_status", "unknown")
+            )
         extinction_seen = extinction_seen or _status_is_dead(registry_status)
         run_terminated = run_terminated or _status_is_terminated(registry_status)
         registry_run_status_inconsistency = (
-            extinction_seen and slug is not None and not _status_is_dead(registry_status)
+            extinction_seen
+            and slug is not None
+            and not _status_is_dead(registry_status)
         )
         status_reconciliation_suggestion = (
             "mark_extinct" if registry_run_status_inconsistency else None
@@ -789,15 +1043,43 @@ def aggregate_lives(
             ),
             "life_liveness_index": liveness["index"],
             "autonomy_index": liveness.get("autonomy_index", liveness["index"]),
-            "mutation_viability": liveness.get("mutation_viability", compute_mutation_viability(all_records)),
+            "mutation_viability": liveness.get(
+                "mutation_viability", compute_mutation_viability(all_records)
+            ),
             "life_liveness_components": liveness["components"],
             "life_liveness_proofs": liveness["proofs"],
             "score_diagnostics": {
                 **liveness["indices"],
-                "health": {"formula_version": "health-observation-v1.0", "formula": "dernière valeur health.score observée", "unit": "points sur 100", "window": time_window,
-                    "components": {"latest": current_health_score, "observations": len(health_score_points)}, "freshness": _data_freshness(all_records, datetime.now(timezone.utc)),
-                    "confidence": {"level": "high" if len(health_score_points) >= 5 else "medium" if len(health_score_points) >= 2 else "low", "sample_size": len(health_score_points)}, "missing_data": [] if health_score_points else ["health.score"], "proofs": [], "recommendations": [],
-                    "change_reason": f"variation de {health_score_points[-1] - health_score_points[0]:+.1f} points sur {len(health_score_points)} observations" if len(health_score_points) >= 2 else "variation indéterminable : moins de deux observations"}},
+                "health": {
+                    "formula_version": "health-observation-v1.0",
+                    "formula": "dernière valeur health.score observée",
+                    "unit": "points sur 100",
+                    "window": time_window,
+                    "components": {
+                        "latest": current_health_score,
+                        "observations": len(health_score_points),
+                    },
+                    "freshness": _data_freshness(
+                        all_records, datetime.now(timezone.utc)
+                    ),
+                    "confidence": {
+                        "level": (
+                            "high"
+                            if len(health_score_points) >= 5
+                            else "medium" if len(health_score_points) >= 2 else "low"
+                        ),
+                        "sample_size": len(health_score_points),
+                    },
+                    "missing_data": [] if health_score_points else ["health.score"],
+                    "proofs": [],
+                    "recommendations": [],
+                    "change_reason": (
+                        f"variation de {health_score_points[-1] - health_score_points[0]:+.1f} points sur {len(health_score_points)} observations"
+                        if len(health_score_points) >= 2
+                        else "variation indéterminable : moins de deux observations"
+                    ),
+                },
+            },
             "score_recommendations": liveness["recommendations"],
         }
     unattached_summary = {

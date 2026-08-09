@@ -33,5 +33,7 @@ def test_cli_beliefs_audit_and_reset(tmp_path, capsys) -> None:
     out = capsys.readouterr().out
     assert "supprimées" in out
 
-    payload = json.loads((life_dir / "mem" / "beliefs.json").read_text(encoding="utf-8"))
+    payload = json.loads(
+        (life_dir / "mem" / "beliefs.json").read_text(encoding="utf-8")
+    )
     assert payload == {}

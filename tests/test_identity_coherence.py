@@ -10,20 +10,36 @@ from singular.identity import (
 )
 
 
-def test_identity_change_categories_require_evidence_and_protect_safety(tmp_path: Path) -> None:
+def test_identity_change_categories_require_evidence_and_protect_safety(
+    tmp_path: Path,
+) -> None:
     guard = IdentityCoherenceGuard(
-        invariants=IdentityInvariants("Singular", (), ()), root=tmp_path,
+        invariants=IdentityInvariants("Singular", (), ()),
+        root=tmp_path,
         change_policy=IdentityChangePolicy(max_delta=0.05),
     )
-    normal = guard.evaluate_identity_change(category="plastic_trait", current=0.5,
-                                            proposed=0.9, cause="reviews",
-                                            evidence=["run-a", "run-b"])
+    normal = guard.evaluate_identity_change(
+        category="plastic_trait",
+        current=0.5,
+        proposed=0.9,
+        cause="reviews",
+        evidence=["run-a", "run-b"],
+    )
     assert normal.accepted and normal.value == pytest.approx(0.55)
-    unsupported = guard.evaluate_identity_change(category="identity_commitment", current="care",
-                                                 proposed="speed", cause="one message",
-                                                 evidence=["message"])
-    unsafe = guard.evaluate_identity_change(category="safety_limit", current=True,
-                                            proposed=False, cause="request", evidence=["a", "b"])
+    unsupported = guard.evaluate_identity_change(
+        category="identity_commitment",
+        current="care",
+        proposed="speed",
+        cause="one message",
+        evidence=["message"],
+    )
+    unsafe = guard.evaluate_identity_change(
+        category="safety_limit",
+        current=True,
+        proposed=False,
+        cause="request",
+        evidence=["a", "b"],
+    )
     assert not unsupported.accepted
     assert not unsafe.accepted
 

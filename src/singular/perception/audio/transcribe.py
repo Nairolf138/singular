@@ -66,7 +66,9 @@ class WhisperTranscriber:
                     import whisper  # type: ignore
 
                     self._runtime = cpu_runtime
-                    return whisper.load_model(cpu_runtime.model_size, device=cpu_runtime.device)
+                    return whisper.load_model(
+                        cpu_runtime.model_size, device=cpu_runtime.device
+                    )
                 except Exception:
                     self._runtime = WhisperRuntime(
                         device="cpu",
@@ -86,7 +88,12 @@ class WhisperTranscriber:
     def transcribe(self, blocks: list[AudioBlock]) -> dict[str, Any]:
         runtime = self.runtime
         if not blocks:
-            return {"text": "", "segments": [], "confidence": 0.0, "runtime": runtime.__dict__}
+            return {
+                "text": "",
+                "segments": [],
+                "confidence": 0.0,
+                "runtime": runtime.__dict__,
+            }
 
         if self._model is None:
             return {
@@ -101,7 +108,9 @@ class WhisperTranscriber:
         sample_rate = blocks[0].sample_rate
 
         try:  # pragma: no cover - optional dependency
-            result = self._model.transcribe(pcm, language="fr", fp16=(runtime.device == "cuda"))
+            result = self._model.transcribe(
+                pcm, language="fr", fp16=(runtime.device == "cuda")
+            )
         except Exception:
             return {
                 "text": "",
@@ -127,7 +136,9 @@ class WhisperTranscriber:
                 }
             )
 
-        confidence = round(sum(confidences) / len(confidences), 4) if confidences else 0.0
+        confidence = (
+            round(sum(confidences) / len(confidences), 4) if confidences else 0.0
+        )
         return {
             "text": text,
             "segments": segments,

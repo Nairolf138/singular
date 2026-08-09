@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from . import ProviderMetrics
 
-
 LAST_METRICS = ProviderMetrics(provider="dummy")
 
 

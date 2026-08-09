@@ -45,7 +45,14 @@ host_sensors:
 
     monkeypatch.setenv(
         "SINGULAR_HOST_SENSORS_OVERRIDES",
-        json.dumps({"host_sensors": {"cpu": {"critical_percent": 91}, "disk": {"critical_percent": 96}}}),
+        json.dumps(
+            {
+                "host_sensors": {
+                    "cpu": {"critical_percent": 91},
+                    "disk": {"critical_percent": 96},
+                }
+            }
+        ),
     )
 
     thresholds = load_host_sensor_thresholds(config)

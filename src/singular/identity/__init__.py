@@ -9,9 +9,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .coherence import (CoherenceDecision, IdentityChangeDecision, IdentityChangePolicy,
-                        IdentityCoherenceGuard, IdentityInvariants, detect_contradictions)
-from .consolidation import ConsolidationPipeline, ConsolidationPolicy, ConsolidationResult
+from .coherence import (
+    CoherenceDecision,
+    IdentityChangeDecision,
+    IdentityChangePolicy,
+    IdentityCoherenceGuard,
+    IdentityInvariants,
+    detect_contradictions,
+)
+from .consolidation import (
+    ConsolidationPipeline,
+    ConsolidationPolicy,
+    ConsolidationResult,
+)
 from .consolidation_coordinator import ConsolidationCoordinator
 from .core import IdentityAggregationService, IdentityCoreService
 from .episodic_store import EpisodicStore

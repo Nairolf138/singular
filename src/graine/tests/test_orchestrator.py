@@ -47,7 +47,6 @@ def test_run_logs_and_snapshots(tmp_path: Path) -> None:
     assert any('"event": "generation"' in line for line in lines)
 
 
-
 def test_run_creates_meta_mutation_log(tmp_path: Path) -> None:
     spec = build_spec()
     snapshot_dir = tmp_path / "snaps"
@@ -65,7 +64,11 @@ def test_run_creates_meta_mutation_log(tmp_path: Path) -> None:
     )
     assert final_spec.validate()
     assert mutation_log.exists()
-    entries = [json.loads(line) for line in mutation_log.read_text(encoding="utf-8").splitlines() if line.strip()]
+    entries = [
+        json.loads(line)
+        for line in mutation_log.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     assert entries
     last = entries[-1]
     assert "hypothesis" in last

@@ -59,7 +59,9 @@ def test_intrinsic_goals_boost_robustesse_when_tech_debt_rises(tmp_path) -> None
     assert with_debt_rise.robustesse > without_debt_rise.robustesse
 
 
-def test_intrinsic_goals_adjust_coherence_and_efficacite_from_user_friction(tmp_path) -> None:
+def test_intrinsic_goals_adjust_coherence_and_efficacite_from_user_friction(
+    tmp_path,
+) -> None:
     goals = IntrinsicGoals(path=tmp_path / "goals.json")
     psyche = Psyche()
 
@@ -100,7 +102,11 @@ def test_intrinsic_goals_uses_skill_reputation_telemetry(tmp_path) -> None:
         resources={"energy": 80.0, "food": 80.0, "warmth": 80.0},
         perception_signals={
             "skill_reputation": {
-                "skill_a": {"mean_cost": 180.0, "mean_quality": 0.25, "recent_failures": 4},
+                "skill_a": {
+                    "mean_cost": 180.0,
+                    "mean_quality": 0.25,
+                    "recent_failures": 4,
+                },
             }
         },
     )
@@ -150,7 +156,9 @@ def test_intrinsic_goals_account_for_host_environment_pressure(tmp_path) -> None
     assert high_pressure.efficacite < low_pressure.efficacite
 
 
-def test_intrinsic_goals_strategy_turns_cautious_on_repeated_negative_feedback(tmp_path) -> None:
+def test_intrinsic_goals_strategy_turns_cautious_on_repeated_negative_feedback(
+    tmp_path,
+) -> None:
     goals = IntrinsicGoals(path=tmp_path / "goals.json")
     strategy = goals.derive_execution_strategy(
         {
@@ -177,7 +185,12 @@ def test_intrinsic_goals_adjust_routine_priorities_from_urgency(tmp_path) -> Non
         ],
         perception_signals={
             "episode_memory": {
-                "structured_feedback": {"frustration": 0.2, "satisfaction": 0.2, "urgency": 0.8, "theme": "support"}
+                "structured_feedback": {
+                    "frustration": 0.2,
+                    "satisfaction": 0.2,
+                    "urgency": 0.8,
+                    "theme": "support",
+                }
             }
         },
     )
@@ -215,7 +228,10 @@ def test_intrinsic_goals_modulates_weights_from_narrative_and_history(tmp_path) 
 
     assert modulated.robustesse > baseline.robustesse
     assert modulated.exploration < baseline.exploration
-    assert goals.history()[-1]["signals"]["intrinsic_modulation_version"] == "intrinsic-mod-v2"
+    assert (
+        goals.history()[-1]["signals"]["intrinsic_modulation_version"]
+        == "intrinsic-mod-v2"
+    )
 
 
 def test_intrinsic_goals_strategy_applies_repeated_failure_penalty(tmp_path) -> None:
@@ -223,7 +239,12 @@ def test_intrinsic_goals_strategy_applies_repeated_failure_penalty(tmp_path) -> 
     strategy = goals.derive_execution_strategy(
         {
             "episode_memory": {
-                "structured_feedback": {"frustration": 0.2, "satisfaction": 0.8, "urgency": 0.4, "theme": "general"}
+                "structured_feedback": {
+                    "frustration": 0.2,
+                    "satisfaction": 0.8,
+                    "urgency": 0.4,
+                    "theme": "general",
+                }
             },
             "narrative_indicators": {"risk_aversion_by_action_family": {"exec": 0.2}},
             "execution_history": {"repeated_failure_pressure": 0.8},
@@ -243,14 +264,26 @@ def test_intrinsic_goals_raise_robustesse_under_eco_relational_debt(tmp_path) ->
         tick=1,
         psyche=psyche,
         health_score=82.0,
-        resources={"energy": 82.0, "food": 82.0, "warmth": 82.0, "ecological_debt": 0.0, "relational_debt": 0.0},
+        resources={
+            "energy": 82.0,
+            "food": 82.0,
+            "warmth": 82.0,
+            "ecological_debt": 0.0,
+            "relational_debt": 0.0,
+        },
         perception_signals={},
     )
     pressured = goals.update_tick(
         tick=2,
         psyche=psyche,
         health_score=82.0,
-        resources={"energy": 82.0, "food": 82.0, "warmth": 82.0, "ecological_debt": 70.0, "relational_debt": 65.0},
+        resources={
+            "energy": 82.0,
+            "food": 82.0,
+            "warmth": 82.0,
+            "ecological_debt": 70.0,
+            "relational_debt": 65.0,
+        },
         perception_signals={
             "world_events": [
                 {"type": "world.delayed.crisis", "data": {"risk": 0.7}},

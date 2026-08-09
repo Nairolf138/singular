@@ -113,11 +113,11 @@ class IdentitySynchronizationService:
                 previous = narrative.trait_trends.get(key, TraitTrend()).value
                 narrative.trait_trends[key] = TraitTrend(
                     value=value,
-                    trend="up"
-                    if value > previous
-                    else "down"
-                    if value < previous
-                    else "stable",
+                    trend=(
+                        "up"
+                        if value > previous
+                        else "down" if value < previous else "stable"
+                    ),
                 )
             if isinstance(event.get("current_heading"), str):
                 narrative.current_heading = str(event["current_heading"])

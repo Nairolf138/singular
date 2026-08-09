@@ -116,7 +116,9 @@ class BeliefStore:
                 pass
 
     def list_beliefs(self) -> list[BeliefRecord]:
-        return sorted(self._beliefs.values(), key=lambda item: item.confidence, reverse=True)
+        return sorted(
+            self._beliefs.values(), key=lambda item: item.confidence, reverse=True
+        )
 
     def get_confidence(self, hypothesis: str, default: float = 0.5) -> float:
         if hypothesis in self._beliefs:
@@ -135,8 +137,13 @@ class BeliefStore:
     def _is_stale(self, record: BeliefRecord, now: datetime) -> bool:
         if self.ttl_days <= 0.0:
             return False
-        age_days = max(0.0, (now - _parse_datetime(record.updated_at)).total_seconds() / 86400.0)
-        near_prior = abs(record.alpha - self.prior_alpha) < 0.02 and abs(record.beta - self.prior_beta) < 0.02
+        age_days = max(
+            0.0, (now - _parse_datetime(record.updated_at)).total_seconds() / 86400.0
+        )
+        near_prior = (
+            abs(record.alpha - self.prior_alpha) < 0.02
+            and abs(record.beta - self.prior_beta) < 0.02
+        )
         return age_days >= self.ttl_days and near_prior
 
     def forget_stale(self, *, when: datetime | None = None) -> int:
@@ -213,7 +220,9 @@ class BeliefStore:
         self._save()
         return count
 
-    def operator_preference_bias(self, operator_names: Iterable[str]) -> dict[str, float]:
+    def operator_preference_bias(
+        self, operator_names: Iterable[str]
+    ) -> dict[str, float]:
         biases: dict[str, float] = {}
         for name in operator_names:
             hypothesis = f"operator:{name}"
@@ -222,7 +231,9 @@ class BeliefStore:
                 biases[name] = 0.0
                 continue
             confidence_shift = record.confidence - 0.5
-            biases[name] = (confidence_shift * 0.4) + max(-0.2, min(0.2, record.score_ema))
+            biases[name] = (confidence_shift * 0.4) + max(
+                -0.2, min(0.2, record.score_ema)
+            )
         return biases
 
     def update_probabilistic_rule(

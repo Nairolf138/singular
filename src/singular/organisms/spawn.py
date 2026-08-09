@@ -15,7 +15,13 @@ from singular.life.reproduction import (
     inherit_psyche,
     inherit_values,
 )
-from singular.memory import read_episodes, read_psyche, read_values, write_psyche, write_values
+from singular.memory import (
+    read_episodes,
+    read_psyche,
+    read_values,
+    write_psyche,
+    write_values,
+)
 
 
 def spawn(
@@ -96,7 +102,9 @@ def spawn(
     if inherited_episodes:
         episodic_file = out_dir / "mem" / "episodic.jsonl"
         episodic_file.parent.mkdir(parents=True, exist_ok=True)
-        lines = "\n".join(json.dumps(ep, ensure_ascii=False) for ep in inherited_episodes)
+        lines = "\n".join(
+            json.dumps(ep, ensure_ascii=False) for ep in inherited_episodes
+        )
         episodic_file.write_text(lines + "\n", encoding="utf-8")
     return out_dir
 

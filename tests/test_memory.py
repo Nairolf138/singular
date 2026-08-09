@@ -67,16 +67,28 @@ def test_birth_initializes_identity_profile_and_psyche(tmp_path: Path) -> None:
     assert psyche_data["schema_version"] >= 1
 
 
-def test_birth_writes_auditable_snapshot_certificate_and_summary(tmp_path: Path) -> None:
+def test_birth_writes_auditable_snapshot_certificate_and_summary(
+    tmp_path: Path,
+) -> None:
     birth(seed=7, home=tmp_path)
     mem_dir = tmp_path / "mem"
 
-    snapshot = json.loads((mem_dir / "initial_snapshot.json").read_text(encoding="utf-8"))
+    snapshot = json.loads(
+        (mem_dir / "initial_snapshot.json").read_text(encoding="utf-8")
+    )
     assert snapshot["schema_version"] == 1
     assert snapshot["initial_state_checksum"]
-    assert set(snapshot["initial_state"]) == {"identity", "psyche", "values", "goals", "world"}
+    assert set(snapshot["initial_state"]) == {
+        "identity",
+        "psyche",
+        "values",
+        "goals",
+        "world",
+    }
 
-    life_events = (mem_dir / "life_events.jsonl").read_text(encoding="utf-8").splitlines()
+    life_events = (
+        (mem_dir / "life_events.jsonl").read_text(encoding="utf-8").splitlines()
+    )
     assert life_events
     birth_event = json.loads(life_events[-1])
     assert birth_event["schema_version"] == 1
@@ -173,7 +185,9 @@ def test_birth_initializes_default_skills(tmp_path: Path) -> None:
     )
     assert skills_data == {name: {"score": 0.0} for name in expected_skill_names}
 
-    catalog = json.loads((tmp_path / "mem" / "skill_catalog.json").read_text(encoding="utf-8"))
+    catalog = json.loads(
+        (tmp_path / "mem" / "skill_catalog.json").read_text(encoding="utf-8")
+    )
     assert set(catalog) >= set(expected_skill_names)
 
 
@@ -233,7 +247,9 @@ def test_skill_maintenance_archive_and_restore_is_lossless(tmp_path: Path) -> No
     skills_path.parent.mkdir(parents=True, exist_ok=True)
     skills_path.write_text(json.dumps(data), encoding="utf-8")
 
-    apply_skill_maintenance(dormant_after_days=5, archive_after_days=30, path=skills_path)
+    apply_skill_maintenance(
+        dormant_after_days=5, archive_after_days=30, path=skills_path
+    )
     archived = json.loads(skills_path.read_text(encoding="utf-8"))
     assert archived["beta"]["lifecycle"]["state"] == "archived"
     assert archived["beta"]["metrics"]["usage_count"] == 1
@@ -250,7 +266,9 @@ def test_skill_temporary_disable_and_controlled_delete(tmp_path: Path) -> None:
     skills_path = tmp_path / "mem" / "skills.json"
     update_score("gamma", 0.2, path=skills_path)
 
-    temporarily_disable_skill("gamma", duration_hours=2, reason="cooldown", path=skills_path)
+    temporarily_disable_skill(
+        "gamma", duration_hours=2, reason="cooldown", path=skills_path
+    )
     disabled = json.loads(skills_path.read_text(encoding="utf-8"))
     assert disabled["gamma"]["lifecycle"]["state"] == "temporarily_disabled"
     assert disabled["gamma"]["lifecycle"]["disabled_until"] is not None

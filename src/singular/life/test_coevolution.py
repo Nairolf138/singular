@@ -128,7 +128,9 @@ def propose_test_candidates(
     observed = _extract_numeric_result(mutated_code)
     if observed is not None:
         candidates.append(TestCandidate(f"result == {observed!r}", origin="oracle"))
-        candidates.append(TestCandidate(f"abs(result - ({observed!r})) <= 1", origin="tolerance"))
+        candidates.append(
+            TestCandidate(f"abs(result - ({observed!r})) <= 1", origin="tolerance")
+        )
 
     rng.shuffle(candidates)
     return candidates[: max(0, limit)]

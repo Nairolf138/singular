@@ -125,7 +125,9 @@ def _collect_process_stdlib() -> tuple[float, float]:
 
     cpu_percent = 0.0
     try:
-        current = _ProcessSample(wall_time=time.monotonic(), cpu_time=time.process_time())
+        current = _ProcessSample(
+            wall_time=time.monotonic(), cpu_time=time.process_time()
+        )
         previous = _LAST_PROCESS_SAMPLE
         _LAST_PROCESS_SAMPLE = current
         if previous is not None:
@@ -198,12 +200,42 @@ def collect_host_metrics() -> dict[str, Any]:
     strategy = "minimal_fallback"
 
     metric_statuses: dict[str, dict[str, Any]] = {
-        "cpu_percent": _metric_payload(value=None, unit="percent", status=_STATUS_UNSUPPORTED, reason="cpu_probe_unavailable"),
-        "cpu_load_1m": _metric_payload(value=None, unit="load", status=_STATUS_UNSUPPORTED, reason="load_probe_unavailable"),
-        "ram_used_percent": _metric_payload(value=None, unit="percent", status=_STATUS_UNSUPPORTED, reason="memory_probe_unavailable"),
-        "ram_available_mb": _metric_payload(value=None, unit="MB", status=_STATUS_UNSUPPORTED, reason="memory_probe_unavailable"),
-        "disk_used_percent": _metric_payload(value=None, unit="percent", status=_STATUS_UNSUPPORTED, reason="disk_probe_unavailable"),
-        "disk_free_gb": _metric_payload(value=None, unit="GB", status=_STATUS_UNSUPPORTED, reason="disk_probe_unavailable"),
+        "cpu_percent": _metric_payload(
+            value=None,
+            unit="percent",
+            status=_STATUS_UNSUPPORTED,
+            reason="cpu_probe_unavailable",
+        ),
+        "cpu_load_1m": _metric_payload(
+            value=None,
+            unit="load",
+            status=_STATUS_UNSUPPORTED,
+            reason="load_probe_unavailable",
+        ),
+        "ram_used_percent": _metric_payload(
+            value=None,
+            unit="percent",
+            status=_STATUS_UNSUPPORTED,
+            reason="memory_probe_unavailable",
+        ),
+        "ram_available_mb": _metric_payload(
+            value=None,
+            unit="MB",
+            status=_STATUS_UNSUPPORTED,
+            reason="memory_probe_unavailable",
+        ),
+        "disk_used_percent": _metric_payload(
+            value=None,
+            unit="percent",
+            status=_STATUS_UNSUPPORTED,
+            reason="disk_probe_unavailable",
+        ),
+        "disk_free_gb": _metric_payload(
+            value=None,
+            unit="GB",
+            status=_STATUS_UNSUPPORTED,
+            reason="disk_probe_unavailable",
+        ),
         "host_temperature_c": _metric_payload(
             value=None,
             unit="C",
@@ -216,16 +248,31 @@ def collect_host_metrics() -> dict[str, Any]:
             status=_STATUS_UNSUPPORTED,
             reason="process_probe_unavailable",
         ),
-        "process_rss_mb": _metric_payload(value=None, unit="MB", status=_STATUS_UNSUPPORTED, reason="process_probe_unavailable"),
-        "host_uptime_s": _metric_payload(value=None, unit="s", status=_STATUS_UNSUPPORTED, reason="uptime_probe_unavailable"),
+        "process_rss_mb": _metric_payload(
+            value=None,
+            unit="MB",
+            status=_STATUS_UNSUPPORTED,
+            reason="process_probe_unavailable",
+        ),
+        "host_uptime_s": _metric_payload(
+            value=None,
+            unit="s",
+            status=_STATUS_UNSUPPORTED,
+            reason="uptime_probe_unavailable",
+        ),
     }
 
     if psutil is not None:
         strategy = "primary"
         try:
-            cpu_percent = max(0.0, min(_safe_float(psutil.cpu_percent(interval=None)), 100.0))
+            cpu_percent = max(
+                0.0, min(_safe_float(psutil.cpu_percent(interval=None)), 100.0)
+            )
             metric_statuses["cpu_percent"] = _metric_payload(
-                value=cpu_percent, unit="percent", status=_STATUS_AVAILABLE, last_seen_at=collected_at
+                value=cpu_percent,
+                unit="percent",
+                status=_STATUS_AVAILABLE,
+                last_seen_at=collected_at,
             )
         except Exception:
             cpu_percent = 0.0
@@ -234,7 +281,10 @@ def collect_host_metrics() -> dict[str, Any]:
             load = os.getloadavg()[0]
             cpu_load_1m = max(_safe_float(load), 0.0)
             metric_statuses["cpu_load_1m"] = _metric_payload(
-                value=cpu_load_1m, unit="load", status=_STATUS_AVAILABLE, last_seen_at=collected_at
+                value=cpu_load_1m,
+                unit="load",
+                status=_STATUS_AVAILABLE,
+                last_seen_at=collected_at,
             )
         except Exception:
             cpu_load_1m = None
@@ -247,46 +297,79 @@ def collect_host_metrics() -> dict[str, Any]:
 
         try:
             vm = psutil.virtual_memory()
-            ram_used_percent = max(0.0, min(_safe_float(getattr(vm, "percent", 0.0)), 100.0))
-            ram_available_mb = max(_safe_float(getattr(vm, "available", 0.0)) / _MB, 0.0)
+            ram_used_percent = max(
+                0.0, min(_safe_float(getattr(vm, "percent", 0.0)), 100.0)
+            )
+            ram_available_mb = max(
+                _safe_float(getattr(vm, "available", 0.0)) / _MB, 0.0
+            )
             metric_statuses["ram_used_percent"] = _metric_payload(
-                value=ram_used_percent, unit="percent", status=_STATUS_AVAILABLE, last_seen_at=collected_at
+                value=ram_used_percent,
+                unit="percent",
+                status=_STATUS_AVAILABLE,
+                last_seen_at=collected_at,
             )
             metric_statuses["ram_available_mb"] = _metric_payload(
-                value=ram_available_mb, unit="MB", status=_STATUS_AVAILABLE, last_seen_at=collected_at
+                value=ram_available_mb,
+                unit="MB",
+                status=_STATUS_AVAILABLE,
+                last_seen_at=collected_at,
             )
         except Exception:
             ram_used_percent, ram_available_mb = _collect_memory_stdlib()
             metric_statuses["ram_used_percent"] = _metric_payload(
-                value=ram_used_percent, unit="percent", status=_STATUS_PARTIAL, reason="psutil_virtual_memory_failed"
+                value=ram_used_percent,
+                unit="percent",
+                status=_STATUS_PARTIAL,
+                reason="psutil_virtual_memory_failed",
             )
             metric_statuses["ram_available_mb"] = _metric_payload(
-                value=ram_available_mb, unit="MB", status=_STATUS_PARTIAL, reason="psutil_virtual_memory_failed"
+                value=ram_available_mb,
+                unit="MB",
+                status=_STATUS_PARTIAL,
+                reason="psutil_virtual_memory_failed",
             )
 
         try:
             du = psutil.disk_usage(str(Path.cwd()))
-            disk_used_percent = max(0.0, min(_safe_float(getattr(du, "percent", 0.0)), 100.0))
+            disk_used_percent = max(
+                0.0, min(_safe_float(getattr(du, "percent", 0.0)), 100.0)
+            )
             disk_free_gb = max(_safe_float(getattr(du, "free", 0.0)) / _GB, 0.0)
             metric_statuses["disk_used_percent"] = _metric_payload(
-                value=disk_used_percent, unit="percent", status=_STATUS_AVAILABLE, last_seen_at=collected_at
+                value=disk_used_percent,
+                unit="percent",
+                status=_STATUS_AVAILABLE,
+                last_seen_at=collected_at,
             )
             metric_statuses["disk_free_gb"] = _metric_payload(
-                value=disk_free_gb, unit="GB", status=_STATUS_AVAILABLE, last_seen_at=collected_at
+                value=disk_free_gb,
+                unit="GB",
+                status=_STATUS_AVAILABLE,
+                last_seen_at=collected_at,
             )
         except Exception:
             disk_used_percent, disk_free_gb = _collect_disk_stdlib()
             metric_statuses["disk_used_percent"] = _metric_payload(
-                value=disk_used_percent, unit="percent", status=_STATUS_PARTIAL, reason="psutil_disk_usage_failed"
+                value=disk_used_percent,
+                unit="percent",
+                status=_STATUS_PARTIAL,
+                reason="psutil_disk_usage_failed",
             )
             metric_statuses["disk_free_gb"] = _metric_payload(
-                value=disk_free_gb, unit="GB", status=_STATUS_PARTIAL, reason="psutil_disk_usage_failed"
+                value=disk_free_gb,
+                unit="GB",
+                status=_STATUS_PARTIAL,
+                reason="psutil_disk_usage_failed",
             )
 
         host_temperature_c = _collect_temperatures_psutil()
         if host_temperature_c is not None:
             metric_statuses["host_temperature_c"] = _metric_payload(
-                value=host_temperature_c, unit="C", status=_STATUS_AVAILABLE, last_seen_at=collected_at
+                value=host_temperature_c,
+                unit="C",
+                status=_STATUS_AVAILABLE,
+                last_seen_at=collected_at,
             )
         else:
             metric_statuses["host_temperature_c"] = _metric_payload(
@@ -298,21 +381,35 @@ def collect_host_metrics() -> dict[str, Any]:
 
         try:
             process = psutil.Process(os.getpid())
-            process_cpu_percent = max(0.0, min(_safe_float(process.cpu_percent(interval=None)), 100.0))
+            process_cpu_percent = max(
+                0.0, min(_safe_float(process.cpu_percent(interval=None)), 100.0)
+            )
             process_rss_mb = max(_safe_float(process.memory_info().rss) / _MB, 0.0)
             metric_statuses["process_cpu_percent"] = _metric_payload(
-                value=process_cpu_percent, unit="percent", status=_STATUS_AVAILABLE, last_seen_at=collected_at
+                value=process_cpu_percent,
+                unit="percent",
+                status=_STATUS_AVAILABLE,
+                last_seen_at=collected_at,
             )
             metric_statuses["process_rss_mb"] = _metric_payload(
-                value=process_rss_mb, unit="MB", status=_STATUS_AVAILABLE, last_seen_at=collected_at
+                value=process_rss_mb,
+                unit="MB",
+                status=_STATUS_AVAILABLE,
+                last_seen_at=collected_at,
             )
         except Exception:
             process_cpu_percent, process_rss_mb = _collect_process_stdlib()
             metric_statuses["process_cpu_percent"] = _metric_payload(
-                value=process_cpu_percent, unit="percent", status=_STATUS_PARTIAL, reason="psutil_process_probe_failed"
+                value=process_cpu_percent,
+                unit="percent",
+                status=_STATUS_PARTIAL,
+                reason="psutil_process_probe_failed",
             )
             metric_statuses["process_rss_mb"] = _metric_payload(
-                value=process_rss_mb, unit="MB", status=_STATUS_PARTIAL, reason="psutil_process_probe_failed"
+                value=process_rss_mb,
+                unit="MB",
+                status=_STATUS_PARTIAL,
+                reason="psutil_process_probe_failed",
             )
     else:
         strategy = "partial_fallback"
@@ -337,50 +434,90 @@ def collect_host_metrics() -> dict[str, Any]:
         try:
             cpu_load_1m = max(_safe_float(os.getloadavg()[0]), 0.0)
             metric_statuses["cpu_load_1m"] = _metric_payload(
-                value=cpu_load_1m, unit="load", status=_STATUS_PARTIAL, reason="loadavg_stdlib_fallback", last_seen_at=collected_at
+                value=cpu_load_1m,
+                unit="load",
+                status=_STATUS_PARTIAL,
+                reason="loadavg_stdlib_fallback",
+                last_seen_at=collected_at,
             )
         except Exception:
             cpu_load_1m = None
             metric_statuses["cpu_load_1m"] = _metric_payload(
-                value=None, unit="load", status=_STATUS_UNSUPPORTED, reason="loadavg_not_supported_on_platform"
+                value=None,
+                unit="load",
+                status=_STATUS_UNSUPPORTED,
+                reason="loadavg_not_supported_on_platform",
             )
 
         ram_used_percent, ram_available_mb = _collect_memory_stdlib()
         if ram_available_mb > 0.0:
             metric_statuses["ram_used_percent"] = _metric_payload(
-                value=ram_used_percent, unit="percent", status=_STATUS_PARTIAL, reason="memory_stdlib_fallback", last_seen_at=collected_at
+                value=ram_used_percent,
+                unit="percent",
+                status=_STATUS_PARTIAL,
+                reason="memory_stdlib_fallback",
+                last_seen_at=collected_at,
             )
             metric_statuses["ram_available_mb"] = _metric_payload(
-                value=ram_available_mb, unit="MB", status=_STATUS_PARTIAL, reason="memory_stdlib_fallback", last_seen_at=collected_at
+                value=ram_available_mb,
+                unit="MB",
+                status=_STATUS_PARTIAL,
+                reason="memory_stdlib_fallback",
+                last_seen_at=collected_at,
             )
         disk_used_percent, disk_free_gb = _collect_disk_stdlib()
         if disk_free_gb > 0.0 or disk_used_percent > 0.0:
             metric_statuses["disk_used_percent"] = _metric_payload(
-                value=disk_used_percent, unit="percent", status=_STATUS_PARTIAL, reason="disk_stdlib_fallback", last_seen_at=collected_at
+                value=disk_used_percent,
+                unit="percent",
+                status=_STATUS_PARTIAL,
+                reason="disk_stdlib_fallback",
+                last_seen_at=collected_at,
             )
             metric_statuses["disk_free_gb"] = _metric_payload(
-                value=disk_free_gb, unit="GB", status=_STATUS_PARTIAL, reason="disk_stdlib_fallback", last_seen_at=collected_at
+                value=disk_free_gb,
+                unit="GB",
+                status=_STATUS_PARTIAL,
+                reason="disk_stdlib_fallback",
+                last_seen_at=collected_at,
             )
         process_cpu_percent, process_rss_mb = _collect_process_stdlib()
         metric_statuses["process_cpu_percent"] = _metric_payload(
-            value=process_cpu_percent, unit="percent", status=_STATUS_PARTIAL, reason="process_stdlib_fallback", last_seen_at=collected_at
+            value=process_cpu_percent,
+            unit="percent",
+            status=_STATUS_PARTIAL,
+            reason="process_stdlib_fallback",
+            last_seen_at=collected_at,
         )
         metric_statuses["process_rss_mb"] = _metric_payload(
-            value=process_rss_mb, unit="MB", status=_STATUS_PARTIAL, reason="process_stdlib_fallback", last_seen_at=collected_at
+            value=process_rss_mb,
+            unit="MB",
+            status=_STATUS_PARTIAL,
+            reason="process_stdlib_fallback",
+            last_seen_at=collected_at,
         )
 
     host_uptime_s, uptime_reason = _collect_uptime_seconds()
     if host_uptime_s is not None:
         metric_statuses["host_uptime_s"] = _metric_payload(
-            value=host_uptime_s, unit="s", status=_STATUS_AVAILABLE, last_seen_at=collected_at
+            value=host_uptime_s,
+            unit="s",
+            status=_STATUS_AVAILABLE,
+            last_seen_at=collected_at,
         )
     else:
         metric_statuses["host_uptime_s"] = _metric_payload(
-            value=None, unit="s", status=_STATUS_UNSUPPORTED, reason=uptime_reason or "uptime_probe_unavailable"
+            value=None,
+            unit="s",
+            status=_STATUS_UNSUPPORTED,
+            reason=uptime_reason or "uptime_probe_unavailable",
         )
 
     if strategy != "primary":
-        has_minimal_signal = any(metric_statuses[name]["value"] is not None for name in ("host_uptime_s", "cpu_load_1m", "ram_available_mb"))
+        has_minimal_signal = any(
+            metric_statuses[name]["value"] is not None
+            for name in ("host_uptime_s", "cpu_load_1m", "ram_available_mb")
+        )
         cpu_or_disk_unavailable = (
             metric_statuses["cpu_percent"]["status"] == _STATUS_UNSUPPORTED
             and metric_statuses["disk_used_percent"]["status"] == _STATUS_UNSUPPORTED

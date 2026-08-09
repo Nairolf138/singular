@@ -34,9 +34,6 @@ def _print_table(headers: list[str], rows: list[list[str]]) -> None:
         print(_fmt(row))
 
 
-
-
-
 def _fmt_ratio(value: object) -> str:
     if isinstance(value, (int, float)):
         return f"{float(value) * 100:.1f}%"
@@ -47,7 +44,6 @@ def _fmt_number(value: object, unit: str = "") -> str:
     if isinstance(value, (int, float)):
         return f"{float(value):.2f}{unit}"
     return "-"
-
 
 
 def _read_quest_status() -> dict[str, object]:
@@ -62,7 +58,9 @@ def _read_quest_status() -> dict[str, object]:
         return {"active": [], "paused": [], "completed": []}
     active = payload.get("active") if isinstance(payload.get("active"), list) else []
     paused = payload.get("paused") if isinstance(payload.get("paused"), list) else []
-    completed = payload.get("completed") if isinstance(payload.get("completed"), list) else []
+    completed = (
+        payload.get("completed") if isinstance(payload.get("completed"), list) else []
+    )
     return {"active": active, "paused": paused, "completed": completed[-20:]}
 
 
@@ -97,7 +95,9 @@ def _build_trajectory_payload(
 ) -> dict[str, object]:
     active = quests.get("active") if isinstance(quests.get("active"), list) else []
     paused = quests.get("paused") if isinstance(quests.get("paused"), list) else []
-    completed = quests.get("completed") if isinstance(quests.get("completed"), list) else []
+    completed = (
+        quests.get("completed") if isinstance(quests.get("completed"), list) else []
+    )
 
     objective_status: dict[str, str] = {}
     for item in active:
@@ -111,9 +111,15 @@ def _build_trajectory_payload(
             objective_status[item["name"]] = "completed"
 
     objective_counts = {
-        "in_progress": sum(1 for status in objective_status.values() if status == "in_progress"),
-        "abandoned": sum(1 for status in objective_status.values() if status == "abandoned"),
-        "completed": sum(1 for status in objective_status.values() if status == "completed"),
+        "in_progress": sum(
+            1 for status in objective_status.values() if status == "in_progress"
+        ),
+        "abandoned": sum(
+            1 for status in objective_status.values() if status == "abandoned"
+        ),
+        "completed": sum(
+            1 for status in objective_status.values() if status == "completed"
+        ),
     }
 
     previous: dict[str, float] = {}
@@ -141,12 +147,21 @@ def _build_trajectory_payload(
                 previous[objective] = new_value
 
     narrative_links: list[dict[str, object]] = []
-    major_events = {"death", "interaction", "quest", "quest_triggered", "quest_resolved", "consciousness"}
+    major_events = {
+        "death",
+        "interaction",
+        "quest",
+        "quest_triggered",
+        "quest_resolved",
+        "consciousness",
+    }
     for record in records:
         event = record.get("event")
         if not isinstance(event, str):
             continue
-        if event not in major_events and not isinstance(record.get("self_narrative_event"), str):
+        if event not in major_events and not isinstance(
+            record.get("self_narrative_event"), str
+        ):
             continue
         objective = record.get("objective")
         if not isinstance(objective, str):
@@ -156,16 +171,32 @@ def _build_trajectory_payload(
                 "objective": objective,
                 "event": record.get("self_narrative_event", event),
                 "at": record.get("ts") if isinstance(record.get("ts"), str) else None,
-                "run": record.get("_run_file") if isinstance(record.get("_run_file"), str) else None,
+                "run": (
+                    record.get("_run_file")
+                    if isinstance(record.get("_run_file"), str)
+                    else None
+                ),
             }
         )
 
     return {
         "objectives": {
             "counts": objective_counts,
-            "in_progress": [name for name, status in objective_status.items() if status == "in_progress"],
-            "abandoned": [name for name, status in objective_status.items() if status == "abandoned"],
-            "completed": [name for name, status in objective_status.items() if status == "completed"],
+            "in_progress": [
+                name
+                for name, status in objective_status.items()
+                if status == "in_progress"
+            ],
+            "abandoned": [
+                name
+                for name, status in objective_status.items()
+                if status == "abandoned"
+            ],
+            "completed": [
+                name
+                for name, status in objective_status.items()
+                if status == "completed"
+            ],
         },
         "priority_changes": priority_changes[-40:],
         "objective_narrative_links": narrative_links[-40:],
@@ -194,6 +225,7 @@ def _read_skill_lifecycle_status() -> dict[str, object]:
         else:
             summary["active"] += 1
     return summary
+
 
 def status(*, verbose: bool = False, output_format: str = "plain") -> None:
     """Display basic metrics and current psyche state."""
@@ -289,9 +321,7 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             mutation_records = [r for r in records if "score_new" in r]
             mutation_count = len(mutation_records)
             success_records = [
-                r
-                for r in records
-                if "score_new" in r or isinstance(r.get("ok"), bool)
+                r for r in records if "score_new" in r or isinstance(r.get("ok"), bool)
             ]
             ok_count = sum(1 for r in success_records if r.get("ok") is True)
             success_rate = (
@@ -336,7 +366,9 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             payload["vital_timeline"] = compute_vital_timeline(
                 age=mutation_count,
                 current_health=health_scores[-1] if health_scores else None,
-                failure_rate=(1 - (ok_count / len(success_records))) if success_records else None,
+                failure_rate=(
+                    (1 - (ok_count / len(success_records))) if success_records else None
+                ),
                 failure_streak=max_failure_streak,
                 extinction_seen=any(r.get("event") == "death" for r in records),
             )
@@ -381,12 +413,34 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         return
 
     if output_format == "table":
-        autonomy = payload.get("autonomy_metrics") if isinstance(payload.get("autonomy_metrics"), dict) else {}
-        decision_quality = autonomy.get("decision_quality") if isinstance(autonomy.get("decision_quality"), dict) else {}
+        autonomy = (
+            payload.get("autonomy_metrics")
+            if isinstance(payload.get("autonomy_metrics"), dict)
+            else {}
+        )
+        decision_quality = (
+            autonomy.get("decision_quality")
+            if isinstance(autonomy.get("decision_quality"), dict)
+            else {}
+        )
         run_rows = [
             ["Latest run", str(payload.get("latest_run") or "-")],
-            ["Last execution speed", f"{payload['last_execution_ms']}ms" if payload.get("last_execution_ms") is not None else "-"],
-            ["Success rate", f"{payload['success_rate']}%" if payload.get("success_rate") is not None else "-"],
+            [
+                "Last execution speed",
+                (
+                    f"{payload['last_execution_ms']}ms"
+                    if payload.get("last_execution_ms") is not None
+                    else "-"
+                ),
+            ],
+            [
+                "Success rate",
+                (
+                    f"{payload['success_rate']}%"
+                    if payload.get("success_rate") is not None
+                    else "-"
+                ),
+            ],
             [
                 "Mutation success rate",
                 (
@@ -404,42 +458,105 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
                     else "-"
                 ),
             ],
-            ["Verdict de vie", str((payload.get("life_status") or {}).get("status") or "-")],
-            ["Score de vie", _fmt_number((payload.get("life_status") or {}).get("score"))],
-            ["Explication", str((payload.get("life_status") or {}).get("explanation") or "-")],
+            [
+                "Verdict de vie",
+                str((payload.get("life_status") or {}).get("status") or "-"),
+            ],
+            [
+                "Score de vie",
+                _fmt_number((payload.get("life_status") or {}).get("score")),
+            ],
+            [
+                "Explication",
+                str((payload.get("life_status") or {}).get("explanation") or "-"),
+            ],
             ["Autonomy index", _fmt_number(autonomy.get("autonomy_index"))],
             ["Mutation viability", _fmt_number(autonomy.get("mutation_viability"))],
-            ["Périodes budgétées ignorées", str(autonomy.get("budgeted_periods_ignored") or 0)],
-            ["Taux d’initiatives proactives", _fmt_ratio(autonomy.get("proactive_initiative_rate"))],
+            [
+                "Périodes budgétées ignorées",
+                str(autonomy.get("budgeted_periods_ignored") or 0),
+            ],
+            [
+                "Taux d’initiatives proactives",
+                _fmt_ratio(autonomy.get("proactive_initiative_rate")),
+            ],
             ["Stabilité long terme", _fmt_ratio(autonomy.get("long_term_stability"))],
             [
                 "Qualité décisions (acceptation/régression)",
                 f"{_fmt_ratio(decision_quality.get('acceptance_rate'))} / {_fmt_ratio(decision_quality.get('regression_rate'))}",
             ],
-            ["Latence perception→action", _fmt_number(autonomy.get("perception_to_action_latency_ms"), " ms")],
-            ["Coût ressources par gain", _fmt_number(autonomy.get("resource_cost_per_gain"))],
+            [
+                "Latence perception→action",
+                _fmt_number(autonomy.get("perception_to_action_latency_ms"), " ms"),
+            ],
+            [
+                "Coût ressources par gain",
+                _fmt_number(autonomy.get("resource_cost_per_gain")),
+            ],
             ["Mood", str(payload.get("mood"))],
             [
                 "Arbre familial (nœuds)",
-                str(len((((payload.get("relationships") or {}).get("family") or {}).get("nodes") or []))),
+                str(
+                    len(
+                        (
+                            (
+                                (payload.get("relationships") or {}).get("family") or {}
+                            ).get("nodes")
+                            or []
+                        )
+                    )
+                ),
             ],
             [
                 "Réseau social (liens)",
-                str(len((((payload.get("relationships") or {}).get("social") or {}).get("edges") or []))),
+                str(
+                    len(
+                        (
+                            (
+                                (payload.get("relationships") or {}).get("social") or {}
+                            ).get("edges")
+                            or []
+                        )
+                    )
+                ),
             ],
             [
                 "Conflits actifs",
-                str(len((payload.get("relationships") or {}).get("active_conflicts", []))),
+                str(
+                    len(
+                        (payload.get("relationships") or {}).get("active_conflicts", [])
+                    )
+                ),
             ],
-            ["Quêtes actives", str(len((payload.get("quests") or {}).get("active", [])))],
-            ["Quêtes terminées", str(len((payload.get("quests") or {}).get("completed", [])))],
-            ["Skills actives", str((payload.get("skills_lifecycle") or {}).get("active", 0))],
-            ["Skills dormantes", str((payload.get("skills_lifecycle") or {}).get("dormant", 0))],
-            ["Skills archivées", str((payload.get("skills_lifecycle") or {}).get("archived", 0))],
+            [
+                "Quêtes actives",
+                str(len((payload.get("quests") or {}).get("active", []))),
+            ],
+            [
+                "Quêtes terminées",
+                str(len((payload.get("quests") or {}).get("completed", []))),
+            ],
+            [
+                "Skills actives",
+                str((payload.get("skills_lifecycle") or {}).get("active", 0)),
+            ],
+            [
+                "Skills dormantes",
+                str((payload.get("skills_lifecycle") or {}).get("dormant", 0)),
+            ],
+            [
+                "Skills archivées",
+                str((payload.get("skills_lifecycle") or {}).get("archived", 0)),
+            ],
             [
                 "Top skill quotidienne",
                 (
-                    str(((payload.get("daily_skills") or {}).get("top_skills") or [{}])[0].get("skill") or "-")
+                    str(
+                        ((payload.get("daily_skills") or {}).get("top_skills") or [{}])[
+                            0
+                        ].get("skill")
+                        or "-"
+                    )
                     if ((payload.get("daily_skills") or {}).get("top_skills") or [])
                     else "-"
                 ),
@@ -460,15 +577,29 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
                 ),
             ],
             ["Âge vital", str((payload.get("vital_timeline") or {}).get("age", 0))],
-            ["État vital", str((payload.get("vital_timeline") or {}).get("state", "n/a"))],
-            ["Risque vital", str((payload.get("vital_timeline") or {}).get("risk_level", "n/a"))],
+            [
+                "État vital",
+                str((payload.get("vital_timeline") or {}).get("state", "n/a")),
+            ],
+            [
+                "Risque vital",
+                str((payload.get("vital_timeline") or {}).get("risk_level", "n/a")),
+            ],
             [
                 "Impact environnement hôte",
-                str(((payload.get("host_environment") or {}).get("impact") or {}).get("impact_level", "low")),
+                str(
+                    ((payload.get("host_environment") or {}).get("impact") or {}).get(
+                        "impact_level", "low"
+                    )
+                ),
             ],
             [
                 "Biais décisionnel hôte",
-                str(((payload.get("host_environment") or {}).get("impact") or {}).get("decision_bias", "balanced")),
+                str(
+                    ((payload.get("host_environment") or {}).get("impact") or {}).get(
+                        "decision_bias", "balanced"
+                    )
+                ),
             ],
         ]
         _print_table(["Metric", "Value"], run_rows)
@@ -476,7 +607,11 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             alerts = payload.get("alerts") or []
             if alerts:
                 alert_rows = [
-                    [str(a.get("level", "?")), str(a.get("message", "")), str(a.get("action", ""))]
+                    [
+                        str(a.get("level", "?")),
+                        str(a.get("message", "")),
+                        str(a.get("action", "")),
+                    ]
                     for a in alerts
                 ]
                 print("Alerts")
@@ -485,7 +620,10 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
                 print("Alerts: none")
             missing = (payload.get("life_status") or {}).get("missing_signals")
             if isinstance(missing, list) and missing:
-                print("Signaux de vie manquants: " + ", ".join(str(item) for item in missing))
+                print(
+                    "Signaux de vie manquants: "
+                    + ", ".join(str(item) for item in missing)
+                )
         trait_rows = [[k, f"{v:.2f}"] for k, v in payload["traits"].items()]
         print("Traits")
         _print_table(["Trait", "Value"], trait_rows)
@@ -502,25 +640,55 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
         if payload.get("mutation_success_rate") is not None:
             print(f"Mutation success rate: {payload['mutation_success_rate']:.0f}%")
         print(f"Mutation count: {payload['mutation_count']}")
-        autonomy = payload.get("autonomy_metrics") if isinstance(payload.get("autonomy_metrics"), dict) else {}
-        decision_quality = autonomy.get("decision_quality") if isinstance(autonomy.get("decision_quality"), dict) else {}
+        autonomy = (
+            payload.get("autonomy_metrics")
+            if isinstance(payload.get("autonomy_metrics"), dict)
+            else {}
+        )
+        decision_quality = (
+            autonomy.get("decision_quality")
+            if isinstance(autonomy.get("decision_quality"), dict)
+            else {}
+        )
         print(f"Autonomy index: {_fmt_number(autonomy.get('autonomy_index'))}")
         print(f"Mutation viability: {_fmt_number(autonomy.get('mutation_viability'))}")
-        print(f"Périodes budgétées ignorées: {autonomy.get('budgeted_periods_ignored') or 0}")
-        print(f"Taux d’initiatives proactives: {_fmt_ratio(autonomy.get('proactive_initiative_rate'))}")
-        print(f"Stabilité long terme: {_fmt_ratio(autonomy.get('long_term_stability'))}")
+        print(
+            f"Périodes budgétées ignorées: {autonomy.get('budgeted_periods_ignored') or 0}"
+        )
+        print(
+            f"Taux d’initiatives proactives: {_fmt_ratio(autonomy.get('proactive_initiative_rate'))}"
+        )
+        print(
+            f"Stabilité long terme: {_fmt_ratio(autonomy.get('long_term_stability'))}"
+        )
         print(
             "Qualité décisions (acceptation/régression): "
             f"{_fmt_ratio(decision_quality.get('acceptance_rate'))} / {_fmt_ratio(decision_quality.get('regression_rate'))}"
         )
-        print(f"Latence perception→action: {_fmt_number(autonomy.get('perception_to_action_latency_ms'), ' ms')}")
-        print(f"Coût ressources par gain: {_fmt_number(autonomy.get('resource_cost_per_gain'))}")
-        vital = payload.get("vital_timeline") if isinstance(payload.get("vital_timeline"), dict) else {}
+        print(
+            f"Latence perception→action: {_fmt_number(autonomy.get('perception_to_action_latency_ms'), ' ms')}"
+        )
+        print(
+            f"Coût ressources par gain: {_fmt_number(autonomy.get('resource_cost_per_gain'))}"
+        )
+        vital = (
+            payload.get("vital_timeline")
+            if isinstance(payload.get("vital_timeline"), dict)
+            else {}
+        )
         print(f"Âge vital: {vital.get('age', 0)}")
         print(f"État vital: {vital.get('state', 'n/a')}")
         print(f"Risque vital: {vital.get('risk_level', 'n/a')}")
-        host_environment = payload.get("host_environment") if isinstance(payload.get("host_environment"), dict) else {}
-        host_impact = host_environment.get("impact") if isinstance(host_environment.get("impact"), dict) else {}
+        host_environment = (
+            payload.get("host_environment")
+            if isinstance(payload.get("host_environment"), dict)
+            else {}
+        )
+        host_impact = (
+            host_environment.get("impact")
+            if isinstance(host_environment.get("impact"), dict)
+            else {}
+        )
         print(f"Impact environnement hôte: {host_impact.get('impact_level', 'low')}")
         print(f"Biais décisionnel hôte: {host_impact.get('decision_bias', 'balanced')}")
         causes = vital.get("causes")
@@ -544,26 +712,52 @@ def status(*, verbose: bool = False, output_format: str = "plain") -> None:
             else:
                 print("Alerts: none")
 
-    life_status = payload.get("life_status") if isinstance(payload.get("life_status"), dict) else {}
+    life_status = (
+        payload.get("life_status")
+        if isinstance(payload.get("life_status"), dict)
+        else {}
+    )
     print(f"Verdict de vie: {life_status.get('status') or '-'}")
     print(f"Score de vie: {_fmt_number(life_status.get('score'))}")
     print(f"Explication: {life_status.get('explanation') or '-'}")
     if verbose:
         missing = life_status.get("missing_signals")
         if isinstance(missing, list) and missing:
-            print("Signaux de vie manquants: " + ", ".join(str(item) for item in missing))
+            print(
+                "Signaux de vie manquants: " + ", ".join(str(item) for item in missing)
+            )
 
     print(f"Mood: {payload['mood']}")
-    relationships = payload.get("relationships") if isinstance(payload.get("relationships"), dict) else {}
-    family = relationships.get("family") if isinstance(relationships.get("family"), dict) else {}
-    social = relationships.get("social") if isinstance(relationships.get("social"), dict) else {}
+    relationships = (
+        payload.get("relationships")
+        if isinstance(payload.get("relationships"), dict)
+        else {}
+    )
+    family = (
+        relationships.get("family")
+        if isinstance(relationships.get("family"), dict)
+        else {}
+    )
+    social = (
+        relationships.get("social")
+        if isinstance(relationships.get("social"), dict)
+        else {}
+    )
     print(f"Arbre familial: {len(family.get('nodes', []))} nœuds")
     print(f"Réseau social: {len(social.get('edges', []))} relations")
     print(f"Conflits actifs: {len(relationships.get('active_conflicts', []))}")
-    quests = payload.get("quests") if isinstance(payload.get("quests"), dict) else {"active": [], "completed": []}
+    quests = (
+        payload.get("quests")
+        if isinstance(payload.get("quests"), dict)
+        else {"active": [], "completed": []}
+    )
     print(f"Quêtes actives: {len(quests.get('active', []))}")
     print(f"Quêtes terminées: {len(quests.get('completed', []))}")
-    lifecycle = payload.get("skills_lifecycle") if isinstance(payload.get("skills_lifecycle"), dict) else {}
+    lifecycle = (
+        payload.get("skills_lifecycle")
+        if isinstance(payload.get("skills_lifecycle"), dict)
+        else {}
+    )
     print(f"Skills actives: {lifecycle.get('active', 0)}")
     print(f"Skills dormantes: {lifecycle.get('dormant', 0)}")
     print(f"Skills archivées: {lifecycle.get('archived', 0)}")

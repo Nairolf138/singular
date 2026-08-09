@@ -47,12 +47,18 @@ def test_pipeline_compaction_preserves_identity_invariants(tmp_path: Path) -> No
     assert "identity.created" in lines[0]
 
 
-def test_pipeline_detects_cumulative_simultaneous_trait_collapse(tmp_path: Path) -> None:
+def test_pipeline_detects_cumulative_simultaneous_trait_collapse(
+    tmp_path: Path,
+) -> None:
     mem = tmp_path / "mem"
     Psyche().save_state(mem / "psyche.json")
     episodes = [
-        {"event": "stress", "cause": f"stress-{index}", "evidence": ["sensor", "report"],
-         "trait_changes": {"patience": -0.1, "optimism": -0.1, "resilience": -0.1}}
+        {
+            "event": "stress",
+            "cause": f"stress-{index}",
+            "evidence": ["sensor", "report"],
+            "trait_changes": {"patience": -0.1, "optimism": -0.1, "resilience": -0.1},
+        }
         for index in range(2)
     ]
     result = ConsolidationPipeline(

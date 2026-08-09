@@ -197,8 +197,15 @@ class ImitationEngine:
                 action="imitate_safe", difficulty=trial_cost, sensitive=False
             )
             if not decision.allowed:
-                self._event("rejections", {"type": "developmental_gate", "skill": skill,
-                                             "reason": decision.reason, "stage": decision.stage})
+                self._event(
+                    "rejections",
+                    {
+                        "type": "developmental_gate",
+                        "skill": skill,
+                        "reason": decision.reason,
+                        "stage": decision.stage,
+                    },
+                )
                 return None
         request = ActiveImitationRequest(
             skill,

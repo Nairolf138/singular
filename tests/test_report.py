@@ -476,7 +476,9 @@ def test_report_supports_subcommand_format_option(monkeypatch, tmp_path, capsys)
     assert payload["context"]["run_id"] == "run-json"
 
 
-def test_report_json_payload_contains_stabilized_life_verdict(monkeypatch, tmp_path, capsys):
+def test_report_json_payload_contains_stabilized_life_verdict(
+    monkeypatch, tmp_path, capsys
+):
     monkeypatch.chdir(tmp_path)
     _patch_life_status(
         monkeypatch,
@@ -512,7 +514,9 @@ def test_report_json_payload_contains_stabilized_life_verdict(monkeypatch, tmp_p
     }
 
 
-def test_report_markdown_contains_stabilized_life_verdict(monkeypatch, tmp_path, capsys):
+def test_report_markdown_contains_stabilized_life_verdict(
+    monkeypatch, tmp_path, capsys
+):
     monkeypatch.chdir(tmp_path)
     _patch_life_status(
         monkeypatch,

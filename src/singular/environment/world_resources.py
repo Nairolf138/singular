@@ -68,7 +68,9 @@ class WorldResourcePool:
     ) -> ActionResolution:
         """Consume resources for one action and persist contention/conflict events."""
 
-        cooperation = [name for name in cooperation_partners if name and name != life_id]
+        cooperation = [
+            name for name in cooperation_partners if name and name != life_id
+        ]
         effective_cpu = max(float(cpu_cost), 0.0)
         effective_mut = max(float(mutation_cost), 0.0)
         effective_attention = max(float(attention_cost), 0.0)
@@ -89,9 +91,15 @@ class WorldResourcePool:
             or self.attention_score < effective_attention
         )
         contention = scarcity or len(contenders) > 1
-        conflicts = [intent.life_id for intent in contenders if intent.life_id != winner.life_id]
+        conflicts = [
+            intent.life_id for intent in contenders if intent.life_id != winner.life_id
+        ]
         if scarcity and not granted:
-            consumed = {"cpu_budget": 0.0, "mutation_slots": 0.0, "attention_score": 0.0}
+            consumed = {
+                "cpu_budget": 0.0,
+                "mutation_slots": 0.0,
+                "attention_score": 0.0,
+            }
             rivalry_penalty = 0.2 + (max(winner.bid - actor_score, 0.0) * 0.01)
             relation_bonus = 0.0
         else:
@@ -105,7 +113,9 @@ class WorldResourcePool:
                 "attention_score": effective_attention,
             }
             relation_bonus = 0.1 * len(cooperation)
-            rivalry_penalty = 0.0 if cooperation else (0.05 * len(conflicts) if contention else 0.0)
+            rivalry_penalty = (
+                0.0 if cooperation else (0.05 * len(conflicts) if contention else 0.0)
+            )
 
         event = {
             "life_id": life_id,

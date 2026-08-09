@@ -125,7 +125,9 @@ def test_context_budget_is_provider_aware_stable_and_safely_capped(monkeypatch):
     openai = providers.LLMProviderClient(name="openai", generate=lambda prompt: prompt)
     ollama = providers.LLMProviderClient(name="ollama", generate=lambda prompt: prompt)
     assert ContextBudget.for_client(openai) == ContextBudget.for_client(openai)
-    assert ContextBudget.for_client(ollama).total > ContextBudget.for_client(openai).total
+    assert (
+        ContextBudget.for_client(ollama).total > ContextBudget.for_client(openai).total
+    )
 
     monkeypatch.setenv("SINGULAR_TALK_CONTEXT_CHARS", "999999")
     assert ContextBudget.for_client(ollama).total == 2000

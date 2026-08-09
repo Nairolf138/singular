@@ -103,13 +103,17 @@ class EcosystemRulesConfig:
         return cls(
             schema_version=int(payload.get("schema_version", 1)),
             mode=str(payload.get("mode", "production")),
-            resource_competition_unit=float(payload.get("resource_competition_unit", 1.0)),
+            resource_competition_unit=float(
+                payload.get("resource_competition_unit", 1.0)
+            ),
             passive_energy_decay=float(payload.get("passive_energy_decay", 0.05)),
             passive_resource_decay=float(payload.get("passive_resource_decay", 0.02)),
             crossover_interval=int(payload.get("crossover_interval", 50)),
             cooperation_probability=float(payload.get("cooperation_probability", 0.2)),
             competition_bid_ceiling=float(payload.get("competition_bid_ceiling", 5.0)),
-            reputation_action_weights=dict(payload.get("reputation_action_weights", {"share": 0.2, "steal": -0.2})),
+            reputation_action_weights=dict(
+                payload.get("reputation_action_weights", {"share": 0.2, "steal": -0.2})
+            ),
         )
 
 
@@ -128,12 +132,25 @@ def draw_global_event(rng: random.Random) -> GlobalEvent:
         ("simulated_catastrophe", "systemic catastrophe simulation"),
     ]
     event_type, desc = rng.choice(templates)
-    return GlobalEvent(event_type=event_type, intensity=rng.uniform(0.2, 0.9), duration_ticks=rng.randint(2, 6), description=desc)
+    return GlobalEvent(
+        event_type=event_type,
+        intensity=rng.uniform(0.2, 0.9),
+        duration_ticks=rng.randint(2, 6),
+        description=desc,
+    )
 
 
-def compute_population_metrics(before: Mapping[str, tuple[float, float]], after: Mapping[str, tuple[float, float]], ticks_elapsed: int) -> dict[str, float]:
+def compute_population_metrics(
+    before: Mapping[str, tuple[float, float]],
+    after: Mapping[str, tuple[float, float]],
+    ticks_elapsed: int,
+) -> dict[str, float]:
     if not before or not after:
-        return {"resilience": 0.0, "diversity": 0.0, "recovery_time": float(max(ticks_elapsed, 0))}
+        return {
+            "resilience": 0.0,
+            "diversity": 0.0,
+            "recovery_time": float(max(ticks_elapsed, 0)),
+        }
     before_total = sum(max(0.0, e + r) for e, r in before.values())
     after_total = sum(max(0.0, e + r) for e, r in after.values())
     resilience = 0.0 if before_total <= 0 else min(after_total / before_total, 2.0)

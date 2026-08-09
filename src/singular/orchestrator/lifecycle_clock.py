@@ -8,7 +8,6 @@ from typing import Any
 
 from singular.resources import config_resource
 
-
 DEFAULT_CONFIG_PATH = config_resource("lifecycle.yaml")
 
 
@@ -50,9 +49,13 @@ class LifecycleClockConfig:
     phases: dict[str, PhaseBehavior] = field(
         default_factory=lambda: {
             "veille": PhaseBehavior(30.0, 1.1, ("perception", "resource_scan")),
-            "action": PhaseBehavior(75.0, 1.5, ("mutation", "evaluation", "checkpoint")),
+            "action": PhaseBehavior(
+                75.0, 1.5, ("mutation", "evaluation", "checkpoint")
+            ),
             "introspection": PhaseBehavior(40.0, 1.2, ("self_review",)),
-            "sommeil": PhaseBehavior(15.0, 1.0, ("recovery", "cooldown", "memory_consolidation")),
+            "sommeil": PhaseBehavior(
+                15.0, 1.0, ("recovery", "cooldown", "memory_consolidation")
+            ),
         }
     )
 
@@ -113,7 +116,9 @@ def load_lifecycle_clock_config(path: Path | None = None) -> LifecycleClockConfi
 
     cycle = CycleParameters(
         veille_seconds=float(cycle_raw.get("veille_seconds", cfg.cycle.veille_seconds)),
-        sommeil_seconds=float(cycle_raw.get("sommeil_seconds", cfg.cycle.sommeil_seconds)),
+        sommeil_seconds=float(
+            cycle_raw.get("sommeil_seconds", cfg.cycle.sommeil_seconds)
+        ),
         introspection_frequency_ticks=int(
             cycle_raw.get(
                 "introspection_frequency_ticks",
@@ -126,22 +131,34 @@ def load_lifecycle_clock_config(path: Path | None = None) -> LifecycleClockConfi
     )
 
     coevolution = CoevolutionParameters(
-        enabled=bool(coevolution_raw.get("enabled", cfg.coevolution.enabled))
-        if isinstance(coevolution_raw, dict)
-        else cfg.coevolution.enabled,
-        robustness_weight=float(
-            coevolution_raw.get("robustness_weight", cfg.coevolution.robustness_weight)
-        )
-        if isinstance(coevolution_raw, dict)
-        else cfg.coevolution.robustness_weight,
-        max_test_candidates=int(
-            coevolution_raw.get("max_test_candidates", cfg.coevolution.max_test_candidates)
-        )
-        if isinstance(coevolution_raw, dict)
-        else cfg.coevolution.max_test_candidates,
-        ttl=int(coevolution_raw.get("ttl", cfg.coevolution.ttl))
-        if isinstance(coevolution_raw, dict)
-        else cfg.coevolution.ttl,
+        enabled=(
+            bool(coevolution_raw.get("enabled", cfg.coevolution.enabled))
+            if isinstance(coevolution_raw, dict)
+            else cfg.coevolution.enabled
+        ),
+        robustness_weight=(
+            float(
+                coevolution_raw.get(
+                    "robustness_weight", cfg.coevolution.robustness_weight
+                )
+            )
+            if isinstance(coevolution_raw, dict)
+            else cfg.coevolution.robustness_weight
+        ),
+        max_test_candidates=(
+            int(
+                coevolution_raw.get(
+                    "max_test_candidates", cfg.coevolution.max_test_candidates
+                )
+            )
+            if isinstance(coevolution_raw, dict)
+            else cfg.coevolution.max_test_candidates
+        ),
+        ttl=(
+            int(coevolution_raw.get("ttl", cfg.coevolution.ttl))
+            if isinstance(coevolution_raw, dict)
+            else cfg.coevolution.ttl
+        ),
     )
 
     phases: dict[str, PhaseBehavior] = {}
@@ -151,8 +168,12 @@ def load_lifecycle_clock_config(path: Path | None = None) -> LifecycleClockConfi
         if isinstance(actions, str):
             actions = [actions]
         phases[name] = PhaseBehavior(
-            cpu_budget_percent=float(source.get("cpu_budget_percent", default.cpu_budget_percent)),
-            slowdown_on_fatigue=float(source.get("slowdown_on_fatigue", default.slowdown_on_fatigue)),
+            cpu_budget_percent=float(
+                source.get("cpu_budget_percent", default.cpu_budget_percent)
+            ),
+            slowdown_on_fatigue=float(
+                source.get("slowdown_on_fatigue", default.slowdown_on_fatigue)
+            ),
             allowed_actions=tuple(str(item) for item in actions),
         )
 

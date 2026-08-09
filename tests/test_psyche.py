@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from singular.psyche import Psyche, Mood, TraitEvolutionPolicy, choose_action_from_psyche
+from singular.psyche import (
+    Psyche,
+    Mood,
+    TraitEvolutionPolicy,
+    choose_action_from_psyche,
+)
 from singular.resource_manager import ResourceManager
 from singular.motivation import GoalPolicy, Objective
 
@@ -77,7 +82,12 @@ def test_state_persistence(tmp_path: Path) -> None:
 
 def test_trait_evolution_is_bounded_rate_limited_and_explained() -> None:
     psyche = Psyche(evolution_policy=TraitEvolutionPolicy(max_delta=0.05))
-    assert psyche.evolve_traits({"curiosity": 0.4}, cause="observations", evidence=["a", "b"]) == "applied"
+    assert (
+        psyche.evolve_traits(
+            {"curiosity": 0.4}, cause="observations", evidence=["a", "b"]
+        )
+        == "applied"
+    )
     assert psyche.curiosity == pytest.approx(0.55)
     assert psyche.trait_history[-1]["cause"] == "observations"
     assert psyche.trait_history[-1]["before"]["curiosity"] == 0.5
@@ -89,12 +99,15 @@ def test_cumulative_correlated_structural_collapse_restores_and_freezes() -> Non
     for index in range(2):
         status = psyche.evolve_traits(
             {"patience": -0.1, "optimism": -0.1, "resilience": -0.1},
-            cause=f"stress-{index}", evidence=["sensor-a", "sensor-b"],
+            cause=f"stress-{index}",
+            evidence=["sensor-a", "sensor-b"],
         )
     assert status == "review"
     assert psyche.trait_snapshot() == initial
     assert psyche.evolution_reviews[-1]["status"] == "restored"
-    assert psyche.evolve_traits({"curiosity": 0.05}, cause="next", evidence=[]) == "frozen"
+    assert (
+        psyche.evolve_traits({"curiosity": 0.05}, cause="next", evidence=[]) == "frozen"
+    )
 
 
 def test_resource_manager_influences_mood(tmp_path: Path) -> None:
@@ -125,7 +138,9 @@ def test_objective_policy_persistence_and_schema(tmp_path: Path) -> None:
                 weight=0.7,
                 parent=None,
                 horizon_ticks=4,
-                policy=GoalPolicy(besoin=0.9, priorite=0.8, urgence=1.0, alignement_valeurs=0.7),
+                policy=GoalPolicy(
+                    besoin=0.9, priorite=0.8, urgence=1.0, alignement_valeurs=0.7
+                ),
             )
         }
     )
@@ -145,14 +160,18 @@ def test_weighted_axes_and_operator_bias() -> None:
             "root": Objective(
                 "root",
                 weight=1.0,
-                policy=GoalPolicy(besoin=0.6, priorite=0.9, urgence=0.2, alignement_valeurs=0.9),
+                policy=GoalPolicy(
+                    besoin=0.6, priorite=0.9, urgence=0.2, alignement_valeurs=0.9
+                ),
             ),
             "urgent": Objective(
                 "urgent",
                 weight=0.5,
                 parent="root",
                 horizon_ticks=3,
-                policy=GoalPolicy(besoin=0.9, priorite=0.5, urgence=1.0, alignement_valeurs=0.4),
+                policy=GoalPolicy(
+                    besoin=0.9, priorite=0.5, urgence=1.0, alignement_valeurs=0.4
+                ),
             ),
         }
     )
@@ -208,7 +227,14 @@ def test_social_state_bounds_are_stable() -> None:
 @pytest.mark.parametrize(
     ("mood", "energy", "signals", "social_states", "expected_action", "reason_text"),
     [
-        (Mood.FATIGUE, 12.0, {"resource_energy": 12.0}, {}, "rest", "fatigue_or_low_energy"),
+        (
+            Mood.FATIGUE,
+            12.0,
+            {"resource_energy": 12.0},
+            {},
+            "rest",
+            "fatigue_or_low_energy",
+        ),
         (Mood.CURIOUS, 80.0, {"opportunity": 0.9}, {}, "move", "curiosity"),
         (Mood.ANGER, 70.0, {"competition_pressure": 0.8}, {}, "compete", "anger"),
         (

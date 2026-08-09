@@ -7,8 +7,18 @@ from typing import Any
 
 from singular.core.agent_runtime import PerceptEvent
 
-from .capture import ActiveWindowCapture, CameraCapture, ScreenCapture, VisionCaptureError
-from .extractors import KeyObjectExtractor, OcrTextExtractor, UIStateChangeExtractor, VisionEventExtractor
+from .capture import (
+    ActiveWindowCapture,
+    CameraCapture,
+    ScreenCapture,
+    VisionCaptureError,
+)
+from .extractors import (
+    KeyObjectExtractor,
+    OcrTextExtractor,
+    UIStateChangeExtractor,
+    VisionEventExtractor,
+)
 from .preprocess import FramePreprocessor, FrameSamplingStrategy
 
 
@@ -18,10 +28,16 @@ class VisionPerceptionPipeline:
 
     source: str = "screen"
     source_name: str = "vision.pipeline"
-    sampling: FrameSamplingStrategy = field(default_factory=lambda: FrameSamplingStrategy(fps=1.5))
+    sampling: FrameSamplingStrategy = field(
+        default_factory=lambda: FrameSamplingStrategy(fps=1.5)
+    )
     preprocessor: FramePreprocessor = field(default_factory=FramePreprocessor)
     extractors: list[VisionEventExtractor] = field(
-        default_factory=lambda: [OcrTextExtractor(), KeyObjectExtractor(), UIStateChangeExtractor()]
+        default_factory=lambda: [
+            OcrTextExtractor(),
+            KeyObjectExtractor(),
+            UIStateChangeExtractor(),
+        ]
     )
 
     def collect(self) -> list[PerceptEvent]:
@@ -50,7 +66,9 @@ class VisionPerceptionPipeline:
             "events": {},
         }
         for extractor in self.extractors:
-            payload["events"][extractor.__class__.__name__] = extractor.extract(processed)
+            payload["events"][extractor.__class__.__name__] = extractor.extract(
+                processed
+            )
 
         return [
             PerceptEvent(

@@ -39,7 +39,9 @@ class SemanticMemoryStore:
         return [item for item in payload if isinstance(item, dict)]
 
     def write_facts(self, facts: list[dict[str, Any]]) -> None:
-        atomic_write_text(self.path, json.dumps(facts, ensure_ascii=False, indent=2) + "\n")
+        atomic_write_text(
+            self.path, json.dumps(facts, ensure_ascii=False, indent=2) + "\n"
+        )
 
     def extract_facts(self, episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
         extracted: list[dict[str, Any]] = []
@@ -73,9 +75,14 @@ class SemanticMemoryStore:
                 existing["confidence"] = min(0.99, round(0.5 + mentions * 0.1, 2))
             else:
                 current[fid] = fact
-        merged = sorted(current.values(), key=lambda item: (str(item.get("kind")), str(item.get("value"))))
+        merged = sorted(
+            current.values(),
+            key=lambda item: (str(item.get("kind")), str(item.get("value"))),
+        )
         self.write_facts(merged)
         return merged
 
-    def consolidate_from_episodes(self, episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def consolidate_from_episodes(
+        self, episodes: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         return self.merge_facts(self.extract_facts(episodes))

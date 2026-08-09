@@ -31,12 +31,17 @@ def test_life_identity_renderers_do_not_conflate_three_distinct_lives() -> None:
 
 def test_timeline_static_exposes_correlation_navigation() -> None:
     timeline = (DASHBOARD_STATIC / "render-timeline.js").read_text(encoding="utf-8")
-    conversations = (DASHBOARD_STATIC / "render-conversations.js").read_text(encoding="utf-8")
+    conversations = (DASHBOARD_STATIC / "render-conversations.js").read_text(
+        encoding="utf-8"
+    )
     template = DASHBOARD_TEMPLATE.read_text(encoding="utf-8")
     assert "correlation_id" in timeline
     assert "Mutation déclenchante" in timeline
     assert "timeline-path" in timeline
-    assert all(label in conversations for label in ("données absentes", "sain", "mode dégradé", "bloqué"))
+    assert all(
+        label in conversations
+        for label in ("données absentes", "sain", "mode dégradé", "bloqué")
+    )
     assert "cause, décision, conséquence, vie, action corrective" in template
 
 
@@ -78,7 +83,10 @@ def test_dashboard_bootstrap_literal_ids_exist_or_are_created() -> None:
     unprotected_missing = {
         element_id
         for element_id in missing
-        if re.search(rf"document\.getElementById\([\"']{re.escape(element_id)}[\"']\)\.", bootstrap)
+        if re.search(
+            rf"document\.getElementById\([\"']{re.escape(element_id)}[\"']\)\.",
+            bootstrap,
+        )
     }
     assert not unprotected_missing, (
         "Bootstrap references missing dashboard IDs without a guard: "
@@ -91,18 +99,22 @@ def test_dashboard_js_uses_guards_for_direct_get_element_access() -> None:
     offenders: list[str] = []
     direct_access = re.compile(r"document\.getElementById\([^\n]+?\)\.(?!\?)")
     for path in AUDITED_JS:
-      text = path.read_text(encoding="utf-8")
-      for match in direct_access.finditer(text):
-          line = text.count("\n", 0, match.start()) + 1
-          offenders.append(f"{path}:{line}: {match.group(0)}")
+        text = path.read_text(encoding="utf-8")
+        for match in direct_access.finditer(text):
+            line = text.count("\n", 0, match.start()) + 1
+            offenders.append(f"{path}:{line}: {match.group(0)}")
 
-    assert not offenders, "Unprotected direct DOM access remains:\n" + "\n".join(offenders)
+    assert not offenders, "Unprotected direct DOM access remains:\n" + "\n".join(
+        offenders
+    )
 
 
 def test_dashboard_quests_websocket_targets_existing_raw_panel() -> None:
     bootstrap = (DASHBOARD_STATIC / "bootstrap.js").read_text(encoding="utf-8")
     assert "getElementById('quests')" not in bootstrap
-    assert "getElementById('quests-json-raw')" in bootstrap or "loadQuests()" in bootstrap
+    assert (
+        "getElementById('quests-json-raw')" in bootstrap or "loadQuests()" in bootstrap
+    )
 
 
 def test_dashboard_tab_navigation_supports_legacy_hashes() -> None:
@@ -129,7 +141,13 @@ def test_dashboard_tab_navigation_supports_legacy_hashes() -> None:
         "#tab-technique",
     ]:
         assert current_tab in template
-    for legacy_href in ["#cockpit", "#timeline-section", "#vies", "#logs-live", "#parametres"]:
+    for legacy_href in [
+        "#cockpit",
+        "#timeline-section",
+        "#vies",
+        "#logs-live",
+        "#parametres",
+    ]:
         assert f"href='{legacy_href}'" not in template
 
 
@@ -361,7 +379,9 @@ if (!optionsHtml.includes('Vie &lt;script&gt;alert(1)&lt;/script&gt;')) {{
     subprocess.run(["node", str(script)], check=True)
 
 
-def test_cockpit_loader_keeps_available_data_when_cockpit_endpoint_fails(tmp_path: Path) -> None:
+def test_cockpit_loader_keeps_available_data_when_cockpit_endpoint_fails(
+    tmp_path: Path,
+) -> None:
     """Exercise the cockpit loader against a failed /api/cockpit response."""
     script = tmp_path / "cockpit_partial_failure_check.mjs"
     module_path = (Path.cwd() / DASHBOARD_STATIC / "render-cockpit.js").as_uri()
@@ -481,7 +501,9 @@ if (!raw.includes('"global_status": "warning"')) {{ throw new Error(`fallback co
     subprocess.run(["node", str(script)], check=True)
 
 
-def test_dashboard_bootstrap_keeps_local_handlers_when_websocket_fails(tmp_path: Path) -> None:
+def test_dashboard_bootstrap_keeps_local_handlers_when_websocket_fails(
+    tmp_path: Path,
+) -> None:
     """A WebSocket construction error must not disable local dashboard controls."""
     script = tmp_path / "dashboard_websocket_failure_check.mjs"
     module_path = (Path.cwd() / DASHBOARD_STATIC / "bootstrap.js").as_uri()
@@ -662,7 +684,9 @@ if (!result.textContent.includes('Saisissez le nom exact')) {{ throw new Error(`
     subprocess.run(["node", str(script)], check=True)
 
 
-def test_dashboard_websocket_url_supports_http_https_and_proxy_prefix(tmp_path: Path) -> None:
+def test_dashboard_websocket_url_supports_http_https_and_proxy_prefix(
+    tmp_path: Path,
+) -> None:
     """The browser protocol and optional reverse-proxy prefix determine the WebSocket URL."""
     script = tmp_path / "dashboard_websocket_url_check.mjs"
     module_path = (Path.cwd() / DASHBOARD_STATIC / "bootstrap.js").as_uri()
@@ -797,7 +821,9 @@ if (birth.disabled || !archive.disabled || !talk.disabled || !emergency.disabled
     subprocess.run(["node", str(script)], check=True)
 
 
-def test_archived_dead_or_stopped_lives_disable_operator_actions(tmp_path: Path) -> None:
+def test_archived_dead_or_stopped_lives_disable_operator_actions(
+    tmp_path: Path,
+) -> None:
     """Operator talk/archive/emergency stop are blocked for non-runnable life statuses."""
     script = tmp_path / "blocked_life_action_check.mjs"
     module_path = (Path.cwd() / DASHBOARD_STATIC / "actions.js").as_uri()

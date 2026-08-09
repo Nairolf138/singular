@@ -69,7 +69,9 @@ def generate_quests(
     recent_failures = _as_float(history.get("recent_failures", 0.0), default=0.0)
 
     if isinstance(value_performance_tension, Mapping):
-        tension = _clamp(_as_float(value_performance_tension.get("score", 0.0), default=0.0))
+        tension = _clamp(
+            _as_float(value_performance_tension.get("score", 0.0), default=0.0)
+        )
     else:
         tension = _clamp(_as_float(value_performance_tension, default=0.0))
 
@@ -77,15 +79,21 @@ def generate_quests(
     food = _clamp(_as_float(stock.get("food", 50.0), default=50.0) / 100.0)
     warmth = _clamp(_as_float(stock.get("warmth", 50.0), default=50.0) / 100.0)
 
-    delayed_crisis = _clamp(_as_float(world.get("delayed_crisis_pressure", 0.0), default=0.0))
+    delayed_crisis = _clamp(
+        _as_float(world.get("delayed_crisis_pressure", 0.0), default=0.0)
+    )
     opportunity = _clamp(_as_float(world.get("opportunity_pressure", 0.0), default=0.0))
 
     generated: list[GeneratedQuest] = []
     surprise = surprise_signals or {}
     surprise_level = _clamp(_as_float(surprise.get("surprise", 0.0), default=0.0))
     frustration_level = _clamp(_as_float(surprise.get("frustration", 0.0), default=0.0))
-    curiosity_spike = _clamp(_as_float(surprise.get("curiosity", curiosity), default=curiosity))
-    repeated_operator_failures = _clamp(_as_float(surprise.get("operator_family_failure_pressure", 0.0), default=0.0))
+    curiosity_spike = _clamp(
+        _as_float(surprise.get("curiosity", curiosity), default=curiosity)
+    )
+    repeated_operator_failures = _clamp(
+        _as_float(surprise.get("operator_family_failure_pressure", 0.0), default=0.0)
+    )
 
     if tension >= 0.45:
         generated.append(
@@ -106,7 +114,9 @@ def generate_quests(
                 objective="Restaurer la stabilité d'exécution après une série d'échecs.",
                 rationale="Historique récent orienté vers l'échec.",
                 origin="intrinsic",
-                priority=_clamp(0.4 + failure_pressure * 0.5 + (1.0 - resilience) * 0.2),
+                priority=_clamp(
+                    0.4 + failure_pressure * 0.5 + (1.0 - resilience) * 0.2
+                ),
             )
         )
 
@@ -162,4 +172,8 @@ def generate_quests(
         )
 
     generated.sort(key=lambda quest: quest.priority, reverse=True)
-    return developmental_model.filter_quests(generated) if developmental_model else generated
+    return (
+        developmental_model.filter_quests(generated)
+        if developmental_model
+        else generated
+    )

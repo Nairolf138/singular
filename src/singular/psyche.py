@@ -396,15 +396,29 @@ class Psyche:
         "resentment",
     )
     _PLASTIC_TRAITS: ClassVar[tuple[str, ...]] = (
-        "curiosity", "patience", "playfulness", "optimism", "resilience"
+        "curiosity",
+        "patience",
+        "playfulness",
+        "optimism",
+        "resilience",
     )
     _STRUCTURAL_TRAITS: ClassVar[tuple[str, ...]] = (
-        "patience", "optimism", "resilience"
+        "patience",
+        "optimism",
+        "resilience",
     )
 
     def __post_init__(self) -> None:
         for trait in self._PLASTIC_TRAITS:
-            setattr(self, trait, _clamp(float(getattr(self, trait)), self.evolution_policy.minimum, self.evolution_policy.maximum))
+            setattr(
+                self,
+                trait,
+                _clamp(
+                    float(getattr(self, trait)),
+                    self.evolution_policy.minimum,
+                    self.evolution_policy.maximum,
+                ),
+            )
         if not self.last_coherent_traits:
             self.last_coherent_traits = self.trait_snapshot()
         else:
@@ -433,47 +447,101 @@ class Psyche:
         """
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         independent = tuple(dict.fromkeys(str(item) for item in evidence if str(item)))
-        requested = {k: float(v) for k, v in deltas.items() if k in self._PLASTIC_TRAITS}
+        requested = {
+            k: float(v) for k, v in deltas.items() if k in self._PLASTIC_TRAITS
+        }
         if self.evolution_freeze_remaining > 0:
             self.evolution_freeze_remaining -= 1
-            self.trait_history.append({"ts": now, "status": "frozen", "cause": cause,
-                                       "evidence": list(independent), "requested": requested})
+            self.trait_history.append(
+                {
+                    "ts": now,
+                    "status": "frozen",
+                    "cause": cause,
+                    "evidence": list(independent),
+                    "requested": requested,
+                }
+            )
             return "frozen"
-        if any(abs(delta) >= self.evolution_policy.important_delta for delta in requested.values()) and len(independent) < self.evolution_policy.independent_evidence_required:
-            self.trait_history.append({"ts": now, "status": "review", "cause": cause,
-                                       "evidence": list(independent), "requested": requested,
-                                       "reason": "insufficient_independent_evidence"})
+        if (
+            any(
+                abs(delta) >= self.evolution_policy.important_delta
+                for delta in requested.values()
+            )
+            and len(independent) < self.evolution_policy.independent_evidence_required
+        ):
+            self.trait_history.append(
+                {
+                    "ts": now,
+                    "status": "review",
+                    "cause": cause,
+                    "evidence": list(independent),
+                    "requested": requested,
+                    "reason": "insufficient_independent_evidence",
+                }
+            )
             return "review"
 
         before = self.trait_snapshot()
         applied: dict[str, float] = {}
         for trait, delta in requested.items():
-            limited = max(-self.evolution_policy.max_delta, min(self.evolution_policy.max_delta, delta))
-            target = _clamp(before[trait] + limited, self.evolution_policy.minimum, self.evolution_policy.maximum)
+            limited = max(
+                -self.evolution_policy.max_delta,
+                min(self.evolution_policy.max_delta, delta),
+            )
+            target = _clamp(
+                before[trait] + limited,
+                self.evolution_policy.minimum,
+                self.evolution_policy.maximum,
+            )
             applied[trait] = target - before[trait]
 
-        recent = [row for row in self.trait_history[-self.evolution_policy.cumulative_window + 1:] if row.get("status") == "applied"]
+        recent = [
+            row
+            for row in self.trait_history[
+                -self.evolution_policy.cumulative_window + 1 :
+            ]
+            if row.get("status") == "applied"
+        ]
         structural_drops = []
         for trait in self._STRUCTURAL_TRAITS:
-            cumulative = -applied.get(trait, 0.0) + sum(max(0.0, -float(row.get("applied", {}).get(trait, 0.0))) for row in recent)
+            cumulative = -applied.get(trait, 0.0) + sum(
+                max(0.0, -float(row.get("applied", {}).get(trait, 0.0)))
+                for row in recent
+            )
             if cumulative >= self.evolution_policy.collapse_drop:
                 structural_drops.append(trait)
         if len(structural_drops) >= 2:
             for trait, value in self.last_coherent_traits.items():
                 setattr(self, trait, value)
-            review = {"ts": now, "status": "restored", "cause": cause,
-                      "traits": structural_drops, "snapshot": dict(self.last_coherent_traits)}
+            review = {
+                "ts": now,
+                "status": "restored",
+                "cause": cause,
+                "traits": structural_drops,
+                "snapshot": dict(self.last_coherent_traits),
+            }
             self.evolution_reviews.append(review)
-            self.trait_history.append({**review, "requested": requested, "evidence": list(independent)})
+            self.trait_history.append(
+                {**review, "requested": requested, "evidence": list(independent)}
+            )
             self.evolution_freeze_remaining = self.evolution_policy.freeze_events
             return "review"
 
         for trait, delta in applied.items():
             setattr(self, trait, before[trait] + delta)
         after = self.trait_snapshot()
-        self.trait_history.append({"ts": now, "status": "applied", "cause": cause,
-                                   "evidence": list(independent), "before": before,
-                                   "requested": requested, "applied": applied, "after": after})
+        self.trait_history.append(
+            {
+                "ts": now,
+                "status": "applied",
+                "cause": cause,
+                "evidence": list(independent),
+                "before": before,
+                "requested": requested,
+                "applied": applied,
+                "after": after,
+            }
+        )
         self.trait_history = self.trait_history[-512:]
         # A broadly negative structural movement remains provisional until the
         # configured cumulative window proves that it is not a collapse.
@@ -977,7 +1045,9 @@ class Psyche:
             ),
             trait_history=list(data.get("trait_history", []))[-512:],
             evolution_reviews=list(data.get("evolution_reviews", []))[-128:],
-            evolution_freeze_remaining=max(0, int(data.get("evolution_freeze_remaining", 0))),
+            evolution_freeze_remaining=max(
+                0, int(data.get("evolution_freeze_remaining", 0))
+            ),
             last_coherent_traits=dict(data.get("last_coherent_traits", {})),
         )
         mood_val = data.get("last_mood")

@@ -27,10 +27,14 @@ def test_collect_host_metrics_returns_normalized_payload() -> None:
     assert isinstance(metrics["disk_free_gb"], float)
     assert isinstance(metrics["process_cpu_percent"], float)
     assert isinstance(metrics["process_rss_mb"], float)
-    assert metrics["host_uptime_s"] is None or isinstance(metrics["host_uptime_s"], float)
+    assert metrics["host_uptime_s"] is None or isinstance(
+        metrics["host_uptime_s"], float
+    )
     assert isinstance(metrics["metric_status"], dict)
     assert metrics["cpu_load_1m"] is None or isinstance(metrics["cpu_load_1m"], float)
-    assert metrics["host_temperature_c"] is None or isinstance(metrics["host_temperature_c"], float)
+    assert metrics["host_temperature_c"] is None or isinstance(
+        metrics["host_temperature_c"], float
+    )
 
 
 def test_collect_host_metrics_without_psutil(monkeypatch) -> None:

@@ -14,11 +14,20 @@ pytestmark = pytest.mark.usefixtures("local_sandbox")
 
 
 def test_technical_gain_is_rejected_when_it_destroys_health():
-    weights = {name: 0.0 for name in (
-        "functional_gain", "health", "vital_risk", "resources",
-        "sandbox_stability", "cost", "quest_progress", "identity_continuity",
-        "useful_skills_retention",
-    )}
+    weights = {
+        name: 0.0
+        for name in (
+            "functional_gain",
+            "health",
+            "vital_risk",
+            "resources",
+            "sandbox_stability",
+            "cost",
+            "quest_progress",
+            "identity_continuity",
+            "useful_skills_retention",
+        )
+    }
     weights.update(functional_gain=0.3, health=0.18, vital_risk=-0.18)
     config = LifecycleFitnessConfig(weights, 2, 0.0, 0.15)
     decision = evaluate_mutation_fitness(

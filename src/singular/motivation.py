@@ -92,7 +92,10 @@ class HierarchicalObjectivesManager:
         meta = payload.get("meta", {})
         return HierarchicalObjectivesState(
             immediate=dict(immediate) if isinstance(immediate, dict) else {},
-            meta={**HierarchicalObjectivesState().meta, **(meta if isinstance(meta, dict) else {})},
+            meta={
+                **HierarchicalObjectivesState().meta,
+                **(meta if isinstance(meta, dict) else {}),
+            },
             meta_failure_streak=int(payload.get("meta_failure_streak", 0) or 0),
         )
 
@@ -110,11 +113,17 @@ class HierarchicalObjectivesManager:
             ),
         )
 
-    def revise(self, *, perturbation: dict[str, Any] | None = None) -> HierarchicalObjectivesState:
+    def revise(
+        self, *, perturbation: dict[str, Any] | None = None
+    ) -> HierarchicalObjectivesState:
         perturbation = perturbation or {}
-        interruption_pressure = _clamp(float(perturbation.get("interruption_pressure", 0.0) or 0.0))
+        interruption_pressure = _clamp(
+            float(perturbation.get("interruption_pressure", 0.0) or 0.0)
+        )
         for key, value in list(self.state.immediate.items()):
-            self.state.immediate[key] = max(0.0, float(value) * (1.0 - (0.15 * interruption_pressure)))
+            self.state.immediate[key] = max(
+                0.0, float(value) * (1.0 - (0.15 * interruption_pressure))
+            )
         for key, value in list(self.state.meta.items()):
             decay = 0.03 if interruption_pressure < 0.35 else 0.01
             self.state.meta[key] = _clamp(float(value) * (1.0 - decay))
@@ -122,7 +131,9 @@ class HierarchicalObjectivesManager:
         return self.state
 
     def register_meta_outcome(self, *, success: bool) -> int:
-        self.state.meta_failure_streak = 0 if success else self.state.meta_failure_streak + 1
+        self.state.meta_failure_streak = (
+            0 if success else self.state.meta_failure_streak + 1
+        )
         self._save()
         return self.state.meta_failure_streak
 
