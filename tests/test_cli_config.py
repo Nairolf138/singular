@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 import types
+import grp
+import pwd
 
 import singular.cli as cli
 
@@ -140,9 +142,7 @@ def test_config_openai_test_ping_failure(monkeypatch, capsys) -> None:
         lambda _prompt: "Error communicating with OpenAI.",
     )
 
-    exit_code = cli.main(
-        ["config", "openai", "--api-key", "sk-test-ko-1234", "--test"]
-    )
+    exit_code = cli.main(["config", "openai", "--api-key", "sk-test-ko-1234", "--test"])
 
     out = capsys.readouterr().out
     assert exit_code == 1
@@ -172,7 +172,9 @@ def test_config_root_set_global_persists_and_show_reads_it(
     assert str(tmp_path / "home" / ".singular" / "lab") in out_show
 
 
-def test_config_root_set_project_overrides_global(monkeypatch, tmp_path, capsys) -> None:
+def test_config_root_set_project_overrides_global(
+    monkeypatch, tmp_path, capsys
+) -> None:
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
     workspace = tmp_path / "workspace"
     workspace.mkdir(parents=True, exist_ok=True)
@@ -180,7 +182,9 @@ def test_config_root_set_project_overrides_global(monkeypatch, tmp_path, capsys)
 
     assert cli.main(["config", "root", "set", "global-root", "--scope", "global"]) == 0
     capsys.readouterr()
-    assert cli.main(["config", "root", "set", "project-root", "--scope", "project"]) == 0
+    assert (
+        cli.main(["config", "root", "set", "project-root", "--scope", "project"]) == 0
+    )
     capsys.readouterr()
 
     exit_code = cli.main(["config", "root", "show"])
@@ -230,7 +234,9 @@ def test_safe_path_windows_fallback_handles_not_implemented(monkeypatch) -> None
     assert root == cli._HOST_PATH_CLS(r"C:\tmp\singular")
 
 
-def test_implicit_registry_root_windows_defaults_to_user_home(monkeypatch, tmp_path) -> None:
+def test_implicit_registry_root_windows_defaults_to_user_home(
+    monkeypatch, tmp_path
+) -> None:
     monkeypatch.setattr(cli.os, "name", "nt")
     monkeypatch.delenv("SINGULAR_ROOT", raising=False)
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
@@ -240,7 +246,9 @@ def test_implicit_registry_root_windows_defaults_to_user_home(monkeypatch, tmp_p
     assert root == cli._HOST_PATH_CLS("~/.singular").expanduser()
 
 
-def test_implicit_registry_root_posix_keeps_configured_behavior(monkeypatch, tmp_path) -> None:
+def test_implicit_registry_root_posix_keeps_configured_behavior(
+    monkeypatch, tmp_path
+) -> None:
     monkeypatch.setattr(cli.os, "name", "posix")
     monkeypatch.delenv("SINGULAR_ROOT", raising=False)
     configured = tmp_path / "configured-root"
@@ -249,3 +257,71 @@ def test_implicit_registry_root_posix_keeps_configured_behavior(monkeypatch, tmp
     root = cli._implicit_registry_root_from_env_or_default()
 
     assert root == configured
+
+
+def test_install_systemd_persists_resolved_active_life(monkeypatch, tmp_path) -> None:
+    account = pwd.getpwuid(cli.os.getuid())
+    group = grp.getgrgid(account.pw_gid)
+    root = tmp_path / "root"
+    life = root / "lives" / "lumen"
+    (life / "mem").mkdir(parents=True)
+    (life / "runs").mkdir()
+    binary = tmp_path / "bin" / "singular"
+    binary.parent.mkdir()
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    binary.chmod(0o755)
+    env_file = tmp_path / "etc" / "singular.env"
+    unit_file = tmp_path / "systemd" / "singular.service"
+    calls = []
+    monkeypatch.setattr(
+        cli.subprocess, "run", lambda command, check: calls.append((command, check))
+    )
+    monkeypatch.setenv("OLLAMA_MODEL", "llama-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-be-written")
+
+    result = cli._install_systemd_service(
+        root,
+        life,
+        user=account.pw_name,
+        group=group.gr_name,
+        binary=binary,
+        environment_file=env_file,
+        unit_file=unit_file,
+    )
+
+    assert result == 0
+    environment = env_file.read_text(encoding="utf-8")
+    assert f'SINGULAR_ROOT="{root.resolve()}"' in environment
+    assert f'SINGULAR_HOME="{life.resolve()}"' in environment
+    assert 'OLLAMA_MODEL="llama-test"' in environment
+    assert "OPENAI_API_KEY" not in environment
+    unit = unit_file.read_text(encoding="utf-8")
+    assert f"WorkingDirectory={life.resolve()}" in unit
+    assert f"ExecStart={binary.resolve()} orchestrate run" in unit
+    assert calls == [(["systemctl", "daemon-reload"], True)]
+
+
+def test_install_systemd_rejects_missing_runtime_directories(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    account = pwd.getpwuid(cli.os.getuid())
+    group = grp.getgrgid(account.pw_gid)
+    life = tmp_path / "root" / "lives" / "broken"
+    life.mkdir(parents=True)
+    binary = tmp_path / "singular"
+    binary.write_text("", encoding="utf-8")
+    monkeypatch.setattr(cli.subprocess, "run", lambda *_args, **_kwargs: globals())
+
+    result = cli._install_systemd_service(
+        tmp_path / "root",
+        life,
+        user=account.pw_name,
+        group=group.gr_name,
+        binary=binary,
+        environment_file=tmp_path / "env",
+        unit_file=tmp_path / "unit",
+    )
+
+    assert result == 1
+    assert "répertoire requis absent" in capsys.readouterr().err
+    assert not (tmp_path / "env").exists()

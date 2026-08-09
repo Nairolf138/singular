@@ -15,10 +15,22 @@ def test_deployment_manifests_are_complete() -> None:
     assert check_manifests() == 0
 
 
+def test_systemd_template_has_only_install_time_context() -> None:
+    unit = Path("deploy/systemd/singular.service").read_text(encoding="utf-8")
+    assert "EnvironmentFile=/etc/singular/singular.env" in unit
+    assert "Environment=SINGULAR_ROOT=" not in unit
+    assert "/opt/singular" not in unit
+    assert "/var/lib/singular" not in unit
+    assert "WorkingDirectory=@SINGULAR_HOME@" in unit
+
+
 @pytest.mark.integration
-def test_injected_restart_preserves_identity_and_progress(tmp_path: Path) -> None:
+def test_injected_restart_preserves_identity_and_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Run any injected supervisor command twice against an existing data root."""
     root = tmp_path / "state"
+    monkeypatch.setenv("SINGULAR_ROOT", str(root))
     assert main(["--root", str(root), "lives", "create", "--name", "Resume"]) == 0
     identity_path = root / "lives" / "resume" / "id.json"
     progress_path = root / "lives" / "resume" / "mem" / "restart-progress.json"

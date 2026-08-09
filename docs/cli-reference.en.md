@@ -872,7 +872,7 @@ Paths below are relative to the root or `SINGULAR_HOME`. Always back up before d
 <!-- cli-command: config root -->
 ## `config root`
 
-**Syntax :** `singular config root [-h] {set,show} ...`
+**Syntax :** `singular config root [-h] {set,show,install-systemd} ...`
 
 **Arguments and defaults :** Aucune / None.
 
@@ -931,6 +931,29 @@ Paths below are relative to the root or `SINGULAR_HOME`. Always back up before d
 **Advanced example :** `singular --root /srv/singular --life ada --format json config root show`
 
 **Common errors :** Missing life/run/file, invalid JSON, sandbox failure, invalid format/export.
+
+<!-- cli-command: config root install-systemd -->
+## `config root install-systemd`
+
+**Syntax :** `singular [--root PATH] [--life NAME] config root install-systemd [--user USER] [--group GROUP] [--binary PATH] [--environment-file PATH] [--unit-file PATH]`
+
+**Arguments and defaults :** `singular` user/group; `/etc/singular/singular.env` environment; `/etc/systemd/system/singular.service` unit; binary discovered from `PATH`.
+
+**Prerequisites :** An existing active life, a `singular` binary, `mem/` and `runs/` writable by the service user, permission to write `/etc`, and systemd.
+
+**Target root and life :** The resolved root and active life (or `--life`) are pinned as `SINGULAR_ROOT` and `SINGULAR_HOME`.
+
+**Files read or written :** Atomically generates the non-secret environment file and rendered unit. Non-secret provider variables (`LLM_PROVIDER`, model names, and Ollama settings) are retained; API keys are excluded.
+
+**Side effects :** Runs `systemctl daemon-reload`; activation remains explicit through `systemctl enable --now singular`.
+
+**Minimal example :** `sudo singular --root /var/lib/singular config root install-systemd`
+
+**Advanced example :** `sudo singular --root /srv/singular --life ada config root install-systemd --user singular --group singular --binary /srv/app/.venv/bin/singular`
+
+**Diagnostics :** `systemctl cat singular`; `cat /etc/singular/singular.env`; `sudo -u singular test -w <life>/mem -a -w <life>/runs`; `sudo -u singular SINGULAR_ROOT=<root> singular lives list`.
+
+**Common errors :** Missing life/directory or binary, unknown account, or incompatible permissions; the diagnostic identifies the command or path to fix and installs no file.
 
 <!-- cli-command: lives -->
 ## `lives`
