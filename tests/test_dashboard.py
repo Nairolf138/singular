@@ -13,6 +13,24 @@ from singular.dashboard.services.trajectory import build_trajectory
 from singular.lives import LifeMetadata, create_life
 
 
+def test_dashboard_exposes_viability_drift_diagnostics(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / "drift.jsonl").write_text(json.dumps({
+        "ts": "2026-08-09T10:00:00+00:00", "event": "interaction",
+        "interaction": "mutation_paused", "action": "paused",
+        "metrics": {"health": .35, "risk": .7, "fitness": .2},
+        "thresholds": {"drift_threshold": .12},
+        "windows": {"short": .35, "long": .62},
+    }) + "\n", encoding="utf-8")
+    payload = TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")).get("/api/cockpit").json()
+    governance = payload["viability_governance"]
+    assert governance["state"] == "paused"
+    assert governance["mutations_enabled"] is False
+    assert governance["metrics"]["risk"] == .7
+    assert governance["thresholds"]["drift_threshold"] == .12
+
+
 def test_trajectory_contract_joins_records_by_correlation_id(tmp_path: Path) -> None:
     records = [
         {"ts": "2026-08-09T10:00:00+00:00", "event": "sandbox_violation", "correlation_id": "corr-1", "category": "forbidden_name", "life_id": "life-a"},

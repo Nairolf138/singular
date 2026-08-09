@@ -1,4 +1,23 @@
 from singular.life.vital import compute_vital_timeline
+from singular.life.health import ViabilityDriftDetector
+
+
+def test_viability_drift_escalates_and_recovers_with_hysteresis() -> None:
+    detector = ViabilityDriftDetector()
+    healthy = {"health": .9, "risk": .05, "resources": .9, "failure_rate": .05,
+               "traits": .9, "useful_skills": .9, "fitness": .9}
+    degraded = {"health": .1, "risk": .9, "resources": .1, "failure_rate": .9,
+                "traits": .2, "useful_skills": .2, "fitness": .1}
+    transitions = []
+    for metrics in [healthy] * 12 + [degraded] * 14 + [healthy] * 30:
+        action, transition = detector.observe(metrics)
+        if transition:
+            transitions.append((action, transition))
+    assert transitions == [
+        ("throttled", "drift"), ("paused", "drift"),
+        ("restored", "drift"), ("operator", "drift"),
+        ("normal", "recovered"),
+    ]
 
 
 def test_vital_transition_to_declining_on_age_threshold() -> None:

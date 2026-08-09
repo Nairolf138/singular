@@ -801,6 +801,31 @@ def create_app(
             "events": events[-10:],
         }
 
+    def _summarize_viability_governance(records: list[dict[str, object]]) -> dict[str, object]:
+        """Expose the latest preventive drift state separately from sandbox policy."""
+        names = {
+            "governance.viability_drift_detected",
+            "mutation_paused",
+            "checkpoint.restored",
+            "governance.viability_recovered",
+        }
+        events = [record for record in records if _record_event_name(record) in names]
+        latest = events[-1] if events else {}
+        latest_name = _record_event_name(latest) if latest else None
+        state = latest.get("action", "normal") if latest else "normal"
+        if latest_name == "governance.viability_recovered":
+            state = "normal"
+        return {
+            "state": state,
+            "mutations_enabled": state in {"normal", "throttled"},
+            "operator_intervention_required": state == "operator",
+            "latest_event": latest_name,
+            "metrics": latest.get("metrics", {}),
+            "thresholds": latest.get("thresholds", {}),
+            "windows": latest.get("windows", {}),
+            "events": events[-20:],
+        }
+
     def _summarize_memory(records: list[dict[str, object]]) -> dict[str, object]:
         """Build a compact memory summary for cockpit and smoke checks."""
         memory_records = [
@@ -1121,6 +1146,7 @@ def create_app(
                 "accepted_mutation_rate": None,
                 "critical_alerts": [],
                 "sandbox_governance": _summarize_sandbox_governance([]),
+                "viability_governance": _summarize_viability_governance([]),
                 "governance_policy": _governance_policy_diagnostics(),
                 "last_notable_mutation": None,
                 "next_action": "Aucune donnée: démarrer un run pour remplir le cockpit.",
@@ -1418,6 +1444,7 @@ def create_app(
             "accepted_mutation_rate": accepted_rate,
             "critical_alerts": critical_alerts,
             "sandbox_governance": sandbox_governance,
+            "viability_governance": _summarize_viability_governance(records),
             "governance_policy": _governance_policy_diagnostics(),
             "last_notable_mutation": last_notable_mutation,
             "next_action": next_action,

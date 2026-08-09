@@ -1,9 +1,142 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from typing import Any, Iterable, Literal
+from dataclasses import asdict, dataclass, field
+from typing import Any, Iterable, Literal, Mapping
 
 HealthState = Literal["amélioration", "plateau", "dégradation"]
+ViabilityAction = Literal["normal", "throttled", "paused", "restored", "operator"]
+
+
+@dataclass(frozen=True)
+class ViabilityDriftConfig:
+    """Thresholds for the multi-window, hysteretic viability governor."""
+
+    short_window: int = 3
+    medium_window: int = 6
+    long_window: int = 12
+    degrade_cycles: int = 2
+    stable_cycles: int = 4
+    drift_threshold: float = 0.12
+    recovery_threshold: float = 0.05
+    critical_score: float = 0.38
+
+
+@dataclass
+class ViabilityDriftDetector:
+    """Escalate preventive controls before sandbox policy is violated.
+
+    Every observation combines health, risk, resources, failure rate, trait
+    continuity, useful-skill retention and mutation fitness.  Both a short vs
+    long trend and a medium-window absolute level must agree; consequently one
+    anomalous sample cannot change the governance state.
+    """
+
+    config: ViabilityDriftConfig = field(default_factory=ViabilityDriftConfig)
+    action: ViabilityAction = "normal"
+    degraded_cycles: int = 0
+    stable_cycles: int = 0
+    samples: list[dict[str, float]] = field(default_factory=list)
+
+    _LEVELS = ("normal", "throttled", "paused", "restored", "operator")
+    _BENEFICIAL = ("health", "resources", "traits", "useful_skills", "fitness")
+    _ADVERSE = ("risk", "failure_rate")
+
+    @classmethod
+    def from_state(cls, state: Mapping[str, object] | None) -> "ViabilityDriftDetector":
+        detector = cls()
+        if not isinstance(state, Mapping):
+            return detector
+        action = state.get("action")
+        if action in cls._LEVELS:
+            detector.action = action  # type: ignore[assignment]
+        detector.degraded_cycles = int(state.get("degraded_cycles", 0))
+        detector.stable_cycles = int(state.get("stable_cycles", 0))
+        raw = state.get("samples", [])
+        if isinstance(raw, list):
+            detector.samples = [
+                {str(k): float(v) for k, v in item.items() if isinstance(v, (int, float))}
+                for item in raw[-detector.config.long_window :]
+                if isinstance(item, Mapping)
+            ]
+        return detector
+
+    def to_state(self) -> dict[str, object]:
+        return {
+            "action": self.action,
+            "degraded_cycles": self.degraded_cycles,
+            "stable_cycles": self.stable_cycles,
+            "samples": self.samples[-self.config.long_window :],
+            "diagnostics": self.diagnostics(),
+        }
+
+    @staticmethod
+    def _mean(items: list[dict[str, float]], key: str) -> float:
+        values = [item[key] for item in items if key in item]
+        return sum(values) / len(values) if values else 0.0
+
+    def _score(self, item: Mapping[str, float]) -> float:
+        good = sum(_clamp(float(item.get(k, 1.0))) for k in self._BENEFICIAL)
+        adverse = sum(1.0 - _clamp(float(item.get(k, 0.0))) for k in self._ADVERSE)
+        return (good + adverse) / (len(self._BENEFICIAL) + len(self._ADVERSE))
+
+    def observe(self, metrics: Mapping[str, float]) -> tuple[ViabilityAction, str | None]:
+        normalized = {key: _clamp(float(metrics.get(key, 0.0))) for key in (*self._BENEFICIAL, *self._ADVERSE)}
+        normalized["score"] = self._score(normalized)
+        self.samples.append(normalized)
+        self.samples = self.samples[-self.config.long_window :]
+        if len(self.samples) < self.config.medium_window:
+            return self.action, None
+
+        short = self.samples[-self.config.short_window :]
+        medium = self.samples[-self.config.medium_window :]
+        long = self.samples
+        short_score = self._mean(short, "score")
+        medium_score = self._mean(medium, "score")
+        long_score = self._mean(long, "score")
+        drift = long_score - short_score
+        degrading = drift >= self.config.drift_threshold and medium_score < long_score
+        critical = short_score <= self.config.critical_score
+        recovering = abs(short_score - long_score) <= self.config.recovery_threshold and short_score > self.config.critical_score
+
+        if degrading or critical:
+            self.degraded_cycles += 1
+            self.stable_cycles = 0
+            if self.degraded_cycles >= self.config.degrade_cycles:
+                previous = self.action
+                index = min(self._LEVELS.index(self.action) + 1, len(self._LEVELS) - 1)
+                self.action = self._LEVELS[index]  # type: ignore[assignment]
+                self.degraded_cycles = 0
+                if self.action != previous:
+                    return self.action, "drift"
+        elif recovering:
+            self.stable_cycles += 1
+            self.degraded_cycles = 0
+            if self.stable_cycles >= self.config.stable_cycles and self.action != "normal":
+                self.action = "normal"
+                self.stable_cycles = 0
+                return self.action, "recovered"
+        else:
+            self.degraded_cycles = 0
+            self.stable_cycles = 0
+        return self.action, None
+
+    def diagnostics(self) -> dict[str, object]:
+        short = self.samples[-self.config.short_window :]
+        long = self.samples[-self.config.long_window :]
+        return {
+            "state": self.action,
+            "mutations_enabled": self.action in {"normal", "throttled"},
+            "mutation_interval": 2 if self.action == "throttled" else (1 if self.action == "normal" else None),
+            "degraded_cycles": self.degraded_cycles,
+            "stable_cycles": self.stable_cycles,
+            "samples": len(self.samples),
+            "metrics": self.samples[-1] if self.samples else {},
+            "windows": {
+                "short": self._mean(short, "score"),
+                "long": self._mean(long, "score"),
+            },
+            "thresholds": asdict(self.config),
+        }
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
