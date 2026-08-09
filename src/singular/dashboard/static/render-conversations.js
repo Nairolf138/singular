@@ -182,11 +182,11 @@ const collectLives=(payload,rows)=>{
   const comparisonRows=Array.isArray(payload?.comparison?.table)?payload.comparison.table:[];
   for(const item of comparisonRows){
     const life=item.life||item.slug||item.name;
-    addLife(lives,life,{status:item.registry_status||item.status||item.life_status,last_update:item.last_activity,selected_life:item.selected_life});
+    addLife(lives,life,{status:item.registry_status,last_update:item.last_activity,selected_life:item.selected_life});
   }
   const comparisonLives=payload?.comparison?.lives||{};
   for(const [life,meta] of Object.entries(comparisonLives)){
-    addLife(lives,life,{status:meta?.registry_status||meta?.status,last_update:meta?.last_activity});
+    addLife(lives,life,{status:meta?.registry_status,last_update:meta?.last_activity});
   }
   for(const row of rows){
     const life=row.owner||row.life||row.title||'Vie inconnue';
@@ -237,11 +237,6 @@ export const renderConversationsSection=payload=>{
 
   const sharedLife=getSelectedLife();
   if(sharedLife&&lives.has(sharedLife)){conversationState.selectedLife=sharedLife;}
-  if(!conversationState.selectedLife&&lives.size){
-    const selected=[...lives.entries()].find(([,meta])=>meta.active||meta.selected_life);
-    conversationState.selectedLife=selected?.[0]||[...lives.keys()][0];
-    setSelectedLife(conversationState.selectedLife,{source:'conversation-default',metadata:lives.get(conversationState.selectedLife)||{}});
-  }
   bindSelectedLifeListener();
   updateOperatorLifeOptions(mergeLifeRows(payload?.context,payload?.comparison));
   syncConversationSelection(conversationState.selectedLife);

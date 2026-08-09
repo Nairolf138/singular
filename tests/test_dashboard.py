@@ -13,6 +13,31 @@ from singular.dashboard.services.trajectory import build_trajectory
 from singular.lives import LifeMetadata, create_life
 
 
+def test_comparison_exposes_distinct_consulted_active_and_observed_lives(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    (runs / "events.jsonl").write_text(
+        json.dumps({"ts": "2026-08-09T10:00:00Z", "life": "observed", "event": "interaction"}) + "\n",
+        encoding="utf-8",
+    )
+    registry_lives = {}
+    for slug in ("consulted", "running", "observed"):
+        path = tmp_path / slug
+        path.mkdir()
+        registry_lives[slug] = {"slug": slug, "name": slug, "path": path, "status": "active"}
+    monkeypatch.setattr(dashboard_module, "load_registry", lambda: {"active": "running", "lives": registry_lives})
+    app = create_app(runs_dir=runs, psyche_file=tmp_path / "psyche.json")
+    route = app._routes["/lives/comparison"]
+    payload = route(life_id="consulted")
+    assert payload["life_identities"]["selected_life_id"] == "consulted"
+    assert payload["life_identities"]["registry_active_life_id"] == "running"
+    assert payload["life_identities"]["latest_event_life_id"] == "observed"
+    with pytest.raises(Exception, match="life_id is not a registry entry"):
+        route(life_id="missing")
+
+
 def test_dashboard_exposes_viability_drift_diagnostics(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()

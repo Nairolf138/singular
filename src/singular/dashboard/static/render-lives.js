@@ -206,7 +206,9 @@ const rowActivitySummary=row=>{
 const summarizeBadges=row=>{
   let badges='';
   if(row.selected_life){badges+=badge('Vie sélectionnée',BADGE_TONE.success);}else{badges+=badge('Vie non sélectionnée',BADGE_TONE.danger);}
-  if(row.is_registry_active_life){badges+=badge('Vie active dans le registre',BADGE_TONE.success);}else{badges+=badge(`Statut registre: ${row.life_status||na()}`,BADGE_TONE.danger);}
+  if(row.is_registry_active_life){badges+=badge('Vie active dans le registre',BADGE_TONE.success);}else{badges+=badge(`Statut registre: ${row.registry_status||na()}`,BADGE_TONE.danger);}
+  badges+=badge(`État vital: ${row.life_status||'inconnu'}`,BADGE_TONE.info);
+  badges+=badge(`Viabilité: ${row.viability_status||'inconnue'}`,BADGE_TONE.info);
   if(row.run_terminated){badges+=badge('Run terminé',BADGE_TONE.warning);}
   if(row.extinction_seen_in_runs){badges+=badge('Extinction détectée',BADGE_TONE.danger);}
   if(row.has_recent_activity){badges+=badge('Activité récente',BADGE_TONE.info);}
@@ -312,7 +314,9 @@ const showLifeDetails=lifeName=>{
   setSelectedLife(lifeName,{source:'lives-detail',metadata:row});
   const operatorMetadata=[
     ['Vie',row.life],
-    ['Statut registre',row.life_status],
+    ['Statut registre',row.registry_status],
+    ['État vital',row.life_status],
+    ['Viabilité',row.viability_status],
     ['Score courant',row.current_health_score===null||row.current_health_score===undefined?na():Number(row.current_health_score).toFixed(1)],
     ['Dernière activité',row.last_activity],
     ['Life liveness index',row.life_liveness_index===null||row.life_liveness_index===undefined?na():Number(row.life_liveness_index).toFixed(1)],
@@ -395,7 +399,7 @@ export const loadLivesBoard=()=>{
     clientSteps.push({step:'client_quick_filter',label:`Après filtre rapide ${livesUiState.quickFilter}`,applied:livesUiState.quickFilter!=='all',count:mappedRows.length});
     mappedRows=filterRowsByTimeWindow(mappedRows,timeWindow);
     clientSteps.push({step:'client_time_window',label:`Après fenêtre ${timeWindow}`,applied:timeWindow!=='all',count:mappedRows.length});
-    if(scopeState.currentLifeOnly){mappedRows=mappedRows.filter(row=>row.selected_life===true||row.life===context?.registry_state?.active);}
+    if(scopeState.currentLifeOnly){mappedRows=mappedRows.filter(row=>row.selected_life===true);}
     clientSteps.push({step:'client_current_life_only',label:'Après portée vie courante',applied:scopeState.currentLifeOnly,count:mappedRows.length});
     let tableRows=preset.apply(mappedRows);
     clientSteps.push({step:'client_after_preset',label:`Après preset ${presetKey}`,applied:true,count:tableRows.length});

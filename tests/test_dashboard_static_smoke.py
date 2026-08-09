@@ -20,6 +20,15 @@ AUDITED_JS = [
 CANONICAL_BRANDING = Path("docs/assets/branding")
 
 
+def test_life_identity_renderers_do_not_conflate_three_distinct_lives() -> None:
+    cockpit = (DASHBOARD_STATIC / "render-cockpit.js").read_text(encoding="utf-8")
+    actions = (DASHBOARD_STATIC / "actions.js").read_text(encoding="utf-8")
+    assert "consultée=${selectedLabel" in cockpit
+    assert "registre=${activeLife" in cockpit
+    assert "dernier événement=${identities.latest_event_life_id" in cockpit
+    assert "row?.selected_life===true||row?.active" not in actions
+
+
 def test_timeline_static_exposes_correlation_navigation() -> None:
     timeline = (DASHBOARD_STATIC / "render-timeline.js").read_text(encoding="utf-8")
     conversations = (DASHBOARD_STATIC / "render-conversations.js").read_text(encoding="utf-8")

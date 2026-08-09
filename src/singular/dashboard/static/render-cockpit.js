@@ -285,19 +285,20 @@ const renderOperatorSummary=()=>{
   const risks=riskRows(rows);
   const sharedSelection=getSelectedLife();
   const selected=rows.find(row=>row.life&&row.life===sharedSelection)||rows.find(row=>row.selected_life===true);
-  const latest=rows.find(row=>row.last_activity)||rows[0];
-  const focus=selected||latest;
-  const activeLife=ctx.registry_state?.active;
-  const selectedLabel=selected?.life||sharedSelection||cockpit.selected_life||null;
-  const activeSelectedLabel=activeLife&&selectedLabel&&activeLife!==selectedLabel?`active=${activeLife} · sélectionnée=${selectedLabel}`:(selectedLabel||activeLife||'Aucune');
-  const lastActivity=focus?.last_activity||latest?.last_activity||(total>0?'vie créée mais aucun run':na());
+  const identities=lives.life_identities||{};
+  const latest=rows.find(row=>row.life===identities.latest_event_life_id);
+  const focus=selected;
+  const activeLife=identities.registry_active_life_id??ctx.registry_state?.active??null;
+  const selectedLabel=selected?.life||sharedSelection||null;
+  const activeSelectedLabel=`consultée=${selectedLabel||'Aucune'} · registre=${activeLife||'Aucune'} · dernier événement=${identities.latest_event_life_id||'Aucun'} · état vital=${identities.latest_event_life_status||'inconnu'}`;
+  const lastActivity=identities.latest_event_at||(total>0?'vie créée mais aucun événement':na());
   const mood=extractMood(focus);
   const energy=extractEnergy(focus,eco);
   const moodLabel=mood||'données de mood absentes';
   const energyLabel=energy===null||energy===undefined?na():formatOneDecimal(energy);
   const trend=focus?.trend||cockpit.trend||na();
   const liveness=firstDefined(focus?.life_liveness_index,cockpit.life_liveness_index,cockpit.liveness_index);
-  const status=isArchived(focus)?'vie archivée':(focus?.registry_status||focus?.status||(total>0?'vie créée':'aucune vie créée'));
+  const status=focus?.life_status||'état vital inconnu';
   const health=firstDefined(focus?.current_health_score,cockpit.health_score);
   const objectivesCount=activeObjectivesCount(cockpit,workItems);
   const lastMessage=extractLastMessage(focus)||workItems?.conversations?.items?.[0]?.title||'aucun message';
@@ -531,7 +532,7 @@ export const loadCockpit=()=>Promise.allSettled([
   fetchSharedDashboardContext(),
   fetchSharedLivesComparison(),
   fetchSharedCockpitEssential(),
-  fetchJson(withScope('/api/cockpit')),
+  fetchJson(withScope(`/api/cockpit?dashboard=1${getSelectedLife()?`&life_id=${encodeURIComponent(getSelectedLife())}`:''}`)),
 ]).then(results=>{
   const endpointKeys=['context','comparison','essential','cockpit'];
   const [ctxResult,livesResult,essentialResult,cockpitResult]=results;
@@ -604,7 +605,7 @@ export const loadCockpit=()=>Promise.allSettled([
   setText('kpi-alerts',String(alertsCount));
   setText('kpi-liveness-index',livenessIndex);
   const comparisonRows=Array.isArray(lives.table)?lives.table:[];
-  const diagnosticRow=comparisonRows.find(row=>row.life===essentialPayload.selected_life)||comparisonRows.find(row=>row.selected_life===true);
+  const diagnosticRow=comparisonRows.find(row=>row.life===essentialPayload.selected_life);
   const diagnostics={...(d.score_diagnostics||{}),...(diagnosticRow?.score_diagnostics||{})};
   exposeScoreDetails('kpi-health','Santé',diagnostics.health);
   exposeScoreDetails('kpi-liveness-index','Vivacité',diagnostics.liveness);

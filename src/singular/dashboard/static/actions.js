@@ -17,7 +17,7 @@ const readValue=(...ids)=>{
 };
 
 const operatorLifeSelect=()=>document.getElementById('operator-action-life-select');
-const selectedOperatorLife=()=>getSelectedLife()||readValue('operator-action-life-select','action-life-name');
+const selectedOperatorLife=()=>getSelectedLife();
 const operatorMessage=()=>readValue('operator-action-message','action-prompt');
 const birthName=()=>readValue('operator-birth-name','action-life-name');
 const normalizeLifeStatus=value=>String(value||'').trim().toLowerCase();
@@ -216,7 +216,7 @@ export const updateOperatorLifeOptions=(rows=[],{registryState='empty'}={})=>{
     option.value=name;
     option.textContent=name;
     const row=rowByName.get(name);
-    option.dataset.lifeStatus=normalizeLifeStatus(row?.registry_status||row?.status);
+    option.dataset.lifeStatus=normalizeLifeStatus(row?.registry_status);
     option.dataset.operatorActions=JSON.stringify(row?.operator_actions||{});
     select.appendChild(option);
   }
@@ -224,7 +224,7 @@ export const updateOperatorLifeOptions=(rows=[],{registryState='empty'}={})=>{
   if(shared&&names.includes(shared)){select.value=shared;}
   else if(previous&&names.includes(previous)){select.value=previous;}
   else{
-    const selectedRow=(rows||[]).find(row=>row?.selected_life===true||row?.active===true||row?.is_registry_active_life===true);
+    const selectedRow=(rows||[]).find(row=>row?.selected_life===true);
     const selectedName=selectedRow?.life||selectedRow?.slug||selectedRow?.name||'';
     if(selectedName&&names.includes(selectedName)){select.value=selectedName;}
   }
