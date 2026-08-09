@@ -7,6 +7,20 @@ Cette procédure permet de redémarrer l’agent après arrêt d’urgence (hotk
 - Agent arrêté.
 - Cause d’arrêt identifiée dans les événements runtime (`runtime.global_stop`, `runtime.watchdog_stopped`, `runtime.rate_limited`, `runtime.auto_disabled`).
 - Aucun processus concurrent n’écrit dans le même répertoire de mémoire.
+- Pour systemd, `/etc/singular/singular.env` doit désigner le root et la vie
+  attendus (`SINGULAR_ROOT` et `SINGULAR_HOME`). La commande
+  `singular config root install-systemd` régénère atomiquement ce fichier et
+  l'unité, après contrôle du binaire, de la vie et des droits de `mem/`/`runs/`.
+
+Diagnostic avant reprise :
+
+```bash
+sudo systemctl cat singular
+sudo cat /etc/singular/singular.env
+sudo -u singular test -w "$SINGULAR_HOME/mem" -a -w "$SINGULAR_HOME/runs"
+sudo -u singular SINGULAR_ROOT="$SINGULAR_ROOT" singular lives list
+sudo systemctl daemon-reload
+```
 
 ## 2) État minimal à conserver
 

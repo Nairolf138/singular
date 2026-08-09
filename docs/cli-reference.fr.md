@@ -872,7 +872,7 @@ Les chemins ci-dessous sont relatifs au root ou à `SINGULAR_HOME`. Toujours sau
 <!-- cli-command: config root -->
 ## `config root`
 
-**Syntaxe :** `singular config root [-h] {set,show} ...`
+**Syntaxe :** `singular config root [-h] {set,show,install-systemd} ...`
 
 **Arguments et défauts :** Aucune / None.
 
@@ -931,6 +931,29 @@ Les chemins ci-dessous sont relatifs au root ou à `SINGULAR_HOME`. Toujours sau
 **Exemple avancé :** `singular --root /srv/singular --life ada --format json config root show`
 
 **Erreurs usuelles :** Vie/run/fichier absent, JSON invalide, skill sandbox KO, format/export invalide.
+
+<!-- cli-command: config root install-systemd -->
+## `config root install-systemd`
+
+**Syntaxe :** `singular [--root PATH] [--life NOM] config root install-systemd [--user USER] [--group GROUP] [--binary PATH] [--environment-file PATH] [--unit-file PATH]`
+
+**Arguments et défauts :** utilisateur/groupe `singular`; environnement `/etc/singular/singular.env`; unité `/etc/systemd/system/singular.service`; binaire trouvé dans `PATH`.
+
+**Prérequis :** Une vie active existante, un binaire `singular`, `mem/` et `runs/` inscriptibles par l'utilisateur du service, les droits d'écriture dans `/etc` et systemd.
+
+**Root et vie ciblés :** Le root résolu et la vie active (ou `--life`) sont figés respectivement dans `SINGULAR_ROOT` et `SINGULAR_HOME`.
+
+**Fichiers lus ou écrits :** Génère atomiquement le fichier d'environnement non secret et l'unité rendue. Les variables provider non secrètes (`LLM_PROVIDER`, modèles et configuration Ollama) sont conservées; les clés API sont exclues.
+
+**Effets de bord :** Exécute `systemctl daemon-reload`; l'activation reste explicite avec `systemctl enable --now singular`.
+
+**Exemple minimal :** `sudo singular --root /var/lib/singular config root install-systemd`
+
+**Exemple avancé :** `sudo singular --root /srv/singular --life ada config root install-systemd --user singular --group singular --binary /srv/app/.venv/bin/singular`
+
+**Diagnostic :** `systemctl cat singular`; `cat /etc/singular/singular.env`; `sudo -u singular test -w <vie>/mem -a -w <vie>/runs`; `sudo -u singular SINGULAR_ROOT=<root> singular lives list`.
+
+**Erreurs usuelles :** Vie ou répertoire absent, binaire introuvable, compte inconnu ou droits incompatibles; le diagnostic indique la commande ou le chemin à corriger et aucun fichier n'est installé.
 
 <!-- cli-command: lives -->
 ## `lives`

@@ -104,9 +104,11 @@ premier démarrage, créez et sélectionnez une vie dans le même root, par exem
 
 ### Service systemd
 
-Le modèle [`deploy/systemd/singular.service`](deploy/systemd/singular.service)
-suppose que le dépôt et son environnement virtuel sont installés sous
-`/opt/singular`, et utilise le compte non privilégié `singular` :
+Le modèle [`deploy/systemd/singular.service`](deploy/systemd/singular.service) est
+rendu avec les chemins réels par la CLI. Celle-ci refuse l'installation si la
+vie active, le binaire ou les répertoires inscriptibles `mem/` et `runs/` ne sont
+pas utilisables par le compte de service. Elle écrit atomiquement le contexte
+non secret dans `/etc/singular/singular.env`, puis lance `systemctl daemon-reload` :
 
 ```bash
 sudo useradd --system --home /var/lib/singular --create-home singular
@@ -114,10 +116,17 @@ sudo git clone <URL_DU_DEPOT> /opt/singular
 sudo python3 -m venv /opt/singular/.venv
 sudo /opt/singular/.venv/bin/pip install /opt/singular
 sudo chown -R singular:singular /opt/singular /var/lib/singular
-sudo install -m 0644 deploy/systemd/singular.service /etc/systemd/system/
-sudo systemctl daemon-reload
+sudo -u singular SINGULAR_ROOT=/var/lib/singular /opt/singular/.venv/bin/singular lives create --name Lumen
+sudo SINGULAR_ROOT=/var/lib/singular /opt/singular/.venv/bin/singular \
+  config root install-systemd --binary /opt/singular/.venv/bin/singular
 sudo systemctl enable --now singular.service
 ```
+
+La vie démarrée est celle inscrite comme `SINGULAR_HOME` dans le fichier
+d'environnement au moment de l'installation. Diagnostiquez toute divergence avec
+`sudo systemctl cat singular`, `sudo cat /etc/singular/singular.env`,
+`sudo -u singular test -w <vie>/mem -a -w <vie>/runs` et
+`sudo -u singular SINGULAR_ROOT=<root> singular lives list`.
 
 Consultez l'état et les journaux avec `systemctl status singular` et
 `journalctl -u singular -f`. Pour mettre à niveau : arrêtez le service, faites

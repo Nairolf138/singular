@@ -5,15 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=singular
-Group=singular
-WorkingDirectory=/opt/singular
-Environment=SINGULAR_ROOT=/var/lib/singular
-ExecStart=/opt/singular/.venv/bin/singular orchestrate run
+User=@SERVICE_USER@
+Group=@SERVICE_GROUP@
+WorkingDirectory=@SINGULAR_HOME@
+EnvironmentFile=/etc/singular/singular.env
+ExecStart=@SINGULAR_BINARY@ orchestrate run
 Restart=on-failure
 RestartSec=10s
-StateDirectory=singular
-StateDirectoryMode=0750
 KillSignal=SIGTERM
 TimeoutStopSec=45s
 NoNewPrivileges=true
