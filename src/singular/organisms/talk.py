@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import random
 import time
-import re
 import json
 from dataclasses import dataclass, field
 from typing import Mapping, Any, Iterable
@@ -22,6 +21,7 @@ from ..memory import (
 )
 from ..memory_layers import MemoryRetrievalService, build_backend
 from ..perception import capture_signals
+from ..perception.interaction import apply_psyche_deltas, extract_structured_signals
 from ..psyche import Mood, Psyche
 from ..identity.synchronization import IdentitySynchronizationService
 from ..self_narrative import load as load_self_narrative, summarize_short
@@ -181,76 +181,6 @@ def _user_message_for_error(provider: str, err: LLMProviderError) -> str:
     if isinstance(err, ProviderRetryExhaustedError):
         return f"Provider '{provider}' retries exhausted. Using local fallback replies."
     return f"Provider '{provider}' failed unexpectedly. Using local fallback replies."
-
-
-def _extract_structured_signals(text: str) -> dict[str, object]:
-    lowered = text.lower()
-    frustration_tokens = {
-        "bug",
-        "erreur",
-        "error",
-        "frustr",
-        "bloqué",
-        "bloque",
-        "impossible",
-        "nul",
-        "fail",
-        "failed",
-        "wtf",
-    }
-    satisfaction_tokens = {
-        "merci",
-        "super",
-        "parfait",
-        "great",
-        "thanks",
-        "top",
-        "cool",
-        "good",
-        "bien",
-    }
-    urgency_tokens = {
-        "urgent",
-        "asap",
-        "vite",
-        "maintenant",
-        "now",
-        "immédiat",
-        "immediat",
-        "deadline",
-    }
-    token_count = max(1, len(re.findall(r"\w+", lowered)))
-    frustration = min(
-        1.0,
-        sum(1 for token in frustration_tokens if token in lowered)
-        / max(1.0, token_count * 0.2),
-    )
-    satisfaction = min(
-        1.0,
-        sum(1 for token in satisfaction_tokens if token in lowered)
-        / max(1.0, token_count * 0.2),
-    )
-    urgency = min(
-        1.0,
-        0.35 * float("!" in text or "?" in text)
-        + sum(1 for token in urgency_tokens if token in lowered) * 0.35,
-    )
-    theme = "general"
-    for candidate, keywords in (
-        ("bugfix", ("bug", "erreur", "fix", "incident")),
-        ("performance", ("lent", "slow", "optim", "performance", "latence")),
-        ("planning", ("roadmap", "plan", "deadline", "priorit")),
-        ("support", ("help", "aide", "explain", "comprendre")),
-    ):
-        if any(keyword in lowered for keyword in keywords):
-            theme = candidate
-            break
-    return {
-        "frustration": round(frustration, 3),
-        "satisfaction": round(satisfaction, 3),
-        "urgency": round(urgency, 3),
-        "theme": theme,
-    }
 
 
 def _trim_for_budget(text: str, budget: int) -> str:
@@ -427,7 +357,10 @@ def talk(
         self_narrative_summary: str,
         self_narrative_version: int,
     ) -> str:
-        user_signals = _extract_structured_signals(user_input)
+        user_signals = extract_structured_signals(
+            user_input, state_path=mem_dir / "interaction_perception.json"
+        )
+        apply_psyche_deltas(psyche, user_signals)
         theme = str(user_signals.get("theme", "general"))
         retrieval = MemoryRetrievalService(
             life_root, build_backend(root=mem_dir / "layers")
