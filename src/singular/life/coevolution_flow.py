@@ -123,7 +123,8 @@ class CoevolutionFlow:
             CandidateEvaluation(
                 expr=candidate.expr,
                 origin=candidate.origin,
-                retained=candidate.expr in after_exprs and candidate.expr not in before_exprs,
+                retained=candidate.expr in after_exprs
+                and candidate.expr not in before_exprs,
             )
             for candidate in candidate_list
         )
@@ -152,9 +153,7 @@ class CoevolutionFlow:
         strict_regression_rejection = self.config.robustness_weight > 0.0
         regression_allowed = not strict_regression_rejection or detection_rate == 0.0
         accepted = (
-            initially_accepted
-            and combined_new <= combined_base
-            and regression_allowed
+            initially_accepted and combined_new <= combined_base and regression_allowed
         )
         rejected_for_robustness = initially_accepted and not accepted
 

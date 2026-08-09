@@ -51,7 +51,9 @@ def test_host_metrics_aggregates_and_impact(tmp_path, monkeypatch) -> None:
     assert impact["decision_bias"] == "robustesse"
 
 
-def test_host_metrics_store_accepts_metric_status_payload(tmp_path, monkeypatch) -> None:
+def test_host_metrics_store_accepts_metric_status_payload(
+    tmp_path, monkeypatch
+) -> None:
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
     append_host_metrics_sample(
         {

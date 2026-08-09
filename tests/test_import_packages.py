@@ -7,7 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 PUBLIC_MODULES = (
     "graine",
     "singular",

@@ -30,7 +30,14 @@ def test_run_benchmarks_writes_artifacts_and_summary(tmp_path: Path) -> None:
     weights_path = benchmarks_dir / "weights.json"
 
     benchmarks_dir.mkdir()
-    for domain in ["raisonnement", "code", "planification", "memoire", "interaction", "adaptation"]:
+    for domain in [
+        "raisonnement",
+        "code",
+        "planification",
+        "memoire",
+        "interaction",
+        "adaptation",
+    ]:
         _write_domain(benchmarks_dir / f"{domain}.json", domain, "alpha beta")
 
     weights_path.write_text(
@@ -84,7 +91,14 @@ def test_run_benchmarks_fails_on_regression(tmp_path: Path) -> None:
     summary_path = tmp_path / "mem" / "benchmark_summary.json"
 
     benchmarks_dir.mkdir()
-    for domain in ["raisonnement", "code", "planification", "memoire", "interaction", "adaptation"]:
+    for domain in [
+        "raisonnement",
+        "code",
+        "planification",
+        "memoire",
+        "interaction",
+        "adaptation",
+    ]:
         _write_domain(benchmarks_dir / f"{domain}.json", domain, "alpha beta")
 
     run_benchmarks(
@@ -95,7 +109,14 @@ def test_run_benchmarks_fails_on_regression(tmp_path: Path) -> None:
         max_regression_drop=0.01,
     )
 
-    for domain in ["raisonnement", "code", "planification", "memoire", "interaction", "adaptation"]:
+    for domain in [
+        "raisonnement",
+        "code",
+        "planification",
+        "memoire",
+        "interaction",
+        "adaptation",
+    ]:
         _write_domain(benchmarks_dir / f"{domain}.json", domain, "alpha")
 
     with pytest.raises(BenchmarkRegressionError):

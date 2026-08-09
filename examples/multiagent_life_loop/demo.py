@@ -35,7 +35,9 @@ def main() -> None:
         transport = InMemoryQueueTransport()
         runtime = MultiAgentRuntime(
             transport=transport,
-            policy=MultiAgentPolicy(low_score_threshold=0.0, high_confidence_threshold=0.8),
+            policy=MultiAgentPolicy(
+                low_score_threshold=0.0, high_confidence_threshold=0.8
+            ),
             governance_policy=MutationGovernancePolicy(
                 modifiable_paths=("skills",),
                 review_required_paths=(),
@@ -84,10 +86,21 @@ def main() -> None:
         )
         alpha_decision = runtime.begin_tick(alpha_context)
         print("alpha reasons:", alpha_decision.reasons)
-        print("accepted offer:", alpha_decision.accepted_offer.skill if alpha_decision.accepted_offer else None)
+        print(
+            "accepted offer:",
+            (
+                alpha_decision.accepted_offer.skill
+                if alpha_decision.accepted_offer
+                else None
+            ),
+        )
 
-        runtime.complete_tick(alpha_context, accepted=True, score_before=5.0, score_after=-3.0)
-        print("collective records:", len(runtime.memory.read()) if runtime.memory else 0)
+        runtime.complete_tick(
+            alpha_context, accepted=True, score_before=5.0, score_after=-3.0
+        )
+        print(
+            "collective records:", len(runtime.memory.read()) if runtime.memory else 0
+        )
 
 
 if __name__ == "__main__":

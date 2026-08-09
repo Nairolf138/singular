@@ -8,7 +8,6 @@ from typing import Any, Mapping
 
 from singular.memory import get_values_file, read_values
 
-
 VALUE_KEYS = (
     "securite",
     "utilite_utilisateur",

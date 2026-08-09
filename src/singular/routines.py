@@ -11,7 +11,9 @@ from typing import Any, Mapping
 
 from singular.memory import _atomic_write_text
 
-DEFAULT_ROUTINES_PATH = Path(__file__).resolve().parents[2] / "configs" / "routines.yaml"
+DEFAULT_ROUTINES_PATH = (
+    Path(__file__).resolve().parents[2] / "configs" / "routines.yaml"
+)
 
 
 @dataclass(frozen=True)
@@ -101,7 +103,6 @@ class RoutinesOrchestrator:
             )
         return specs
 
-
     def _load_simple_routines_yaml(self, path: Path) -> dict[str, Any]:
         routines: list[dict[str, Any]] = []
         current: dict[str, Any] | None = None
@@ -153,10 +154,26 @@ class RoutinesOrchestrator:
             if not isinstance(key, str) or not isinstance(raw, dict):
                 continue
             state[key] = RoutineRunState(
-                last_run_at=raw.get("last_run_at") if isinstance(raw.get("last_run_at"), str) else None,
-                last_success=raw.get("last_success") if isinstance(raw.get("last_success"), bool) else None,
-                last_latency_ms=float(raw.get("last_latency_ms")) if isinstance(raw.get("last_latency_ms"), (int, float)) else None,
-                next_run_at=raw.get("next_run_at") if isinstance(raw.get("next_run_at"), str) else None,
+                last_run_at=(
+                    raw.get("last_run_at")
+                    if isinstance(raw.get("last_run_at"), str)
+                    else None
+                ),
+                last_success=(
+                    raw.get("last_success")
+                    if isinstance(raw.get("last_success"), bool)
+                    else None
+                ),
+                last_latency_ms=(
+                    float(raw.get("last_latency_ms"))
+                    if isinstance(raw.get("last_latency_ms"), (int, float))
+                    else None
+                ),
+                next_run_at=(
+                    raw.get("next_run_at")
+                    if isinstance(raw.get("next_run_at"), str)
+                    else None
+                ),
             )
         return state
 
@@ -165,7 +182,9 @@ class RoutinesOrchestrator:
             "routines": {name: asdict(item) for name, item in self.state.items()},
             "updated_at": self._now().isoformat(),
         }
-        _atomic_write_text(self.state_path, json.dumps(payload, ensure_ascii=False, indent=2))
+        _atomic_write_text(
+            self.state_path, json.dumps(payload, ensure_ascii=False, indent=2)
+        )
 
     def _parse_iso(self, value: str | None) -> datetime | None:
         if not value:
@@ -226,10 +245,14 @@ class RoutinesOrchestrator:
         adjusted.sort(key=lambda item: (-item.priority, item.deadline_at))
         return adjusted
 
-    def mark_executed(self, task: RoutineTask, *, success: bool, latency_ms: float) -> None:
+    def mark_executed(
+        self, task: RoutineTask, *, success: bool, latency_ms: float
+    ) -> None:
         executed_at = self._now()
         next_run = executed_at + timedelta(
-            minutes=next((spec.interval_minutes for spec in self.specs if spec.id == task.id), 60)
+            minutes=next(
+                (spec.interval_minutes for spec in self.specs if spec.id == task.id), 60
+            )
         )
         self.state[task.id] = RoutineRunState(
             last_run_at=executed_at.isoformat(),

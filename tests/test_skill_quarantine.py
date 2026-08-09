@@ -104,7 +104,11 @@ def test_valid_skill_is_not_quarantined_after_sandbox_timeouts(
     )
 
     skills_file = tmp_path / "mem" / "skills.json"
-    skills = json.loads(skills_file.read_text(encoding="utf-8")) if skills_file.exists() else {}
+    skills = (
+        json.loads(skills_file.read_text(encoding="utf-8"))
+        if skills_file.exists()
+        else {}
+    )
     lifecycle = skills.get("valid", {}).get("lifecycle", {})
     assert lifecycle.get("state") != "temporarily_disabled"
 
@@ -122,7 +126,8 @@ def test_valid_skill_is_not_quarantined_after_sandbox_timeouts(
         event
         for event in events
         if event.get("event_type") == "interaction"
-        and event.get("payload", {}).get("interaction") == "sandbox_infrastructure_failure"
+        and event.get("payload", {}).get("interaction")
+        == "sandbox_infrastructure_failure"
     ]
     assert len(infrastructure_events) >= 3
     assert all(

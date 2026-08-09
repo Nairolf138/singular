@@ -54,7 +54,10 @@ class OSSemanticInterpreter:
             )
 
         cpu = snapshot.host_state.cpu_percent
-        if isinstance(cpu, (int, float)) and float(cpu) >= self.config.high_cpu_threshold:
+        if (
+            isinstance(cpu, (int, float))
+            and float(cpu) >= self.config.high_cpu_threshold
+        ):
             events.append(
                 {
                     "type": "host.cpu_high",
@@ -90,9 +93,7 @@ class OSSemanticInterpreter:
                     "confidence": 0.74,
                     "reason": "notification_source",
                     "count": sum(
-                        1
-                        for n in snapshot.notifications
-                        if "calendar" in n.app.lower()
+                        1 for n in snapshot.notifications if "calendar" in n.app.lower()
                     ),
                 }
             )

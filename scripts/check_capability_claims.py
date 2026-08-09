@@ -8,7 +8,6 @@ import re
 import unicodedata
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 CAPABILITY = re.compile(
@@ -44,8 +43,7 @@ def _has_campaign(name: str, errors: list[str]) -> bool:
             and all(item["sample_count"] >= 200 for item in windows[-2:])
             and all(item["confidence_level"] >= 0.95 for item in windows[-2:])
             and all(
-                {"domain", "language", "task_difficulty"}
-                <= set(item["segments"])
+                {"domain", "language", "task_difficulty"} <= set(item["segments"])
                 for item in windows[-2:]
             )
         )
@@ -53,7 +51,9 @@ def _has_campaign(name: str, errors: list[str]) -> bool:
         errors.append(f"{path.relative_to(ROOT)}: invalid campaign: {exc}")
         return False
     if not valid:
-        errors.append(f"{path.relative_to(ROOT)}: campaign does not meet validation gates")
+        errors.append(
+            f"{path.relative_to(ROOT)}: campaign does not meet validation gates"
+        )
     return valid
 
 

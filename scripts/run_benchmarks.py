@@ -15,11 +15,29 @@ from singular.benchmarks import BenchmarkRegressionError, run_benchmarks  # noqa
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run benchmark suites and emit artifacts.")
-    parser.add_argument("--benchmarks-dir", default="benchmarks", help="Benchmark definitions directory.")
-    parser.add_argument("--artifacts-dir", default="artifacts/benchmarks", help="Benchmark artifacts directory.")
-    parser.add_argument("--summary-path", default="mem/benchmark_summary.json", help="Consolidated summary JSON path.")
-    parser.add_argument("--weights-path", default="benchmarks/weights.json", help="Domain weights JSON path.")
+    parser = argparse.ArgumentParser(
+        description="Run benchmark suites and emit artifacts."
+    )
+    parser.add_argument(
+        "--benchmarks-dir",
+        default="benchmarks",
+        help="Benchmark definitions directory.",
+    )
+    parser.add_argument(
+        "--artifacts-dir",
+        default="artifacts/benchmarks",
+        help="Benchmark artifacts directory.",
+    )
+    parser.add_argument(
+        "--summary-path",
+        default="mem/benchmark_summary.json",
+        help="Consolidated summary JSON path.",
+    )
+    parser.add_argument(
+        "--weights-path",
+        default="benchmarks/weights.json",
+        help="Domain weights JSON path.",
+    )
     parser.add_argument(
         "--max-regression-drop",
         type=float,

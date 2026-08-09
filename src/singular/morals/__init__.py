@@ -12,6 +12,13 @@ from .decision import (
 from .context import MoralContext, MoralContextBuilder
 
 __all__ = [
-    "AffectedParty", "Consequence", "IdentityCommitment", "MoralAction",
-    "MoralDecision", "MoralDecisionEngine", "MoralContext", "MoralContextBuilder", "evaluate_action",
+    "AffectedParty",
+    "Consequence",
+    "IdentityCommitment",
+    "MoralAction",
+    "MoralDecision",
+    "MoralDecisionEngine",
+    "MoralContext",
+    "MoralContextBuilder",
+    "evaluate_action",
 ]

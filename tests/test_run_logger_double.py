@@ -21,7 +21,9 @@ def test_recording_run_logger_implements_life_loop_contract():
     }
 
     assert logger.run_id == "contract-run"
-    assert all(callable(getattr(logger, method, None)) for method in methods_used_by_life_loop)
+    assert all(
+        callable(getattr(logger, method, None)) for method in methods_used_by_life_loop
+    )
     assert logger.__enter__() is logger
     assert logger.__exit__(None, None, None) is False
 

@@ -18,8 +18,15 @@ from singular.memory import _atomic_write_text, get_mem_dir
 
 SCHEMA_VERSION = 2
 _EVIDENCE_LIMIT = 50
-EvidenceKind = Literal["direct_observation", "other_statement", "inference", "verified_outcome"]
-_EVIDENCE_KINDS = {"direct_observation", "other_statement", "inference", "verified_outcome"}
+EvidenceKind = Literal[
+    "direct_observation", "other_statement", "inference", "verified_outcome"
+]
+_EVIDENCE_KINDS = {
+    "direct_observation",
+    "other_statement",
+    "inference",
+    "verified_outcome",
+}
 
 
 def _utcnow() -> datetime:
@@ -88,7 +95,9 @@ class TheoryOfMindStore:
                     attributed_beliefs=_scores(value.get("attributed_beliefs")),
                     reliability=_clamp(value.get("reliability", 0.5)),
                     confidence=_clamp(value.get("confidence", 0.0)),
-                    reciprocity=max(-1.0, min(1.0, float(value.get("reciprocity", 0.0)))),
+                    reciprocity=max(
+                        -1.0, min(1.0, float(value.get("reciprocity", 0.0)))
+                    ),
                     evidence=_evidence(value.get("evidence")),
                     uncertainty=_clamp(value.get("uncertainty", 1.0)),
                     updated_at=str(value.get("updated_at", self.clock().isoformat())),
@@ -97,13 +106,25 @@ class TheoryOfMindStore:
                 continue
 
     def _save(self) -> None:
-        _atomic_write_text(self.path, json.dumps({
-            "schema_version": SCHEMA_VERSION,
-            "models": {key: model.to_dict() for key, model in sorted(self._models.items())},
-        }, ensure_ascii=False, indent=2))
+        _atomic_write_text(
+            self.path,
+            json.dumps(
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "models": {
+                        key: model.to_dict()
+                        for key, model in sorted(self._models.items())
+                    },
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
 
     def get(self, individual_id: str, *, decayed: bool = True) -> dict[str, object]:
-        model = self._models.get(str(individual_id), MentalStateModel(str(individual_id)))
+        model = self._models.get(
+            str(individual_id), MentalStateModel(str(individual_id))
+        )
         result = model.to_dict()
         if decayed and model.version:
             try:
@@ -143,8 +164,19 @@ class TheoryOfMindStore:
         key = str(individual_id)
         model = self._models.get(key, MentalStateModel(key))
         event_key = str(event).lower()
-        positive = event_key in {"conversation", "cooperation", "successful_cooperation", "promise_kept", "positive_outcome"}
-        negative = event_key in {"conflict", "cooperation_failure", "promise_broken", "negative_outcome"}
+        positive = event_key in {
+            "conversation",
+            "cooperation",
+            "successful_cooperation",
+            "promise_kept",
+            "positive_outcome",
+        }
+        negative = event_key in {
+            "conflict",
+            "cooperation_failure",
+            "promise_broken",
+            "negative_outcome",
+        }
         if outcome is not None:
             positive, negative = outcome, not outcome
 
@@ -152,10 +184,14 @@ class TheoryOfMindStore:
             model.supposed_goals.append(goal)
         if intention:
             previous = model.intentions.get(intention, 0.5)
-            model.intentions[intention] = _clamp(previous + (0.25 if positive else -0.4 if negative else 0.08))
+            model.intentions[intention] = _clamp(
+                previous + (0.25 if positive else -0.4 if negative else 0.08)
+            )
         if belief:
             previous = model.attributed_beliefs.get(belief, 0.5)
-            model.attributed_beliefs[belief] = _clamp(previous + (0.15 if not negative else -0.25))
+            model.attributed_beliefs[belief] = _clamp(
+                previous + (0.15 if not negative else -0.25)
+            )
         if positive:
             model.reliability = _clamp(model.reliability + 0.1)
             model.reciprocity = min(1.0, model.reciprocity + 0.15)
@@ -168,7 +204,9 @@ class TheoryOfMindStore:
             "other_statement": 0.45,
             "inference": 0.25,
         }[evidence_kind]
-        evidence_strength = (0.14 if outcome is not None or "promise" in event_key else 0.08)
+        evidence_strength = (
+            0.14 if outcome is not None or "promise" in event_key else 0.08
+        )
         evidence_strength *= kind_weight * _clamp(confidence)
         model.confidence = _clamp(model.confidence + evidence_strength)
         model.uncertainty = _clamp(1.0 - model.confidence)
@@ -181,7 +219,13 @@ class TheoryOfMindStore:
             "confidence": _clamp(confidence),
             "asserted_fact": evidence_kind == "verified_outcome",
         }
-        for name, value in (("intention", intention), ("goal", goal), ("belief", belief), ("outcome", outcome), ("note", note)):
+        for name, value in (
+            ("intention", intention),
+            ("goal", goal),
+            ("belief", belief),
+            ("outcome", outcome),
+            ("note", note),
+        ):
             if value is not None:
                 item[name] = value
         if source is not None:
@@ -193,7 +237,11 @@ class TheoryOfMindStore:
 
 
 def _strings(value: object) -> list[str]:
-    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+    return (
+        [item for item in value if isinstance(item, str)]
+        if isinstance(value, list)
+        else []
+    )
 
 
 def _scores(value: object) -> dict[str, float]:
@@ -210,4 +258,8 @@ def _scores(value: object) -> dict[str, float]:
 
 
 def _evidence(value: object) -> list[dict[str, object]]:
-    return [dict(item) for item in value if isinstance(item, dict)][-_EVIDENCE_LIMIT:] if isinstance(value, list) else []
+    return (
+        [dict(item) for item in value if isinstance(item, dict)][-_EVIDENCE_LIMIT:]
+        if isinstance(value, list)
+        else []
+    )

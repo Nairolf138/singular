@@ -109,10 +109,14 @@ def aggregate_code_evolution(
                     "stability": {"before": stability_before, "after": stability_after},
                 },
                 "status": status,
-                "timestamp": record.get("ts") if isinstance(record.get("ts"), str) else None,
+                "timestamp": (
+                    record.get("ts") if isinstance(record.get("ts"), str) else None
+                ),
                 "run_id": record_run_id(record),
                 "trace_id": (
-                    record.get("trace_id") if isinstance(record.get("trace_id"), str) else None
+                    record.get("trace_id")
+                    if isinstance(record.get("trace_id"), str)
+                    else None
                 ),
             }
         )

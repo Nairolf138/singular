@@ -10,10 +10,18 @@ import pytest
 
 from singular.cognition.reflect import ActionHypothesis, reflect_action
 from singular.life import loop
-from singular.life.coevolution_flow import CoevolutionConfig, CoevolutionFlow, LivingTestPool, TestCandidate
+from singular.life.coevolution_flow import (
+    CoevolutionConfig,
+    CoevolutionFlow,
+    LivingTestPool,
+    TestCandidate,
+)
 from singular.life.loop import EcosystemRules, Organism, WorldState, run_tick
 from singular.life.mutation_flow import select_operator
-from singular.life.reproduction_flow import ReproductionDecisionPolicy, decide_reproduction
+from singular.life.reproduction_flow import (
+    ReproductionDecisionPolicy,
+    decide_reproduction,
+)
 from singular.life.sandbox_scoring import score_code_with_error
 from singular.resource_manager import CapabilityStatus, ResourceManager
 
@@ -39,8 +47,12 @@ def _inc_operator(tree: ast.AST, rng=None) -> ast.AST:
 def test_reflection_prefers_long_term_low_risk_action() -> None:
     decision = reflect_action(
         [
-            ActionHypothesis("risky", long_term=0.9, sandbox_risk=0.9, resource_cost=0.7),
-            ActionHypothesis("steady", long_term=0.75, sandbox_risk=0.05, resource_cost=0.05),
+            ActionHypothesis(
+                "risky", long_term=0.9, sandbox_risk=0.9, resource_cost=0.7
+            ),
+            ActionHypothesis(
+                "steady", long_term=0.75, sandbox_risk=0.05, resource_cost=0.05
+            ),
         ]
     )
 
@@ -51,7 +63,10 @@ def test_reflection_prefers_long_term_low_risk_action() -> None:
 
 def test_operator_selection_uses_analyze_and_objective_bias() -> None:
     operators = {"low_count": _dec_operator, "rewarded": _inc_operator}
-    stats = {"low_count": {"count": 0, "reward": 0.0}, "rewarded": {"count": 3, "reward": 1.0}}
+    stats = {
+        "low_count": {"count": 0, "reward": 0.0},
+        "rewarded": {"count": 3, "reward": 1.0},
+    }
 
     assert select_operator(operators, stats, "analyze", random.Random(0)) == "low_count"
 
@@ -103,7 +118,9 @@ def test_run_tick_manages_resources_and_mutates_skill(temp_life) -> None:
     )
 
     assert state.iteration == 1
-    assert (temp_life["skills_dir"] / "skill.py").read_text(encoding="utf-8").strip() == "result = 1"
+    assert (temp_life["skills_dir"] / "skill.py").read_text(
+        encoding="utf-8"
+    ).strip() == "result = 1"
     assert resources.energy != before_energy
 
 
@@ -168,7 +185,9 @@ class _SleepyPsyche:
         return None
 
 
-def test_run_tick_sleeps_without_mutating_when_energy_is_low(temp_life, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_tick_sleeps_without_mutating_when_energy_is_low(
+    temp_life, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sleepy = _SleepyPsyche()
     monkeypatch.setattr(loop.Psyche, "load_state", staticmethod(lambda: sleepy))
 
@@ -183,7 +202,9 @@ def test_run_tick_sleeps_without_mutating_when_energy_is_low(temp_life, monkeypa
     assert state.iteration == 1
     assert sleepy.sleeping is True
     assert sleepy.sleep_ticks == 1
-    assert (temp_life["skills_dir"] / "skill.py").read_text(encoding="utf-8") == "result = 2\n"
+    assert (temp_life["skills_dir"] / "skill.py").read_text(
+        encoding="utf-8"
+    ) == "result = 2\n"
     checkpoint = json.loads(temp_life["checkpoint_path"].read_text(encoding="utf-8"))
     assert checkpoint["iteration"] == 1
 
@@ -204,7 +225,9 @@ def test_reproduction_decision_accepts_healthy_governed_parents(temp_life) -> No
         parent_a_health=1.0,
         parent_b_health=1.0,
         governance_allowed=True,
-        policy=ReproductionDecisionPolicy(min_parent_health=0.1, compatibility_threshold=0.1),
+        policy=ReproductionDecisionPolicy(
+            min_parent_health=0.1, compatibility_threshold=0.1
+        ),
     )
 
     assert decision.accepted is True
@@ -234,7 +257,9 @@ def test_coevolution_rejects_regression_detected_by_living_test(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     flow = CoevolutionFlow(
-        pool=LivingTestPool(tests=[TestCandidate("result == 1")], ttl={"result == 1": 3}),
+        pool=LivingTestPool(
+            tests=[TestCandidate("result == 1")], ttl={"result == 1": 3}
+        ),
         config=CoevolutionConfig(enabled=True, robustness_weight=robustness_weight),
     )
     monkeypatch.setattr(flow.pool, "evaluate", lambda code: [code == "result = 1"])
@@ -257,17 +282,25 @@ def test_coevolution_rejects_regression_detected_by_living_test(
     assert decision.score_combined_new == expected_combined
 
 
-def test_cycle_complet_creation_tick_mutation_learning_reproduction_and_stop(temp_life) -> None:
+def test_cycle_complet_creation_tick_mutation_learning_reproduction_and_stop(
+    temp_life,
+) -> None:
     world = WorldState(
         organisms={
             "alpha": Organism(temp_life["skills_dir"], energy=5.0, resources=5.0),
-            "beta": Organism(temp_life["root"] / "beta" / "skills", energy=5.0, resources=5.0),
+            "beta": Organism(
+                temp_life["root"] / "beta" / "skills", energy=5.0, resources=5.0
+            ),
         }
     )
-    (temp_life["skills_dir"] / "skill.py").write_text("result = 2\ndef solve():\n    return 2\n", encoding="utf-8")
+    (temp_life["skills_dir"] / "skill.py").write_text(
+        "result = 2\ndef solve():\n    return 2\n", encoding="utf-8"
+    )
     beta_skill = world.organisms["beta"].skills_dir
     beta_skill.mkdir(parents=True)
-    (beta_skill / "skill.py").write_text("result = 3\ndef solve():\n    return 3\n", encoding="utf-8")
+    (beta_skill / "skill.py").write_text(
+        "result = 3\ndef solve():\n    return 3\n", encoding="utf-8"
+    )
 
     state = run_tick(
         {name: org.skills_dir for name, org in world.organisms.items()},
@@ -277,7 +310,9 @@ def test_cycle_complet_creation_tick_mutation_learning_reproduction_and_stop(tem
         world=world,
         ecosystem_rules=EcosystemRules(
             crossover_interval=1,
-            reproduction_policy=ReproductionDecisionPolicy(min_parent_health=0.1, compatibility_threshold=0.1, cooldown_ticks=1),
+            reproduction_policy=ReproductionDecisionPolicy(
+                min_parent_health=0.1, compatibility_threshold=0.1, cooldown_ticks=1
+            ),
         ),
         tick_budget_seconds=0.05,
     )
@@ -285,7 +320,10 @@ def test_cycle_complet_creation_tick_mutation_learning_reproduction_and_stop(tem
     assert state.iteration == 1
     assert state.stats["dec"]["count"] == 1
     assert list(Path("runs").glob("**/*.jsonl"))
-    assert any(path.name.startswith("child_") for path in temp_life["root"].iterdir()) or world.reproduction_cooldowns
+    assert (
+        any(path.name.startswith("child_") for path in temp_life["root"].iterdir())
+        or world.reproduction_cooldowns
+    )
 
     stopped = loop.run(
         temp_life["skills_dir"],
@@ -298,7 +336,9 @@ def test_cycle_complet_creation_tick_mutation_learning_reproduction_and_stop(tem
     assert stopped.iteration == state.iteration
 
 
-def test_contextual_operator_is_preferred_for_stable_life_but_refused_terminal() -> None:
+def test_contextual_operator_is_preferred_for_stable_life_but_refused_terminal() -> (
+    None
+):
     from singular.beliefs.meta_learning import StrategyRecommendation
 
     operators = {"proven": _dec_operator, "fallback": _inc_operator}
@@ -307,16 +347,29 @@ def test_contextual_operator_is_preferred_for_stable_life_but_refused_terminal()
         "fallback": {"count": 5, "reward": 5.0},
     }
     evidence = StrategyRecommendation(
-        operator="proven", confidence=0.75, context_key="stable",
-        sample_count=8, regression_risk=0.2, uncertainty=0.1, recency=1.0,
+        operator="proven",
+        confidence=0.75,
+        context_key="stable",
+        sample_count=8,
+        regression_risk=0.2,
+        uncertainty=0.1,
+        recency=1.0,
     )
     stable = select_operator(
-        operators, stats, "exploit", random.Random(0),
-        contextual_recommendation=evidence, vital_risk=0.1,
+        operators,
+        stats,
+        "exploit",
+        random.Random(0),
+        contextual_recommendation=evidence,
+        vital_risk=0.1,
     )
     terminal = select_operator(
-        operators, stats, "exploit", random.Random(0),
-        contextual_recommendation=evidence, vital_risk=0.95,
+        operators,
+        stats,
+        "exploit",
+        random.Random(0),
+        contextual_recommendation=evidence,
+        vital_risk=0.95,
     )
     assert stable == "proven"
     assert terminal == "fallback"

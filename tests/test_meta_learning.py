@@ -182,16 +182,30 @@ def test_contextual_evidence_is_stable_but_not_transferable_to_terminal_life(
         )
 
     stable = recommend_strategy(
-        store, failure_type="anticipated", environment_signal="stable",
-        mood="calm", outcome_hint="success", candidates=["const_tune"],
-        skill_family="python", vital_state="stable", objective="robustesse",
-        governance_mode="enabled", candidate_characteristics={"complexity": "low"},
+        store,
+        failure_type="anticipated",
+        environment_signal="stable",
+        mood="calm",
+        outcome_hint="success",
+        candidates=["const_tune"],
+        skill_family="python",
+        vital_state="stable",
+        objective="robustesse",
+        governance_mode="enabled",
+        candidate_characteristics={"complexity": "low"},
     )
     terminal = recommend_strategy(
-        store, failure_type="anticipated", environment_signal="stable",
-        mood="calm", outcome_hint="success", candidates=["const_tune"],
-        skill_family="python", vital_state="terminal", objective="robustesse",
-        governance_mode="enabled", candidate_characteristics={"complexity": "low"},
+        store,
+        failure_type="anticipated",
+        environment_signal="stable",
+        mood="calm",
+        outcome_hint="success",
+        candidates=["const_tune"],
+        skill_family="python",
+        vital_state="terminal",
+        objective="robustesse",
+        governance_mode="enabled",
+        candidate_characteristics={"complexity": "low"},
     )
 
     assert stable is not None
@@ -207,13 +221,21 @@ def test_contextual_evidence_is_stable_but_not_transferable_to_terminal_life(
 def test_one_success_does_not_create_high_confidence(tmp_path: Path) -> None:
     store = BeliefStore(path=tmp_path / "beliefs.json")
     features = extract_run_features(
-        operator="lucky", accepted=True, base_score=1.0, mutated_score=0.5,
-        temperature=20.0, mood="calm",
+        operator="lucky",
+        accepted=True,
+        base_score=1.0,
+        mutated_score=0.5,
+        temperature=20.0,
+        mood="calm",
     )
     register_run_result(store, features, reward_delta=0.5)
     recommendation = recommend_strategy(
-        store, failure_type="anticipated", environment_signal="stable",
-        mood="calm", outcome_hint="success", candidates=["lucky"],
+        store,
+        failure_type="anticipated",
+        environment_signal="stable",
+        mood="calm",
+        outcome_hint="success",
+        candidates=["lucky"],
     )
     assert recommendation is not None
     assert recommendation.sample_count == 1

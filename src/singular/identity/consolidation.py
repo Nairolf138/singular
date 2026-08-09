@@ -110,7 +110,9 @@ class ConsolidationPipeline:
                 evidence = [evidence]
             status = psyche.evolve_traits(
                 changes,
-                cause=str(episode.get("cause") or episode.get("event") or "consolidation"),
+                cause=str(
+                    episode.get("cause") or episode.get("event") or "consolidation"
+                ),
                 evidence=evidence if isinstance(evidence, list) else [],
             )
             counts[status] += 1

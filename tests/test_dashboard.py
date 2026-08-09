@@ -19,15 +19,27 @@ def test_comparison_exposes_distinct_consulted_active_and_observed_lives(
     runs = tmp_path / "runs"
     runs.mkdir()
     (runs / "events.jsonl").write_text(
-        json.dumps({"ts": "2026-08-09T10:00:00Z", "life": "observed", "event": "interaction"}) + "\n",
+        json.dumps(
+            {"ts": "2026-08-09T10:00:00Z", "life": "observed", "event": "interaction"}
+        )
+        + "\n",
         encoding="utf-8",
     )
     registry_lives = {}
     for slug in ("consulted", "running", "observed"):
         path = tmp_path / slug
         path.mkdir()
-        registry_lives[slug] = {"slug": slug, "name": slug, "path": path, "status": "active"}
-    monkeypatch.setattr(dashboard_module, "load_registry", lambda: {"active": "running", "lives": registry_lives})
+        registry_lives[slug] = {
+            "slug": slug,
+            "name": slug,
+            "path": path,
+            "status": "active",
+        }
+    monkeypatch.setattr(
+        dashboard_module,
+        "load_registry",
+        lambda: {"active": "running", "lives": registry_lives},
+    )
     app = create_app(runs_dir=runs, psyche_file=tmp_path / "psyche.json")
     route = app._routes["/lives/comparison"]
     payload = route(life_id="consulted")
@@ -41,36 +53,70 @@ def test_comparison_exposes_distinct_consulted_active_and_observed_lives(
 def test_dashboard_exposes_viability_drift_diagnostics(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
-    (runs_dir / "drift.jsonl").write_text(json.dumps({
-        "ts": "2026-08-09T10:00:00+00:00", "event": "interaction",
-        "interaction": "mutation_paused", "action": "paused",
-        "metrics": {"health": .35, "risk": .7, "fitness": .2},
-        "thresholds": {"drift_threshold": .12},
-        "windows": {"short": .35, "long": .62},
-    }) + "\n", encoding="utf-8")
-    payload = TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")).get("/api/cockpit").json()
+    (runs_dir / "drift.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": "2026-08-09T10:00:00+00:00",
+                "event": "interaction",
+                "interaction": "mutation_paused",
+                "action": "paused",
+                "metrics": {"health": 0.35, "risk": 0.7, "fitness": 0.2},
+                "thresholds": {"drift_threshold": 0.12},
+                "windows": {"short": 0.35, "long": 0.62},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    payload = (
+        TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json"))
+        .get("/api/cockpit")
+        .json()
+    )
     governance = payload["viability_governance"]
     assert governance["state"] == "paused"
     assert governance["mutations_enabled"] is False
-    assert governance["metrics"]["risk"] == .7
-    assert governance["thresholds"]["drift_threshold"] == .12
+    assert governance["metrics"]["risk"] == 0.7
+    assert governance["thresholds"]["drift_threshold"] == 0.12
 
 
 def test_trajectory_contract_joins_records_by_correlation_id(tmp_path: Path) -> None:
     records = [
-        {"ts": "2026-08-09T10:00:00+00:00", "event": "sandbox_violation", "correlation_id": "corr-1", "category": "forbidden_name", "life_id": "life-a"},
-        {"ts": "2026-08-09T10:00:01+00:00", "event": "mutation", "correlation_id": "corr-1", "op": "replace", "impacted_file": "skills/a.py", "accepted": False},
-        {"ts": "2026-08-09T10:00:02+00:00", "event": "governance.circuit_breaker_opened", "correlation_id": "corr-1", "corrective_action": "halt mutations"},
+        {
+            "ts": "2026-08-09T10:00:00+00:00",
+            "event": "sandbox_violation",
+            "correlation_id": "corr-1",
+            "category": "forbidden_name",
+            "life_id": "life-a",
+        },
+        {
+            "ts": "2026-08-09T10:00:01+00:00",
+            "event": "mutation",
+            "correlation_id": "corr-1",
+            "op": "replace",
+            "impacted_file": "skills/a.py",
+            "accepted": False,
+        },
+        {
+            "ts": "2026-08-09T10:00:02+00:00",
+            "event": "governance.circuit_breaker_opened",
+            "correlation_id": "corr-1",
+            "corrective_action": "halt mutations",
+        },
     ]
     payload = build_trajectory(records, tmp_path / "missing.json", lambda _: "run-a")
     assert [item["event"] for item in payload["correlations"]["corr-1"]] == [
-        "sandbox_violation", "mutation", "governance.circuit_breaker_opened"
+        "sandbox_violation",
+        "mutation",
+        "governance.circuit_breaker_opened",
     ]
     assert payload["correlations"]["corr-1"][1]["path"] == "skills/a.py"
     assert payload["causal_chronology"][2]["corrective_action"] == "halt mutations"
 
 
-def _receive_with_timeout(ws: TestClient._WSConnection, timeout: float = 2.0) -> dict[str, object]:
+def _receive_with_timeout(
+    ws: TestClient._WSConnection, timeout: float = 2.0
+) -> dict[str, object]:
     try:
         return ws.ws._queue.get(timeout=timeout)
     except Empty as exc:  # pragma: no cover - defensive for slow CI
@@ -109,7 +155,9 @@ def test_dashboard_endpoints(tmp_path: Path, monkeypatch) -> None:
     assert "last_purge" in retention
 
 
-def test_dashboard_brand_assets_are_referenced_and_served_as_svg(tmp_path: Path) -> None:
+def test_dashboard_brand_assets_are_referenced_and_served_as_svg(
+    tmp_path: Path,
+) -> None:
     app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
     client = TestClient(app)
 
@@ -187,7 +235,9 @@ def test_dashboard_context_normalizes_object_and_dict_life_metadata(
     ]
 
 
-def test_dashboard_starts_with_empty_registry_and_exposes_onboarding(tmp_path: Path, monkeypatch) -> None:
+def test_dashboard_starts_with_empty_registry_and_exposes_onboarding(
+    tmp_path: Path, monkeypatch
+) -> None:
     root = tmp_path / "empty-root"
     root.mkdir()
     monkeypatch.setenv("SINGULAR_ROOT", str(root))
@@ -272,10 +322,25 @@ def test_dashboard_quests_endpoint(tmp_path: Path, monkeypatch) -> None:
     mem_dir = tmp_path / "mem"
     mem_dir.mkdir()
     quests_state = {
-        "active": [{"name": "q1", "status": "active", "started_at": "2026-01-01T00:00:00+00:00"}],
-        "completed": [{"name": "q0", "status": "success", "started_at": "2026-01-01T00:00:00+00:00", "completed_at": "2026-01-01T00:01:00+00:00"}],
+        "active": [
+            {
+                "name": "q1",
+                "status": "active",
+                "started_at": "2026-01-01T00:00:00+00:00",
+            }
+        ],
+        "completed": [
+            {
+                "name": "q0",
+                "status": "success",
+                "started_at": "2026-01-01T00:00:00+00:00",
+                "completed_at": "2026-01-01T00:01:00+00:00",
+            }
+        ],
     }
-    (mem_dir / "quests_state.json").write_text(json.dumps(quests_state), encoding="utf-8")
+    (mem_dir / "quests_state.json").write_text(
+        json.dumps(quests_state), encoding="utf-8"
+    )
 
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
     app = create_app(runs_dir=runs_dir, psyche_file=psyche_file)
@@ -309,10 +374,14 @@ def test_dashboard_work_items_schema_contains_required_fields(
         ],
         "completed": [],
     }
-    (mem_dir / "quests_state.json").write_text(json.dumps(quests_state), encoding="utf-8")
+    (mem_dir / "quests_state.json").write_text(
+        json.dumps(quests_state), encoding="utf-8"
+    )
 
     run_file = runs_dir / "loop.jsonl"
-    run_file.write_text(json.dumps({"ts": "2026-01-01T00:00:00+00:00"}), encoding="utf-8")
+    run_file.write_text(
+        json.dumps({"ts": "2026-01-01T00:00:00+00:00"}), encoding="utf-8"
+    )
     consciousness_file = runs_dir / "loop.consciousness.jsonl"
     consciousness_file.write_text(
         json.dumps(
@@ -372,8 +441,6 @@ def test_dashboard_alerts_endpoint(tmp_path: Path) -> None:
         "sandbox_failures_rising",
         "prolonged_stagnation",
     }
-
-
 
 
 def test_dashboard_latest_run_summary_endpoint(tmp_path: Path) -> None:
@@ -642,9 +709,11 @@ def test_dashboard_vital_state_recovers_after_historical_failure_peak(
         encoding="utf-8",
     )
 
-    payload = TestClient(
-        create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
-    ).get("/api/cockpit").json()
+    payload = (
+        TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json"))
+        .get("/api/cockpit")
+        .json()
+    )
 
     assert payload["vital_timeline"]["state"] != "terminal"
     assert payload["vital_timeline"]["current_failure_streak"] == 0
@@ -705,9 +774,11 @@ def test_dashboard_cockpit_sandbox_governance_summary(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    payload = TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")).get(
-        "/api/cockpit"
-    ).json()
+    payload = (
+        TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json"))
+        .get("/api/cockpit")
+        .json()
+    )
 
     assert payload["governance_policy"]["circuit_breaker_threshold"] == 3
     assert payload["governance_policy"]["circuit_breaker_window_seconds"] == 180.0
@@ -720,7 +791,9 @@ def test_dashboard_cockpit_sandbox_governance_summary(tmp_path: Path) -> None:
     assert governance["recent_violations_count"] == 2
     assert governance["last_faulty_skill"] == "life-a:skills/bad.py"
     assert governance["cooldown_remaining_seconds"] > 0
-    assert governance["recommended_corrective_action"] == "halt mutations until cooldown"
+    assert (
+        governance["recommended_corrective_action"] == "halt mutations until cooldown"
+    )
     assert governance["empty_state"] is None
     assert {item["event"] for item in governance["events"]} >= {
         "sandbox_violation",
@@ -734,13 +807,16 @@ def test_dashboard_cockpit_sandbox_governance_empty_state(tmp_path: Path) -> Non
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
     (runs_dir / "empty-sandbox.jsonl").write_text(
-        json.dumps({"ts": "2026-05-11T08:00:00+00:00", "health": {"score": 99.0}}) + "\n",
+        json.dumps({"ts": "2026-05-11T08:00:00+00:00", "health": {"score": 99.0}})
+        + "\n",
         encoding="utf-8",
     )
 
-    payload = TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")).get(
-        "/api/cockpit"
-    ).json()
+    payload = (
+        TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json"))
+        .get("/api/cockpit")
+        .json()
+    )
 
     governance = payload["sandbox_governance"]
     assert governance["recent_violations_count"] == 0
@@ -765,8 +841,12 @@ def test_dashboard_cockpit_life_status_defaults_without_memory_or_registry(
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(dashboard_module, "load_registry", lambda: {"active": None, "lives": {}})
-    client = TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json"))
+    monkeypatch.setattr(
+        dashboard_module, "load_registry", lambda: {"active": None, "lives": {}}
+    )
+    client = TestClient(
+        create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    )
 
     payload = client.get("/api/cockpit").json()
     assert payload["life_status"] == "not_alive_yet"
@@ -816,7 +896,9 @@ def test_dashboard_cockpit_life_status_defaults_when_active_life_has_no_memory(
             },
         },
     )
-    client = TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json"))
+    client = TestClient(
+        create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    )
 
     payload = client.get("/api/cockpit").json()
     assert payload["life_status"] == "not_alive_yet"
@@ -861,7 +943,9 @@ def test_dashboard_cockpit_life_status_uses_extinct_registry_status(
             },
         },
     )
-    client = TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json"))
+    client = TestClient(
+        create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
+    )
 
     payload = client.get("/api/cockpit").json()
     assert payload["life_status"] == "dead"
@@ -990,7 +1074,9 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "life-detail-panel" in body
     assert "<th><button data-sort='life'>Nom</button></th>" in body
     assert "<th><button data-sort='score'>Score / santé</button></th>" in body
-    assert "<th><button data-sort='last_activity'>Dernière activité</button></th>" in body
+    assert (
+        "<th><button data-sort='last_activity'>Dernière activité</button></th>" in body
+    )
     assert "<th><button data-sort='liveness'>Liveness</button></th>" in body
     assert "<th>Statut</th>" in body
     assert "<th>Risques</th>" in body
@@ -1001,7 +1087,9 @@ def test_dashboard_index_contains_cockpit_cards(tmp_path: Path) -> None:
     assert "data-essential-level='3'" in body
 
 
-def test_dashboard_essential_mode_critical_blocks_and_visibility_markers(tmp_path: Path) -> None:
+def test_dashboard_essential_mode_critical_blocks_and_visibility_markers(
+    tmp_path: Path,
+) -> None:
     app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
     body = TestClient(app).get("/").json()
 
@@ -1014,7 +1102,10 @@ def test_dashboard_essential_mode_critical_blocks_and_visibility_markers(tmp_pat
     ]:
         assert marker in body
 
-    assert "id='cockpit-detail' class='panel level-panel technical-only' data-essential-level='3'" in body
+    assert (
+        "id='cockpit-detail' class='panel level-panel technical-only' data-essential-level='3'"
+        in body
+    )
     assert "class='lives-grid' data-essential-level='2'" in body
     assert "class='lives-grid technical-only'" not in body
 
@@ -1023,12 +1114,12 @@ def test_dashboard_index_renders_main_sections(tmp_path: Path) -> None:
     app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
     body = TestClient(app).get("/").json()
 
-    assert "<section id=\"cockpit\">" in body
-    assert "<section id=\"timeline-section\">" in body
-    assert "<section id=\"reflections-section\">" in body
-    assert "<section id=\"vies\">" in body
-    assert "<section id=\"logs-live\">" in body
-    assert "<section id=\"parametres\">" in body
+    assert '<section id="cockpit">' in body
+    assert '<section id="timeline-section">' in body
+    assert '<section id="reflections-section">' in body
+    assert '<section id="vies">' in body
+    assert '<section id="logs-live">' in body
+    assert '<section id="parametres">' in body
 
 
 def test_dashboard_timeline_comparison_and_top_mutations(tmp_path: Path) -> None:
@@ -1167,7 +1258,9 @@ def test_dashboard_consciousness_endpoint_filters(tmp_path: Path) -> None:
     assert payload["items"][0]["objective"] == "coherence"
 
 
-def test_dashboard_lives_comparison_excludes_runs_without_explicit_life(tmp_path: Path) -> None:
+def test_dashboard_lives_comparison_excludes_runs_without_explicit_life(
+    tmp_path: Path,
+) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
     (runs_dir / "loop-1001.jsonl").write_text(
@@ -1266,17 +1359,25 @@ def test_dashboard_code_evolution_endpoint_and_comparison_link(tmp_path: Path) -
     client = TestClient(app)
 
     comparison_payload = client.get("/lives/comparison").json()
-    life_row = next(row for row in comparison_payload["table"] if row["life"] == "life-explicit")
-    assert life_row["code_evolution_endpoint"] == "/api/lives/life-explicit/code-evolution"
+    life_row = next(
+        row for row in comparison_payload["table"] if row["life"] == "life-explicit"
+    )
+    assert (
+        life_row["code_evolution_endpoint"] == "/api/lives/life-explicit/code-evolution"
+    )
     special_life_row = next(
-        row for row in comparison_payload["table"] if row["life"] == "life explicit/with spaces"
+        row
+        for row in comparison_payload["table"]
+        if row["life"] == "life explicit/with spaces"
     )
     assert (
         special_life_row["code_evolution_endpoint"]
         == "/api/lives/life%20explicit%2Fwith%20spaces/code-evolution"
     )
 
-    endpoint_payload = app._routes["/api/lives/{life}/code-evolution"](life="life-explicit")
+    endpoint_payload = app._routes["/api/lives/{life}/code-evolution"](
+        life="life-explicit"
+    )
     assert endpoint_payload["life"] == "life-explicit"
     assert endpoint_payload["count"] == 2
     assert endpoint_payload["summary"]["by_status"] == {"accepté": 1, "rejeté": 1}
@@ -1291,7 +1392,9 @@ def test_dashboard_code_evolution_endpoint_and_comparison_link(tmp_path: Path) -
     assert filtered_payload["items"][0]["status"] == "accepté"
 
 
-def test_run_timeline_endpoint_filters_pagination_and_event_coherence(tmp_path: Path) -> None:
+def test_run_timeline_endpoint_filters_pagination_and_event_coherence(
+    tmp_path: Path,
+) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
     run_file = runs_dir / "run-42.jsonl"
@@ -1379,7 +1482,12 @@ def test_run_timeline_endpoint_filters_pagination_and_event_coherence(tmp_path: 
     route = app._routes["/api/runs/{run_id}/timeline"]
 
     all_payload = route(run_id="run-42", page=1, page_size=2)
-    assert all_payload["pagination"] == {"page": 1, "page_size": 2, "total": 7, "total_pages": 4}
+    assert all_payload["pagination"] == {
+        "page": 1,
+        "page_size": 2,
+        "total": 7,
+        "total_pages": 4,
+    }
     assert [item["event"] for item in all_payload["items"]] == ["mutation", "delay"]
 
     page_two = route(run_id="run-42", page=2, page_size=2)
@@ -1413,7 +1521,8 @@ def test_run_timeline_endpoint_filters_pagination_and_event_coherence(tmp_path: 
         "governance.circuit_breaker_opened",
     }.issubset(event_types)
     breaker_item = next(
-        entry for entry in route(run_id="run-42")["items"]
+        entry
+        for entry in route(run_id="run-42")["items"]
         if entry["event"] == "governance.circuit_breaker_opened"
     )
     assert breaker_item["category"] == "sandbox_violation"
@@ -1424,7 +1533,9 @@ def test_run_timeline_endpoint_filters_pagination_and_event_coherence(tmp_path: 
     assert breaker_item["last_sandbox_diagnostics"] == {"sandbox_violation_streak": 3}
 
 
-def test_run_mutation_detail_endpoint_returns_diff_metrics_and_ast(tmp_path: Path) -> None:
+def test_run_mutation_detail_endpoint_returns_diff_metrics_and_ast(
+    tmp_path: Path,
+) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
     run_file = runs_dir / "run-mut.jsonl"
@@ -1695,7 +1806,9 @@ def test_lives_comparison_compare_lives_filter(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     app = create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
-    payload = app._routes["/lives/comparison"](compare_lives="life-a", time_window="all")
+    payload = app._routes["/lives/comparison"](
+        compare_lives="life-a", time_window="all"
+    )
     assert set(payload["lives"]) == {"life-a"}
     assert payload["filters"]["compare_lives"] == ["life-a"]
     assert payload["filters"]["time_window"] == "all"
@@ -1935,7 +2048,11 @@ def test_lives_genealogy_life_filter_limits_active_relations(
         lambda: {
             "active": "life-a",
             "lives": {
-                "life-a": {"slug": "life-a", "allies": ["life-b"], "rivals": ["life-c"]},
+                "life-a": {
+                    "slug": "life-a",
+                    "allies": ["life-b"],
+                    "rivals": ["life-c"],
+                },
                 "life-b": {"slug": "life-b", "allies": ["life-a"], "rivals": []},
                 "life-c": {"slug": "life-c", "allies": [], "rivals": ["life-a"]},
             },
@@ -1963,7 +2080,9 @@ def test_psyche_missing_returns_404(tmp_path: Path) -> None:
     assert response.status_code == 404
 
 
-def test_websocket_stream_incremental_events_and_growth_stability(tmp_path: Path) -> None:
+def test_websocket_stream_incremental_events_and_growth_stability(
+    tmp_path: Path,
+) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
     run_file = runs_dir / "run-live-20260511090000.jsonl.tmp"
@@ -1993,7 +2112,9 @@ def test_websocket_stream_incremental_events_and_growth_stability(tmp_path: Path
         }
 
         with run_file.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps({"ts": "2026-04-12T10:00:01", "event": "delay"}) + "\n")
+            handle.write(
+                json.dumps({"ts": "2026-04-12T10:00:01", "event": "delay"}) + "\n"
+            )
         update = _receive_with_timeout(ws)
         assert update == {
             "type": "run_event",
@@ -2003,7 +2124,9 @@ def test_websocket_stream_incremental_events_and_growth_stability(tmp_path: Path
         }
 
         with run_file.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps({"ts": "2026-04-12T10:00:02", "event": "refuse"}) + "\n")
+            handle.write(
+                json.dumps({"ts": "2026-04-12T10:00:02", "event": "refuse"}) + "\n"
+            )
             handle.write(
                 json.dumps(
                     {
@@ -2033,21 +2156,23 @@ def test_websocket_stream_incremental_events_and_growth_stability(tmp_path: Path
         ]
 
 
-def test_websocket_multiple_clients_receive_the_same_bounded_stream(tmp_path: Path) -> None:
+def test_websocket_multiple_clients_receive_the_same_bounded_stream(
+    tmp_path: Path,
+) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
     (runs_dir / "shared.jsonl").write_text(
-        json.dumps({"ts": "2026-04-12T10:00:00", "event": "interaction"})
-        + "\n",
+        json.dumps({"ts": "2026-04-12T10:00:00", "event": "interaction"}) + "\n",
         encoding="utf-8",
     )
     client = TestClient(
         create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")
     )
 
-    with client.websocket_connect("/ws") as first, client.websocket_connect(
-        "/ws"
-    ) as second:
+    with (
+        client.websocket_connect("/ws") as first,
+        client.websocket_connect("/ws") as second,
+    ):
         first_event = _receive_with_timeout(first)
         second_event = _receive_with_timeout(second)
 
@@ -2113,7 +2238,6 @@ def test_websocket_application_shutdown_closes_client_and_releases_slot(
     assert "CancelledError" not in capsys.readouterr().err
 
 
-
 def test_run_requires_uvicorn(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -2135,7 +2259,9 @@ def test_run_requires_uvicorn(
     assert "pip install uvicorn" in captured.err
 
 
-def test_dashboard_actions_endpoint_and_ui_panel(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dashboard_actions_endpoint_and_ui_panel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("SINGULAR_DASHBOARD_ACTION_TOKEN", "secret")
     app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
     client = TestClient(app)
@@ -2222,7 +2348,9 @@ def test_dashboard_actions_require_token_unless_local_dev_override(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("SINGULAR_DASHBOARD_ACTION_TOKEN", raising=False)
-    monkeypatch.delenv("SINGULAR_DASHBOARD_ALLOW_UNAUTHENTICATED_ACTIONS", raising=False)
+    monkeypatch.delenv(
+        "SINGULAR_DASHBOARD_ALLOW_UNAUTHENTICATED_ACTIONS", raising=False
+    )
     app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
     client = TestClient(app)
 
@@ -2230,7 +2358,10 @@ def test_dashboard_actions_require_token_unless_local_dev_override(
 
     assert missing_token.status_code == 403
     assert "SINGULAR_DASHBOARD_ACTION_TOKEN" in missing_token.json()["detail"]
-    assert "SINGULAR_DASHBOARD_ALLOW_UNAUTHENTICATED_ACTIONS=1" in missing_token.json()["detail"]
+    assert (
+        "SINGULAR_DASHBOARD_ALLOW_UNAUTHENTICATED_ACTIONS=1"
+        in missing_token.json()["detail"]
+    )
 
     monkeypatch.setenv("SINGULAR_DASHBOARD_ALLOW_UNAUTHENTICATED_ACTIONS", "1")
     allowed = client.post("/api/actions/lives_list", json={}).json()
@@ -2257,9 +2388,11 @@ def test_dashboard_emergency_stop_action_writes_active_life_stop_signal(
     with pytest.raises(Exception):
         route("emergency_stop", payload=json.dumps({"scope": "active_life"}))
 
-    result = TestClient(app).post(
-        "/api/actions/emergency_stop", json={"scope": "active_life"}
-    ).json()
+    result = (
+        TestClient(app)
+        .post("/api/actions/emergency_stop", json={"scope": "active_life"})
+        .json()
+    )
 
     assert result["ok"] is True
     assert result["action"] == "emergency_stop"
@@ -2270,6 +2403,7 @@ def test_dashboard_emergency_stop_action_writes_active_life_stop_signal(
     assert payload["reason"] == "dashboard_emergency_stop"
     assert payload["requested_by"] == "dashboard"
     assert payload["life"] == meta.slug
+
 
 def test_dashboard_actions_validation_robustness(tmp_path: Path) -> None:
     app = create_app(runs_dir=tmp_path / "runs", psyche_file=tmp_path / "psyche.json")
@@ -2460,15 +2594,22 @@ def test_lives_comparison_get_does_not_reconcile_registry_silently(
     assert first_payload["lives"]["alpha"]["life_status"] == "dead"
     assert first_payload["lives"]["alpha"]["extinction_seen_in_runs"] is True
     assert first_payload["lives"]["alpha"]["registry_run_status_inconsistency"] is True
-    assert first_payload["lives"]["alpha"]["status_reconciliation_suggestion"] == "mark_extinct"
-    assert first_payload["status_reconciliation"] == second_payload["status_reconciliation"] == [
-        {
-            "life": "alpha",
-            "registry_status": "active",
-            "extinction_seen_in_runs": True,
-            "suggestion": "mark_extinct",
-        }
-    ]
+    assert (
+        first_payload["lives"]["alpha"]["status_reconciliation_suggestion"]
+        == "mark_extinct"
+    )
+    assert (
+        first_payload["status_reconciliation"]
+        == second_payload["status_reconciliation"]
+        == [
+            {
+                "life": "alpha",
+                "registry_status": "active",
+                "extinction_seen_in_runs": True,
+                "suggestion": "mark_extinct",
+            }
+        ]
+    )
 
 
 def test_lives_status_reconciliation_action_marks_suggested_extinctions(
@@ -2528,7 +2669,12 @@ def test_lives_status_reconciliation_action_marks_suggested_extinctions(
             "suggestion": "mark_extinct",
         }
     ]
-    assert json.loads(registry_file.read_text(encoding="utf-8"))["lives"]["alpha"]["status"] == "extinct"
+    assert (
+        json.loads(registry_file.read_text(encoding="utf-8"))["lives"]["alpha"][
+            "status"
+        ]
+        == "extinct"
+    )
 
 
 def test_chat_get_reports_status_without_running_chat(
@@ -2561,7 +2707,10 @@ def test_chat_get_reports_status_without_running_chat(
     assert response["available"] is True
     assert response["registry_status"] == "active"
     assert response["status"] == "ready"
-    assert response["message"] == "Utilisez POST avec un corps JSON pour envoyer un message."
+    assert (
+        response["message"]
+        == "Utilisez POST avec un corps JSON pour envoyer un message."
+    )
 
 
 def test_chat_post_remains_the_message_execution_path(
@@ -2592,10 +2741,14 @@ def test_chat_post_remains_the_message_execution_path(
 
     assert response.status_code == 200
     assert response.json()["status"] == "message_missing"
-    assert response.json()["response"] == "Message vide: saisissez un contenu à envoyer."
+    assert (
+        response.json()["response"] == "Message vide: saisissez un contenu à envoyer."
+    )
 
 
-def test_dashboard_cockpit_exposes_used_memories(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dashboard_cockpit_exposes_used_memories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     runs_dir = tmp_path / "runs"
     runs_dir.mkdir()
     mem_dir = tmp_path / "mem"
@@ -2615,13 +2768,17 @@ def test_dashboard_cockpit_exposes_used_memories(tmp_path: Path, monkeypatch: py
     )
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
 
-    payload = TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json")).get(
-        "/api/cockpit"
-    ).json()
+    payload = (
+        TestClient(create_app(runs_dir=runs_dir, psyche_file=tmp_path / "psyche.json"))
+        .get("/api/cockpit")
+        .json()
+    )
 
     assert payload["memory_metrics"]["has_memory_signal"] is True
-    assert payload["memory_metrics"]["used_memories"][0]["summary"] == "bug prioritaire rappelé"
-
+    assert (
+        payload["memory_metrics"]["used_memories"][0]["summary"]
+        == "bug prioritaire rappelé"
+    )
 
 
 def test_dashboard_context_exposes_degraded_dummy_diagnostic(tmp_path, monkeypatch):
@@ -2629,15 +2786,19 @@ def test_dashboard_context_exposes_degraded_dummy_diagnostic(tmp_path, monkeypat
         "state": "degraded_dummy",
         "llm_real": False,
         "deterministic_fake": True,
-        "providers": [{
-            "provider": "openai",
-            "state": "unavailable",
-            "cause": "missing OPENAI_API_KEY",
-            "configuration_command": "singular config openai",
-        }],
+        "providers": [
+            {
+                "provider": "openai",
+                "state": "unavailable",
+                "cause": "missing OPENAI_API_KEY",
+                "configuration_command": "singular config openai",
+            }
+        ],
     }
     monkeypatch.setattr(dashboard_module, "provider_diagnostics", lambda: diagnostic)
 
-    context = create_app(psyche_file=tmp_path / "psyche.json")._routes["/dashboard/context"]()
+    context = create_app(psyche_file=tmp_path / "psyche.json")._routes[
+        "/dashboard/context"
+    ]()
 
     assert context["llm_providers"] == diagnostic

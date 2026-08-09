@@ -17,7 +17,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, Iterable, Mapping
 
-from singular.cognition.reflect import ActionHypothesis, ReflectionDecision, reflect_action
+from singular.cognition.reflect import (
+    ActionHypothesis,
+    ReflectionDecision,
+    reflect_action,
+)
 from singular.cognition.self_observation import SelfObservationService
 from singular.beliefs.store import BeliefStore
 from singular.beliefs.meta_learning import (
@@ -44,6 +48,7 @@ from singular.runs.explain import summarize_mutation
 from singular.runs.generations import record_generation
 from singular.organisms.spawn import mutation_absurde
 from singular.perception import capture_signals, get_temperature
+
 # Graine is the external proposal generator for the life loop: it does not
 # write files directly here, but supplies validated patch/operator intentions.
 from graine.evolver.generate import propose_mutations
@@ -63,7 +68,12 @@ from singular.life.effectors import perform_action
 from singular.life.world_state import PersistentWorldState
 from singular.social.graph import SocialGraph
 from singular.multiagent.runtime import LifeTickContext, MultiAgentRuntime
-from singular.life.ecosystem import ARCHETYPES, EcosystemRulesConfig, compute_population_metrics, draw_global_event
+from singular.life.ecosystem import (
+    ARCHETYPES,
+    EcosystemRulesConfig,
+    compute_population_metrics,
+    draw_global_event,
+)
 
 from .death import DeathMonitor
 from .health import HealthTracker, ViabilityDriftDetector
@@ -73,7 +83,12 @@ from singular.governance.policy import (
     classify_sandbox_error_type,
 )
 from singular.governance.values import load_value_weights
-from singular.morals import MoralAction, MoralContextBuilder, MoralDecision, MoralDecisionEngine
+from singular.morals import (
+    MoralAction,
+    MoralContextBuilder,
+    MoralDecision,
+    MoralDecisionEngine,
+)
 from singular.identity.core import IdentityCoreService
 
 from .checkpointing import (
@@ -90,7 +105,11 @@ from .sandbox_scoring import (
     _sandbox_failure_category,
 )
 from .mutation_flow import apply_mutation, select_operator, _load_default_operators
-from .fitness import FitnessDecision, evaluate_mutation_fitness, load_lifecycle_fitness_config
+from .fitness import (
+    FitnessDecision,
+    evaluate_mutation_fitness,
+    load_lifecycle_fitness_config,
+)
 from .resource_flow import manage_resources
 from .reproduction_flow import (
     ReproductionDecisionPolicy,
@@ -99,7 +118,12 @@ from .reproduction_flow import (
     decide_reproduction,
     _pick_crossover_parents,
 )
-from .coevolution_flow import CoevolutionConfig, CoevolutionFlow, MapElites, LivingTestPool
+from .coevolution_flow import (
+    CoevolutionConfig,
+    CoevolutionFlow,
+    MapElites,
+    LivingTestPool,
+)
 from .skill_genesis import create_skill
 from .social_decision import decide_social_actions
 from .profiling import LifeLoopProfiler
@@ -124,7 +148,10 @@ def _deliberate_life_action(
     action = MoralAction(action_type, parameters=dict(relational_context or {}))
     supplied = {
         "consequences": consequences,
-        "affected_parties": ({"identifier": organism, "vulnerability": 0.0}, *affected_parties),
+        "affected_parties": (
+            {"identifier": organism, "vulnerability": 0.0},
+            *affected_parties,
+        ),
         "identity_commitments": (
             {"value": "non_maleficence", "weight": 1.0},
             {"value": "identity_coherence", "weight": 0.8},
@@ -136,10 +163,14 @@ def _deliberate_life_action(
         IdentityCoreService(get_mem_dir()), journal=add_episode
     ).build(action, supplied)
     decision = MoralDecisionEngine(journal=add_episode).evaluate(
-        action, context.consequences, context.affected_parties,
-        context.identity_commitments, context.uncertainty,
+        action,
+        context.consequences,
+        context.affected_parties,
+        context.identity_commitments,
+        context.uncertainty,
     )
     return decision
+
 
 _DEFAULT_RUN_LOGGER = RunLogger
 
@@ -208,7 +239,9 @@ def _graine_allowed_operator_names(
     """
 
     try:
-        proposals = propose_mutations(_graine_zones_for_skill(skill_path, operator_names))
+        proposals = propose_mutations(
+            _graine_zones_for_skill(skill_path, operator_names)
+        )
     except Exception as exc:  # pragma: no cover - defensive integration boundary
         log.warning("graine proposal generation failed for %s: %s", skill_path, exc)
         return set()
@@ -499,7 +532,13 @@ def _coverage_gap_spec_signals(signals: Mapping[str, object]) -> dict[str, objec
             spec[key] = signals[key]
     coverage_spec = signals.get("coverage_gap_spec")
     if isinstance(coverage_spec, Mapping):
-        for key in ("examples", "success_criteria", "signature", "cooldown", "expected_impact"):
+        for key in (
+            "examples",
+            "success_criteria",
+            "signature",
+            "cooldown",
+            "expected_impact",
+        ):
             if key in coverage_spec:
                 spec[key] = coverage_spec[key]
     return spec
@@ -635,7 +674,6 @@ def log_mutation(
         mutation_error_message=mutation_error_message,
         fitness=fitness_payload,
     )
-
 
 
 def _ast_node_count(tree: ast.AST) -> int:
@@ -781,7 +819,10 @@ def _should_count_skill_quarantine_failure(
 ) -> bool:
     """Count only deterministic source failures observed in a healthy sandbox."""
 
-    if base_result.is_infrastructure_failure or mutated_result.is_infrastructure_failure:
+    if (
+        base_result.is_infrastructure_failure
+        or mutated_result.is_infrastructure_failure
+    ):
         return False
     return (not base_result.ok) and _sandbox_failure_classification(base_result) in {
         "invalid_candidate",
@@ -830,7 +871,10 @@ def _choose_skill(
             + targeted_mutation
         )
 
-    weighted = [(org_name, skill_path, max(0.01, priority(org_name, skill_path))) for org_name, skill_path in candidates]
+    weighted = [
+        (org_name, skill_path, max(0.01, priority(org_name, skill_path)))
+        for org_name, skill_path in candidates
+    ]
     total = sum(weight for _, _, weight in weighted)
     pick = rng.random() * total
     cumulative = 0.0
@@ -921,7 +965,11 @@ def run(
     """
 
     rng = rng or random.Random()
-    life_root = Path(life_home) if life_home is not None else Path(os.environ.get("SINGULAR_HOME", "."))
+    life_root = (
+        Path(life_home)
+        if life_home is not None
+        else Path(os.environ.get("SINGULAR_HOME", "."))
+    )
     state = load_checkpoint(checkpoint_path)
     state.health_history = _retain_health_history(state.health_history)
 
@@ -950,7 +998,9 @@ def run(
         if org_name not in world.organisms:
             prototype = mortality or DeathMonitor()
             archetype = list(ARCHETYPES)[len(world.organisms) % len(ARCHETYPES)]
-            world.organisms[org_name] = Organism(skills_dir, monitor=prototype, archetype=archetype)
+            world.organisms[org_name] = Organism(
+                skills_dir, monitor=prototype, archetype=archetype
+            )
 
     operators = operators or _load_default_operators()
     stats: Dict[str, Dict[str, float]] = state.stats
@@ -963,7 +1013,9 @@ def run(
     resource_manager = resource_manager or ResourceManager()
     event_bus = event_bus or get_global_event_bus()
     value_weights = load_value_weights()
-    governance_policy = governance_policy or MutationGovernancePolicy(value_weights=value_weights)
+    governance_policy = governance_policy or MutationGovernancePolicy(
+        value_weights=value_weights
+    )
     social_graph = social_graph or SocialGraph()
     if multiagent_runtime is not None and multiagent_runtime.social_graph is None:
         # The runtime and resource paths must contribute to the same durable
@@ -989,9 +1041,7 @@ def run(
     sleep_ticks_remaining = 0
     intrinsic_goals = IntrinsicGoals(value_weights=value_weights)
     lifecycle_fitness_config = load_lifecycle_fitness_config()
-    self_observation = SelfObservationService(
-        life_root / "mem" / "self_model.json"
-    )
+    self_observation = SelfObservationService(life_root / "mem" / "self_model.json")
     coevolution_flow: CoevolutionFlow | None = None
     if coevolve_tests:
         if test_pool is None:
@@ -1013,7 +1063,9 @@ def run(
         code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
         cached = score_cache.get(code_hash)
         if current_tick_profiler is not None:
-            current_tick_profiler.record_cache("sandbox_scoring", hit=cached is not None)
+            current_tick_profiler.record_cache(
+                "sandbox_scoring", hit=cached is not None
+            )
         if cached is not None:
             return cached
         if current_tick_profiler is None:
@@ -1043,8 +1095,12 @@ def run(
         logger_kwargs["root"] = life_root / "runs"
     with RunLogger(run_id, **logger_kwargs) as logger:
         health_tracker = HealthTracker.from_state(state.health_counters)
-        viability_detector = ViabilityDriftDetector.from_state(state.viability_governance)
-        healthy_checkpoint_path = checkpoint_path.with_suffix(checkpoint_path.suffix + ".healthy")
+        viability_detector = ViabilityDriftDetector.from_state(
+            state.viability_governance
+        )
+        healthy_checkpoint_path = checkpoint_path.with_suffix(
+            checkpoint_path.suffix + ".healthy"
+        )
         delayed: list[tuple[float, str, Path]] = []
         tick_count = 0
 
@@ -1065,7 +1121,9 @@ def run(
             state.iteration += 1
             # Learning is metered separately and remains inactive until every
             # sandbox, baseline, governance, and publication gate has passed.
-            if imitation_engine is not None and learning_attempts < max(0, learning_budget):
+            if imitation_engine is not None and learning_attempts < max(
+                0, learning_budget
+            ):
                 imitation_engine.learn_next()
                 learning_attempts += 1
             if getattr(psyche, "sleeping", False) or (
@@ -1091,16 +1149,20 @@ def run(
             # all later levels remain mutation-free until hysteretic recovery.
             if viability_detector.action == "throttled" and state.iteration % 2:
                 logger.log_interaction(
-                    "mutation_paused", iteration=state.iteration,
-                    reason="viability_throttled", governance=viability_detector.diagnostics(),
+                    "mutation_paused",
+                    iteration=state.iteration,
+                    reason="viability_throttled",
+                    governance=viability_detector.diagnostics(),
                 )
                 _persist_consumed_tick()
                 continue
             if viability_detector.action in {"paused", "restored", "operator"}:
                 logger.log_interaction(
-                    "mutation_paused", iteration=state.iteration,
+                    "mutation_paused",
+                    iteration=state.iteration,
                     reason=f"viability_{viability_detector.action}",
-                    operator_intervention_required=viability_detector.action == "operator",
+                    operator_intervention_required=viability_detector.action
+                    == "operator",
                     governance=viability_detector.diagnostics(),
                 )
                 _persist_consumed_tick()
@@ -1209,8 +1271,12 @@ def run(
                     organism=org_name,
                     skill=selected_skill_key,
                     reasons=multiagent_decision.reasons,
-                    inbound=[message.to_dict() for message in multiagent_decision.inbound],
-                    emitted=[message.to_dict() for message in multiagent_decision.emitted],
+                    inbound=[
+                        message.to_dict() for message in multiagent_decision.inbound
+                    ],
+                    emitted=[
+                        message.to_dict() for message in multiagent_decision.emitted
+                    ],
                     mutation_allowed=multiagent_decision.mutation_allowed,
                     action_allowed=multiagent_decision.action_allowed,
                     reproduction_allowed=multiagent_decision.reproduction_allowed,
@@ -1244,12 +1310,18 @@ def run(
                 if not multiagent_decision.mutation_allowed:
                     _persist_consumed_tick()
                     continue
-            for penalty in persistent_world_state.consume_due_penalties(state.iteration):
+            for penalty in persistent_world_state.consume_due_penalties(
+                state.iteration
+            ):
                 selected_org.energy += penalty.energy_delta
                 persistent_world_state.mortality_pressure = max(
-                    0.0, persistent_world_state.mortality_pressure + penalty.mortality_delta
+                    0.0,
+                    persistent_world_state.mortality_pressure + penalty.mortality_delta,
                 )
-            if selected_org.degraded_mode and state.iteration % DEGRADED_MUTATION_INTERVAL != 0:
+            if (
+                selected_org.degraded_mode
+                and state.iteration % DEGRADED_MUTATION_INTERVAL != 0
+            ):
                 logger.log_interaction(
                     "degraded_mode_throttle",
                     organism=org_name,
@@ -1260,9 +1332,11 @@ def run(
                 _persist_consumed_tick()
                 continue
 
-            trigger_genesis, trigger_name, trigger_snapshot = _should_trigger_skill_genesis(
-                signals=signals,
-                health_counters=state.health_counters,
+            trigger_genesis, trigger_name, trigger_snapshot = (
+                _should_trigger_skill_genesis(
+                    signals=signals,
+                    health_counters=state.health_counters,
+                )
             )
             if trigger_genesis and not selected_org.degraded_mode:
                 mem_dir = life_root / "mem"
@@ -1305,8 +1379,10 @@ def run(
                 _persist_consumed_tick()
                 continue
             if decision is Psyche.Decision.DELAY:
-                delay_until = time.time() + 0.01 + (
-                    DEGRADED_DELAY_SECONDS if selected_org.degraded_mode else 0.0
+                delay_until = (
+                    time.time()
+                    + 0.01
+                    + (DEGRADED_DELAY_SECONDS if selected_org.degraded_mode else 0.0)
                 )
                 heapq.heappush(delayed, (delay_until, org_name, skill_path))
                 logger.log_delay(skill_path.name, delay_until)
@@ -1322,8 +1398,14 @@ def run(
                         tofile="mutated",
                     )
                 )
-                governance_root = skill_path.parent.parent if skill_path.parent.name == "skills" else skill_path.parent
-                decision = governance_policy.enforce_write(skill_path, mutated, root=governance_root)
+                governance_root = (
+                    skill_path.parent.parent
+                    if skill_path.parent.name == "skills"
+                    else skill_path.parent
+                )
+                decision = governance_policy.enforce_write(
+                    skill_path, mutated, root=governance_root
+                )
                 if not decision.allowed:
                     logger.log_interaction(
                         "governance_violation",
@@ -1388,10 +1470,9 @@ def run(
                     "recalled_memories": recalled_memories,
                 },
             )
-            baseline_failure_risk = (
-                float(state.health_counters.get("sandbox_failures", 0))
-                / max(float(state.health_counters.get("total", 0)), 1.0)
-            )
+            baseline_failure_risk = float(
+                state.health_counters.get("sandbox_failures", 0)
+            ) / max(float(state.health_counters.get("total", 0)), 1.0)
             graine_allowed_operators = _graine_allowed_operator_names(
                 skill_path, operators.keys()
             )
@@ -1404,7 +1485,9 @@ def run(
                 if graine_allowed_operators
                 else operators
             )
-            max_count = max((stats[name]["count"] for name in eligible_operators), default=0.0)
+            max_count = max(
+                (stats[name]["count"] for name in eligible_operators), default=0.0
+            )
             candidate_names = list(eligible_operators.keys())
             rng.shuffle(candidate_names)
             candidate_names = candidate_names[: max(1, min(5, len(candidate_names)))]
@@ -1428,7 +1511,9 @@ def run(
                         resource_cost=resource_cost,
                     )
                 )
-            adjusted_hypotheses = intrinsic_goals.influence_action_hypotheses(hypotheses)
+            adjusted_hypotheses = intrinsic_goals.influence_action_hypotheses(
+                hypotheses
+            )
             weighted_hypotheses = [
                 ActionHypothesis(
                     action=entry["action"],
@@ -1448,31 +1533,38 @@ def run(
                 bus=event_bus,
                 event_context={"iteration": state.iteration, "organism": org_name},
                 long_term_weight=(
-                    goal_weights.coherence
-                    + (psyche_axes.get("long_term", 0.0) * 0.4)
+                    goal_weights.coherence + (psyche_axes.get("long_term", 0.0) * 0.4)
                 ),
                 sandbox_weight=(
-                    goal_weights.robustesse
-                    + (psyche_axes.get("sandbox", 0.0) * 0.4)
+                    goal_weights.robustesse + (psyche_axes.get("sandbox", 0.0) * 0.4)
                 ),
                 resource_weight=(
-                    goal_weights.efficacite
-                    + (psyche_axes.get("resource", 0.0) * 0.4)
+                    goal_weights.efficacite + (psyche_axes.get("resource", 0.0) * 0.4)
                 ),
                 metacognition=self_observation.decision_context("mutation"),
             )
-            score_by_index = {index: score for index, _, score in reflection.alternative_scores}
-            belief_bias = belief_store.operator_preference_bias(eligible_operators.keys())
+            score_by_index = {
+                index: score for index, _, score in reflection.alternative_scores
+            }
+            belief_bias = belief_store.operator_preference_bias(
+                eligible_operators.keys()
+            )
             combined_bias = intrinsic_goals.influence_operator_scores(
                 stats,
                 skill_reputation=logger.skill_reputation(),
                 planner_narrative_signals=planner_narrative_signals,
             )
-            psyche_bias = getattr(psyche, "operator_bias", lambda names: {})(list(eligible_operators.keys()))
+            psyche_bias = getattr(psyche, "operator_bias", lambda names: {})(
+                list(eligible_operators.keys())
+            )
             for operator_name, extra_bias in belief_bias.items():
-                combined_bias[operator_name] = combined_bias.get(operator_name, 0.0) + extra_bias
+                combined_bias[operator_name] = (
+                    combined_bias.get(operator_name, 0.0) + extra_bias
+                )
             for operator_name, extra_bias in psyche_bias.items():
-                combined_bias[operator_name] = combined_bias.get(operator_name, 0.0) + extra_bias
+                combined_bias[operator_name] = (
+                    combined_bias.get(operator_name, 0.0) + extra_bias
+                )
             reputation_bonus = world.reputation.get(org_name) * 0.01
             for operator_name in combined_bias:
                 combined_bias[operator_name] += reputation_bonus
@@ -1481,15 +1573,12 @@ def run(
             if mood_label is None and getattr(psyche, "last_mood", None) is not None:
                 mood_label = str(getattr(psyche, "last_mood"))
             predicted_failure = (
-                "hot"
-                if temp >= 30.0
-                else "cold"
-                if temp <= 5.0
-                else "stable"
+                "hot" if temp >= 30.0 else "cold" if temp <= 5.0 else "stable"
             )
             contextual_vital_state = (
-                "terminal" if baseline_failure_risk >= 0.7 else "fragile"
-                if baseline_failure_risk >= 0.35 else "stable"
+                "terminal"
+                if baseline_failure_risk >= 0.7
+                else "fragile" if baseline_failure_risk >= 0.35 else "stable"
             )
             contextual_objective_weights = asdict(goal_weights)
             contextual_objective = max(
@@ -1528,7 +1617,7 @@ def run(
                 and meta_recommendation.confidence >= 0.55
                 and meta_recommendation.sample_count >= 3
                 and meta_recommendation.regression_risk
-                    <= max(0.05, 1.0 - baseline_failure_risk)
+                <= max(0.05, 1.0 - baseline_failure_risk)
                 and meta_recommendation.operator in eligible_operators
             ):
                 op_name = select_operator(
@@ -1542,7 +1631,9 @@ def run(
                 )
             else:
                 reflected_action = (
-                    reflection.action if reflection.action in eligible_operators else None
+                    reflection.action
+                    if reflection.action in eligible_operators
+                    else None
                 )
                 op_name = reflected_action or select_operator(
                     eligible_operators,
@@ -1644,26 +1735,42 @@ def run(
             pre_mutation_snapshot = {
                 "functional_gain": 0.0,
                 "health": _clamp01(previous_health_score),
-                "vital_risk": _clamp01(selected_org.sandbox_violation_streak / SANDBOX_EXTINCTION_THRESHOLD),
+                "vital_risk": _clamp01(
+                    selected_org.sandbox_violation_streak / SANDBOX_EXTINCTION_THRESHOLD
+                ),
                 "resources": _clamp01(float(selected_org.resources)),
-                "sandbox_stability": 1.0 if selected_org.sandbox_violation_streak == 0 else 0.0,
+                "sandbox_stability": (
+                    1.0 if selected_org.sandbox_violation_streak == 0 else 0.0
+                ),
                 "cost": _clamp01(ms_base / 1000.0),
                 "quest_progress": 0.0,
-                "identity_continuity": 1.0 - _clamp01(float(getattr(psyche, "identity_wounds", 0.0))),
+                "identity_continuity": 1.0
+                - _clamp01(float(getattr(psyche, "identity_wounds", 0.0))),
                 "useful_skills_retention": 1.0,
             }
             technical_gain = (
                 (base_score - mutated_score) / max(abs(base_score), 1.0)
-                if scores_comparable else -1.0
+                if scores_comparable
+                else -1.0
             )
             post_mutation_snapshot = dict(pre_mutation_snapshot)
             post_mutation_snapshot.update(
                 functional_gain=technical_gain,
-                vital_risk=_clamp01(pre_mutation_snapshot["vital_risk"] + (1.0 if mutation_failed else 0.0)),
-                sandbox_stability=0.0 if mutation_failed else pre_mutation_snapshot["sandbox_stability"],
+                vital_risk=_clamp01(
+                    pre_mutation_snapshot["vital_risk"]
+                    + (1.0 if mutation_failed else 0.0)
+                ),
+                sandbox_stability=(
+                    0.0
+                    if mutation_failed
+                    else pre_mutation_snapshot["sandbox_stability"]
+                ),
                 cost=_clamp01(ms_new / 1000.0),
-                identity_continuity=1.0 - _clamp01(float(getattr(psyche, "identity_wounds", 0.0))),
-                useful_skills_retention=min(1.0, len(list(selected_org.skills_dir.glob("*.py"))) / skill_count),
+                identity_continuity=1.0
+                - _clamp01(float(getattr(psyche, "identity_wounds", 0.0))),
+                useful_skills_retention=min(
+                    1.0, len(list(selected_org.skills_dir.glob("*.py"))) / skill_count
+                ),
             )
             fitness_decision = evaluate_mutation_fitness(
                 pre_mutation_snapshot,
@@ -1705,19 +1812,29 @@ def run(
             if mutation_failed:
                 if hasattr(psyche, "feel"):
                     psyche.feel(Mood.PAIN)
-            elif scores_comparable and mutated_comparable_score <= base_comparable_score:
+            elif (
+                scores_comparable and mutated_comparable_score <= base_comparable_score
+            ):
                 if hasattr(psyche, "feel"):
                     psyche.feel(Mood.PLEASURE)
 
             identity_violations: list[str] = []
             commitments = getattr(psyche, "identity_commitments", {})
-            red_lines = commitments.get("red_lines", []) if isinstance(commitments, Mapping) else []
+            red_lines = (
+                commitments.get("red_lines", [])
+                if isinstance(commitments, Mapping)
+                else []
+            )
             for red_line in red_lines:
                 token = str(red_line).strip().lower()
                 if token and token in f"{op_name} {reflection.decision_reason}".lower():
                     identity_violations.append(token)
             if identity_violations:
-                psyche.identity_wounds = min(1.0, float(getattr(psyche, "identity_wounds", 0.0)) + 0.15 * len(identity_violations))
+                psyche.identity_wounds = min(
+                    1.0,
+                    float(getattr(psyche, "identity_wounds", 0.0))
+                    + 0.15 * len(identity_violations),
+                )
 
             _write_json(
                 Path("mem") / "decision_signal_audit.json",
@@ -1774,11 +1891,12 @@ def run(
                 "corrective_action": None,
             }
             if coevolution_flow is not None and not selected_org.degraded_mode:
-                can_run_coevo, coevo_state = resource_manager.apply_capability_cost("test_coevolution")
+                can_run_coevo, coevo_state = resource_manager.apply_capability_cost(
+                    "test_coevolution"
+                )
                 if not can_run_coevo:
                     candidate_accepted = (
-                        candidate_accepted
-                        and coevo_state != CapabilityStatus.UNSTABLE
+                        candidate_accepted and coevo_state != CapabilityStatus.UNSTABLE
                     )
                     logger.log_test_coevolution(
                         skill=skill_path.stem,
@@ -1981,7 +2099,9 @@ def run(
                     "summary": recalled_memory_summary,
                 }
                 add_episode({"event": "memory.used_for_decision", **used_event})
-                logger.log_interaction("memory.used_for_decision", **used_event, alive=True)
+                logger.log_interaction(
+                    "memory.used_for_decision", **used_event, alive=True
+                )
 
             objective_weights = asdict(goal_weights)
             dominant_objective = max(
@@ -2024,7 +2144,9 @@ def run(
             reward_delta = base_score - mutated_score
             if math.isfinite(reward_delta):
                 stats[op_name]["reward"] += reward_delta
-            fitness_reward = fitness_decision.fitness_after - fitness_decision.fitness_before
+            fitness_reward = (
+                fitness_decision.fitness_after - fitness_decision.fitness_before
+            )
             if math.isfinite(fitness_reward):
                 stats[op_name]["fitness_reward"] += fitness_reward
             belief_store.update_after_run(
@@ -2092,7 +2214,9 @@ def run(
             cooperation_partners: list[str] = []
             other_names = [name for name in world.organisms if name != org_name]
             arbitration_seed = int(
-                hashlib.sha1(f"{state.iteration}:{org_name}".encode("utf-8")).hexdigest()[:8],
+                hashlib.sha1(
+                    f"{state.iteration}:{org_name}".encode("utf-8")
+                ).hexdigest()[:8],
                 16,
             )
             arbitration_rng = random.Random(arbitration_seed)
@@ -2103,7 +2227,9 @@ def run(
                 decision.peer: decision for decision in social_decisions
             }
             help_candidates = [
-                decision.peer for decision in social_decisions if decision.action == "help"
+                decision.peer
+                for decision in social_decisions
+                if decision.action == "help"
             ]
             if help_candidates and arbitration_rng.random() < max(
                 ecosystem_rules.cooperation_probability, 0.0
@@ -2118,7 +2244,9 @@ def run(
                     if decision.action == "neutral"
                 ]
                 if neutral_candidates:
-                    cooperation_partners.append(arbitration_rng.choice(neutral_candidates))
+                    cooperation_partners.append(
+                        arbitration_rng.choice(neutral_candidates)
+                    )
             competitor_intents: list[CompetitorIntent] = []
             for other_name in other_names:
                 social_decision = social_decision_by_peer.get(other_name)
@@ -2132,16 +2260,19 @@ def run(
                     and social_decision.action == "compete"
                     else 0
                 )
-                other_priority = int(
-                    max(world.reputation.get(other_name), 0.0) * 10
-                ) + arbitration_rng.randint(0, 2) + rivalry_boost
+                other_priority = (
+                    int(max(world.reputation.get(other_name), 0.0) * 10)
+                    + arbitration_rng.randint(0, 2)
+                    + rivalry_boost
+                )
                 competitor_intents.append(
                     CompetitorIntent(
                         life_id=other_name,
                         priority=other_priority,
                         bid=arbitration_rng.uniform(
                             0.0, ecosystem_rules.competition_bid_ceiling
-                        ) + float(rivalry_boost),
+                        )
+                        + float(rivalry_boost),
                     )
                 )
             action_resolution = world.world_resources.consume_for_action(
@@ -2151,7 +2282,9 @@ def run(
                 attention_cost=1.0 if accepted else 1.2,
                 cooperation_partners=cooperation_partners,
                 priority=int(max(world.reputation.get(org_name), 0.0) * 10),
-                bid=arbitration_rng.uniform(0.0, ecosystem_rules.competition_bid_ceiling),
+                bid=arbitration_rng.uniform(
+                    0.0, ecosystem_rules.competition_bid_ceiling
+                ),
                 competitor_intents=competitor_intents,
             )
             if action_resolution.granted:
@@ -2178,7 +2311,9 @@ def run(
             else:
                 org.resources = max(
                     0.0,
-                    org.resources - (competition_unit * 0.2) - action_resolution.rivalry_penalty,
+                    org.resources
+                    - (competition_unit * 0.2)
+                    - action_resolution.rivalry_penalty,
                 )
 
             social_relation_updates: list[dict[str, object]] = []
@@ -2199,7 +2334,11 @@ def run(
                     interaction = social_graph.record_interaction(
                         org_name,
                         partner,
-                        "successful_cooperation" if action_resolution.granted else "cooperation_failure",
+                        (
+                            "successful_cooperation"
+                            if action_resolution.granted
+                            else "cooperation_failure"
+                        ),
                         evidence_kind="verified_outcome",
                         outcome=action_resolution.granted,
                         intention="cooperate",
@@ -2257,7 +2396,9 @@ def run(
                     )
                 )
 
-            fallback_action_name = "simulated_world_task" if accepted else "structured_user_interaction"
+            fallback_action_name = (
+                "simulated_world_task" if accepted else "structured_user_interaction"
+            )
             if action_resolution.granted:
                 fallback_action_name = "resource_management"
             psyche_decision = choose_action_from_psyche(
@@ -2265,7 +2406,9 @@ def run(
                 {
                     "risk": persistent_world_state.risks,
                     "rarity_pressure": persistent_world_state.rarity,
-                    "competition_pressure": getattr(persistent_world_state, "competition", 0.5),
+                    "competition_pressure": getattr(
+                        persistent_world_state, "competition", 0.5
+                    ),
                     "opportunity": persistent_world_state.opportunities,
                     "resource_energy": resource_manager.energy,
                     "success_bias": 0.2 if accepted else -0.2,
@@ -2305,7 +2448,9 @@ def run(
                         "vulnerability": min(
                             1.0,
                             persistent_world_state.risks
-                            + (0.25 if decision.action in {"avoid", "compete"} else 0.0),
+                            + (
+                                0.25 if decision.action in {"avoid", "compete"} else 0.0
+                            ),
                         ),
                         "consent": True if decision.action == "help" else None,
                     }
@@ -2343,7 +2488,9 @@ def run(
                 {
                     "risk": persistent_world_state.risks,
                     "rarity_pressure": persistent_world_state.rarity,
-                    "competition_pressure": getattr(persistent_world_state, "competition", 0.5),
+                    "competition_pressure": getattr(
+                        persistent_world_state, "competition", 0.5
+                    ),
                     "success_bias": 0.2 if accepted else -0.2,
                     "psyche_decision_reason": psyche_decision.reason,
                 },
@@ -2351,7 +2498,8 @@ def run(
             selected_org.energy += effect_result.energy_delta
             persistent_world_state.mortality_pressure = max(
                 0.0,
-                persistent_world_state.mortality_pressure + effect_result.mortality_delta,
+                persistent_world_state.mortality_pressure
+                + effect_result.mortality_delta,
             )
             persistent_world_state.apply_world_delta(effect_result.world_delta)
             persistent_world_state.schedule_penalties(
@@ -2359,7 +2507,9 @@ def run(
             )
 
             for other in world.organisms.values():
-                other.energy = max(0.1, other.energy - ecosystem_rules.passive_energy_decay)
+                other.energy = max(
+                    0.1, other.energy - ecosystem_rules.passive_energy_decay
+                )
                 other.resources = max(
                     0.1,
                     other.resources - ecosystem_rules.passive_resource_decay,
@@ -2372,12 +2522,22 @@ def run(
             if state.iteration > 0 and state.iteration % 40 == 0:
                 shock_rng = random.Random(state.iteration)
                 global_event = draw_global_event(shock_rng)
-                pre_event = {name: (o.energy, o.resources) for name, o in world.organisms.items()}
+                pre_event = {
+                    name: (o.energy, o.resources) for name, o in world.organisms.items()
+                }
                 for entity in world.organisms.values():
-                    entity.energy = max(0.1, entity.energy - (global_event.intensity * 0.4))
-                    entity.resources = max(0.1, entity.resources - (global_event.intensity * 0.5))
-                post_event = {name: (o.energy, o.resources) for name, o in world.organisms.items()}
-                reorg = compute_population_metrics(pre_event, post_event, global_event.duration_ticks)
+                    entity.energy = max(
+                        0.1, entity.energy - (global_event.intensity * 0.4)
+                    )
+                    entity.resources = max(
+                        0.1, entity.resources - (global_event.intensity * 0.5)
+                    )
+                post_event = {
+                    name: (o.energy, o.resources) for name, o in world.organisms.items()
+                }
+                reorg = compute_population_metrics(
+                    pre_event, post_event, global_event.duration_ticks
+                )
                 event_bus.publish(
                     "ecosystem.global_event",
                     {
@@ -2428,8 +2588,12 @@ def run(
                 "sandbox_violation_category": sandbox_violation_category,
                 "sandbox_violation_severity": sandbox_violation_severity,
                 "sandbox_violation_global_recorded": record_global_sandbox_violation,
-                "sandbox_incident_scope": sandbox_incident.scope if sandbox_incident else None,
-                "sandbox_recovery_policy": sandbox_incident.recovery if sandbox_incident else None,
+                "sandbox_incident_scope": (
+                    sandbox_incident.scope if sandbox_incident else None
+                ),
+                "sandbox_recovery_policy": (
+                    sandbox_incident.recovery if sandbox_incident else None
+                ),
                 "dangerous_mutation_pattern": (
                     mutation_failed
                     and not base_failed
@@ -2472,10 +2636,7 @@ def run(
                     _sandbox_failure_classification(mutated_score_result)
                 )
                 logger.log_interaction("sandbox_violation", **sandbox_diagnostic)
-                quarantine_triggered = (
-                    skill_quarantine_failure
-                    and base_failed
-                )
+                quarantine_triggered = skill_quarantine_failure and base_failed
                 if quarantine_triggered:
                     reason = "consecutive_sandbox_failures"
                     skills_after_disable = temporarily_disable_skill(
@@ -2520,7 +2681,8 @@ def run(
                             sandbox_diagnostic
                         )
                         logger.log_event(
-                            "governance.security_circuit_breaker_opened", **breaker_payload
+                            "governance.security_circuit_breaker_opened",
+                            **breaker_payload,
                         )
                         logger.log_event(
                             "governance.circuit_breaker_opened", **breaker_payload
@@ -2591,7 +2753,9 @@ def run(
                 "useful_skills": post_mutation_snapshot["useful_skills_retention"],
                 "fitness": _clamp01((fitness_decision.fitness_after + 1.0) / 2.0),
             }
-            viability_action, viability_transition = viability_detector.observe(viability_metrics)
+            viability_action, viability_transition = viability_detector.observe(
+                viability_metrics
+            )
             state.viability_governance = viability_detector.to_state()
             viability_payload = {
                 "iteration": state.iteration,
@@ -2602,21 +2766,41 @@ def run(
                 "sandbox_violation_streak": org.sandbox_violation_streak,
             }
             if viability_transition == "drift":
-                logger.log_interaction("governance.viability_drift_detected", **viability_payload)
-                event_bus.publish("governance.viability_drift_detected", viability_payload, payload_version=1)
+                logger.log_interaction(
+                    "governance.viability_drift_detected", **viability_payload
+                )
+                event_bus.publish(
+                    "governance.viability_drift_detected",
+                    viability_payload,
+                    payload_version=1,
+                )
                 if viability_action == "paused":
-                    logger.log_interaction("mutation_paused", reason="viability_drift", **viability_payload)
+                    logger.log_interaction(
+                        "mutation_paused", reason="viability_drift", **viability_payload
+                    )
                 elif viability_action == "restored":
                     healthy = load_checkpoint(healthy_checkpoint_path)
                     if healthy_checkpoint_path.exists():
                         state.stats = healthy.stats
                         state.health_history = healthy.health_history
                         state.health_counters = healthy.health_counters
-                    logger.log_interaction("checkpoint.restored", checkpoint=str(healthy_checkpoint_path), **viability_payload)
-                    event_bus.publish("checkpoint.restored", viability_payload, payload_version=1)
+                    logger.log_interaction(
+                        "checkpoint.restored",
+                        checkpoint=str(healthy_checkpoint_path),
+                        **viability_payload,
+                    )
+                    event_bus.publish(
+                        "checkpoint.restored", viability_payload, payload_version=1
+                    )
             elif viability_transition == "recovered":
-                logger.log_interaction("governance.viability_recovered", **viability_payload)
-                event_bus.publish("governance.viability_recovered", viability_payload, payload_version=1)
+                logger.log_interaction(
+                    "governance.viability_recovered", **viability_payload
+                )
+                event_bus.publish(
+                    "governance.viability_recovered",
+                    viability_payload,
+                    payload_version=1,
+                )
             if viability_action == "normal":
                 save_checkpoint(healthy_checkpoint_path, state)
 
@@ -2663,38 +2847,38 @@ def run(
             }
             gain_loss = round(base_score - mutated_score, 6)
             causal_payload = {
-                    "ts": datetime.now(timezone.utc).isoformat(),
-                    "trace_id": hashlib.sha1(
-                        f"{logger.run_id}:{state.iteration}:{key}:{op_name}".encode("utf-8")
-                    ).hexdigest(),
-                    "life": org_name,
-                    "run_id": logger.run_id,
-                    "iteration": state.iteration,
-                    "pipeline": "life.loop",
-                    "input": {
-                        "kind": "world_event",
-                        "temperature_c": temp,
-                        "perception_signals": signals,
-                    },
-                    "decision": {
-                        "reason": reflection.decision_reason,
-                        "operator": op_name,
-                        "accepted": accepted,
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "trace_id": hashlib.sha1(
+                    f"{logger.run_id}:{state.iteration}:{key}:{op_name}".encode("utf-8")
+                ).hexdigest(),
+                "life": org_name,
+                "run_id": logger.run_id,
+                "iteration": state.iteration,
+                "pipeline": "life.loop",
+                "input": {
+                    "kind": "world_event",
+                    "temperature_c": temp,
+                    "perception_signals": signals,
+                },
+                "decision": {
+                    "reason": reflection.decision_reason,
+                    "operator": op_name,
+                    "accepted": accepted,
+                    "objective": dominant_objective,
+                },
+                "action": {
+                    "kind": "mutation",
+                    "skill": key,
+                    "impacted_file": skill_path.name,
+                },
+                "result": {
+                    "gain_loss": gain_loss,
+                    "objective_impact": {
                         "objective": dominant_objective,
+                        "impact": gain_loss,
                     },
-                    "action": {
-                        "kind": "mutation",
-                        "skill": key,
-                        "impacted_file": skill_path.name,
-                    },
-                    "result": {
-                        "gain_loss": gain_loss,
-                        "objective_impact": {
-                            "objective": dominant_objective,
-                            "impact": gain_loss,
-                        },
-                    },
-                }
+                },
+            }
             add_causal_trace(causal_payload)
             self_observation.observe_trace(
                 causal_payload, evidence_ref=causal_payload["trace_id"]
@@ -2778,7 +2962,9 @@ def run(
                     else None
                 ),
                 cache_candidates=list(phase_summary.get("cache_candidates", [])),
-                async_distribution_note=str(phase_summary.get("async_distribution_note", "")),
+                async_distribution_note=str(
+                    phase_summary.get("async_distribution_note", "")
+                ),
             )
 
             # DeathMonitor convention: ``action_succeeded=True`` means the
@@ -2788,7 +2974,8 @@ def run(
                 psyche,
                 action_succeeded=accepted,
                 resources=max(0.0, org.resources - persistent_world_state.rarity),
-                homeostasis_viable=resource_manager.viability_state() == CapabilityStatus.VIABLE,
+                homeostasis_viable=resource_manager.viability_state()
+                == CapabilityStatus.VIABLE,
             )
             if persistent_world_state.mortality_pressure > 0.35:
                 dead = True
@@ -2856,7 +3043,9 @@ def run(
                         "iteration": state.iteration,
                         "autopsy_path": str(autopsy_path),
                         "biography_path": str(biography_path),
-                        "orchestrator_stop_path": str(mem_dir / "orchestrator.stop.json"),
+                        "orchestrator_stop_path": str(
+                            mem_dir / "orchestrator.stop.json"
+                        ),
                     },
                     payload_version=1,
                 )
@@ -2912,8 +3101,14 @@ def run(
                 child_skills_dir = child_dir / "skills"
                 child_skills_dir.mkdir(parents=True, exist_ok=True)
                 target = child_skills_dir / "candidate_hybrid.py"
-                root = target.parent.parent if target.parent.name == "skills" else target.parent
-                simulated_governance = governance_policy.simulate_write(target, root=root)
+                root = (
+                    target.parent.parent
+                    if target.parent.name == "skills"
+                    else target.parent
+                )
+                simulated_governance = governance_policy.simulate_write(
+                    target, root=root
+                )
                 reproduction_gate = None
                 if multiagent_runtime is not None:
                     reproduction_gate = multiagent_runtime.gate_reproduction(
@@ -2926,7 +3121,9 @@ def run(
                         "multiagent.reproduction_gate",
                         parents=parent_names,
                         reasons=reproduction_gate.reasons,
-                        emitted=[message.to_dict() for message in reproduction_gate.emitted],
+                        emitted=[
+                            message.to_dict() for message in reproduction_gate.emitted
+                        ],
                         reproduction_allowed=reproduction_gate.reproduction_allowed,
                         alive=True,
                     )
@@ -2935,23 +3132,33 @@ def run(
                     parent_b=parent_names[1],
                     parent_a_skills=pa,
                     parent_b_skills=pb,
-                    parent_a_health=min(1.0, world.organisms[parent_names[0]].energy / 5.0),
-                    parent_b_health=min(1.0, world.organisms[parent_names[1]].energy / 5.0),
+                    parent_a_health=min(
+                        1.0, world.organisms[parent_names[0]].energy / 5.0
+                    ),
+                    parent_b_health=min(
+                        1.0, world.organisms[parent_names[1]].energy / 5.0
+                    ),
                     governance_allowed=simulated_governance.allowed,
                     policy=ecosystem_rules.reproduction_policy,
                 )
-                if reproduction_gate is not None and not reproduction_gate.reproduction_allowed:
+                if (
+                    reproduction_gate is not None
+                    and not reproduction_gate.reproduction_allowed
+                ):
                     decision = decision.__class__(
                         accepted=False,
                         score=decision.score,
-                        reasons=["multiagent_gate"] + reproduction_gate.reasons + decision.reasons,
+                        reasons=["multiagent_gate"]
+                        + reproduction_gate.reasons
+                        + decision.reasons,
                         components=decision.components,
                     )
                 if cooldown_remaining > 0:
                     decision = decision.__class__(
                         accepted=False,
                         score=decision.score,
-                        reasons=[f"cooldown_active:{cooldown_remaining}"] + decision.reasons,
+                        reasons=[f"cooldown_active:{cooldown_remaining}"]
+                        + decision.reasons,
                         components=decision.components,
                     )
                 logger.log_interaction(

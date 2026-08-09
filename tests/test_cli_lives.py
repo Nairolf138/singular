@@ -150,7 +150,9 @@ def test_status_supports_subcommand_format_and_verbose(
     assert captured["output_format"] == "table"
 
 
-def test_cli_loop_runs_startup_retention(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_cli_loop_runs_startup_retention(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     root = tmp_path / "loop-root"
     monkeypatch.delenv("SINGULAR_ROOT", raising=False)
     monkeypatch.delenv("SINGULAR_HOME", raising=False)
@@ -172,7 +174,9 @@ def test_cli_loop_runs_startup_retention(monkeypatch: pytest.MonkeyPatch, tmp_pa
     def fake_loop_run(**kwargs):
         called["loop"] = kwargs
 
-    monkeypatch.setattr("singular.storage_retention.run_retention_service", fake_run_retention_service)
+    monkeypatch.setattr(
+        "singular.storage_retention.run_retention_service", fake_run_retention_service
+    )
     monkeypatch.setattr("singular.runs.loop.loop", fake_loop_run)
 
     code = main(["--root", str(root), "loop", "--budget-seconds", "0.1"])
@@ -365,7 +369,18 @@ def test_lives_relations_commands_and_journal(
     main(["--root", str(root), "lives", "proximity", "alpha", "--score", "0.72"])
     assert "Score proximité mis à jour" in capsys.readouterr().out
 
-    main(["--root", str(root), "--format", "json", "lives", "relations", "--name", "alpha"])
+    main(
+        [
+            "--root",
+            str(root),
+            "--format",
+            "json",
+            "lives",
+            "relations",
+            "--name",
+            "alpha",
+        ]
+    )
     payload = json.loads(capsys.readouterr().out)
     assert payload["focus"]["slug"] == "alpha"
     assert payload["focus"]["proximity_score"] == 0.72

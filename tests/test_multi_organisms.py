@@ -79,9 +79,12 @@ def test_run_logger_canonicalizes_three_life_identifiers(tmp_path: Path) -> None
     for raw, expected in (("Ada", "ada"), ("BOB", "bob"), ("Eve Smith", "eve-smith")):
         with RunLogger(raw, root=tmp_path / raw / "runs", life_id=raw) as logger:
             logger.log_event("contradictory", summary=raw)
-        record = json.loads((tmp_path / raw / "runs" / raw / "events.jsonl").read_text().splitlines()[0])
+        record = json.loads(
+            (tmp_path / raw / "runs" / raw / "events.jsonl").read_text().splitlines()[0]
+        )
         assert record["life_id"] == expected
         assert record["payload"]["life_id"] == expected
+
 
 def test_multi_organism_events_and_dashboard(tmp_path: Path, monkeypatch) -> None:
     org1 = tmp_path / "org1" / "skills"
@@ -109,7 +112,9 @@ def test_multi_organism_events_and_dashboard(tmp_path: Path, monkeypatch) -> Non
     )
 
     log_file = next(runs_dir.glob("loop-*.jsonl"))
-    rows = [json.loads(line) for line in log_file.read_text(encoding="utf-8").splitlines()]
+    rows = [
+        json.loads(line) for line in log_file.read_text(encoding="utf-8").splitlines()
+    ]
     interactions = [row for row in rows if row.get("event") == "interaction"]
     assert any(
         row.get("interaction") == life_loop.INTERACTION_RESOURCE_COMPETITION

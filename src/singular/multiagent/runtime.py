@@ -155,9 +155,11 @@ class MultiAgentRuntime:
                 evidence_event = (
                     "promise"
                     if msg.intent == HELP_OFFERED
-                    else "conflict"
-                    if msg.intent in {"help.refused", "warning"}
-                    else "conversation"
+                    else (
+                        "conflict"
+                        if msg.intent in {"help.refused", "warning"}
+                        else "conversation"
+                    )
                 )
                 self.social_graph.record_interaction(
                     context.life_id,

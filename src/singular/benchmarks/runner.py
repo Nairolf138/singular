@@ -107,7 +107,9 @@ def run_benchmarks(
             json.dump(artifact, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
 
-    weights = _load_weights(weights_path=weights_path, domains=sorted(per_domain_scores))
+    weights = _load_weights(
+        weights_path=weights_path, domains=sorted(per_domain_scores)
+    )
     global_score = sum(per_domain_scores[d] * weights[d] for d in per_domain_scores)
     global_score = round(global_score, 4)
 

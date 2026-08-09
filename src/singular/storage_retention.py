@@ -204,7 +204,11 @@ def _safe_delete_path(target: Path) -> tuple[bool, str]:
 
 
 def persisted_retention_config_path(base_dir: Path | None = None) -> Path:
-    root = Path(base_dir) if base_dir is not None else Path(os.environ.get("SINGULAR_HOME", "."))
+    root = (
+        Path(base_dir)
+        if base_dir is not None
+        else Path(os.environ.get("SINGULAR_HOME", "."))
+    )
     return root / _DEFAULT_PERSISTED_CONFIG_RELATIVE_PATH
 
 
@@ -278,18 +282,33 @@ def build_runs_policy_report(
         if run_dir.is_dir():
             grouped.setdefault(run_dir.name, []).append(run_dir)
     for legacy_file in runs_dir.glob("*.jsonl"):
-        grouped.setdefault(_run_id_from_legacy_file(legacy_file), []).append(legacy_file)
+        grouped.setdefault(_run_id_from_legacy_file(legacy_file), []).append(
+            legacy_file
+        )
 
     candidates: list[tuple[str, Path, datetime, float, int, bool]] = []
     for run_id, artifacts in grouped.items():
-        mtimes = [mtime for artifact in artifacts if (mtime := _latest_mtime(artifact)) is not None]
+        mtimes = [
+            mtime
+            for artifact in artifacts
+            if (mtime := _latest_mtime(artifact)) is not None
+        ]
         if not mtimes:
             continue
         latest_mtime = max(mtimes)
         age_days = (ref_now - latest_mtime).total_seconds() / 86400
         size = sum(_walk_total_size(artifact) for artifact in artifacts)
         primary = runs_dir / run_id if (runs_dir / run_id).exists() else artifacts[0]
-        candidates.append((run_id, primary, latest_mtime, age_days, size, _is_active_run(runs_dir, run_id)))
+        candidates.append(
+            (
+                run_id,
+                primary,
+                latest_mtime,
+                age_days,
+                size,
+                _is_active_run(runs_dir, run_id),
+            )
+        )
 
     candidates.sort(key=lambda row: (row[2], row[0]), reverse=True)
 
@@ -297,7 +316,9 @@ def build_runs_policy_report(
     kept_count = 0
     kept_candidates: list[tuple[int, int]] = []
     running_size = 0
-    for index, (run_id, target, _mtime, age_days, size, active) in enumerate(candidates):
+    for index, (run_id, target, _mtime, age_days, size, active) in enumerate(
+        candidates
+    ):
         size_mb = size / _BYTES_PER_MB
         action = "keep"
         reason = "within_policy"
@@ -329,7 +350,9 @@ def build_runs_policy_report(
             kept_candidates.append((index, size))
 
     if running_size / _BYTES_PER_MB > config.max_total_runs_size_mb:
-        for index, size in sorted(kept_candidates, key=lambda row: row[0], reverse=True):
+        for index, size in sorted(
+            kept_candidates, key=lambda row: row[0], reverse=True
+        ):
             if running_size / _BYTES_PER_MB <= config.max_total_runs_size_mb:
                 break
             decision = decisions[index]
@@ -423,7 +446,11 @@ def run_retention_service(
     writing retention state.
     """
 
-    root = Path(base_dir) if base_dir is not None else Path(os.environ.get("SINGULAR_HOME", "."))
+    root = (
+        Path(base_dir)
+        if base_dir is not None
+        else Path(os.environ.get("SINGULAR_HOME", "."))
+    )
     target_runs_dir = Path(runs_dir) if runs_dir is not None else root / "runs"
     ref_now = now or _now_utc()
     config = load_retention_config(base_dir=root)
@@ -482,7 +509,9 @@ def run_retention_service(
             for decision in report.decisions
             if decision.action == "delete" and not decision.active
         ]
-        freed_mb = round(sum(decision.size_mb or 0.0 for decision in deleted_decisions), 4)
+        freed_mb = round(
+            sum(decision.size_mb or 0.0 for decision in deleted_decisions), 4
+        )
         counts = report.summary
         last_run_summary = {
             "scope": report.scope,
@@ -534,7 +563,11 @@ def retention_status_snapshot(
 ) -> Mapping[str, Any]:
     """Return a rich status payload used by CLI and dashboard monitoring."""
 
-    root = Path(base_dir) if base_dir is not None else Path(os.environ.get("SINGULAR_HOME", "."))
+    root = (
+        Path(base_dir)
+        if base_dir is not None
+        else Path(os.environ.get("SINGULAR_HOME", "."))
+    )
     target_runs_dir = Path(runs_dir) if runs_dir is not None else root / "runs"
     config = load_retention_config(base_dir=root)
     report = build_runs_policy_report(runs_dir=target_runs_dir, config=config, now=now)
@@ -546,11 +579,14 @@ def retention_status_snapshot(
 
     run_count = len(report.decisions)
     overdue_age = [
-        decision for decision in report.decisions if (decision.age_days or 0.0) > config.max_run_age_days
+        decision
+        for decision in report.decisions
+        if (decision.age_days or 0.0) > config.max_run_age_days
     ]
     exceeds = {
         "max_runs": run_count > config.max_runs,
-        "max_total_runs_size_mb": (runs_size_bytes / _BYTES_PER_MB) > config.max_total_runs_size_mb,
+        "max_total_runs_size_mb": (runs_size_bytes / _BYTES_PER_MB)
+        > config.max_total_runs_size_mb,
         "max_run_age_days": len(overdue_age) > 0,
     }
 

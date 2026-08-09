@@ -30,7 +30,9 @@ class _MindStub:
     def propose_intent(self, percept: PerceptEvent) -> Intent | None:
         return Intent(goal=f"inspect:{percept.event_type}", confidence=0.9)
 
-    def propose_action(self, intent: Intent, percept: PerceptEvent) -> ActionRequest | None:
+    def propose_action(
+        self, intent: Intent, percept: PerceptEvent
+    ) -> ActionRequest | None:
         return ActionRequest(
             action_type="os.notify",
             parameters={
@@ -52,7 +54,6 @@ class _ActionStub:
             message="done",
             audit={"intent_goal": request.intent_goal},
         )
-
 
 
 def test_agent_runtime_step_orchestrates_ports_and_events() -> None:
@@ -90,7 +91,6 @@ def test_agent_runtime_step_orchestrates_ports_and_events() -> None:
     assert results[0].audit["policy"]["allowed"] is True
 
 
-
 def test_agent_runtime_rejects_schema_version_mismatch() -> None:
     class _BadPerception:
         def collect(self) -> list[PerceptEvent]:
@@ -113,13 +113,16 @@ def test_agent_runtime_rejects_schema_version_mismatch() -> None:
         runtime.step()
 
 
-
 def test_agent_runtime_blocks_action_not_allowlisted() -> None:
     decisions: list[dict[str, object]] = []
     gate_topics: list[str] = []
     bus = RuntimeEventBus()
-    bus.subscribe("action.moral.decision", lambda event: gate_topics.append(event.topic))
-    bus.subscribe("action.policy.decision", lambda event: gate_topics.append(event.topic))
+    bus.subscribe(
+        "action.moral.decision", lambda event: gate_topics.append(event.topic)
+    )
+    bus.subscribe(
+        "action.policy.decision", lambda event: gate_topics.append(event.topic)
+    )
     runtime = AgentRuntime(
         perception=_PerceptionStub(),
         mind=_MindStub(),
@@ -150,7 +153,6 @@ def test_agent_runtime_blocks_action_not_allowlisted() -> None:
     assert gate_topics == ["action.moral.decision", "action.policy.decision"]
 
 
-
 def test_agent_runtime_simulates_dry_run_without_executing_action_port() -> None:
     class _ActionSpy(_ActionStub):
         def __init__(self) -> None:
@@ -176,10 +178,11 @@ def test_agent_runtime_simulates_dry_run_without_executing_action_port() -> None
     assert action_spy.called is False
 
 
-
 def test_agent_runtime_requires_human_confirmation_for_critical_actions() -> None:
     class _CriticalMind(_MindStub):
-        def propose_action(self, intent: Intent, percept: PerceptEvent) -> ActionRequest | None:
+        def propose_action(
+            self, intent: Intent, percept: PerceptEvent
+        ) -> ActionRequest | None:
             return ActionRequest(
                 action_type="os.notify",
                 parameters={
@@ -234,12 +237,13 @@ def test_agent_runtime_global_stop_hotkey_interrupts_step() -> None:
     assert seen == ["runtime.global_stop"]
 
 
-
 def test_agent_runtime_watchdog_stops_abnormal_action_loop() -> None:
     class _ManyPercepts:
         def collect(self) -> list[PerceptEvent]:
             return [
-                PerceptEvent(event_type=f"vision-{idx}", source="camera", payload={"idx": idx})
+                PerceptEvent(
+                    event_type=f"vision-{idx}", source="camera", payload={"idx": idx}
+                )
                 for idx in range(8)
             ]
 
@@ -259,12 +263,13 @@ def test_agent_runtime_watchdog_stops_abnormal_action_loop() -> None:
     assert len(results) == 3
 
 
-
 def test_agent_runtime_enforces_max_actions_per_minute() -> None:
     class _ManyPercepts:
         def collect(self) -> list[PerceptEvent]:
             return [
-                PerceptEvent(event_type=f"vision-{idx}", source="camera", payload={"idx": idx})
+                PerceptEvent(
+                    event_type=f"vision-{idx}", source="camera", payload={"idx": idx}
+                )
                 for idx in range(10)
             ]
 
@@ -278,7 +283,6 @@ def test_agent_runtime_enforces_max_actions_per_minute() -> None:
     results = runtime.step()
 
     assert len(results) == 2
-
 
 
 def test_agent_runtime_auto_disables_after_critical_errors() -> None:

@@ -30,7 +30,10 @@ def _phase_records(runs_dir: Path, run_id: str) -> list[dict[str, object]]:
                 payload = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if isinstance(payload, dict) and payload.get("event") == "life_loop_phase_metrics":
+            if (
+                isinstance(payload, dict)
+                and payload.get("event") == "life_loop_phase_metrics"
+            ):
                 records.append(payload)
     return records
 
@@ -56,19 +59,31 @@ def _aggregate(records: list[dict[str, object]]) -> dict[str, object]:
             if not isinstance(raw, dict):
                 continue
             phase = str(name)
-            phase_totals[phase] = phase_totals.get(phase, 0.0) + float(raw.get("total_ms", 0.0) or 0.0)
-            phase_calls[phase] = phase_calls.get(phase, 0) + int(raw.get("calls", 0) or 0)
-            cache_hits[phase] = cache_hits.get(phase, 0) + int(raw.get("cache_hits", 0) or 0)
-            cache_misses[phase] = cache_misses.get(phase, 0) + int(raw.get("cache_misses", 0) or 0)
+            phase_totals[phase] = phase_totals.get(phase, 0.0) + float(
+                raw.get("total_ms", 0.0) or 0.0
+            )
+            phase_calls[phase] = phase_calls.get(phase, 0) + int(
+                raw.get("calls", 0) or 0
+            )
+            cache_hits[phase] = cache_hits.get(phase, 0) + int(
+                raw.get("cache_hits", 0) or 0
+            )
+            cache_misses[phase] = cache_misses.get(phase, 0) + int(
+                raw.get("cache_misses", 0) or 0
+            )
     phases = {
         phase: {
             "total_ms": round(total, 3),
             "calls": phase_calls.get(phase, 0),
-            "avg_ms": round(total / phase_calls[phase], 3) if phase_calls.get(phase) else 0.0,
+            "avg_ms": (
+                round(total / phase_calls[phase], 3) if phase_calls.get(phase) else 0.0
+            ),
             "cache_hits": cache_hits.get(phase, 0),
             "cache_misses": cache_misses.get(phase, 0),
         }
-        for phase, total in sorted(phase_totals.items(), key=lambda item: item[1], reverse=True)
+        for phase, total in sorted(
+            phase_totals.items(), key=lambda item: item[1], reverse=True
+        )
     }
     return {
         "ticks_profiled": len(records),
@@ -81,9 +96,15 @@ def _aggregate(records: list[dict[str, object]]) -> dict[str, object]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Profile life loop phases on a temporary life")
-    parser.add_argument("--ticks", type=int, default=5, help="fixed number of life-loop ticks")
-    parser.add_argument("--run-id", default="profile-life-loop", help="run id used for JSONL logs")
+    parser = argparse.ArgumentParser(
+        description="Profile life loop phases on a temporary life"
+    )
+    parser.add_argument(
+        "--ticks", type=int, default=5, help="fixed number of life-loop ticks"
+    )
+    parser.add_argument(
+        "--run-id", default="profile-life-loop", help="run id used for JSONL logs"
+    )
     parser.add_argument("--seed", type=int, default=7, help="deterministic random seed")
     args = parser.parse_args()
 

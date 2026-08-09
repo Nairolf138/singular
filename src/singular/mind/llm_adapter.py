@@ -25,7 +25,7 @@ DEFAULT_SYSTEM_PROMPT = (
 )
 
 _JSON_FORMAT_INSTRUCTION = (
-    'Réponds STRICTEMENT avec un objet JSON de la forme: '
+    "Réponds STRICTEMENT avec un objet JSON de la forme: "
     '{"intent": "<string>", "action": {"type": "<string>", "params": {<object>}}, '
     '"reasoning": "<string court>", "confidence": <float entre 0 et 1>}.'
 )
@@ -73,7 +73,9 @@ class LLMAdapter:
         """
 
         memory_summary = self._summarize_short_term_memory(short_term_memory or [])
-        prompt = self._build_prompt(user_input=user_input, memory_summary=memory_summary)
+        prompt = self._build_prompt(
+            user_input=user_input, memory_summary=memory_summary
+        )
 
         errors: list[Exception] = []
         for model_name in (self.model, self.fallback_model):
@@ -132,21 +134,29 @@ class LLMAdapter:
             with request.urlopen(req, timeout=self.timeout_s) as resp:  # nosec B310
                 payload = resp.read().decode("utf-8")
         except error.HTTPError as exc:
-            raise AdapterResponseError(f"HTTP {exc.code} depuis le serveur local") from exc
+            raise AdapterResponseError(
+                f"HTTP {exc.code} depuis le serveur local"
+            ) from exc
         except error.URLError as exc:
             reason = getattr(exc, "reason", exc)
-            raise AdapterTimeoutError(f"Serveur local injoignable/timeout: {reason}") from exc
+            raise AdapterTimeoutError(
+                f"Serveur local injoignable/timeout: {reason}"
+            ) from exc
         except TimeoutError as exc:
             raise AdapterTimeoutError("Timeout appel modèle local") from exc
 
         try:
             parsed = json.loads(payload)
         except json.JSONDecodeError as exc:
-            raise AdapterResponseError("Réponse brute non-JSON du serveur local") from exc
+            raise AdapterResponseError(
+                "Réponse brute non-JSON du serveur local"
+            ) from exc
 
         response_text = parsed.get("response")
         if not isinstance(response_text, str) or not response_text.strip():
-            raise AdapterResponseError("Champ 'response' manquant ou vide dans la réponse API")
+            raise AdapterResponseError(
+                "Champ 'response' manquant ou vide dans la réponse API"
+            )
         return response_text.strip()
 
     def _build_prompt(self, *, user_input: str, memory_summary: str) -> str:
@@ -192,7 +202,9 @@ class LLMAdapter:
             start = candidate.find("{")
             end = candidate.rfind("}")
             if start == -1 or end == -1 or end <= start:
-                raise AdapterResponseError("Impossible d'extraire un objet JSON valide") from None
+                raise AdapterResponseError(
+                    "Impossible d'extraire un objet JSON valide"
+                ) from None
             try:
                 data = json.loads(candidate[start : end + 1])
             except json.JSONDecodeError as exc:

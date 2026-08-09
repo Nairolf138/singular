@@ -56,7 +56,11 @@ def decide_social_actions(
         if model_version and not evidence_is_usable:
             action = "neutral"
             reason = "insufficient_mental_state_evidence"
-        elif model_version and evidence_is_usable and (reliability < 0.35 or reciprocity < -0.4):
+        elif (
+            model_version
+            and evidence_is_usable
+            and (reliability < 0.35 or reciprocity < -0.4)
+        ):
             action = "avoid"
             reason = "predicted_unreliable_or_nonreciprocal"
         elif trust >= 0.7 and affinity >= 0.7 and rivalry < 0.65:

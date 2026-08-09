@@ -6,7 +6,9 @@ from pathlib import Path
 from singular.identity.consolidation_coordinator import ConsolidationCoordinator, STAGES
 
 
-def test_stage_checkpoints_resume_and_retry_idempotently(tmp_path: Path, monkeypatch) -> None:
+def test_stage_checkpoints_resume_and_retry_idempotently(
+    tmp_path: Path, monkeypatch
+) -> None:
     coordinator = ConsolidationCoordinator(tmp_path)
     episodes = [{"id": "e1", "user_fact": "loves trees", "strategy": "reflect"}]
     original = coordinator._apply_stage
@@ -38,11 +40,18 @@ def test_stage_checkpoints_resume_and_retry_idempotently(tmp_path: Path, monkeyp
 
 def test_retention_contradictions_and_critical_provenance(tmp_path: Path) -> None:
     coordinator = ConsolidationCoordinator(tmp_path)
-    result = coordinator.run([
-        {"id": "critical", "user_fact": "is a parent", "importance": "critical", "obsolete": True},
-        {"id": "conflict", "user_fact": "not is a parent"},
-        {"id": "old", "preference": "tea", "obsolete": True},
-    ])
+    result = coordinator.run(
+        [
+            {
+                "id": "critical",
+                "user_fact": "is a parent",
+                "importance": "critical",
+                "obsolete": True,
+            },
+            {"id": "conflict", "user_fact": "not is a parent"},
+            {"id": "old", "preference": "tea", "obsolete": True},
+        ]
+    )
 
     assert result["items_rejected"] >= 1
     assert result["items_forgotten"] >= 1

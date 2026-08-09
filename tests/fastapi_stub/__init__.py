@@ -71,7 +71,6 @@ class FastAPI:
 
         return decorator
 
-
     def post(
         self, path: str, **_kwargs: Any
     ) -> Callable[[Callable[[], Any]], Callable[[], Any]]:

@@ -4,7 +4,9 @@ from singular.mind.state_model import PerceivedEvent, StateModel, UserFeedback
 def test_state_model_event_updates_are_bounded() -> None:
     state = StateModel(humeur=0.5, energie=0.5, confiance=0.5, charge_cognitive=0.2)
 
-    event = PerceivedEvent(valence=1.0, intensity=1.0, cognitive_load=0.9, energy_delta=-0.8)
+    event = PerceivedEvent(
+        valence=1.0, intensity=1.0, cognitive_load=0.9, energy_delta=-0.8
+    )
     state.update_from_event(event)
 
     snap = state.snapshot()
@@ -15,7 +17,9 @@ def test_state_model_event_updates_are_bounded() -> None:
 def test_user_feedback_lowers_cognitive_load_when_clear() -> None:
     state = StateModel(charge_cognitive=0.7)
 
-    state.update_from_user_feedback(UserFeedback(sentiment=0.2, clarity=1.0, trust_signal=0.1))
+    state.update_from_user_feedback(
+        UserFeedback(sentiment=0.2, clarity=1.0, trust_signal=0.1)
+    )
 
     assert state.charge_cognitive < 0.7
 

@@ -33,11 +33,13 @@ def test_installed_wheel_contains_all_runtime_resources(tmp_path: Path) -> None:
         check=True,
     )
     python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    subprocess.run([python, "-m", "pip", "install", "--no-deps", str(wheel)], check=True)
+    subprocess.run(
+        [python, "-m", "pip", "install", "--no-deps", str(wheel)], check=True
+    )
 
     execution_dir = tmp_path / "installed-runtime"
     execution_dir.mkdir()
-    script = r'''
+    script = r"""
 from importlib.resources import as_file, files
 from pathlib import Path
 
@@ -79,7 +81,7 @@ assert dashboard.joinpath("templates", "mutation_detail.html").is_file()
 assert dashboard.joinpath("static", "dashboard.css").is_file()
 app = create_app()
 assert any(getattr(route, "name", None) == "dashboard-static" for route in app.routes)
-'''
+"""
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     subprocess.run([python, "-c", script], cwd=execution_dir, env=env, check=True)

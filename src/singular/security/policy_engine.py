@@ -78,7 +78,9 @@ class ActionPolicyEngine:
         )
         if requires_confirmation:
             is_confirmed = bool(
-                self.confirmation_callback(request) if self.confirmation_callback else False
+                self.confirmation_callback(request)
+                if self.confirmation_callback
+                else False
             )
             if not is_confirmed:
                 decision = PolicyDecision(

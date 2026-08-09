@@ -248,21 +248,19 @@ def test_refuses_missing_container_runtime(monkeypatch):
     monkeypatch.setattr(sandbox.shutil, "which", lambda _name: None)
     with pytest.raises(SandboxError, match="podman or docker"):
         run("result = 1")
+
+
 def test_path_resolution_distinguishes_broken_link_and_internal_denial(tmp_path):
     allowed = tmp_path / "skills"
     allowed.mkdir()
     broken = allowed / "broken.py"
     broken.symlink_to(tmp_path / "absent-target.py")
 
-    unresolved = classify_source_sandbox_path(
-        broken, (allowed,), sandbox_root=tmp_path
-    )
+    unresolved = classify_source_sandbox_path(broken, (allowed,), sandbox_root=tmp_path)
     internal = tmp_path / "private" / "artifact.py"
     internal.parent.mkdir()
     internal.write_text("result = 1\n")
-    denied = classify_source_sandbox_path(
-        internal, (allowed,), sandbox_root=tmp_path
-    )
+    denied = classify_source_sandbox_path(internal, (allowed,), sandbox_root=tmp_path)
 
     assert unresolved.category == "unresolved_path"
     assert denied.category == "unauthorized_internal_path"

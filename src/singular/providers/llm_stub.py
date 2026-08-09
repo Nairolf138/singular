@@ -6,7 +6,6 @@ import re
 
 from . import ProviderMetrics
 
-
 LAST_METRICS = ProviderMetrics(provider="stub")
 
 

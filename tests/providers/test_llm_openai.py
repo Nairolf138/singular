@@ -202,7 +202,9 @@ def test_generate_reply_schema_error_non_string_content(monkeypatch):
     class FakeCompletions:
         def create(self, **_kwargs):
             return SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content=["not", "text"]))]
+                choices=[
+                    SimpleNamespace(message=SimpleNamespace(content=["not", "text"]))
+                ]
             )
 
     class FakeClient:

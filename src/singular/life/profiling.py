@@ -87,7 +87,9 @@ class LifeLoopProfiler:
             target.cache_misses += stats.cache_misses
 
     def summary(self) -> dict[str, object]:
-        phase_payload = {name: self.stats[name].to_dict() for name in sorted(self.stats)}
+        phase_payload = {
+            name: self.stats[name].to_dict() for name in sorted(self.stats)
+        }
         total_ms = sum(float(item["total_ms"]) for item in phase_payload.values())
         slowest = None
         if phase_payload:
@@ -115,7 +117,9 @@ def cache_candidates_from_phases(
 
     candidates: list[dict[str, object]] = []
     sandbox = phases.get("sandbox_scoring", {})
-    if int(sandbox.get("cache_hits", 0) or 0) or int(sandbox.get("cache_misses", 0) or 0):
+    if int(sandbox.get("cache_hits", 0) or 0) or int(
+        sandbox.get("cache_misses", 0) or 0
+    ):
         candidates.append(
             {
                 "phase": "sandbox_scoring",

@@ -81,7 +81,11 @@ class AuditLogStore:
     filename: str = "audit_events.jsonl"
 
     def __post_init__(self) -> None:
-        base = Path(self.root) if self.root is not None else Path(os.environ.get("SINGULAR_HOME", "."))
+        base = (
+            Path(self.root)
+            if self.root is not None
+            else Path(os.environ.get("SINGULAR_HOME", "."))
+        )
         self.path = base / "mem" / self.filename
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -203,7 +207,9 @@ def read_audit_events(path: Path | str) -> list[dict[str, Any]]:
     return events
 
 
-def filter_session(events: Iterable[Mapping[str, Any]], session_id: str) -> list[dict[str, Any]]:
+def filter_session(
+    events: Iterable[Mapping[str, Any]], session_id: str
+) -> list[dict[str, Any]]:
     """Return only records for ``session_id`` preserving order."""
 
     return [dict(event) for event in events if event.get("session_id") == session_id]

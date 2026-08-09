@@ -687,7 +687,9 @@ def test_compute_life_status_budget_exhaustion_is_not_death(life_home_factory) -
 
     life_home, mem = life_home_factory()
     _write_json(mem / "world_state.json", {"global_health": {"score": 90}})
-    _write_json(mem / "self_narrative.json", {"identity": {"name": "Alpha", "slug": "alpha"}})
+    _write_json(
+        mem / "self_narrative.json", {"identity": {"name": "Alpha", "slug": "alpha"}}
+    )
     _write_json(mem / "quests_state.json", {})
 
     result = compute_life_status(

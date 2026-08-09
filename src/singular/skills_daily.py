@@ -44,7 +44,9 @@ def _extract_task_label(record: dict[str, Any]) -> str | None:
 def build_daily_skills_snapshot(
     records: list[dict[str, Any]], *, now: datetime | None = None
 ) -> dict[str, Any]:
-    now_dt = now.astimezone(timezone.utc) if now is not None else datetime.now(timezone.utc)
+    now_dt = (
+        now.astimezone(timezone.utc) if now is not None else datetime.now(timezone.utc)
+    )
     since_24h = now_dt - timedelta(hours=24)
     since_7d = now_dt - timedelta(days=7)
     previous_24h = since_24h - timedelta(hours=24)
@@ -78,9 +80,15 @@ def build_daily_skills_snapshot(
         )
         skill_entry["total_uses"] += 1
         if timestamp is not None:
-            if skill_entry["first_seen_at"] is None or timestamp < skill_entry["first_seen_at"]:
+            if (
+                skill_entry["first_seen_at"] is None
+                or timestamp < skill_entry["first_seen_at"]
+            ):
                 skill_entry["first_seen_at"] = timestamp
-            if skill_entry["last_used_at"] is None or timestamp > skill_entry["last_used_at"]:
+            if (
+                skill_entry["last_used_at"] is None
+                or timestamp > skill_entry["last_used_at"]
+            ):
                 skill_entry["last_used_at"] = timestamp
             if timestamp >= since_24h:
                 skill_entry["uses_24h"] += 1
@@ -91,7 +99,11 @@ def build_daily_skills_snapshot(
             if previous_24h <= timestamp < since_24h:
                 skill_entry["uses_previous_24h"] += 1
         task_label = _extract_task_label(record)
-        if task_label and task_label not in skill_entry["associated_tasks"] and len(skill_entry["associated_tasks"]) < 4:
+        if (
+            task_label
+            and task_label not in skill_entry["associated_tasks"]
+            and len(skill_entry["associated_tasks"]) < 4
+        ):
             skill_entry["associated_tasks"].append(task_label)
         if isinstance(accepted, bool):
             skill_entry["attempts_with_result"] += 1
@@ -107,7 +119,9 @@ def build_daily_skills_snapshot(
     for item in per_skill.values():
         attempts = item["attempts_with_result"]
         success_rate = item["success_total"] / attempts if attempts else None
-        success_rate_24h = item["success_24h"] / item["uses_24h"] if item["uses_24h"] else None
+        success_rate_24h = (
+            item["success_24h"] / item["uses_24h"] if item["uses_24h"] else None
+        )
         if item["uses_24h"] > item["uses_previous_24h"]:
             trend = "hausse"
         elif item["uses_24h"] < item["uses_previous_24h"]:
@@ -119,7 +133,11 @@ def build_daily_skills_snapshot(
             learned += 1
         if item["uses_24h"] > 0:
             used += 1
-        if trend == "hausse" and success_rate_24h is not None and success_rate_24h >= 0.6:
+        if (
+            trend == "hausse"
+            and success_rate_24h is not None
+            and success_rate_24h >= 0.6
+        ):
             improved += 1
         top_skills.append(
             {
@@ -128,7 +146,9 @@ def build_daily_skills_snapshot(
                 "frequency": {"uses_24h": item["uses_24h"], "uses_7d": item["uses_7d"]},
                 "success_rate": success_rate,
                 "last_used_at": (
-                    item["last_used_at"].isoformat() if isinstance(item["last_used_at"], datetime) else None
+                    item["last_used_at"].isoformat()
+                    if isinstance(item["last_used_at"], datetime)
+                    else None
                 ),
                 "associated_tasks": item["associated_tasks"],
                 "trend": trend,

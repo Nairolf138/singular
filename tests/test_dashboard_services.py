@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from singular.dashboard.services.lives_comparison import aggregate_lives, build_life_timeseries
+from singular.dashboard.services.lives_comparison import (
+    aggregate_lives,
+    build_life_timeseries,
+)
 from singular.dashboard.services.metrics_contract import normalize_life_metrics
 from singular.dashboard.services.code_evolution import aggregate_code_evolution
 from singular.dashboard.services.trajectory import build_trajectory
@@ -11,9 +14,21 @@ from singular.dashboard.services.trajectory import build_trajectory
 def test_life_metrics_contract_keeps_selected_active_and_latest_distinct() -> None:
     lives, identities = normalize_life_metrics(
         {
-            "consulted": {"registry_status": "active", "life_status": "alive", "last_activity": None},
-            "running": {"registry_status": "active", "life_status": "alive", "last_activity": "2026-08-08T00:00:00Z"},
-            "observed": {"registry_status": "archived", "life_status": "fragile", "last_activity": "2026-08-09T00:00:00Z"},
+            "consulted": {
+                "registry_status": "active",
+                "life_status": "alive",
+                "last_activity": None,
+            },
+            "running": {
+                "registry_status": "active",
+                "life_status": "alive",
+                "last_activity": "2026-08-08T00:00:00Z",
+            },
+            "observed": {
+                "registry_status": "archived",
+                "life_status": "fragile",
+                "last_activity": "2026-08-09T00:00:00Z",
+            },
         },
         selected_life_id="consulted",
         registry_active_life_id="running",
@@ -27,7 +42,9 @@ def test_life_metrics_contract_keeps_selected_active_and_latest_distinct() -> No
 
 def test_trajectory_service_builds_priority_changes_and_links(tmp_path: Path) -> None:
     quests = tmp_path / "quests_state.json"
-    quests.write_text('{"active":[{"name":"obj-a"}],"completed":[{"name":"obj-b"}]}' , encoding="utf-8")
+    quests.write_text(
+        '{"active":[{"name":"obj-a"}],"completed":[{"name":"obj-b"}]}', encoding="utf-8"
+    )
     records = [
         {"ts": "2026-01-01T00:00:00Z", "objective_priorities": {"obj-a": 0.2}},
         {
@@ -39,7 +56,9 @@ def test_trajectory_service_builds_priority_changes_and_links(tmp_path: Path) ->
         },
     ]
 
-    payload = build_trajectory(records, quests, lambda rec: str(rec.get("run_id", "unknown")))
+    payload = build_trajectory(
+        records, quests, lambda rec: str(rec.get("run_id", "unknown"))
+    )
 
     assert payload["objectives"]["counts"]["in_progress"] == 1
     assert payload["objectives"]["counts"]["completed"] == 1
@@ -77,7 +96,9 @@ def test_lives_comparison_service_aggregates_metrics() -> None:
         record_life=lambda rec: str(rec.get("life", "unknown")),
         record_run_id=lambda rec: str(rec.get("run_id", "unknown")),
         is_mutation_record=lambda rec: "score_base" in rec,
-        as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
+        as_float=lambda value: (
+            float(value) if isinstance(value, (int, float)) else None
+        ),
         alerts_from_records=lambda _: [],
         compute_vital_timeline=lambda **_: {"ok": True},
         registry_life_meta=lambda life_name, lives: (life_name, lives.get(life_name)),
@@ -92,17 +113,38 @@ def test_lives_comparison_service_aggregates_metrics() -> None:
 
 def test_life_timeseries_buckets_metrics_and_keeps_evidence() -> None:
     records = [
-        {"ts": "2026-01-01T00:10:00Z", "health": {"score": 60}, "energy": 40,
-         "event": "mutation", "accepted": True, "run_id": "run 1"},
-        {"ts": "2026-01-01T00:50:00Z", "health": {"score": 80}, "mood": 75,
-         "event": "interaction", "run_id": "run 1"},
-        {"ts": "2026-01-01T02:00:00Z", "event": "skill_acquired", "skill": "alpha:vision",
-         "accepted": False, "run_id": "run-2"},
+        {
+            "ts": "2026-01-01T00:10:00Z",
+            "health": {"score": 60},
+            "energy": 40,
+            "event": "mutation",
+            "accepted": True,
+            "run_id": "run 1",
+        },
+        {
+            "ts": "2026-01-01T00:50:00Z",
+            "health": {"score": 80},
+            "mood": 75,
+            "event": "interaction",
+            "run_id": "run 1",
+        },
+        {
+            "ts": "2026-01-01T02:00:00Z",
+            "event": "skill_acquired",
+            "skill": "alpha:vision",
+            "accepted": False,
+            "run_id": "run-2",
+        },
     ]
 
     payload = build_life_timeseries(
-        records, life="alpha", time_window="all", resolution="hour", limit=10,
-        mutation_index=0, record_run_id=lambda rec: str(rec["run_id"]),
+        records,
+        life="alpha",
+        time_window="all",
+        resolution="hour",
+        limit=10,
+        mutation_index=0,
+        record_run_id=lambda rec: str(rec["run_id"]),
     )
 
     assert payload["count"] == 2
@@ -144,7 +186,9 @@ def test_lives_comparison_includes_registry_life_without_records_in_table() -> N
         record_life=lambda rec: str(rec.get("life", "unknown")),
         record_run_id=lambda rec: str(rec.get("run_id", "unknown")),
         is_mutation_record=lambda rec: "score_base" in rec,
-        as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
+        as_float=lambda value: (
+            float(value) if isinstance(value, (int, float)) else None
+        ),
         alerts_from_records=lambda _: [],
         compute_vital_timeline=lambda **_: {"ok": True},
         registry_life_meta=lambda life_name, lives: (life_name, lives.get(life_name)),
@@ -173,7 +217,9 @@ def test_lives_comparison_marks_selected_active_life_without_records() -> None:
         record_life=lambda rec: str(rec.get("life", "unknown")),
         record_run_id=lambda rec: str(rec.get("run_id", "unknown")),
         is_mutation_record=lambda rec: "score_base" in rec,
-        as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
+        as_float=lambda value: (
+            float(value) if isinstance(value, (int, float)) else None
+        ),
         alerts_from_records=lambda _: [],
         compute_vital_timeline=lambda **_: {"ok": True},
         registry_life_meta=lambda life_name, lives: (life_name, lives.get(life_name)),
@@ -198,7 +244,9 @@ def test_lives_comparison_default_rows_follow_active_and_dead_filters() -> None:
         record_life=lambda rec: str(rec.get("life", "unknown")),
         record_run_id=lambda rec: str(rec.get("run_id", "unknown")),
         is_mutation_record=lambda rec: "score_base" in rec,
-        as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
+        as_float=lambda value: (
+            float(value) if isinstance(value, (int, float)) else None
+        ),
         alerts_from_records=lambda _: [],
         compute_vital_timeline=lambda **_: {"ok": True},
         registry_life_meta=lambda life_name, lives: (life_name, lives.get(life_name)),
@@ -233,9 +281,13 @@ def test_lives_comparison_normalizes_registry_life_statuses() -> None:
         record_life=lambda rec: str(rec.get("life", "unknown")),
         record_run_id=lambda rec: str(rec.get("run_id", "unknown")),
         is_mutation_record=lambda rec: "score_base" in rec,
-        as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
+        as_float=lambda value: (
+            float(value) if isinstance(value, (int, float)) else None
+        ),
         alerts_from_records=lambda _: [],
-        compute_vital_timeline=lambda **kwargs: {"registry_status": kwargs["registry_status"]},
+        compute_vital_timeline=lambda **kwargs: {
+            "registry_status": kwargs["registry_status"]
+        },
         registry_life_meta=lambda life_name, lives: (life_name, lives.get(life_name)),
     )
 
@@ -251,6 +303,7 @@ def test_lives_comparison_normalizes_registry_life_statuses() -> None:
     assert comparison["delta"]["run_terminated"] is True
     assert comparison["epsilon"]["life_status"] == "unknown"
     assert comparison["zeta"]["life_status"] == "unknown"
+
 
 def test_code_evolution_service_aggregates_by_life_and_metrics() -> None:
     payload = aggregate_code_evolution(
@@ -295,14 +348,22 @@ def test_code_evolution_service_aggregates_by_life_and_metrics() -> None:
         life="alpha",
         record_life=lambda rec: str(rec.get("life", "unknown")),
         record_run_id=lambda rec: str(rec.get("run_id", "unknown")),
-        as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
+        as_float=lambda value: (
+            float(value) if isinstance(value, (int, float)) else None
+        ),
     )
 
     assert payload["life"] == "alpha"
     assert payload["count"] == 2
     assert payload["items"][0]["timestamp"] == "2026-03-02T00:00:00Z"
-    assert payload["items"][1]["metrics"]["latency_ms"] == {"before": 100.0, "after": 75.0}
+    assert payload["items"][1]["metrics"]["latency_ms"] == {
+        "before": 100.0,
+        "after": 75.0,
+    }
     assert payload["items"][1]["metrics"]["stability"] == {"before": 0.7, "after": 0.9}
     assert payload["summary"]["by_status"] == {"accepté": 1, "rejeté": 1}
     assert payload["summary"]["by_change_type"] == {"perf_fix": 1, "cleanup": 1}
-    assert payload["summary"]["by_target"] == {"skills/a.py": 1, "singular.life.loop": 1}
+    assert payload["summary"]["by_target"] == {
+        "skills/a.py": 1,
+        "singular.life.loop": 1,
+    }

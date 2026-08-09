@@ -159,9 +159,11 @@ def autonomous_diagnostics(*, run_generation: bool = False) -> dict[str, Any]:
             "critical",
             "ready" if writable else "blocked",
             {"required": [p.name for p in required], "writable": writable},
-            None
-            if writable
-            else f"mkdir -p {home / 'mem'} {home / 'runs'} && chmod u+rwx {home / 'mem'} {home / 'runs'}",
+            (
+                None
+                if writable
+                else f"mkdir -p {home / 'mem'} {home / 'runs'} && chmod u+rwx {home / 'mem'} {home / 'runs'}"
+            ),
         )
     )
     checks.append(_systemd_check(root, home))
@@ -191,14 +193,18 @@ def autonomous_diagnostics(*, run_generation: bool = False) -> dict[str, Any]:
             {
                 "provider": configured_name or None,
                 "reachable": bool(provider_result and provider_result.get("reachable")),
-                "category": provider_result.get("error_category")
-                if provider_result
-                else "not_configured",
+                "category": (
+                    provider_result.get("error_category")
+                    if provider_result
+                    else "not_configured"
+                ),
             },
-            None
-            if model_ready
-            else (provider_result or {}).get("configuration_command")
-            or "singular config providers doctor",
+            (
+                None
+                if model_ready
+                else (provider_result or {}).get("configuration_command")
+                or "singular config providers doctor"
+            ),
         )
     )
 
@@ -239,9 +245,11 @@ def autonomous_diagnostics(*, run_generation: bool = False) -> dict[str, Any]:
             "critical",
             "ready" if closed else "blocked",
             {"state": circuit.get("state"), "updated_at": circuit.get("updated_at")},
-            None
-            if closed
-            else "singular governance recover --operator <nom> --justification <raison>",
+            (
+                None
+                if closed
+                else "singular governance recover --operator <nom> --justification <raison>"
+            ),
         )
     )
     mutation = _mutation_evidence(home)

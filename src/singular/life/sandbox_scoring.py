@@ -10,7 +10,6 @@ from typing import ClassVar
 
 from . import sandbox
 
-
 CONFIRMED_ROOT_ESCAPE = "confirmed_root_escape"
 OUTBOUND_SYMLINK = "outbound_symlink"
 UNRESOLVED_PATH = "unresolved_path"

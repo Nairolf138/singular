@@ -78,10 +78,14 @@ class ContextBudget:
         scale = total / 420
         return cls(
             total=total,
-            identity=round(220 * scale), traits=round(100 * scale),
-            values=round(100 * scale), objectives=round(100 * scale),
-            relations=round(100 * scale), recent_events=round(100 * scale),
-            recalled_memories=round(120 * scale), safety=round(160 * scale),
+            identity=round(220 * scale),
+            traits=round(100 * scale),
+            values=round(100 * scale),
+            objectives=round(100 * scale),
+            relations=round(100 * scale),
+            recent_events=round(100 * scale),
+            recalled_memories=round(120 * scale),
+            safety=round(160 * scale),
         )
 
 
@@ -98,7 +102,13 @@ class ContextItem:
 
     @property
     def priority(self) -> tuple[float, float, float, int, str]:
-        return (self.relevance, self.recency, self.confidence, int(self.active_life), self.provenance_id)
+        return (
+            self.relevance,
+            self.recency,
+            self.confidence,
+            int(self.active_life),
+            self.provenance_id,
+        )
 
 
 @dataclass
@@ -108,14 +118,20 @@ class ContextBuildResult:
 
 
 _SECTION_LABELS = {
-    "identity": "Contexte identitaire", "traits": "Traits", "values": "Valeurs",
-    "objectives": "Objectifs", "relations": "Relations",
-    "recent_events": "Événements récents", "recalled_memories": "Souvenirs récupérés",
+    "identity": "Contexte identitaire",
+    "traits": "Traits",
+    "values": "Valeurs",
+    "objectives": "Objectifs",
+    "relations": "Relations",
+    "recent_events": "Événements récents",
+    "recalled_memories": "Souvenirs récupérés",
     "safety": "Règle de sécurité",
 }
 
 
-def _build_structured_context(items: Iterable[ContextItem], budget: ContextBudget) -> ContextBuildResult:
+def _build_structured_context(
+    items: Iterable[ContextItem], budget: ContextBudget
+) -> ContextBuildResult:
     """Select complete facts only; safety is pinned and no text is sliced."""
     limits = {name: getattr(budget, name) for name in _SECTION_LABELS}
     ordered = sorted(items, key=lambda item: item.priority, reverse=True)
@@ -127,9 +143,14 @@ def _build_structured_context(items: Iterable[ContextItem], budget: ContextBudge
     total = 0
     # Safety rules are indivisible and retained before all autobiographical data.
     for item in safety + others:
-        rendered = f"{_SECTION_LABELS[item.section]}: [{item.provenance_id}] {item.text}\n"
+        rendered = (
+            f"{_SECTION_LABELS[item.section]}: [{item.provenance_id}] {item.text}\n"
+        )
         size = len(rendered)
-        fits = section_sizes[item.section] + size <= limits[item.section] and total + size <= budget.total
+        fits = (
+            section_sizes[item.section] + size <= limits[item.section]
+            and total + size <= budget.total
+        )
         if fits or (item.critical and item.section == "safety"):
             selected.append(item)
             section_sizes[item.section] += size
@@ -140,16 +161,26 @@ def _build_structured_context(items: Iterable[ContextItem], budget: ContextBudge
         f"{_SECTION_LABELS[item.section]}: [{item.provenance_id}] {item.text}\n"
         for item in selected
     ).rstrip()
-    return ContextBuildResult(text, {
-        "budget_chars": budget.total,
-        "used_chars": len(text),
-        "estimated_tokens": (len(text) + 3) // 4,
-        "blocks": {name: {"chars": section_sizes[name], "estimated_tokens": (section_sizes[name] + 3) // 4} for name in limits},
-        # IDs and counts are auditable without copying potentially sensitive text.
-        "retained_ids": [item.provenance_id for item in selected],
-        "dropped_ids": [item.provenance_id for item in dropped],
-        "retained_count": len(selected), "dropped_count": len(dropped),
-    })
+    return ContextBuildResult(
+        text,
+        {
+            "budget_chars": budget.total,
+            "used_chars": len(text),
+            "estimated_tokens": (len(text) + 3) // 4,
+            "blocks": {
+                name: {
+                    "chars": section_sizes[name],
+                    "estimated_tokens": (section_sizes[name] + 3) // 4,
+                }
+                for name in limits
+            },
+            # IDs and counts are auditable without copying potentially sensitive text.
+            "retained_ids": [item.provenance_id for item in selected],
+            "dropped_ids": [item.provenance_id for item in dropped],
+            "retained_count": len(selected),
+            "dropped_count": len(dropped),
+        },
+    )
 
 
 def _default_reply(prompt: str, rng: random.Random) -> str:
@@ -194,11 +225,25 @@ def _trim_for_budget(text: str, budget: int) -> str:
 
 def _load_context_profile(life_root: Path, narrative_summary: str) -> list[ContextItem]:
     """Read stable profile sections without exposing their values to telemetry."""
-    items = [ContextItem("identity", narrative_summary, "self_narrative:summary", relevance=1.1)]
-    sources = ((life_root / "id.json", ("identity",)), (life_root / "mem" / "self_model.json", ("traits", "values", "objectives", "relations")))
-    aliases = {"identity": ("identity", "name", "id"), "traits": ("traits", "preferences"),
-               "values": ("values", "identity_commitments", "constraints"),
-               "objectives": ("objectives", "goals"), "relations": ("relations", "social")}
+    items = [
+        ContextItem(
+            "identity", narrative_summary, "self_narrative:summary", relevance=1.1
+        )
+    ]
+    sources = (
+        (life_root / "id.json", ("identity",)),
+        (
+            life_root / "mem" / "self_model.json",
+            ("traits", "values", "objectives", "relations"),
+        ),
+    )
+    aliases = {
+        "identity": ("identity", "name", "id"),
+        "traits": ("traits", "preferences"),
+        "values": ("values", "identity_commitments", "constraints"),
+        "objectives": ("objectives", "goals"),
+        "relations": ("relations", "social"),
+    }
     for path, sections in sources:
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
@@ -210,8 +255,18 @@ def _load_context_profile(life_root: Path, narrative_summary: str) -> list[Conte
             payload = {key: raw[key] for key in aliases[section] if key in raw}
             if not payload:
                 continue
-            text = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-            items.append(ContextItem(section, text, f"{path.name}:{section}", relevance=1.0, confidence=1.0))
+            text = json.dumps(
+                payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
+            items.append(
+                ContextItem(
+                    section,
+                    text,
+                    f"{path.name}:{section}",
+                    relevance=1.0,
+                    confidence=1.0,
+                )
+            )
     return items
 
 
@@ -225,11 +280,28 @@ def _build_system_preamble(
 ) -> str:
     """Compatibility wrapper for callers that only have the legacy inputs."""
     items = [
-        ContextItem("identity", narrative_summary, "self_narrative:summary", relevance=1.1),
-        ContextItem("recent_events", last_event or "inconnu", "episode:last_user", recency=1.0),
-        ContextItem("recent_events", mood_event or "inconnu", "psyche:recent_mood", recency=0.9),
-        ContextItem("recalled_memories", recalled_memory_summary or "aucun souvenir pertinent", "memory:summary", relevance=0.8),
-        ContextItem("safety", _UNKNOWN_GUARD, "policy:anti_hallucination", relevance=1.0, critical=True),
+        ContextItem(
+            "identity", narrative_summary, "self_narrative:summary", relevance=1.1
+        ),
+        ContextItem(
+            "recent_events", last_event or "inconnu", "episode:last_user", recency=1.0
+        ),
+        ContextItem(
+            "recent_events", mood_event or "inconnu", "psyche:recent_mood", recency=0.9
+        ),
+        ContextItem(
+            "recalled_memories",
+            recalled_memory_summary or "aucun souvenir pertinent",
+            "memory:summary",
+            relevance=0.8,
+        ),
+        ContextItem(
+            "safety",
+            _UNKNOWN_GUARD,
+            "policy:anti_hallucination",
+            relevance=1.0,
+            critical=True,
+        ),
     ]
     return _build_structured_context(items, budget or ContextBudget()).text
 
@@ -292,11 +364,13 @@ def talk(
 
     psyche = Psyche.load_state(psyche_file)
 
-    def gather_context() -> tuple[
-        str | None, dict | None, dict | None, str | None, str | None
-    ]:
+    def gather_context() -> (
+        tuple[str | None, dict | None, dict | None, str | None, str | None]
+    ):
         signals = capture_signals()
-        add_episode({"event": "perception", "life_id": life_id, **signals}, path=episodic_file)
+        add_episode(
+            {"event": "perception", "life_id": life_id, **signals}, path=episodic_file
+        )
         psyche.consume()
         episodes = read_episodes(episodic_file)
         episodes_by_role = {
@@ -406,27 +480,58 @@ def talk(
                 path=episodic_file,
             )
         add_episode(
-            {"role": "user", "life_id": life_id, "text": user_input, "structured_signals": user_signals},
+            {
+                "role": "user",
+                "life_id": life_id,
+                "text": user_input,
+                "structured_signals": user_signals,
+            },
             path=episodic_file,
         )
         mood = psyche.feel(Mood.NEUTRAL)
         mood_report = mood_event or mood.value
         context_items = _load_context_profile(life_root, self_narrative_summary)
-        context_items.extend([
-            ContextItem("recent_events", last_event or "inconnu", "episode:last_user", recency=1.0),
-            ContextItem("recent_events", mood_event or "inconnu", "psyche:recent_mood", recency=0.9),
-            ContextItem("safety", _UNKNOWN_GUARD, "policy:anti_hallucination", relevance=1.0, critical=True),
-        ])
+        context_items.extend(
+            [
+                ContextItem(
+                    "recent_events",
+                    last_event or "inconnu",
+                    "episode:last_user",
+                    recency=1.0,
+                ),
+                ContextItem(
+                    "recent_events",
+                    mood_event or "inconnu",
+                    "psyche:recent_mood",
+                    recency=0.9,
+                ),
+                ContextItem(
+                    "safety",
+                    _UNKNOWN_GUARD,
+                    "policy:anti_hallucination",
+                    relevance=1.0,
+                    critical=True,
+                ),
+            ]
+        )
         for memory in recalled_memories:
-            provenance = f"{memory.get('source', 'memory')}:{memory.get('id', 'unknown')}"
-            context_items.append(ContextItem(
-                "recalled_memories", str(memory.get("excerpt", "")), provenance,
-                relevance=float(memory.get("score", 0.0) or 0.0),
-                recency=1.0 if memory.get("date") else 0.0,
-                confidence=float(memory.get("confidence", 0.0) or 0.0),
-                active_life=memory.get("life_id", life_id) == life_id,
-            ))
-        context_result = _build_structured_context(context_items, ContextBudget.for_client(client))
+            provenance = (
+                f"{memory.get('source', 'memory')}:{memory.get('id', 'unknown')}"
+            )
+            context_items.append(
+                ContextItem(
+                    "recalled_memories",
+                    str(memory.get("excerpt", "")),
+                    provenance,
+                    relevance=float(memory.get("score", 0.0) or 0.0),
+                    recency=1.0 if memory.get("date") else 0.0,
+                    confidence=float(memory.get("confidence", 0.0) or 0.0),
+                    active_life=memory.get("life_id", life_id) == life_id,
+                )
+            )
+        context_result = _build_structured_context(
+            context_items, ContextBudget.for_client(client)
+        )
         system_preamble = context_result.text
         provider_prompt = f"{system_preamble}\n\nUtilisateur: {user_input}"
 

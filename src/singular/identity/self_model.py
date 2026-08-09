@@ -30,7 +30,12 @@ class SelfModelStore:
     so their provenance survives restarts and consolidation.
     """
 
-    _EVIDENCE_SECTIONS = ("autobiographical_facts", "traits", "preferences", "constraints")
+    _EVIDENCE_SECTIONS = (
+        "autobiographical_facts",
+        "traits",
+        "preferences",
+        "constraints",
+    )
     _REQUIRED_ROOT_KEYS = set(_EVIDENCE_SECTIONS)
 
     @staticmethod
@@ -94,8 +99,13 @@ class SelfModelStore:
             confidence = float(raw)
         except (TypeError, ValueError):
             confidence = 0.5
-        return {"value": value, "source": "legacy:self_model", "confidence": confidence,
-                "observed_at": now, "last_confirmed_at": now}
+        return {
+            "value": value,
+            "source": "legacy:self_model",
+            "confidence": confidence,
+            "observed_at": now,
+            "last_confirmed_at": now,
+        }
 
     def _read_and_migrate(self) -> tuple[dict[str, Any], bool]:
         try:
@@ -118,11 +128,20 @@ class SelfModelStore:
                 model[section] = {}
                 migrated = True
                 continue
-            normalized = {str(key): self._record(str(key), value, now) for key, value in values.items()}
+            normalized = {
+                str(key): self._record(str(key), value, now)
+                for key, value in values.items()
+            }
             if normalized != values:
                 model[section] = normalized
                 migrated = True
-        for section in ("founding_events", "cardinal_values", "commitments", "red_lines", "identity_wounds"):
+        for section in (
+            "founding_events",
+            "cardinal_values",
+            "commitments",
+            "red_lines",
+            "identity_wounds",
+        ):
             if not isinstance(model.get(section), list):
                 model[section] = []
                 migrated = True
@@ -148,17 +167,24 @@ class SelfModelStore:
     def write(self, model: dict[str, Any]) -> None:
         missing = self._REQUIRED_ROOT_KEYS.difference(model)
         if missing:
-            raise IdentityInvariantError(f"Missing invariant sections in self model: {sorted(missing)}")
+            raise IdentityInvariantError(
+                f"Missing invariant sections in self model: {sorted(missing)}"
+            )
         model["schema_version"] = SCHEMA_VERSION
-        atomic_write_text(self.path, json.dumps(model, ensure_ascii=False, indent=2) + "\n")
+        atomic_write_text(
+            self.path, json.dumps(model, ensure_ascii=False, indent=2) + "\n"
+        )
 
     def apply_facts(self, facts: list[dict[str, Any]]) -> dict[str, Any]:
         """Merge extracted evidence without confusing biography and character."""
         model = self.read()
         now = _now()
         section_for_kind = {
-            "user_fact": "autobiographical_facts", "autobiographical_fact": "autobiographical_facts",
-            "trait": "traits", "preference": "preferences", "constraint": "constraints",
+            "user_fact": "autobiographical_facts",
+            "autobiographical_fact": "autobiographical_facts",
+            "trait": "traits",
+            "preference": "preferences",
+            "constraint": "constraints",
         }
         for fact in facts:
             section = section_for_kind.get(str(fact.get("kind", "")))
@@ -166,11 +192,17 @@ class SelfModelStore:
             if not section or not value:
                 continue
             previous = model[section].get(value, {})
-            observed = str(fact.get("observed_at") or fact.get("observation_date") or now)
+            observed = str(
+                fact.get("observed_at") or fact.get("observation_date") or now
+            )
             model[section][value] = {
                 "value": value,
-                "source": str(fact.get("source") or previous.get("source") or "unknown"),
-                "confidence": float(fact.get("confidence", previous.get("confidence", 0.5)) or 0.5),
+                "source": str(
+                    fact.get("source") or previous.get("source") or "unknown"
+                ),
+                "confidence": float(
+                    fact.get("confidence", previous.get("confidence", 0.5)) or 0.5
+                ),
                 "observed_at": str(previous.get("observed_at") or observed),
                 "last_confirmed_at": str(fact.get("last_confirmed_at") or observed),
             }
@@ -184,7 +216,13 @@ class SelfModelStore:
         keep_n = max(1, keep_top_n_per_section)
         for section in self._EVIDENCE_SECTIONS:
             values = model[section]
-            model[section] = dict(sorted(values.items(), key=lambda item: float(item[1].get("confidence", 0.0)), reverse=True)[:keep_n])
+            model[section] = dict(
+                sorted(
+                    values.items(),
+                    key=lambda item: float(item[1].get("confidence", 0.0)),
+                    reverse=True,
+                )[:keep_n]
+            )
         model["updated_at"] = _now()
         self.write(model)
         return model

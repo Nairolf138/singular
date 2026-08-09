@@ -31,10 +31,14 @@ def test_service_retention_and_consolidation(tmp_path):
     short_path = tmp_path / "layers" / "short_term.jsonl"
     long_path = tmp_path / "layers" / "long_term.jsonl"
 
-    short_lines = [line for line in short_path.read_text(encoding="utf-8").splitlines() if line]
+    short_lines = [
+        line for line in short_path.read_text(encoding="utf-8").splitlines() if line
+    ]
     assert len(short_lines) == 2
 
-    long_lines = [line for line in long_path.read_text(encoding="utf-8").splitlines() if line]
+    long_lines = [
+        line for line in long_path.read_text(encoding="utf-8").splitlines() if line
+    ]
     assert len(long_lines) >= 2
 
 
@@ -52,7 +56,10 @@ def test_add_episode_enriches_semantic_memory(tmp_path, monkeypatch):
     )
 
     semantic_path = get_memory_layers_dir() / "semantic.jsonl"
-    lines = [json.loads(line) for line in semantic_path.read_text(encoding="utf-8").splitlines()]
+    lines = [
+        json.loads(line)
+        for line in semantic_path.read_text(encoding="utf-8").splitlines()
+    ]
     texts = [entry["text"] for entry in lines]
     assert "lives in paris" in texts
     assert "coffee" in texts

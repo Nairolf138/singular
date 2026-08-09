@@ -39,9 +39,13 @@ class RunFeatures:
     source_run_id: str | None = None
 
     def context_key(self) -> str:
-        candidate = ",".join(
-            f"{key}={value}" for key, value in sorted(self.candidate_characteristics.items())
-        ) or "unknown"
+        candidate = (
+            ",".join(
+                f"{key}={value}"
+                for key, value in sorted(self.candidate_characteristics.items())
+            )
+            or "unknown"
+        )
         return (
             f"failure={self.failure_type}|env={self.environment_signal}|"
             f"mood={self.mood}|outcome={self.outcome}|family={self.skill_family}|"
@@ -208,9 +212,13 @@ def recommend_strategy(
 
     normalized_mood = (mood or "unknown").strip().lower() or "unknown"
     candidate_list = list(candidates)
-    candidate = ",".join(
-        f"{key}={value}" for key, value in sorted((candidate_characteristics or {}).items())
-    ) or "unknown"
+    candidate = (
+        ",".join(
+            f"{key}={value}"
+            for key, value in sorted((candidate_characteristics or {}).items())
+        )
+        or "unknown"
+    )
     context_key = (
         f"failure={failure_type}|env={environment_signal}|"
         f"mood={normalized_mood}|outcome={outcome_hint}|family={skill_family}|"
@@ -240,9 +248,21 @@ def recommend_strategy(
         )
         recency = math.exp(-store.decay_per_day * age_days)
         regression_risk = record.beta / max(record.alpha + record.beta, 1e-9)
-        assessed.append((confidence, -regression_risk, operator, uncertainty, samples, regression_risk, recency))
+        assessed.append(
+            (
+                confidence,
+                -regression_risk,
+                operator,
+                uncertainty,
+                samples,
+                regression_risk,
+                recency,
+            )
+        )
     assessed.sort(reverse=True)
-    confidence, _, best_operator, uncertainty, samples, regression_risk, recency = assessed[0]
+    confidence, _, best_operator, uncertainty, samples, regression_risk, recency = (
+        assessed[0]
+    )
     supporting_features = {
         "failure_type": failure_type,
         "environment_signal": environment_signal,

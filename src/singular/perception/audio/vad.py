@@ -20,7 +20,9 @@ class EnergyVAD:
     _silence_blocks: int = field(default=0, init=False, repr=False)
     _speaking: bool = field(default=False, init=False, repr=False)
 
-    def process(self, block: AudioBlock, *, noise_floor: float) -> tuple[bool, bool, bool, float]:
+    def process(
+        self, block: AudioBlock, *, noise_floor: float
+    ) -> tuple[bool, bool, bool, float]:
         """Return ``(is_speech, speech_started, speech_ended, confidence)``."""
 
         adaptive_start = max(self.start_threshold, noise_floor * self.noise_boost)

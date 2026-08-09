@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import random
 
-from singular.life.ecosystem import ARCHETYPES, compute_population_metrics, draw_global_event
+from singular.life.ecosystem import (
+    ARCHETYPES,
+    compute_population_metrics,
+    draw_global_event,
+)
 
 
 def test_archetypes_are_available() -> None:
@@ -11,7 +15,11 @@ def test_archetypes_are_available() -> None:
 
 def test_global_event_draw_is_supported() -> None:
     event = draw_global_event(random.Random(7))
-    assert event.event_type in {"resource_crisis", "governance_shift", "simulated_catastrophe"}
+    assert event.event_type in {
+        "resource_crisis",
+        "governance_shift",
+        "simulated_catastrophe",
+    }
     assert 0.2 <= event.intensity <= 0.9
 
 

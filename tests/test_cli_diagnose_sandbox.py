@@ -159,7 +159,13 @@ def test_diagnose_evolution_does_not_treat_candidate_incident_as_global_breaker(
     home = tmp_path / "life"
     _write_jsonl(
         home / "runs" / "run-1" / "events.jsonl",
-        [{"event": "sandbox_violation", "category": "invalid_mutation", "scope": "candidate"}],
+        [
+            {
+                "event": "sandbox_violation",
+                "category": "invalid_mutation",
+                "scope": "candidate",
+            }
+        ],
     )
 
     cli.main(["--home", str(home), "diagnose", "evolution"])

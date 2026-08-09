@@ -129,7 +129,12 @@ def test_status_filters_non_mutation_records_for_success_rate(
     assert payload["mutation_success_rate"] == 50.0
     assert payload["success_rate"] == 50.0
     assert payload["vital_timeline"]["age"] == 3
-    assert payload["vital_timeline"]["state"] in {"mature", "declining", "terminal", "extinct"}
+    assert payload["vital_timeline"]["state"] in {
+        "mature",
+        "declining",
+        "terminal",
+        "extinct",
+    }
     assert payload["life_status"]["status"] == "fragile"
     assert payload["life_status"]["score"] == 0.42
     assert set(payload["life_status"]) == {
@@ -195,9 +200,28 @@ def test_status_exposes_quest_counts(tmp_path, monkeypatch, capsys) -> None:
     (mem_dir / "quests_state.json").write_text(
         json.dumps(
             {
-                "active": [{"name": "q1", "status": "active", "started_at": "2026-01-01T00:00:00+00:00"}],
-                "paused": [{"name": "q2", "status": "paused", "started_at": "2026-01-01T00:00:00+00:00"}],
-                "completed": [{"name": "q0", "status": "success", "started_at": "2026-01-01T00:00:00+00:00", "completed_at": "2026-01-01T00:01:00+00:00"}],
+                "active": [
+                    {
+                        "name": "q1",
+                        "status": "active",
+                        "started_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ],
+                "paused": [
+                    {
+                        "name": "q2",
+                        "status": "paused",
+                        "started_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ],
+                "completed": [
+                    {
+                        "name": "q0",
+                        "status": "success",
+                        "started_at": "2026-01-01T00:00:00+00:00",
+                        "completed_at": "2026-01-01T00:01:00+00:00",
+                    }
+                ],
             }
         ),
         encoding="utf-8",
@@ -273,7 +297,10 @@ def test_status_exposes_trajectory_priority_and_narrative_links(
     assert payload["trajectory"]["priority_changes"]
     assert payload["trajectory"]["priority_changes"][0]["objective"] == "coherence"
     assert payload["trajectory"]["objective_narrative_links"]
-    assert payload["trajectory"]["objective_narrative_links"][0]["objective"] == "coherence"
+    assert (
+        payload["trajectory"]["objective_narrative_links"][0]["objective"]
+        == "coherence"
+    )
 
 
 def test_status_exposes_skill_lifecycle_counts(tmp_path, monkeypatch, capsys) -> None:

@@ -90,7 +90,9 @@ class AdaptiveImmunityEngine:
         )
 
         ttl = 600.0 if incident.recurred else 300.0
-        self._blacklist_until[incident.pattern] = incident.happened_at + timedelta(seconds=ttl)
+        self._blacklist_until[incident.pattern] = incident.happened_at + timedelta(
+            seconds=ttl
+        )
 
         return ImmuneResponsePlan(
             targeted_tests=tests,
@@ -113,7 +115,9 @@ class AdaptiveImmunityEngine:
                 updated_at=current,
             )
 
-    def is_temporarily_blacklisted(self, pattern: str, now: datetime | None = None) -> bool:
+    def is_temporarily_blacklisted(
+        self, pattern: str, now: datetime | None = None
+    ) -> bool:
         current = now or datetime.now(timezone.utc)
         expires_at = self._blacklist_until.get(pattern)
         if expires_at is None:
@@ -140,7 +144,9 @@ class AdaptiveImmunityEngine:
         if baseline_learning_velocity <= 0:
             learning_impact = 0.0
         else:
-            learning_impact = (baseline_learning_velocity - current_learning_velocity) / baseline_learning_velocity
+            learning_impact = (
+                baseline_learning_velocity - current_learning_velocity
+            ) / baseline_learning_velocity
 
         return ImmuneMetrics(
             recurrence_rate=max(0.0, recurrence_rate),
@@ -154,7 +160,9 @@ class AdaptiveImmunityEngine:
     def _reinforce(self, pattern: str, *, when: datetime) -> None:
         existing = self._memory.get(pattern)
         if existing is None:
-            self._memory[pattern] = ImmuneMemoryEntry(pattern=pattern, weight=1.0, updated_at=when)
+            self._memory[pattern] = ImmuneMemoryEntry(
+                pattern=pattern, weight=1.0, updated_at=when
+            )
             return
         self._memory[pattern] = ImmuneMemoryEntry(
             pattern=pattern,

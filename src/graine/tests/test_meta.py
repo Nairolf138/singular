@@ -104,7 +104,6 @@ def test_propose_mutation_obeys_population_ceiling():
     assert mutated.population_cap <= MAX_POPULATION_CAP
 
 
-
 def test_mutable_surfaces_are_explicitly_listed():
     assert "operator_mix" in ALLOWED_MUTABLE_SURFACES
     assert "weights" in ALLOWED_MUTABLE_SURFACES

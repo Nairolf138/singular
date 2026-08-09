@@ -255,7 +255,9 @@ def test_death_by_traits(tmp_path: Path, monkeypatch):
     assert any(entry.get("event") == "death" for entry in log)
 
 
-def test_extinction_generates_terminal_artifacts_and_status(tmp_path: Path, monkeypatch):
+def test_extinction_generates_terminal_artifacts_and_status(
+    tmp_path: Path, monkeypatch
+):
     skills_dir, ckpt = _setup(tmp_path)
     _patch_logger(monkeypatch, tmp_path)
     _patch_memory(monkeypatch, tmp_path)
@@ -287,7 +289,9 @@ def test_extinction_generates_terminal_artifacts_and_status(tmp_path: Path, monk
 
     bus = EventBus()
     terminal_events: list[dict[str, object]] = []
-    bus.subscribe("life.terminated", lambda event: terminal_events.append(event.payload))
+    bus.subscribe(
+        "life.terminated", lambda event: terminal_events.append(event.payload)
+    )
 
     monitor = DeathMonitor(max_age=1, max_failures=99, min_trait=0.0)
     run(
@@ -301,20 +305,28 @@ def test_extinction_generates_terminal_artifacts_and_status(tmp_path: Path, monk
         event_bus=bus,
     )
 
-    autopsy = json.loads((life_home / "mem" / "autopsy.json").read_text(encoding="utf-8"))
+    autopsy = json.loads(
+        (life_home / "mem" / "autopsy.json").read_text(encoding="utf-8")
+    )
     assert autopsy["technical_causes"]
     assert autopsy["behavioral_causes"]
 
-    biography = json.loads((life_home / "mem" / "biography.final.json").read_text(encoding="utf-8"))
+    biography = json.loads(
+        (life_home / "mem" / "biography.final.json").read_text(encoding="utf-8")
+    )
     assert biography["periods"]
     assert biography["turning_points"]
     assert biography["regrets_and_pride"]["regrets"]
     assert biography["regrets_and_pride"]["pride"]
 
-    stop_signal = json.loads((life_home / "mem" / "orchestrator.stop.json").read_text(encoding="utf-8"))
+    stop_signal = json.loads(
+        (life_home / "mem" / "orchestrator.stop.json").read_text(encoding="utf-8")
+    )
     assert stop_signal["stop"] is True
 
-    updated_registry = json.loads((registry_dir / "registry.json").read_text(encoding="utf-8"))
+    updated_registry = json.loads(
+        (registry_dir / "registry.json").read_text(encoding="utf-8")
+    )
     assert updated_registry["lives"]["life-a"]["status"] == "extinct"
 
     assert terminal_events

@@ -32,7 +32,10 @@ def _has_expected_function(
     tree: ast.AST, expected_symbol: str
 ) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
     for node in getattr(tree, "body", []):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == expected_symbol:
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == expected_symbol
+        ):
             return node
     return None
 
@@ -67,7 +70,9 @@ def validate_generated_skill(
             False, f"missing expected skill symbol: {expected_symbol}"
         )
     if _function_returns_only_none(expected):
-        return SkillValidationResult(False, f"skill symbol {expected_symbol} only returns None")
+        return SkillValidationResult(
+            False, f"skill symbol {expected_symbol} only returns None"
+        )
 
     if not examples:
         try:
@@ -75,7 +80,9 @@ def validate_generated_skill(
                 f"{code}\nresult = {expected_symbol}()", timeout=timeout
             )
         except Exception as exc:
-            return SkillValidationResult(False, f"minimal sandbox validation failed: {exc}")
+            return SkillValidationResult(
+                False, f"minimal sandbox validation failed: {exc}"
+            )
         if observed is None:
             return SkillValidationResult(
                 False,
@@ -88,8 +95,12 @@ def validate_generated_skill(
         try:
             observed = sandbox.run(test, timeout=timeout)
         except Exception as exc:
-            return SkillValidationResult(False, f"example sandbox validation failed: {exc}")
+            return SkillValidationResult(
+                False, f"example sandbox validation failed: {exc}"
+            )
         if observed != output:
-            return SkillValidationResult(False, f"example mismatch: expected {output!r}, got {observed!r}")
+            return SkillValidationResult(
+                False, f"example mismatch: expected {output!r}, got {observed!r}"
+            )
 
     return SkillValidationResult(True)

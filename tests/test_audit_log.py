@@ -5,7 +5,9 @@ from pathlib import Path
 from singular.observability.audit_log import AuditLogStore, read_audit_events
 
 
-def test_audit_log_persists_correlated_records_and_redacts_sensitive_data(tmp_path: Path) -> None:
+def test_audit_log_persists_correlated_records_and_redacts_sensitive_data(
+    tmp_path: Path,
+) -> None:
     store = AuditLogStore(root=tmp_path)
 
     decision = store.log_decision(
@@ -40,4 +42,3 @@ def test_audit_log_persists_correlated_records_and_redacts_sensitive_data(tmp_pa
     assert len(events) == 3
     assert {event["category"] for event in events} == {"decision", "action", "result"}
     assert all(event["event_id"] == "evt-1" for event in events)
-

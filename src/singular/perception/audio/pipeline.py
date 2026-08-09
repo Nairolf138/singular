@@ -75,7 +75,9 @@ class AudioPerceptionPipeline:
                             "status": transcript.get("status", "ok"),
                             "runtime": transcript.get("runtime", runtime.__dict__),
                             "start": round(segment[0].started_at, 3),
-                            "end": round(segment[-1].started_at + segment[-1].duration_s, 3),
+                            "end": round(
+                                segment[-1].started_at + segment[-1].duration_s, 3
+                            ),
                         },
                     )
                 )

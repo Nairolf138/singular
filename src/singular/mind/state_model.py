@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 _MIN_STATE = 0.0
 _MAX_STATE = 1.0
 
@@ -101,10 +100,14 @@ class StateModel:
         self.humeur = self._lerp(self.humeur, self.humeur + (e.valence * scale))
 
         # Confiance suit surtout la valence (avec amortissement)
-        self.confiance = self._lerp(self.confiance, self.confiance + (e.valence * scale * 0.7))
+        self.confiance = self._lerp(
+            self.confiance, self.confiance + (e.valence * scale * 0.7)
+        )
 
         # Énergie varie avec delta explicite + coût de charge cognitive
-        energy_target = self.energie + (e.energy_delta * 0.25) - (e.cognitive_load * scale * 0.8)
+        energy_target = (
+            self.energie + (e.energy_delta * 0.25) - (e.cognitive_load * scale * 0.8)
+        )
         self.energie = self._lerp(self.energie, energy_target)
 
         # Charge cognitive augmente avec la demande, baisse lentement au repos
@@ -119,11 +122,15 @@ class StateModel:
 
         f = feedback.normalized()
         self.humeur = self._lerp(self.humeur, self.humeur + (f.sentiment * 0.20))
-        self.confiance = self._lerp(self.confiance, self.confiance + (f.trust_signal * 0.25))
+        self.confiance = self._lerp(
+            self.confiance, self.confiance + (f.trust_signal * 0.25)
+        )
 
         # Plus la réponse est claire, moins la charge perçue est élevée.
         clarity_relief = (f.clarity - 0.5) * 0.18
-        self.charge_cognitive = self._lerp(self.charge_cognitive, self.charge_cognitive - clarity_relief)
+        self.charge_cognitive = self._lerp(
+            self.charge_cognitive, self.charge_cognitive - clarity_relief
+        )
 
         # Une charge cognitive haute pèse sur l'énergie.
         fatigue = max(0.0, self.charge_cognitive - 0.65) * 0.10

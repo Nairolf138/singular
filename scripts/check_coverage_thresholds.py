@@ -15,7 +15,9 @@ class ThresholdError(ValueError):
 
 def parse_threshold(raw: str) -> tuple[str, float]:
     if "=" not in raw:
-        raise ThresholdError(f"Invalid --threshold '{raw}': expected '<file>=<percent>'.")
+        raise ThresholdError(
+            f"Invalid --threshold '{raw}': expected '<file>=<percent>'."
+        )
 
     file_path, raw_percent = raw.split("=", maxsplit=1)
     file_path = file_path.strip()
@@ -126,9 +128,7 @@ def main() -> int:
         )
 
         if actual_pct < min_pct:
-            failures.append(
-                f"- {target}: {actual_pct:.2f}% < required {min_pct:.2f}%"
-            )
+            failures.append(f"- {target}: {actual_pct:.2f}% < required {min_pct:.2f}%")
 
     if failures:
         print("\nCoverage threshold failures:", file=sys.stderr)

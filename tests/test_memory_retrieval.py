@@ -6,7 +6,11 @@ from singular.memory_layers import (
     MemoryRecord,
     MemoryRetrievalService,
 )
-from singular.organisms.talk import ContextBudget, ContextItem, _build_structured_context
+from singular.organisms.talk import (
+    ContextBudget,
+    ContextItem,
+    _build_structured_context,
+)
 
 
 def _write(path: Path, value: object) -> None:
@@ -90,8 +94,23 @@ def test_ranking_deduplication_and_life_isolation(tmp_path: Path) -> None:
 def test_prompt_memory_selection_exposes_provenance_and_prefers_active_life() -> None:
     result = _build_structured_context(
         [
-            ContextItem("recalled_memories", "Ada active", "episode:ada", relevance=.8, recency=.9, confidence=.9),
-            ContextItem("recalled_memories", "Eve inactive", "episode:eve", relevance=.8, recency=.9, confidence=.9, active_life=False),
+            ContextItem(
+                "recalled_memories",
+                "Ada active",
+                "episode:ada",
+                relevance=0.8,
+                recency=0.9,
+                confidence=0.9,
+            ),
+            ContextItem(
+                "recalled_memories",
+                "Eve inactive",
+                "episode:eve",
+                relevance=0.8,
+                recency=0.9,
+                confidence=0.9,
+                active_life=False,
+            ),
         ],
         ContextBudget(total=140, recalled_memories=70, safety=0),
     )

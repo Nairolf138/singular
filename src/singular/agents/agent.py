@@ -70,9 +70,11 @@ class Agent:
                 context.get("consequences", {}).get(act, ()),
                 context.get("affected_parties", ()),
                 context.get("identity_commitments", ()),
-                context.get("uncertainty", {}).get(act, 0.0)
-                if isinstance(context.get("uncertainty", 0.0), dict)
-                else context.get("uncertainty", 0.0),
+                (
+                    context.get("uncertainty", {}).get(act, 0.0)
+                    if isinstance(context.get("uncertainty", 0.0), dict)
+                    else context.get("uncertainty", 0.0)
+                ),
             )
             for act in actions
         }
@@ -90,7 +92,8 @@ class Agent:
         hypotheses = [
             ActionHypothesis(
                 action=action,
-                long_term=(value / max_value) + moral_decisions[action].scores["overall"],
+                long_term=(value / max_value)
+                + moral_decisions[action].scores["overall"],
                 sandbox_risk=max(0.0, -score_action(action, context)),
                 resource_cost=float(action_costs.get(action, 0.0)),
                 metadata={"raw_value": value},

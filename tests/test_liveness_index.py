@@ -2,15 +2,21 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from singular.dashboard.services.lives_comparison import aggregate_lives, compute_liveness_index
-
+from singular.dashboard.services.lives_comparison import (
+    aggregate_lives,
+    compute_liveness_index,
+)
 
 NOW = datetime(2026, 4, 15, 12, 0, 0, tzinfo=timezone.utc)
 
 
 def test_liveness_index_reaches_high_score_when_all_signals_present() -> None:
     records = [
-        {"ts": "2026-04-15T10:00:00+00:00", "event": "perception", "perception_summary": "host stable"},
+        {
+            "ts": "2026-04-15T10:00:00+00:00",
+            "event": "perception",
+            "perception_summary": "host stable",
+        },
         {
             "ts": "2026-04-15T10:02:00+00:00",
             "event": "consciousness",
@@ -19,7 +25,11 @@ def test_liveness_index_reaches_high_score_when_all_signals_present() -> None:
             "status": "in_progress",
             "progress": 0.3,
         },
-        {"ts": "2026-04-15T10:03:00+00:00", "event": "interaction", "interaction": {"with": "human"}},
+        {
+            "ts": "2026-04-15T10:03:00+00:00",
+            "event": "interaction",
+            "interaction": {"with": "human"},
+        },
         {
             "ts": "2026-04-15T10:05:00+00:00",
             "event": "mutation",
@@ -62,13 +72,26 @@ def test_liveness_index_avoids_false_positive_on_sparse_noise() -> None:
     assert payload["components"]["interactions"]["score"] == 0.0
     assert payload["components"]["validated_internal_modifications"]["score"] == 0.0
     assert "interactions" in payload["indices"]["liveness"]["missing_data"]
-    assert any("aucune interaction observée depuis 7 jours" in item for item in payload["recommendations"])
+    assert any(
+        "aucune interaction observée depuis 7 jours" in item
+        for item in payload["recommendations"]
+    )
 
 
 def test_liveness_index_partial_interaction_threshold() -> None:
     records = [
-        {"ts": "2026-04-15T10:00:00+00:00", "event": "interaction", "interaction": {"with": "human"}},
-        {"ts": "2026-04-15T10:02:00+00:00", "event": "mutation", "accepted": False, "score_base": 5, "score_new": 7},
+        {
+            "ts": "2026-04-15T10:00:00+00:00",
+            "event": "interaction",
+            "interaction": {"with": "human"},
+        },
+        {
+            "ts": "2026-04-15T10:02:00+00:00",
+            "event": "mutation",
+            "accepted": False,
+            "score_base": 5,
+            "score_new": 7,
+        },
     ]
 
     payload = compute_liveness_index(records, now=NOW)
@@ -113,7 +136,9 @@ def test_lives_comparison_exposes_liveness_fields() -> None:
         record_life=lambda rec: str(rec.get("life", "unknown")),
         record_run_id=lambda rec: str(rec.get("run_id", "unknown")),
         is_mutation_record=lambda rec: "score_base" in rec,
-        as_float=lambda value: float(value) if isinstance(value, (int, float)) else None,
+        as_float=lambda value: (
+            float(value) if isinstance(value, (int, float)) else None
+        ),
         alerts_from_records=lambda _: [],
         compute_vital_timeline=lambda **_: {"ok": True},
         registry_life_meta=lambda life_name, lives: (life_name, lives.get(life_name)),
@@ -124,7 +149,10 @@ def test_lives_comparison_exposes_liveness_fields() -> None:
     assert "recent_activity" in alpha["life_liveness_components"]
     assert isinstance(alpha["life_liveness_proofs"], list)
     assert len(alpha["life_liveness_proofs"]) <= 5
-    assert alpha["score_diagnostics"]["health"]["formula_version"] == "health-observation-v1.0"
+    assert (
+        alpha["score_diagnostics"]["health"]["formula_version"]
+        == "health-observation-v1.0"
+    )
     assert alpha["score_diagnostics"]["liveness"]["components"]
 
 
@@ -132,7 +160,11 @@ def test_autonomy_index_ignores_voluntary_budget_records() -> None:
     payload = compute_liveness_index(
         [
             {"ts": "2026-04-15T10:00:00+00:00", "event": "perception"},
-            {"ts": "2026-04-15T10:01:00+00:00", "event": "loop.budget_exhausted", "voluntary_budget": True},
+            {
+                "ts": "2026-04-15T10:01:00+00:00",
+                "event": "loop.budget_exhausted",
+                "voluntary_budget": True,
+            },
         ],
         now=NOW,
     )
@@ -144,7 +176,15 @@ def test_autonomy_index_ignores_voluntary_budget_records() -> None:
 
 def test_liveness_index_reports_mutation_viability_separately() -> None:
     payload = compute_liveness_index(
-        [{"ts": "2026-04-15T10:00:00+00:00", "event": "mutation", "accepted": True, "score_base": 5, "score_new": 4}],
+        [
+            {
+                "ts": "2026-04-15T10:00:00+00:00",
+                "event": "mutation",
+                "accepted": True,
+                "score_base": 5,
+                "score_new": 4,
+            }
+        ],
         now=NOW,
     )
 
@@ -153,12 +193,27 @@ def test_liveness_index_reports_mutation_viability_separately() -> None:
 
 
 def test_mutation_viability_distinguishes_durable_candidate() -> None:
-    payload = compute_liveness_index([
-        {"event": "mutation", "accepted": False, "useful": True,
-         "durably_viable": False, "score_base": 10, "score_new": 5},
-        {"event": "mutation", "accepted": True, "useful": True,
-         "durably_viable": True, "score_base": 10, "score_new": 8},
-    ], now=NOW)
+    payload = compute_liveness_index(
+        [
+            {
+                "event": "mutation",
+                "accepted": False,
+                "useful": True,
+                "durably_viable": False,
+                "score_base": 10,
+                "score_new": 5,
+            },
+            {
+                "event": "mutation",
+                "accepted": True,
+                "useful": True,
+                "durably_viable": True,
+                "score_base": 10,
+                "score_new": 8,
+            },
+        ],
+        now=NOW,
+    )
     assert payload["mutation_viability"]["accepted_count"] == 1
     assert payload["mutation_viability"]["accepted_useful_changes"] == 1
     assert payload["mutation_viability"]["durably_viable_count"] == 1

@@ -1,6 +1,11 @@
 """Audio perception stack with VAD, segmentation and local Whisper STT."""
 
-from .capture import AudioBlock, AudioBlockProvider, AudioCaptureError, MicrophoneCapture
+from .capture import (
+    AudioBlock,
+    AudioBlockProvider,
+    AudioCaptureError,
+    MicrophoneCapture,
+)
 from .pipeline import AudioPerceptionPipeline
 from .transcribe import WhisperRuntime, WhisperTranscriber
 from .vad import EnergyVAD, SegmentBuffer

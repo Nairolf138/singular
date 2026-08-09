@@ -57,7 +57,9 @@ class KeyObjectExtractor:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         edges = cv2.Canny(blurred, 80, 160)
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         boxes: list[dict[str, int]] = []
         for contour in contours:
@@ -65,7 +67,9 @@ class KeyObjectExtractor:
             if area < self.min_area:
                 continue
             x, y, w, h = cv2.boundingRect(contour)
-            boxes.append({"x": int(x), "y": int(y), "w": int(w), "h": int(h), "area": area})
+            boxes.append(
+                {"x": int(x), "y": int(y), "w": int(w), "h": int(h), "area": area}
+            )
 
         boxes = sorted(boxes, key=lambda item: item["area"], reverse=True)[:5]
         return {
@@ -83,7 +87,9 @@ class UIStateChangeExtractor:
     _previous_hash: str | None = field(default=None, init=False, repr=False)
 
     def extract(self, frame: Any) -> dict[str, Any]:
-        payload = frame.tobytes() if hasattr(frame, "tobytes") else bytes(str(frame), "utf-8")
+        payload = (
+            frame.tobytes() if hasattr(frame, "tobytes") else bytes(str(frame), "utf-8")
+        )
         fingerprint = sha1(payload).hexdigest()[:16]
 
         if self._previous_hash is None:

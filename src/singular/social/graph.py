@@ -40,7 +40,9 @@ class SocialGraph:
 
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or (get_mem_dir() / "social_graph.json")
-        self.theory_of_mind = TheoryOfMindStore(self.path.with_name("theory_of_mind.json"))
+        self.theory_of_mind = TheoryOfMindStore(
+            self.path.with_name("theory_of_mind.json")
+        )
         self._relations: dict[str, PairRelation] = {}
         self._load()
 
@@ -115,7 +117,9 @@ class SocialGraph:
         self._save()
         return relation.to_dict()
 
-    def observe_mental_state(self, individual_id: str, event: str, **details: object) -> dict[str, object]:
+    def observe_mental_state(
+        self, individual_id: str, event: str, **details: object
+    ) -> dict[str, object]:
         """Update a peer hypothesis without changing the affective relation."""
 
         return self.theory_of_mind.observe(individual_id, event, **details)  # type: ignore[arg-type]

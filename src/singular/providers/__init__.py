@@ -236,9 +236,9 @@ def describe_client(
         # A backend only becomes active after generate_reply succeeds.
         "active_provider": getattr(client, "last_active_provider", None),
         "fallback_used": getattr(client, "last_fallback_used", False),
-        "health_state": getattr(client, "health_state", "unknown")
-        if client
-        else "unavailable",
+        "health_state": (
+            getattr(client, "health_state", "unknown") if client else "unavailable"
+        ),
         "candidates": getattr(client, "candidates", []) if client else [],
         "provider_chain": chain,
         "llm_real": has_real,
@@ -528,9 +528,9 @@ def load_llm_client(name: str | None) -> LLMProviderClient | None:
                 "configured": not misconfigured,
                 "reachable": ok,
                 "degraded": degraded,
-                "health_state": "degraded"
-                if degraded
-                else ("ready" if ok else "unavailable"),
+                "health_state": (
+                    "degraded" if degraded else ("ready" if ok else "unavailable")
+                ),
                 "exclusion_cause": None if ok else error,
             }
         )
@@ -566,9 +566,11 @@ def load_llm_client(name: str | None) -> LLMProviderClient | None:
         chain=clients,
         requested_provider=name,
         selected_provider=clients[0].name,
-        health_state="degraded"
-        if all(not provider_is_real(c.name) for c in clients)
-        else "ready",
+        health_state=(
+            "degraded"
+            if all(not provider_is_real(c.name) for c in clients)
+            else "ready"
+        ),
         candidates=candidates,
     )
 

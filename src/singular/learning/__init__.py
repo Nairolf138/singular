@@ -43,4 +43,9 @@ from .developmental import (
     MaturityEvidence,
 )
 
-__all__ = ["DevelopmentalModel", "DevelopmentalStage", "GateDecision", "MaturityEvidence"]
+__all__ = [
+    "DevelopmentalModel",
+    "DevelopmentalStage",
+    "GateDecision",
+    "MaturityEvidence",
+]

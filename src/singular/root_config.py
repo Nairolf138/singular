@@ -7,7 +7,6 @@ import os
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
-
 _CONFIG_DIRNAME = ".singular"
 _CONFIG_FILENAME = "config.json"
 _REGISTRY_ROOT_KEY = "registry_root"

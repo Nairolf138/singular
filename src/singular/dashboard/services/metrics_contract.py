@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 LIFE_METRIC_FIELDS = (
     "selected_life",
     "registry_status",
@@ -56,22 +55,28 @@ def normalize_life_metrics(
         # Do not infer life_status from registry_status or viability_status.
         row["life_status"] = row.get("life_status")
         timestamp = row.get("last_activity")
-        if isinstance(timestamp, str) and (latest_timestamp is None or timestamp > latest_timestamp):
+        if isinstance(timestamp, str) and (
+            latest_timestamp is None or timestamp > latest_timestamp
+        ):
             latest_timestamp, latest_life_id = timestamp, life_id
         if row.get("registry_run_status_inconsistency"):
-            inconsistencies.append({
-                "life_id": life_id,
-                "kind": "registry_vital_status_conflict",
-                "registry_status": row.get("registry_status"),
-                "life_status": row.get("life_status"),
-            })
+            inconsistencies.append(
+                {
+                    "life_id": life_id,
+                    "kind": "registry_vital_status_conflict",
+                    "registry_status": row.get("registry_status"),
+                    "life_status": row.get("life_status"),
+                }
+            )
         normalized[life_id] = row
     identities = {
         "selected_life_id": selected_life_id,
         "registry_active_life_id": registry_active_life_id,
         "latest_event_life_id": latest_life_id,
         "latest_event_at": latest_timestamp,
-        "latest_event_life_status": normalized.get(latest_life_id, {}).get("life_status"),
+        "latest_event_life_status": normalized.get(latest_life_id, {}).get(
+            "life_status"
+        ),
         "inconsistencies": inconsistencies,
     }
     return normalized, identities

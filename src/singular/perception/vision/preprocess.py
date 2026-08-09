@@ -63,7 +63,9 @@ class FramePreprocessor:
     def frame_fingerprint(self, frame: Any) -> str:
         """Compute a compact stable frame fingerprint."""
 
-        payload = frame.tobytes() if hasattr(frame, "tobytes") else bytes(str(frame), "utf-8")
+        payload = (
+            frame.tobytes() if hasattr(frame, "tobytes") else bytes(str(frame), "utf-8")
+        )
         return sha1(payload).hexdigest()[:16]
 
     def _apply_roi(self, frame: Any) -> Any:
