@@ -23,6 +23,7 @@ from singular.events import (
 from singular.goals import IntrinsicGoals
 from singular.cognition.self_observation import SelfObservationService
 from singular.identity import ConsolidationCoordinator, ConsolidationPipeline
+from singular.identity.synchronization import IdentitySynchronizationService
 from singular.governance.policy import MutationGovernancePolicy
 from singular.life.coevolution_flow import LivingTestPool
 from singular.life.loop import WorldState, run_tick
@@ -146,6 +147,9 @@ class OrchestratorService:
         self.state = self._load_state()
         self.resource_manager = ResourceManager(path=self.resources_path)
         self.psyche = Psyche.load_state()
+        self.identity_sync = IdentitySynchronizationService(
+            self.mem_dir.parent, bus=self.bus
+        )
         self.quest_runtime = QuestRuntime(base_dir=self.base_dir, mem_dir=self.mem_dir)
         self.skill_runtime = SkillRuntime(
             skills_dir=self.skills_dir,
@@ -197,6 +201,16 @@ class OrchestratorService:
             }
         )
         self._pending_events = self._pending_events[-50:]
+        if event.event_type in {"mutation.applied", "mutation.rejected"}:
+            self.identity_sync.apply_event(
+                {
+                    "event_id": event.payload.get("event_id")
+                    or f"{event.event_type}:{event.emitted_at}",
+                    "source": f"event_bus:{event.event_type}",
+                    "type": "mutation",
+                },
+                psyche=self.psyche,
+            )
 
     def _load_state(self) -> OrchestratorState:
         if not self.state_path.exists():
@@ -719,7 +733,14 @@ class OrchestratorService:
                 self._push_event(phase, {"skipped": True, "reason": "frequency_gate"})
                 return
             mood = self.psyche.update_from_resource_manager(self.resource_manager)
-            self.psyche.save_state()
+            self.identity_sync.apply_event(
+                {
+                    "event_id": f"introspection:{self._tick_count}:{self._introspection_tick_count}",
+                    "source": "orchestrator.introspection",
+                },
+                psyche=self.psyche,
+                publish=False,
+            )
             narrative_update = self._refresh_self_narrative()
             metacognitive_model = self.self_observation.observe_episodes(
                 read_episodes()

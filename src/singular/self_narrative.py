@@ -87,6 +87,12 @@ class SelfNarrative:
     objective_trends: dict[str, TraitTrend] = field(default_factory=dict)
     life_id: str = "default"
     entries: list[NarrativeEntry] = field(default_factory=list)
+    # Transaction revisions used to prove that psyche and projection agree.
+    psyche_version: int = 0
+    narrative_version: int = 0
+    last_event_id: str | None = None
+    last_source: str | None = None
+    last_deltas: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -271,7 +277,9 @@ def infer_trend(
     return (
         "up"
         if projected_delta >= minimum_delta
-        else "down" if projected_delta <= -minimum_delta else "stable"
+        else "down"
+        if projected_delta <= -minimum_delta
+        else "stable"
     )
 
 
@@ -416,6 +424,19 @@ def _materialize(payload: Mapping[str, Any]) -> SelfNarrative:
         },
         life_id=str(payload.get("life_id", "default")),
         entries=entries,
+        psyche_version=max(0, int(payload.get("psyche_version", 0) or 0)),
+        narrative_version=max(0, int(payload.get("narrative_version", 0) or 0)),
+        last_event_id=(
+            str(payload["last_event_id"]) if payload.get("last_event_id") else None
+        ),
+        last_source=(
+            str(payload["last_source"]) if payload.get("last_source") else None
+        ),
+        last_deltas=(
+            dict(payload.get("last_deltas", {}))
+            if isinstance(payload.get("last_deltas"), Mapping)
+            else {}
+        ),
     )
     narrative.identity.logical_age = _compute_logical_age(narrative.identity.born_at)
     return narrative
