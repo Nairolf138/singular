@@ -68,6 +68,30 @@ singular report --format plain
 singular dashboard
 ```
 
+### Préparer Ollama explicitement
+
+La conversation ne télécharge jamais de modèle implicitement. Avant d'utiliser
+Ollama, lancez l'assistant dédié; il vérifie le service, affiche les modèles,
+demande confirmation avant le téléchargement et valide une génération courte :
+
+```bash
+ollama serve
+singular config providers setup ollama
+```
+
+Le modèle est résolu depuis `OLLAMA_MODEL`, puis utilise le défaut unique du
+provider (`llama3.2`). En CI, aucune question n'est posée et le téléchargement
+doit être autorisé explicitement :
+
+```bash
+singular config providers setup ollama --non-interactive --pull --model llama3.2
+```
+
+Les échecs distinguent `service_stopped`, `command_missing`, `model_missing`,
+`download_incomplete`, `timeout` et `invalid_generation`; chaque diagnostic
+affiche une commande de remédiation. Sans `--pull`, même l'action de setup reste
+un contrôle sans téléchargement.
+
 ## 📚 Tutoriels et gouvernance
 
 Index complet par type de document : [`docs/README.md`](docs/README.md).
