@@ -215,8 +215,8 @@ def talk(
     provider_status = describe_client(client, requested_provider)
     if client is None:
         print(
-            f"Provider active: {provider_status['active_provider']} | "
-            "llm_real=false | fallback=true"
+            "Provider actif: aucun (aucune génération réussie) | "
+            "llm_real=false | fallback=true | health_state=unavailable"
         )
         if requested_provider:
             print(
@@ -229,9 +229,9 @@ def talk(
 
     psyche = Psyche.load_state(psyche_file)
 
-    def gather_context() -> (
-        tuple[str | None, dict | None, dict | None, str | None, str | None]
-    ):
+    def gather_context() -> tuple[
+        str | None, dict | None, dict | None, str | None, str | None
+    ]:
         signals = capture_signals()
         add_episode({"event": "perception", **signals}, path=episodic_file)
         psyche.consume()
@@ -351,13 +351,13 @@ def talk(
         start = time.perf_counter()
         fallback_used = client is None
         error_category: str | None = "provider_missing" if client is None else None
-        active_provider = str(provider_status["active_provider"])
+        active_provider: str | None = None
         llm_real = bool(provider_status["llm_real"]) and not fallback_used
         provider_state = "unavailable" if client is None else "ready"
 
         if client is None:
             print(
-                f"LLM status: active={active_provider} fallback=true "
+                "LLM status: active=none fallback=true mode=dummy "
                 f"error_category={error_category} llm_real=false"
             )
             reply = _default_reply(user_input, rng)
@@ -371,7 +371,7 @@ def talk(
                 provider_state = "unavailable"
                 print(_user_message_for_error(provider_selection, err))
                 print(
-                    f"LLM status: active={active_provider} fallback=true "
+                    "LLM status: active=none fallback=true mode=dummy "
                     f"error_category={error_category} llm_real=false"
                 )
                 reply = _default_reply(user_input, rng)
@@ -409,9 +409,10 @@ def talk(
                         )
                 print(
                     f"LLM status: active={active_provider} "
-                    f"fallback={str(fallback_used).lower()} "
+                    f"fallback={str(fallback_used).lower()} winner={active_provider} "
                     f"error_category={error_category or 'none'} "
-                    f"llm_real={str(llm_real).lower()}"
+                    f"llm_real={str(llm_real).lower()} "
+                    f"mode={'llm' if llm_real else 'dummy'}"
                 )
 
         latency_ms = (time.perf_counter() - start) * 1000
@@ -448,8 +449,12 @@ def talk(
                 "raw_reply": reply,
                 "mood": mood.value,
                 "llm_real": llm_real,
+                "requested_provider": requested_provider,
+                "selected_provider": provider_status["selected_provider"],
                 "active_provider": active_provider,
                 "fallback_used": fallback_used,
+                "health_state": provider_status["health_state"],
+                "provider_candidates": provider_status["candidates"],
                 "error_category": error_category,
                 "provider_state": provider_state,
                 "structured_signals": user_signals,
@@ -488,8 +493,12 @@ def talk(
                     "provider_selection": (
                         "explicit" if requested_provider else "automatic"
                     ),
+                    "requested_provider": requested_provider,
+                    "selected_provider": provider_status["selected_provider"],
                     "active_provider": active_provider,
                     "fallback_used": fallback_used,
+                    "health_state": provider_status["health_state"],
+                    "provider_candidates": provider_status["candidates"],
                     "error_category": error_category,
                     "llm_real": llm_real,
                     "provider_state": provider_state,

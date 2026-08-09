@@ -108,3 +108,20 @@ def test_doctor_reports_missing_openai_key_and_ollama_timeout(monkeypatch):
         "unavailable",
         "Ollama request timed out",
     )
+
+
+def test_doctor_distinguishes_missing_ollama_model(monkeypatch):
+    contract = LLMProviderContract(
+        name="ollama",
+        generate=lambda prompt: prompt,
+        embed=lambda text: [],
+        healthcheck=lambda: {"ok": False, "error": "model llama3 not found"},
+        cost_estimate=lambda prompt, completion="": 0.0,
+    )
+    monkeypatch.setattr(providers, "_load_provider_contract", lambda _name: contract)
+
+    result = doctor_providers(["ollama"])[0]
+
+    assert result["installed"] is True
+    assert result["configured"] is False
+    assert result["reachable"] is False
