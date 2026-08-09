@@ -7,7 +7,7 @@ but can never grant an action rejected by governance or human approval policy.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path

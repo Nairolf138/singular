@@ -898,9 +898,6 @@ def compute_life_status(
     first_seen = _first_timestamp(period_dates)
     current_time = now or datetime.now(UTC)
     age_days = (current_time - first_seen).days if first_seen else 0
-    narrative_has_content = bool(
-        narrative.get("current_heading") or _list_count(narrative.get("life_periods"))
-    )
     narrative_continuity_signal = _extract_narrative_continuity_signal(
         narrative_with_registry_identity,
         cfg.thresholds.minimum_narrative_trajectory_days,

@@ -27,7 +27,9 @@ def _safe_path(raw: str) -> Path:
 def default_registry_root() -> Path:
     """Return the documented fallback registry root."""
 
-    home = _HOST_PATH_CLS.home()
+    # Go through ``Path`` rather than the cached concrete path class so callers
+    # can override the user home (notably embedders and isolated CLI tests).
+    home = Path.home()
     return home / _CONFIG_DIRNAME
 
 
@@ -43,7 +45,7 @@ def project_config_path(cwd: Path | None = None) -> Path:
     if cwd is not None:
         base = cwd
     else:
-        base = _HOST_PATH_CLS.cwd()
+        base = Path.cwd()
     return base / _CONFIG_DIRNAME / _CONFIG_FILENAME
 
 

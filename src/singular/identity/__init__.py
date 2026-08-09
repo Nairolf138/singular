@@ -63,6 +63,7 @@ __all__ = [
     "CoherenceDecision",
     "ConsolidationPipeline",
     "ConsolidationPolicy",
+    "ConsolidationCoordinator",
     "IdentityCoherenceGuard",
     "IdentityChangeDecision",
     "IdentityChangePolicy",

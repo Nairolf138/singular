@@ -11,7 +11,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from singular.benchmarks import BenchmarkRegressionError, run_benchmarks
+from singular.benchmarks import BenchmarkRegressionError, run_benchmarks  # noqa: E402
 
 
 def main() -> int:

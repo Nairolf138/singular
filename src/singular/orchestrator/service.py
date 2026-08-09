@@ -638,6 +638,7 @@ class OrchestratorService:
             candidates,
             context=context,
             recent_successes=successes,
+            recent_failures=failures,
             max_active=max(0, int(self.config.max_active_generated_quests)),
             restrict_costly=terminal or degraded or circuit_open,
         )
