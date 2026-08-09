@@ -452,6 +452,13 @@ class OrchestratorService:
             for ep in recent_episodes
             if ep.get("status") == "failure"
         ]
+        embodied_actions = [
+            dict(ep)
+            for ep in recent_episodes
+            if ep.get("event") == "embodiment.action.result"
+            and ep.get("embodied_outcome")
+            and not ep.get("dry_run")
+        ]
 
         quest_changes = self._refresh_generated_quests(
             psyche_state=psyche_state,
@@ -535,6 +542,7 @@ class OrchestratorService:
                         str(event.get("phase")) for event in last_events[-3:]
                     ],
                 },
+                "embodied_actions": embodied_actions,
             },
             self.mem_dir / "self_narrative.json",
             clock=self.clock,

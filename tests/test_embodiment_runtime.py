@@ -10,6 +10,13 @@ from singular.embodiment import (
     ErrorCode,
     ScriptedSensor,
 )
+from singular.core.agent_runtime import AgentRuntime, Intent
+from singular.identity.consolidation_coordinator import ConsolidationCoordinator
+from singular.memory_layers import (
+    EmbodimentOutcomePipeline,
+    LocalJsonMemoryBackend,
+    MemoryLayerService,
+)
 
 
 def test_multiple_sensors_effectors_and_measured_feedback() -> None:
@@ -115,3 +122,79 @@ def test_cli_runs_simulated_configuration_and_writes_audit(tmp_path, capsys) -> 
     ]
     assert records[-1]["event"] == "embodiment.closed"
     assert records[-1]["state"]["closed"] is True
+
+
+def test_embodied_outcome_is_consolidated_narrated_and_influences_next_decision(
+    tmp_path,
+) -> None:
+    class Perception:
+        def collect(self):
+            from singular.embodiment import Observation
+
+            return [Observation("range", {"distance": 1}, "range-sensor")]
+
+    class Mind:
+        contexts = []
+
+        def propose_intent(self, percept):
+            context = percept.payload.get("embodied_memory_context")
+            self.contexts.append(context)
+            goal = "avoid-obstacle" if context else "approach-obstacle"
+            return Intent(goal=goal, rationale="measured feedback", confidence=0.9)
+
+        def propose_action(self, intent, percept):
+            return Command(
+                "motor.stop" if intent.goal == "avoid-obstacle" else "motor.move",
+                {"distance": percept.payload["distance"]},
+                intent_goal=intent.goal,
+            )
+
+    class Action:
+        def execute(self, request):
+            from singular.embodiment import Acknowledgement
+
+            return Acknowledgement(
+                request.action_type,
+                True,
+                "obstacle reached",
+                command_id=request.command_id,
+                actual={"executed": True, "distance": 1},
+            )
+
+    mem = tmp_path / "mem"
+    memory = MemoryLayerService(LocalJsonMemoryBackend(mem / "layers"))
+    pipeline = EmbodimentOutcomePipeline(
+        memory, ConsolidationCoordinator(mem), mem / "self_narrative.json"
+    )
+    mind = Mind()
+    runtime = AgentRuntime(
+        perception=Perception(), mind=mind, action=Action(), outcome_pipeline=pipeline
+    )
+
+    first = runtime.step()[0]
+    second = runtime.step()[0]
+
+    assert first.action_type == "motor.move" and first.success
+    assert second.action_type == "motor.stop" and second.success
+    assert mind.contexts[0] is None
+    assert mind.contexts[1]["provenance"][0].startswith("causal:")
+    trace_id = mind.contexts[1]["outcomes"][0]["trace_id"]
+    assert trace_id
+    narrative = json.loads((mem / "self_narrative.json").read_text())
+    assert any(
+        "motor.move" in item
+        for item in narrative["regrets_and_pride"]["significant_successes"]
+    )
+    audit = json.loads((mem / "consolidation_audit.json").read_text())
+    assert any(trace_id in row["provenance"] for row in audit.values())
+
+
+def test_dry_run_trace_is_not_learned_as_executed_outcome(tmp_path) -> None:
+    memory = MemoryLayerService(LocalJsonMemoryBackend(tmp_path / "layers"))
+    pipeline = EmbodimentOutcomePipeline(
+        memory, ConsolidationCoordinator(tmp_path), tmp_path / "self_narrative.json"
+    )
+
+    assert pipeline.consume({"trace_id": "simulation", "dry_run": True}) is None
+    assert memory.embodied_outcomes() == []
+    assert not (tmp_path / "self_narrative.json").exists()

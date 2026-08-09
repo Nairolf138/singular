@@ -941,6 +941,29 @@ def update_from_signals(
             regrets_signals.get("costly_incidents"),
         )
 
+    # Embodied evidence is classified here rather than at each caller so a
+    # refusal or an expensive success is narrated consistently. Simulations are
+    # audit evidence only and must never become lived autobiographical evidence.
+    embodied_actions = signals.get("embodied_actions")
+    if isinstance(embodied_actions, list):
+        for action in embodied_actions:
+            if not isinstance(action, Mapping) or action.get("dry_run"):
+                continue
+            summary = str(action.get("summary") or "").strip()
+            if not summary:
+                continue
+            status = str(action.get("outcome_status") or "")
+            if status == "success":
+                _extend_unique(
+                    narrative.regrets_and_pride.significant_successes, [summary]
+                )
+            elif status == "refused":
+                _extend_unique(
+                    narrative.regrets_and_pride.significant_failures, [summary]
+                )
+            if action.get("costly"):
+                _extend_unique(narrative.regrets_and_pride.costly_incidents, [summary])
+
     save(
         narrative,
         path,

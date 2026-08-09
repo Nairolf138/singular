@@ -65,12 +65,12 @@ class ConsolidationCoordinator:
     def _stage_items(stage: str, episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
         keys = {
             "semantic_memory": ("user_fact", "preference", "constraint", "fact"),
-            "autobiographical_memory": ("user_fact", "autobiographical_fact", "achievement", "failure"),
+            "autobiographical_memory": ("user_fact", "autobiographical_fact", "achievement", "failure", "embodied_outcome"),
             "metacognitive_self_model": ("strategy", "error", "bias", "failure_condition"),
             "models_of_others": ("individual_id", "other_id", "person"),
-            "probabilistic_beliefs": ("belief", "hypothesis", "success", "reward"),
+            "probabilistic_beliefs": ("belief", "hypothesis", "success", "reward", "embodied_outcome"),
             "imitation_learning": ("demonstration", "observations", "actions", "skill"),
-            "narrative_projection": ("narrative", "heading", "achievement", "failure"),
+            "narrative_projection": ("narrative", "heading", "achievement", "failure", "embodied_outcome"),
         }[stage]
         return [episode for episode in episodes if any(key in episode for key in keys)]
 
@@ -83,7 +83,7 @@ class ConsolidationCoordinator:
         counts["seen"] = len(items)
         now = _now()
         for episode in items:
-            provenance = str(episode.get("id") or episode.get("event_id") or _key(episode))
+            provenance = str(episode.get("trace_id") or episode.get("id") or episode.get("event_id") or _key(episode))
             content = next(
                 (episode[key] for key in (
                     "value", "user_fact", "autobiographical_fact", "preference",
@@ -91,7 +91,7 @@ class ConsolidationCoordinator:
                     "strategy", "error", "bias", "skill", "individual_id",
                     "other_id", "person",
                 ) if episode.get(key) is not None),
-                episode,
+                episode.get("summary", episode),
             )
             normalized = str(content).strip().casefold()
             item_id = _key([stage, normalized])
@@ -128,6 +128,9 @@ class ConsolidationCoordinator:
                     "obsolete": bool(episode.get("obsolete")),
                     "first_seen": str(episode.get("ts") or now),
                     "last_seen": str(episode.get("ts") or now), "contradicts": contradictions,
+                    "trace_id": episode.get("trace_id"), "objective": episode.get("objective"),
+                    "result": episode.get("result"), "confidence": episode.get("confidence"),
+                    "importance": episode.get("importance"),
                 }
                 counts["rejected"] += int(rejected)
         # Obsolete evidence can leave active memory, but critical records and the
