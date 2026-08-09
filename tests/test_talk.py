@@ -6,7 +6,13 @@ import pytest
 from singular.cli import main
 from singular.lives import load_registry
 from singular.memory import read_causal_timeline, read_episodes
-from singular.organisms.talk import _default_reply, talk
+from singular.organisms.talk import (
+    ContextBudget,
+    ContextItem,
+    _build_structured_context,
+    _default_reply,
+    talk,
+)
 from singular.providers import (
     LLMProviderContract,
     LLMProviderClient,
@@ -371,6 +377,41 @@ def test_talk_bounds_context_budget_and_logs_narrative_version(monkeypatch, tmp_
     assistant_episodes = [e for e in read_episodes() if e.get("role") == "assistant"]
     assert assistant_episodes
     assert assistant_episodes[-1]["context"]["self_narrative_version"] == 3
+
+
+@pytest.mark.parametrize("name", ["Ada", "Bob", "Eve"])
+def test_talk_prompt_keeps_each_life_identity(monkeypatch, tmp_path, name):
+    root = tmp_path / name.lower()
+    root.mkdir()
+    (root / "id.json").write_text(
+        '{"id":"life-' + name.lower() + '","name":"' + name + '"}', encoding="utf-8"
+    )
+    captured = {}
+    client = LLMProviderClient(
+        name="openai", generate=lambda prompt, timeout=8.0: captured.setdefault("prompt", prompt) and "ok"
+    )
+    monkeypatch.setattr("singular.organisms.talk.load_llm_client", lambda _name: client)
+    monkeypatch.setattr("builtins.print", lambda _msg: None)
+
+    talk(provider="openai", prompt="Qui es-tu ?", life_home=root)
+
+    assert name in captured["prompt"]
+    assert all(other not in captured["prompt"] for other in {"Ada", "Bob", "Eve"} - {name})
+
+
+def test_context_drops_whole_facts_but_never_safety_rule():
+    result = _build_structured_context(
+        [
+            ContextItem("identity", "fait critique indivisible", "identity:1", relevance=1),
+            ContextItem("traits", "x" * 500, "trait:oversized", relevance=1),
+            ContextItem("safety", "NE JAMAIS INVENTER", "policy:safety", critical=True),
+        ],
+        ContextBudget(total=180, identity=100, traits=100, safety=100),
+    )
+    assert "NE JAMAIS INVENTER" in result.text
+    assert "fait critique indivisible" in result.text
+    assert "trait:oversized" not in result.text
+    assert result.metrics["dropped_ids"] == ["trait:oversized"]
 
 
 def test_talk_subcommand_life_argument_has_priority(monkeypatch, tmp_path):

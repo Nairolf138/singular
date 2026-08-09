@@ -1,6 +1,7 @@
 import pytest
 
 import singular.providers as providers
+from singular.organisms.talk import ContextBudget
 from singular.providers import (
     FallbackLLMClient,
     LLMProviderContract,
@@ -117,3 +118,14 @@ def test_automatic_selection_excludes_unhealthy_ollama_and_uses_real_fallback(
     assert client.candidates[0]["installed"] is True
     assert client.candidates[0]["reachable"] is False
     assert client.candidates[0]["exclusion_cause"] == "Unable to connect to Ollama"
+
+
+def test_context_budget_is_provider_aware_stable_and_safely_capped(monkeypatch):
+    monkeypatch.delenv("SINGULAR_TALK_CONTEXT_CHARS", raising=False)
+    openai = providers.LLMProviderClient(name="openai", generate=lambda prompt: prompt)
+    ollama = providers.LLMProviderClient(name="ollama", generate=lambda prompt: prompt)
+    assert ContextBudget.for_client(openai) == ContextBudget.for_client(openai)
+    assert ContextBudget.for_client(ollama).total > ContextBudget.for_client(openai).total
+
+    monkeypatch.setenv("SINGULAR_TALK_CONTEXT_CHARS", "999999")
+    assert ContextBudget.for_client(ollama).total == 2000

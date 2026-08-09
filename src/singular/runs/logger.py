@@ -82,6 +82,7 @@ def log_provider_event(
     llm_real: bool,
     active_provider: str | None = None,
     life_root: Path | str | None = None,
+    context_metrics: Mapping[str, Any] | None = None,
 ) -> None:
     """Emit a structured provider log entry."""
 
@@ -94,6 +95,10 @@ def log_provider_event(
         "error_category": error_category,
         "llm_real": llm_real,
     }
+    if context_metrics is not None:
+        # Metrics contain only sizes, counts and opaque provenance identifiers;
+        # prompt text and memory excerpts must never enter provider telemetry.
+        payload["context_metrics"] = dict(context_metrics)
     _provider_logger.info("provider_call", extra={"payload": payload})
     try:
         root = Path(life_root) if life_root is not None else Path(os.environ.get("SINGULAR_HOME", "."))
