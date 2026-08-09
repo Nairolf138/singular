@@ -21,6 +21,7 @@ from ..memory import (
 from ..memory_layers import MemoryRetrievalService, build_backend
 from ..perception import capture_signals
 from ..psyche import Mood, Psyche
+from ..identity.synchronization import IdentitySynchronizationService
 from ..self_narrative import load as load_self_narrative, summarize_short
 from ..providers import (
     FallbackLLMClient,
@@ -194,6 +195,7 @@ def talk(
     psyche_file = mem_dir / "psyche.json"
     narrative_file = mem_dir / "self_narrative.json"
     ensure_memory_structure(mem_dir)
+    identity_sync = IdentitySynchronizationService(life_root)
 
     # Human dialogue is eligible for teaching only through a separate,
     # structured and explicitly consented demonstration payload.
@@ -523,7 +525,15 @@ def talk(
             path=causal_file,
         )
         psyche.gain()
-        psyche.save_state(psyche_file)
+        identity_sync.apply_event(
+            {
+                "event_id": f"conversation-{uuid4()}",
+                "source": "organisms.talk",
+                "type": "conversation",
+                "summary": "Interaction utilisateur traitée",
+            },
+            psyche=psyche,
+        )
         return response
 
     if prompt is not None:

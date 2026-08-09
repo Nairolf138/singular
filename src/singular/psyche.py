@@ -78,7 +78,9 @@ class PsycheActionDecision:
     scores: dict[str, float] = field(default_factory=dict)
 
 
-def _numeric_signal(signals: Mapping[str, Any], key: str, default: float = 0.0) -> float:
+def _numeric_signal(
+    signals: Mapping[str, Any], key: str, default: float = 0.0
+) -> float:
     """Return ``key`` from ``signals`` as a float, falling back on ``default``."""
     try:
         return float(signals.get(key, default))
@@ -86,7 +88,9 @@ def _numeric_signal(signals: Mapping[str, Any], key: str, default: float = 0.0) 
         return default
 
 
-def _social_loneliness_signal(social_states: Mapping[str, Mapping[str, float]]) -> float:
+def _social_loneliness_signal(
+    social_states: Mapping[str, Mapping[str, float]],
+) -> float:
     """Estimate social isolation from low loyalty/gratitude and high resentment."""
     if not social_states:
         return 0.5
@@ -97,7 +101,9 @@ def _social_loneliness_signal(social_states: Mapping[str, Mapping[str, float]]) 
         gratitude = _clamp(float(state.get("gratitude", 0.5)))
         loyalty = _clamp(float(state.get("loyalty", 0.5)))
         resentment = _clamp(float(state.get("resentment", 0.5)))
-        signals.append(_clamp(1.0 - ((gratitude + loyalty) / 2.0) + (resentment * 0.25)))
+        signals.append(
+            _clamp(1.0 - ((gratitude + loyalty) / 2.0) + (resentment * 0.25))
+        )
     if not signals:
         return 1.0
     return _clamp(sum(signals) / len(signals))
@@ -105,7 +111,11 @@ def _social_loneliness_signal(social_states: Mapping[str, Mapping[str, float]]) 
 
 def _objective_pressure(psyche: "Psyche") -> tuple[float, float, float]:
     """Return exploration, safety, and resource pressure from objectives."""
-    axes = getattr(psyche, "weighted_objective_axes", lambda: {"long_term": 0.33, "sandbox": 0.33, "resource": 0.34})()
+    axes = getattr(
+        psyche,
+        "weighted_objective_axes",
+        lambda: {"long_term": 0.33, "sandbox": 0.33, "resource": 0.34},
+    )()
     exploration = _clamp(float(axes.get("long_term", 0.33)))
     safety = _clamp(float(axes.get("sandbox", 0.33)))
     resources = _clamp(float(axes.get("resource", 0.34)))
@@ -155,7 +165,9 @@ def choose_action_from_psyche(
     competition = _clamp(_numeric_signal(signals, "competition_pressure", 0.0))
     opportunity = _clamp(_numeric_signal(signals, "opportunity", 0.5))
     fallback_action = signals.get("fallback_action")
-    exploration_pressure, safety_pressure, resource_pressure = _objective_pressure(psyche)
+    exploration_pressure, safety_pressure, resource_pressure = _objective_pressure(
+        psyche
+    )
     loneliness = max(
         _social_loneliness_signal(getattr(psyche, "social_states", {})),
         _clamp(_numeric_signal(signals, "social_isolation", 0.0)),
@@ -200,7 +212,9 @@ def choose_action_from_psyche(
         reason_parts.append("loneliness favors cooperation")
     if risk >= 0.75:
         add("avoid_threat", 2.0)
-        reason_parts.append(f"high environmental risk({risk:.2f}) favors avoiding threat")
+        reason_parts.append(
+            f"high environmental risk({risk:.2f}) favors avoiding threat"
+        )
     if rarity >= 0.70 and effective_energy >= 35.0:
         add("forage", 1.3)
         reason_parts.append(f"scarcity({rarity:.2f}) favors foraging")
@@ -210,7 +224,9 @@ def choose_action_from_psyche(
         reason_parts.append(
             "balanced objective/environment scoring selected the highest-scoring action"
         )
-    reason = "; ".join(reason_parts) + f"; selected={action}; score={scores[action]:.3f}"
+    reason = (
+        "; ".join(reason_parts) + f"; selected={action}; score={scores[action]:.3f}"
+    )
     return PsycheActionDecision(action=action, reason=reason, scores=scores)
 
 
@@ -241,6 +257,9 @@ class Psyche:
         }
     )
     identity_wounds: float = 0.0
+    # Monotonic identity revision (distinct from the JSON schema version).
+    psyche_version: int = 0
+    last_identity_event_id: str | None = None
 
     # ``last_mood`` is updated every time :meth:`feel` is called and can be
     # queried by other subsystems (interaction and mutation policies).
@@ -472,7 +491,9 @@ class Psyche:
         self.social_states[target_life] = normalized
         return normalized
 
-    def apply_social_interaction(self, target_life: str, interaction: str) -> Dict[str, float]:
+    def apply_social_interaction(
+        self, target_life: str, interaction: str
+    ) -> Dict[str, float]:
         """Apply interaction-triggered social deltas for one target life."""
 
         state = self.social_state(target_life)
@@ -493,7 +514,9 @@ class Psyche:
         )
         return _clamp((0.6 * trait_base) + (0.4 * _clamp(0.5 + social_signal)))
 
-    def reproduction_arbitration_score(self, base_score: float, target_life: str) -> float:
+    def reproduction_arbitration_score(
+        self, base_score: float, target_life: str
+    ) -> float:
         """Modulate reproduction arbitration score using social emotions."""
 
         state = self.social_state(target_life)
@@ -736,6 +759,8 @@ class Psyche:
             },
             "identity_commitments": self.identity_commitments,
             "identity_wounds": float(self.identity_wounds),
+            "psyche_version": self.psyche_version,
+            "last_identity_event_id": self.last_identity_event_id,
         }
         if self.objectives:
             state["objectives"] = {
@@ -808,18 +833,33 @@ class Psyche:
             },
             social_states={
                 str(target): {
-                    key: _clamp(float(values.get(key, 0.5)))
-                    for key in cls._SOCIAL_KEYS
+                    key: _clamp(float(values.get(key, 0.5))) for key in cls._SOCIAL_KEYS
                 }
                 for target, values in social_payload.items()
                 if isinstance(values, dict)
             },
             mood_history=[str(entry) for entry in mood_history[-256:]],
             identity_commitments={
-                "values": [str(v) for v in data.get("identity_commitments", {}).get("values", ["coherence", "safety", "utility"])],
-                "red_lines": [str(v) for v in data.get("identity_commitments", {}).get("red_lines", ["harm_user", "silent_data_loss"])],
+                "values": [
+                    str(v)
+                    for v in data.get("identity_commitments", {}).get(
+                        "values", ["coherence", "safety", "utility"]
+                    )
+                ],
+                "red_lines": [
+                    str(v)
+                    for v in data.get("identity_commitments", {}).get(
+                        "red_lines", ["harm_user", "silent_data_loss"]
+                    )
+                ],
             },
             identity_wounds=_clamp(float(data.get("identity_wounds", 0.0))),
+            psyche_version=max(0, int(data.get("psyche_version", 0) or 0)),
+            last_identity_event_id=(
+                str(data["last_identity_event_id"])
+                if data.get("last_identity_event_id")
+                else None
+            ),
         )
         mood_val = data.get("last_mood")
         psyche.last_mood = Mood(mood_val) if mood_val else None
