@@ -6,6 +6,7 @@ from singular.memory_layers import (
     MemoryRecord,
     MemoryRetrievalService,
 )
+from singular.organisms.talk import ContextBudget, ContextItem, _build_structured_context
 
 
 def _write(path: Path, value: object) -> None:
@@ -84,3 +85,16 @@ def test_ranking_deduplication_and_life_isolation(tmp_path: Path) -> None:
     assert results[0]["id"] == "a"
     assert sum("Alice aime le thé" in item["excerpt"] for item in results) == 1
     assert all("Bob" not in item["excerpt"] for item in results)
+
+
+def test_prompt_memory_selection_exposes_provenance_and_prefers_active_life() -> None:
+    result = _build_structured_context(
+        [
+            ContextItem("recalled_memories", "Ada active", "episode:ada", relevance=.8, recency=.9, confidence=.9),
+            ContextItem("recalled_memories", "Eve inactive", "episode:eve", relevance=.8, recency=.9, confidence=.9, active_life=False),
+        ],
+        ContextBudget(total=140, recalled_memories=70, safety=0),
+    )
+    assert "episode:ada" in result.text
+    assert result.metrics["retained_ids"] == ["episode:ada"]
+    assert result.metrics["dropped_ids"] == ["episode:eve"]

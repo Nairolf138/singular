@@ -6,7 +6,9 @@ import os
 import random
 import time
 import re
-from typing import Mapping, Any
+import json
+from dataclasses import dataclass, field
+from typing import Mapping, Any, Iterable
 from pathlib import Path
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -40,8 +42,114 @@ from ..providers import (
 from ..runs.logger import log_provider_event
 from ..learning.imitation import ImitationEngine
 
-_CONTEXT_BUDGET_CHARS = 420
 _UNKNOWN_GUARD = 'Garde anti-hallucination: si une information demandée est inconnue, réponds explicitement "inconnu".'
+
+
+@dataclass(frozen=True)
+class ContextBudget:
+    """Deterministic, character-based prompt budget with per-section limits."""
+
+    total: int = 420
+    identity: int = 220
+    traits: int = 100
+    values: int = 100
+    objectives: int = 100
+    relations: int = 100
+    recent_events: int = 100
+    recalled_memories: int = 120
+    safety: int = 160
+
+    @classmethod
+    def for_client(cls, client: object | None) -> "ContextBudget":
+        provider = str(getattr(client, "name", "") or "").lower()
+        model = str(getattr(client, "model", "") or "").lower()
+        # Conservative defaults are intentionally stable.  Larger local context
+        # windows may opt into more context, but never beyond the hard ceiling.
+        total = {"ollama": 900, "local": 700}.get(provider, 420)
+        if any(marker in model for marker in ("32k", "128k", "200k")):
+            total = 1200
+        configured = os.getenv("SINGULAR_TALK_CONTEXT_CHARS")
+        if configured:
+            try:
+                total = int(configured)
+            except ValueError:
+                pass
+        total = max(len(_UNKNOWN_GUARD) + 20, min(total, 2000))
+        scale = total / 420
+        return cls(
+            total=total,
+            identity=round(220 * scale), traits=round(100 * scale),
+            values=round(100 * scale), objectives=round(100 * scale),
+            relations=round(100 * scale), recent_events=round(100 * scale),
+            recalled_memories=round(120 * scale), safety=round(160 * scale),
+        )
+
+
+@dataclass(frozen=True)
+class ContextItem:
+    section: str
+    text: str
+    provenance_id: str
+    relevance: float = 0.0
+    recency: float = 0.0
+    confidence: float = 1.0
+    active_life: bool = True
+    critical: bool = False
+
+    @property
+    def priority(self) -> tuple[float, float, float, int, str]:
+        return (self.relevance, self.recency, self.confidence, int(self.active_life), self.provenance_id)
+
+
+@dataclass
+class ContextBuildResult:
+    text: str
+    metrics: dict[str, Any] = field(default_factory=dict)
+
+
+_SECTION_LABELS = {
+    "identity": "Contexte identitaire", "traits": "Traits", "values": "Valeurs",
+    "objectives": "Objectifs", "relations": "Relations",
+    "recent_events": "Événements récents", "recalled_memories": "Souvenirs récupérés",
+    "safety": "Règle de sécurité",
+}
+
+
+def _build_structured_context(items: Iterable[ContextItem], budget: ContextBudget) -> ContextBuildResult:
+    """Select complete facts only; safety is pinned and no text is sliced."""
+    limits = {name: getattr(budget, name) for name in _SECTION_LABELS}
+    ordered = sorted(items, key=lambda item: item.priority, reverse=True)
+    safety = [item for item in ordered if item.section == "safety"]
+    others = [item for item in ordered if item.section != "safety"]
+    selected: list[ContextItem] = []
+    dropped: list[ContextItem] = []
+    section_sizes = {name: 0 for name in limits}
+    total = 0
+    # Safety rules are indivisible and retained before all autobiographical data.
+    for item in safety + others:
+        rendered = f"{_SECTION_LABELS[item.section]}: [{item.provenance_id}] {item.text}\n"
+        size = len(rendered)
+        fits = section_sizes[item.section] + size <= limits[item.section] and total + size <= budget.total
+        if fits or (item.critical and item.section == "safety"):
+            selected.append(item)
+            section_sizes[item.section] += size
+            total += size
+        else:
+            dropped.append(item)
+    text = "".join(
+        f"{_SECTION_LABELS[item.section]}: [{item.provenance_id}] {item.text}\n"
+        for item in selected
+    ).rstrip()
+    return ContextBuildResult(text, {
+        "budget_chars": budget.total,
+        "used_chars": len(text),
+        "estimated_tokens": (len(text) + 3) // 4,
+        "blocks": {name: {"chars": section_sizes[name], "estimated_tokens": (section_sizes[name] + 3) // 4} for name in limits},
+        # IDs and counts are auditable without copying potentially sensitive text.
+        "retained_ids": [item.provenance_id for item in selected],
+        "dropped_ids": [item.provenance_id for item in dropped],
+        "retained_count": len(selected), "dropped_count": len(dropped),
+    })
 
 
 def _default_reply(prompt: str, rng: random.Random) -> str:
@@ -154,25 +262,46 @@ def _trim_for_budget(text: str, budget: int) -> str:
     return f"{cleaned[: budget - 3]}..."
 
 
+def _load_context_profile(life_root: Path, narrative_summary: str) -> list[ContextItem]:
+    """Read stable profile sections without exposing their values to telemetry."""
+    items = [ContextItem("identity", narrative_summary, "self_narrative:summary", relevance=1.1)]
+    sources = ((life_root / "id.json", ("identity",)), (life_root / "mem" / "self_model.json", ("traits", "values", "objectives", "relations")))
+    aliases = {"identity": ("identity", "name", "id"), "traits": ("traits", "preferences"),
+               "values": ("values", "identity_commitments", "constraints"),
+               "objectives": ("objectives", "goals"), "relations": ("relations", "social")}
+    for path, sections in sources:
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            continue
+        if not isinstance(raw, Mapping):
+            continue
+        for section in sections:
+            payload = {key: raw[key] for key in aliases[section] if key in raw}
+            if not payload:
+                continue
+            text = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            items.append(ContextItem(section, text, f"{path.name}:{section}", relevance=1.0, confidence=1.0))
+    return items
+
+
 def _build_system_preamble(
     *,
     narrative_summary: str,
     last_event: str | None,
     mood_event: str | None,
     recalled_memory_summary: str | None = None,
+    budget: ContextBudget | None = None,
 ) -> str:
-    available_for_summary = max(0, _CONTEXT_BUDGET_CHARS - len(_UNKNOWN_GUARD) - 120)
-    summary = _trim_for_budget(narrative_summary, available_for_summary)
-    event_fragment = _trim_for_budget(last_event or "inconnu", 80)
-    mood_fragment = _trim_for_budget(mood_event or "inconnu", 40)
-    preamble = (
-        f"Contexte identitaire: {summary}\n"
-        f"Dernier événement utilisateur: {event_fragment}\n"
-        f"Humeur récente: {mood_fragment}\n"
-        f"Souvenirs pertinents: {_trim_for_budget(recalled_memory_summary or 'aucun souvenir pertinent', 120)}\n"
-        f"{_UNKNOWN_GUARD}"
-    )
-    return _trim_for_budget(preamble, _CONTEXT_BUDGET_CHARS)
+    """Compatibility wrapper for callers that only have the legacy inputs."""
+    items = [
+        ContextItem("identity", narrative_summary, "self_narrative:summary", relevance=1.1),
+        ContextItem("recent_events", last_event or "inconnu", "episode:last_user", recency=1.0),
+        ContextItem("recent_events", mood_event or "inconnu", "psyche:recent_mood", recency=0.9),
+        ContextItem("recalled_memories", recalled_memory_summary or "aucun souvenir pertinent", "memory:summary", relevance=0.8),
+        ContextItem("safety", _UNKNOWN_GUARD, "policy:anti_hallucination", relevance=1.0, critical=True),
+    ]
+    return _build_structured_context(items, budget or ContextBudget()).text
 
 
 def talk(
@@ -195,7 +324,7 @@ def talk(
     causal_file = mem_dir / "causal_timeline.jsonl"
     psyche_file = mem_dir / "psyche.json"
     narrative_file = mem_dir / "self_narrative.json"
-    life_id = canonical_life_id(life_root)
+    life_id = canonical_life_id(life_root.resolve())
     ensure_memory_structure(mem_dir)
     identity_sync = IdentitySynchronizationService(life_root)
 
@@ -346,12 +475,23 @@ def talk(
         )
         mood = psyche.feel(Mood.NEUTRAL)
         mood_report = mood_event or mood.value
-        system_preamble = _build_system_preamble(
-            narrative_summary=self_narrative_summary,
-            last_event=last_event,
-            mood_event=mood_event,
-            recalled_memory_summary=format_recalled_memories(recalled_memories),
-        )
+        context_items = _load_context_profile(life_root, self_narrative_summary)
+        context_items.extend([
+            ContextItem("recent_events", last_event or "inconnu", "episode:last_user", recency=1.0),
+            ContextItem("recent_events", mood_event or "inconnu", "psyche:recent_mood", recency=0.9),
+            ContextItem("safety", _UNKNOWN_GUARD, "policy:anti_hallucination", relevance=1.0, critical=True),
+        ])
+        for memory in recalled_memories:
+            provenance = f"{memory.get('source', 'memory')}:{memory.get('id', 'unknown')}"
+            context_items.append(ContextItem(
+                "recalled_memories", str(memory.get("excerpt", "")), provenance,
+                relevance=float(memory.get("score", 0.0) or 0.0),
+                recency=1.0 if memory.get("date") else 0.0,
+                confidence=float(memory.get("confidence", 0.0) or 0.0),
+                active_life=memory.get("life_id", life_id) == life_id,
+            ))
+        context_result = _build_structured_context(context_items, ContextBudget.for_client(client))
+        system_preamble = context_result.text
         provider_prompt = f"{system_preamble}\n\nUtilisateur: {user_input}"
 
         start = time.perf_counter()
@@ -430,6 +570,7 @@ def talk(
             llm_real=llm_real,
             active_provider=active_provider,
             life_root=life_root,
+            context_metrics=context_result.metrics,
         )
 
         parts = [reply]
@@ -472,6 +613,7 @@ def talk(
                     ),
                     "recalled_memories": recalled_memories,
                     "recalled_memory_summary": recall_summary,
+                    "metrics": context_result.metrics,
                 },
             },
             path=episodic_file,
@@ -512,6 +654,7 @@ def talk(
                     "mood": mood_report,
                     "recalled_memory_summary": recall_summary,
                     "recalled_memories": recalled_memories,
+                    "context_metrics": context_result.metrics,
                 },
                 "action": {
                     "kind": "assistant_reply",
