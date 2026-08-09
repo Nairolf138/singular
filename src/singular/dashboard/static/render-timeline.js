@@ -35,6 +35,20 @@ const showGovernanceBreakerDetail=(item)=>{
   diff.textContent='';
 };
 
+const addCorrelationLinks=(row,item,items,runId)=>{
+  if(!item.correlation_id){return;}
+  row.dataset.correlationId=item.correlation_id;
+  const mutation=items.find(candidate=>candidate.correlation_id===item.correlation_id&&candidate.event==='mutation');
+  const path=item.mutation_path||mutation?.mutation_path;
+  if(mutation){
+    const button=document.createElement('button');
+    button.type='button';button.className='timeline-link';button.textContent='Mutation déclenchante';
+    button.onclick=()=>showMutationDetail(runId,items.filter(entry=>entry.event==='mutation').indexOf(mutation));
+    row.appendChild(button);
+  }
+  if(path){const code=document.createElement('code');code.className='timeline-path';code.textContent=path;row.appendChild(code);}
+};
+
 export const loadTimeline=()=>fetchJson(withScope('/runs/latest')).then(meta=>{
   if(!meta.run){return {run_id:null,items:[]};}
   return fetchJson(`/api/runs/${meta.run}/timeline?page=1&page_size=120`);
@@ -58,6 +72,7 @@ export const loadTimeline=()=>fetchJson(withScope('/runs/latest')).then(meta=>{
       btn.onclick=()=>showGovernanceBreakerDetail(item);
     }
     row.appendChild(btn);
+    addCorrelationLinks(row,item,data.items||[],data.run_id);
     if(item.event==='mutation'&&data.run_id){
       const currentIndex=mutationIndex;
       mutationIndex+=1;

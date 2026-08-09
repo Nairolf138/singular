@@ -10,6 +10,7 @@ import json
 import logging
 import signal
 import time
+from uuid import uuid4
 from pathlib import Path
 from typing import Any, Callable
 
@@ -180,6 +181,7 @@ class OrchestratorService:
         self._host_thresholds = load_host_sensor_thresholds()
         self._started_at = datetime.now(timezone.utc)
         self._behavioral_metrics: dict[str, Any] = {}
+        self._correlation_id = uuid4().hex
 
         self._subscribe_external_stimuli()
 
@@ -534,6 +536,7 @@ class OrchestratorService:
         summary_long = summarize_long(narrative=narrative)
         payload = {
             "event_type": "self_narrative.updated",
+            "correlation_id": self._correlation_id,
             "tick": self._tick_count,
             "introspection_tick": self._introspection_tick_count,
             "episodes_loaded": len(recent_episodes),

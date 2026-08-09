@@ -10,6 +10,10 @@ const conversationState={
 };
 
 const FLOW_STYLES={
+  'sain':'summary-ok',
+  'mode dégradé':'summary-warning',
+  'bloqué':'summary-critical',
+  'données absentes':'summary-muted',
   'en écoute':'summary-ok',
   'en réflexion':'summary-warning',
   'indisponible':'summary-muted',
@@ -76,6 +80,10 @@ const setFlowState=(flow)=>{
 
 const inferFlow=(meta)=>{
   const chatStatus=String(meta?.chat_status||'').toLowerCase();
+  if(!chatStatus&&!meta?.status){return 'données absentes';}
+  if(chatStatus==='ok'){return 'sain';}
+  if(chatStatus.includes('fallback')||chatStatus.includes('degraded')){return 'mode dégradé';}
+  if(chatStatus.includes('blocked')||chatStatus.includes('breaker')){return 'bloqué';}
   if(STATUS_LABELS[chatStatus]){return STATUS_LABELS[chatStatus];}
   const status=String(meta?.status||'').toLowerCase();
   if(status.includes('archiv')){return 'archivée';}

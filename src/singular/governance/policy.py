@@ -10,6 +10,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Mapping
+from uuid import uuid4
 
 from .values import ValueWeights
 
@@ -760,6 +761,7 @@ def audit_circuit_transition(
     new_state: str,
     emergency: bool = False,
     evidence: Mapping[str, Any] | None = None,
+    correlation_id: str | None = None,
 ) -> None:
     """Append a mandatory, attributable state transition audit record."""
 
@@ -777,6 +779,7 @@ def audit_circuit_transition(
         "new_state": new_state,
         "emergency": emergency,
         "evidence": dict(evidence or {}),
+        "correlation_id": correlation_id or uuid4().hex,
     }
     with path.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -1077,13 +1080,18 @@ class MutationGovernancePolicy:
         severity: str | None = None,
         closure: Mapping[str, Any] | None = None,
         probe: Mapping[str, Any] | None = None,
+        correlation_id: str | None = None,
     ) -> None:
         if self._circuit_state_file is None:
             return
         home = self._circuit_state_file.parent.parent
         payload = load_circuit_state(home)
         now = self._now().isoformat()
-        payload.update({"state": state, "updated_at": now})
+        payload.update({
+            "state": state,
+            "updated_at": now,
+            "correlation_id": correlation_id or payload.get("correlation_id") or uuid4().hex,
+        })
         if cause:
             violations = payload["violations"]
             violations["total"] = int(violations.get("total", 0)) + 1

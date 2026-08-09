@@ -667,13 +667,13 @@ export const loadCockpit=()=>Promise.allSettled([
   const energyResources=vitalMetrics.energy_resources||{};
   const codeGeneration=vitalMetrics.code_generation||{};
   const risks=vitalMetrics.risks||[];
-  setText('kpi-vital-age',String(vital.age??0));
+  setText('kpi-vital-age',String(vital.age??na()));
   setText('kpi-vital-risk',String(vital.risk_level||na()));
   setText('kpi-vital-terminal',vital.terminal===true?'oui':'non');
   setText('kpi-vital-causes',(vital.causes||[]).join(', ')||na());
   setText('kpi-circadian-phase',String((vitalMetrics.circadian_cycle||{}).phase||na()));
-  setText('kpi-active-objectives-count',String(objectives.count||0));
-  setText('kpi-quests-progress',`${objectives.count||0} actifs`);
+  setText('kpi-active-objectives-count',String(objectives.count??na()));
+  setText('kpi-quests-progress',objectives.count==null?'Données absentes':`${objectives.count} actifs`);
   setText('kpi-energy-total',fmtNum(energyResources.total_energy));
   setText('kpi-resources-total',fmtNum(energyResources.total_resources));
   setText('kpi-code-progression',String(codeGeneration.progression||na()));
