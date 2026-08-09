@@ -7,18 +7,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from singular.evaluation import run_multi_life_evaluation
+from singular.evaluation import run_multi_life_evaluation  # noqa: E402
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Replay one simulated trace across lives and negative controls (no network)."
+        description="Run the deterministic, versioned Ada/Bob/Eve protocol (no network)."
     )
     parser.add_argument("--seeds", default="11,23,37,53,71")
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("artifacts/evaluations/offline_multi_life_v1.json"),
+        default=Path("artifacts/evaluations/offline_multi_life_v2.json"),
     )
     parser.add_argument(
         "--kpi-config", type=Path, default=Path("configs/agi_kpis.yaml")
