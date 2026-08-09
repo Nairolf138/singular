@@ -1,4 +1,3 @@
-from pathlib import Path
 
 from singular.cli import main
 

@@ -19,7 +19,6 @@ import uuid
 from singular.beliefs.store import BeliefStore
 from singular.io_utils import atomic_write_text, file_lock
 
-
 FEEDBACK_SOURCES = frozenset({"run", "conversation", "action", "perception", "social"})
 UPDATE_KINDS = frozenset({"strategy", "belief", "skill"})
 
@@ -116,13 +115,17 @@ class LearningOrchestrator:
             return default
 
     def _write(self, path: Path, value: Any) -> None:
-        atomic_write_text(path, json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True))
+        atomic_write_text(
+            path, json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
+        )
 
     def _recover(self) -> None:
         """Finish an interrupted commit; the journal contains the complete next state."""
         with file_lock(self.state_path):
             transaction = self._read(self.journal_path, None)
-            if isinstance(transaction, dict) and isinstance(transaction.get("state"), dict):
+            if isinstance(transaction, dict) and isinstance(
+                transaction.get("state"), dict
+            ):
                 self._write(self.state_path, transaction["state"])
                 self.journal_path.unlink(missing_ok=True)
 
@@ -133,7 +136,9 @@ class LearningOrchestrator:
         self.journal_path.unlink(missing_ok=True)
 
     @staticmethod
-    def normalize(source: str, raw: Mapping[str, Any], *, life_id: str = "default") -> FeedbackEvent:
+    def normalize(
+        source: str, raw: Mapping[str, Any], *, life_id: str = "default"
+    ) -> FeedbackEvent:
         """Normalize an event emitted by any supported runtime surface."""
         reward = raw.get("reward", raw.get("reward_delta", raw.get("score", 0.0)))
         subject = raw.get("subject", raw.get("target", raw.get("hypothesis", "")))
@@ -163,24 +168,43 @@ class LearningOrchestrator:
             cycle = state.setdefault("cycle", {})
             today = datetime.now(timezone.utc).date().isoformat()
             if cycle.get("id") != today:
-                cycle.clear(); cycle.update({"id": today, "events": 0, "candidates": []})
+                cycle.clear()
+                cycle.update({"id": today, "events": 0, "candidates": []})
                 self._apply_decay(state)
             if cycle["events"] >= self.policy.max_events_per_cycle:
                 raise RuntimeError("learning event budget exhausted")
-            if candidate_id not in state["candidates"] and len(cycle["candidates"]) >= self.policy.max_candidates_per_cycle:
+            if (
+                candidate_id not in state["candidates"]
+                and len(cycle["candidates"]) >= self.policy.max_candidates_per_cycle
+            ):
                 raise RuntimeError("candidate budget exhausted")
             previous = state["active"].get(key)
-            candidate = state["candidates"].setdefault(candidate_id, {
-                "id": candidate_id, "key": key, "kind": kind, "subject": event.subject,
-                "proposed_value": proposed_value, "previous_version": previous,
-                "evidence": [], "reward_sum": 0.0, "status": "candidate", "created_at": _now(),
-            })
+            candidate = state["candidates"].setdefault(
+                candidate_id,
+                {
+                    "id": candidate_id,
+                    "key": key,
+                    "kind": kind,
+                    "subject": event.subject,
+                    "proposed_value": proposed_value,
+                    "previous_version": previous,
+                    "evidence": [],
+                    "reward_sum": 0.0,
+                    "status": "candidate",
+                    "created_at": _now(),
+                },
+            )
             # Contradictory proposals never silently overwrite an accumulated candidate.
             if candidate["proposed_value"] != proposed_value:
-                candidate["contradictions"] = int(candidate.get("contradictions", 0)) + 1
+                candidate["contradictions"] = (
+                    int(candidate.get("contradictions", 0)) + 1
+                )
             candidate["evidence"].append(asdict(event))
             candidate["reward_sum"] += float(event.reward)
-            state["events"][event.event_id] = {"candidate_id": candidate_id, "at": _now()}
+            state["events"][event.event_id] = {
+                "candidate_id": candidate_id,
+                "at": _now(),
+            }
             cycle["events"] += 1
             if candidate_id not in cycle["candidates"]:
                 cycle["candidates"].append(candidate_id)
@@ -191,11 +215,17 @@ class LearningOrchestrator:
         for candidate in state.get("candidates", {}).values():
             candidate["reward_sum"] *= min(1.0, max(0.0, self.policy.decay))
 
-    def add_regression_case(self, case_id: str, context: Mapping[str, Any], expected: Any) -> None:
+    def add_regression_case(
+        self, case_id: str, context: Mapping[str, Any], expected: Any
+    ) -> None:
         """Persist a protected capability example used by every promotion."""
         with file_lock(self.regression_path):
             suite = self._read(self.regression_path, {})
-            suite[case_id] = {"context": dict(context), "expected": expected, "updated_at": _now()}
+            suite[case_id] = {
+                "context": dict(context),
+                "expected": expected,
+                "updated_at": _now(),
+            }
             self._write(self.regression_path, suite)
 
     def evaluate_and_promote(self, candidate_id: str) -> PromotionDecision:
@@ -210,27 +240,56 @@ class LearningOrchestrator:
             rewards = [float(item["reward"]) for item in evidence]
             drift = (max(rewards) - min(rewards)) if rewards else 0.0
             reasons = []
-            if len(evidence) < self.policy.minimum_evidence: reasons.append("insufficient_evidence")
-            if len(sources) < self.policy.minimum_distinct_sources: reasons.append("insufficient_source_diversity")
-            if mean < self.policy.promotion_reward: reasons.append("reward_below_threshold")
-            if drift > self.policy.drift_threshold: reasons.append("drift_detected")
-            if candidate.get("contradictions", 0): reasons.append("contradictory_feedback")
+            if len(evidence) < self.policy.minimum_evidence:
+                reasons.append("insufficient_evidence")
+            if len(sources) < self.policy.minimum_distinct_sources:
+                reasons.append("insufficient_source_diversity")
+            if mean < self.policy.promotion_reward:
+                reasons.append("reward_below_threshold")
+            if drift > self.policy.drift_threshold:
+                reasons.append("drift_detected")
+            if candidate.get("contradictions", 0):
+                reasons.append("contradictory_feedback")
             suite = list(self._read(self.regression_path, {}).values())
-            if len(suite) < self.policy.minimum_regression_cases: reasons.append("regression_suite_missing")
-            evaluation = dict(self.evaluator(candidate["kind"], candidate["subject"], candidate["proposed_value"], suite))
+            if len(suite) < self.policy.minimum_regression_cases:
+                reasons.append("regression_suite_missing")
+            evaluation = dict(
+                self.evaluator(
+                    candidate["kind"],
+                    candidate["subject"],
+                    candidate["proposed_value"],
+                    suite,
+                )
+            )
             regression = float(evaluation.get("regression", 0.0))
             retention = float(evaluation.get("retention", 1.0))
             gain = float(evaluation.get("gain", mean))
-            if regression > self.policy.max_regression: reasons.append("regression_limit")
-            if retention < self.policy.minimum_retention: reasons.append("catastrophic_forgetting_risk")
+            if regression > self.policy.max_regression:
+                reasons.append("regression_limit")
+            if retention < self.policy.minimum_retention:
+                reasons.append("catastrophic_forgetting_risk")
             activated = not reasons
             rollback_path = None
             if activated:
                 version = int(state.get("version", 1)) + 1
-                rollback_path = str(self.directory / "rollback" / f"{version}-{candidate_id}.json")
-                self._write(Path(rollback_path), {"key": candidate["key"], "previous": candidate["previous_version"]})
-                active = {"value": candidate["proposed_value"], "version": version, "activated_at": _now(),
-                          "candidate_id": candidate_id, "evaluation": evaluation, "rollback_path": rollback_path}
+                rollback_path = str(
+                    self.directory / "rollback" / f"{version}-{candidate_id}.json"
+                )
+                self._write(
+                    Path(rollback_path),
+                    {
+                        "key": candidate["key"],
+                        "previous": candidate["previous_version"],
+                    },
+                )
+                active = {
+                    "value": candidate["proposed_value"],
+                    "version": version,
+                    "activated_at": _now(),
+                    "candidate_id": candidate_id,
+                    "evaluation": evaluation,
+                    "rollback_path": rollback_path,
+                }
                 state["active"][candidate["key"]] = active
                 state["version"] = version
                 candidate["status"] = "active"
@@ -238,22 +297,44 @@ class LearningOrchestrator:
             else:
                 candidate["status"] = "rejected"
             candidate["evaluation"] = evaluation
-            candidate["activation_decision"] = {"activated": activated, "reasons": reasons, "at": _now()}
+            candidate["activation_decision"] = {
+                "activated": activated,
+                "reasons": reasons,
+                "at": _now(),
+            }
             candidate["rollback_path"] = rollback_path
             self._commit(state)
             self._record_metrics(gain, retention, regression)
-            return PromotionDecision(candidate_id, activated, ",".join(reasons) or "promoted", evaluation, rollback_path)
+            return PromotionDecision(
+                candidate_id,
+                activated,
+                ",".join(reasons) or "promoted",
+                evaluation,
+                rollback_path,
+            )
 
     @staticmethod
-    def _default_evaluator(kind: str, subject: str, value: Any, suite: list[dict[str, Any]]) -> Mapping[str, float]:
+    def _default_evaluator(
+        kind: str, subject: str, value: Any, suite: list[dict[str, Any]]
+    ) -> Mapping[str, float]:
         # With no domain evaluator, preserve the suite rather than claiming improvement.
-        return {"gain": 0.0, "retention": 1.0, "regression": 0.0, "samples": float(len(suite))}
+        return {
+            "gain": 0.0,
+            "retention": 1.0,
+            "regression": 0.0,
+            "samples": float(len(suite)),
+        }
 
     def _publish(self, candidate: Mapping[str, Any], active: Mapping[str, Any]) -> None:
         """Connect validated state to beliefs, skill metadata, and planner choices."""
         kind, subject = candidate["kind"], candidate["subject"]
         if kind == "belief":
-            self.belief_store.update_after_run(subject, success=True, evidence=f"learning:{candidate['id']}", reward_delta=float(candidate["reward_sum"]))
+            self.belief_store.update_after_run(
+                subject,
+                success=True,
+                evidence=f"learning:{candidate['id']}",
+                reward_delta=float(candidate["reward_sum"]),
+            )
         filename = "skill_catalog.json" if kind == "skill" else "planning_learning.json"
         if kind in {"skill", "strategy"}:
             path = self.root / "mem" / self.life_id / filename
@@ -271,24 +352,42 @@ class LearningOrchestrator:
         with file_lock(self.state_path):
             state = self._read(self.state_path, self._empty_state())
             active = state["active"].get(key)
-            if not active: return False
+            if not active:
+                return False
             snapshot = self._read(Path(active["rollback_path"]), {})
             previous = snapshot.get("previous")
-            if previous is None: state["active"].pop(key, None)
-            else: state["active"][key] = previous
+            if previous is None:
+                state["active"].pop(key, None)
+            else:
+                state["active"][key] = previous
             self._commit(state)
             return True
 
     def _record_metrics(self, gain: float, retention: float, regression: float) -> None:
         metrics = self._read(self.metrics_path, {"samples": []})
-        metrics["samples"].append({"at": _now(), "post_feedback_gain_pct": gain * 100,
-                                   "retention_30d_pct": retention * 100,
-                                   "monthly_regression_pct": regression * 100})
+        metrics["samples"].append(
+            {
+                "at": _now(),
+                "post_feedback_gain_pct": gain * 100,
+                "retention_30d_pct": retention * 100,
+                "monthly_regression_pct": regression * 100,
+            }
+        )
         self._write(self.metrics_path, metrics)
 
     def metrics(self) -> Mapping[str, float]:
         samples = self._read(self.metrics_path, {"samples": []})["samples"]
         if not samples:
-            return {"post_feedback_gain_pct": 0.0, "retention_30d_pct": 100.0, "monthly_regression_pct": 0.0}
-        return {key: sum(float(x[key]) for x in samples) / len(samples) for key in
-                ("post_feedback_gain_pct", "retention_30d_pct", "monthly_regression_pct")}
+            return {
+                "post_feedback_gain_pct": 0.0,
+                "retention_30d_pct": 100.0,
+                "monthly_regression_pct": 0.0,
+            }
+        return {
+            key: sum(float(x[key]) for x in samples) / len(samples)
+            for key in (
+                "post_feedback_gain_pct",
+                "retention_30d_pct",
+                "monthly_regression_pct",
+            )
+        }

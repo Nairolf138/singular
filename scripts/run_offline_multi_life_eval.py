@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from singular.evaluation import run_multi_life_evaluation
+from singular.evaluation import run_multi_life_evaluation  # noqa: E402
 
 
 def main() -> int:

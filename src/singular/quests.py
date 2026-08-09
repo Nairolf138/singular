@@ -243,6 +243,7 @@ class QuestRuntime:
         *,
         context: str,
         recent_successes: int,
+        recent_failures: int,
         max_active: int,
         restrict_costly: bool = False,
     ) -> dict[str, list[str]]:

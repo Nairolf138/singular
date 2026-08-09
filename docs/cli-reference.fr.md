@@ -1504,3 +1504,91 @@ Les chemins ci-dessous sont relatifs au root ou à `SINGULAR_HOME`. Toujours sau
 ## Alias et aide
 
 `veille` est un alias exact de `watch`; `talk --live` est un alias déprécié de `talk --life`; `birth` peut être désactivé avec `SINGULAR_ENABLE_BIRTH_ALIAS=0`. `singular <commande> --help` reste la source exécutable pour le détail des metavars.
+
+<!-- cli-command: governance -->
+## `governance`
+Commandes de diagnostic et de récupération de la gouvernance.
+
+
+**Syntaxe :** `singular governance [-h]`
+
+**Arguments et défauts :** Voir `--help`; aucun argument implicite non documenté.
+
+**Prérequis :** Registre accessible et autorisation opérateur pour la récupération.
+
+**Root et vie ciblés :** Root du registre sélectionné; aucune vie implicite.
+
+**Fichiers lus ou écrits :** Lit et peut mettre à jour l'état de gouvernance.
+
+**Effets de bord :** Le diagnostic est en lecture seule; la récupération est auditée.
+
+**Exemple minimal :** `singular governance`
+
+**Exemple avancé :** `singular --root /srv/singular governance`
+
+**Erreurs usuelles :** Root absent, justification ou autorisation manquante.
+<!-- cli-command: governance diagnose -->
+## `governance diagnose`
+Affiche l'état auditable des coupe-circuits de gouvernance.
+
+
+**Syntaxe :** `singular governance diagnose [-h]`
+
+**Arguments et défauts :** Voir `--help`; aucun argument implicite non documenté.
+
+**Prérequis :** Registre accessible et autorisation opérateur pour la récupération.
+
+**Root et vie ciblés :** Root du registre sélectionné; aucune vie implicite.
+
+**Fichiers lus ou écrits :** Lit et peut mettre à jour l'état de gouvernance.
+
+**Effets de bord :** Le diagnostic est en lecture seule; la récupération est auditée.
+
+**Exemple minimal :** `singular governance diagnose`
+
+**Exemple avancé :** `singular --root /srv/singular governance diagnose`
+
+**Erreurs usuelles :** Root absent, justification ou autorisation manquante.
+<!-- cli-command: governance recover -->
+## `governance recover`
+Récupère la gouvernance avec une justification opérateur explicite.
+
+
+**Syntaxe :** `singular governance recover [-h]`
+
+**Arguments et défauts :** Voir `--help`; aucun argument implicite non documenté.
+
+**Prérequis :** Registre accessible et autorisation opérateur pour la récupération.
+
+**Root et vie ciblés :** Root du registre sélectionné; aucune vie implicite.
+
+**Fichiers lus ou écrits :** Lit et peut mettre à jour l'état de gouvernance.
+
+**Effets de bord :** Le diagnostic est en lecture seule; la récupération est auditée.
+
+**Exemple minimal :** `singular governance recover`
+
+**Exemple avancé :** `singular --root /srv/singular governance recover`
+
+**Erreurs usuelles :** Root absent, justification ou autorisation manquante.
+<!-- cli-command: diagnose governance -->
+## `diagnose governance`
+Alias de diagnostic disponible sous la commande générale `diagnose`.
+
+**Syntaxe :** `singular diagnose governance [-h]`
+
+**Arguments et défauts :** Voir `--help`; aucun argument implicite non documenté.
+
+**Prérequis :** Registre accessible et autorisation opérateur pour la récupération.
+
+**Root et vie ciblés :** Root du registre sélectionné; aucune vie implicite.
+
+**Fichiers lus ou écrits :** Lit et peut mettre à jour l'état de gouvernance.
+
+**Effets de bord :** Le diagnostic est en lecture seule; la récupération est auditée.
+
+**Exemple minimal :** `singular diagnose governance`
+
+**Exemple avancé :** `singular --root /srv/singular diagnose governance`
+
+**Erreurs usuelles :** Root absent, justification ou autorisation manquante.

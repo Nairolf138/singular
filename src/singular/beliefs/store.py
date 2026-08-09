@@ -9,7 +9,7 @@ import math
 import os
 from pathlib import Path
 import tempfile
-from typing import Any, Iterable
+from typing import Iterable
 
 
 def _utcnow() -> datetime:

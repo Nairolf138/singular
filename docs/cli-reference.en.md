@@ -1504,3 +1504,91 @@ Paths below are relative to the root or `SINGULAR_HOME`. Always back up before d
 **Advanced example :** `singular config providers setup ollama --non-interactive --pull --model llama3.2`
 
 **Common errors :** `service_stopped`, `command_missing`, `model_missing`, `download_incomplete`, `timeout`, or `invalid_generation`; every failure includes remediation.
+
+<!-- cli-command: governance -->
+## `governance`
+Governance diagnosis and recovery commands.
+
+
+**Syntax :** `singular governance [-h]`
+
+**Arguments and defaults :** See `--help`; no undocumented implicit argument.
+
+**Prerequisites :** Accessible registry and operator authorization for recovery.
+
+**Target root and life :** Selected registry root; no implicit life.
+
+**Files read or written :** Reads and may update governance state.
+
+**Side effects :** Diagnosis is read-only; recovery is audited.
+
+**Minimal example :** `singular governance`
+
+**Advanced example :** `singular --root /srv/singular governance`
+
+**Common errors :** Missing root, justification, or authorization.
+<!-- cli-command: governance diagnose -->
+## `governance diagnose`
+Displays the auditable state of governance circuit breakers.
+
+
+**Syntax :** `singular governance diagnose [-h]`
+
+**Arguments and defaults :** See `--help`; no undocumented implicit argument.
+
+**Prerequisites :** Accessible registry and operator authorization for recovery.
+
+**Target root and life :** Selected registry root; no implicit life.
+
+**Files read or written :** Reads and may update governance state.
+
+**Side effects :** Diagnosis is read-only; recovery is audited.
+
+**Minimal example :** `singular governance diagnose`
+
+**Advanced example :** `singular --root /srv/singular governance diagnose`
+
+**Common errors :** Missing root, justification, or authorization.
+<!-- cli-command: governance recover -->
+## `governance recover`
+Recovers governance with an explicit operator justification.
+
+
+**Syntax :** `singular governance recover [-h]`
+
+**Arguments and defaults :** See `--help`; no undocumented implicit argument.
+
+**Prerequisites :** Accessible registry and operator authorization for recovery.
+
+**Target root and life :** Selected registry root; no implicit life.
+
+**Files read or written :** Reads and may update governance state.
+
+**Side effects :** Diagnosis is read-only; recovery is audited.
+
+**Minimal example :** `singular governance recover`
+
+**Advanced example :** `singular --root /srv/singular governance recover`
+
+**Common errors :** Missing root, justification, or authorization.
+<!-- cli-command: diagnose governance -->
+## `diagnose governance`
+Diagnostic alias available under the general `diagnose` command.
+
+**Syntax :** `singular diagnose governance [-h]`
+
+**Arguments and defaults :** See `--help`; no undocumented implicit argument.
+
+**Prerequisites :** Accessible registry and operator authorization for recovery.
+
+**Target root and life :** Selected registry root; no implicit life.
+
+**Files read or written :** Reads and may update governance state.
+
+**Side effects :** Diagnosis is read-only; recovery is audited.
+
+**Minimal example :** `singular diagnose governance`
+
+**Advanced example :** `singular --root /srv/singular diagnose governance`
+
+**Common errors :** Missing root, justification, or authorization.

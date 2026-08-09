@@ -76,7 +76,12 @@ from singular.governance.values import load_value_weights
 from singular.morals import MoralAction, MoralContextBuilder, MoralDecision, MoralDecisionEngine
 from singular.identity.core import IdentityCoreService
 
-from .checkpointing import CHECKPOINT_VERSION, Checkpoint, load_checkpoint, save_checkpoint
+from .checkpointing import (
+    CHECKPOINT_VERSION as CHECKPOINT_VERSION,
+    Checkpoint,
+    load_checkpoint,
+    save_checkpoint,
+)
 from .sandbox_scoring import (
     SandboxScore,
     classify_source_sandbox_path,

@@ -1514,12 +1514,6 @@ def create_app(
         cockpit = _summarize_cockpit(
             current_life_only=current_life_only, selected_life_id=selected_life_id
         )
-        comparison, _ = _aggregate_lives(current_life_only=current_life_only)
-        rows = (
-            comparison.get("table", [])
-            if isinstance(comparison.get("table"), list)
-            else []
-        )
         selected_life = selected_life_id or "Aucune"
         incidents_count = 0
         critical_alerts = cockpit.get("critical_alerts")
