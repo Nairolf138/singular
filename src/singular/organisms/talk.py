@@ -23,6 +23,7 @@ from ..perception import capture_signals
 from ..psyche import Mood, Psyche
 from ..identity.synchronization import IdentitySynchronizationService
 from ..self_narrative import load as load_self_narrative, summarize_short
+from ..lives import canonical_life_id
 from ..providers import (
     FallbackLLMClient,
     LLMProviderError,
@@ -194,6 +195,7 @@ def talk(
     causal_file = mem_dir / "causal_timeline.jsonl"
     psyche_file = mem_dir / "psyche.json"
     narrative_file = mem_dir / "self_narrative.json"
+    life_id = canonical_life_id(life_root)
     ensure_memory_structure(mem_dir)
     identity_sync = IdentitySynchronizationService(life_root)
 
@@ -235,7 +237,7 @@ def talk(
         str | None, dict | None, dict | None, str | None, str | None
     ]:
         signals = capture_signals()
-        add_episode({"event": "perception", **signals}, path=episodic_file)
+        add_episode({"event": "perception", "life_id": life_id, **signals}, path=episodic_file)
         psyche.consume()
         episodes = read_episodes(episodic_file)
         episodes_by_role = {
@@ -319,6 +321,7 @@ def talk(
             add_episode(
                 {
                     "event": "memory.recalled",
+                    "life_id": life_id,
                     "source": "talk",
                     "query": user_input,
                     "memories": recalled_memories,
@@ -329,6 +332,7 @@ def talk(
             add_episode(
                 {
                     "event": "memory.used_for_decision",
+                    "life_id": life_id,
                     "source": "talk",
                     "decision": "assistant_reply",
                     "memories": recalled_memories,
@@ -337,7 +341,7 @@ def talk(
                 path=episodic_file,
             )
         add_episode(
-            {"role": "user", "text": user_input, "structured_signals": user_signals},
+            {"role": "user", "life_id": life_id, "text": user_input, "structured_signals": user_signals},
             path=episodic_file,
         )
         mood = psyche.feel(Mood.NEUTRAL)
@@ -447,6 +451,7 @@ def talk(
         add_episode(
             {
                 "role": "assistant",
+                "life_id": life_id,
                 "text": response,
                 "raw_reply": reply,
                 "mood": mood.value,
@@ -538,7 +543,7 @@ def talk(
 
     if prompt is not None:
         context = gather_context()
-        self_narrative = load_self_narrative(narrative_file)
+        self_narrative = load_self_narrative(narrative_file, life_id=life_id)
         return respond(
             prompt,
             *context,
@@ -549,7 +554,7 @@ def talk(
 
     while True:
         context = gather_context()
-        self_narrative = load_self_narrative(narrative_file)
+        self_narrative = load_self_narrative(narrative_file, life_id=life_id)
         try:
             user_input = input("you: ")
         except EOFError:

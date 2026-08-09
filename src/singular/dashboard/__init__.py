@@ -2928,7 +2928,7 @@ def create_app(
                 details={"active_run_locks": locks},
             )
 
-        from singular.lives import resolve_life
+        from singular.lives import canonical_life_id, resolve_life
         from singular.organisms.talk import talk
 
         resolved_life = resolve_life(target)
@@ -2951,7 +2951,7 @@ def create_app(
                 life_home=resolved_life,
             )
             return {
-                "life": target,
+                "life": canonical_life_id(resolved_life),
                 "path": str(resolved_life),
                 "response": response or "",
             }

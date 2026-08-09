@@ -27,7 +27,7 @@ from singular.identity.synchronization import IdentitySynchronizationService
 from singular.governance.policy import MutationGovernancePolicy
 from singular.life.coevolution_flow import LivingTestPool
 from singular.life.loop import WorldState, run_tick
-from singular.lives import resolve_life
+from singular.lives import canonical_life_id, resolve_life
 from singular.memory import (
     _atomic_write_text,
     get_base_dir,
@@ -371,6 +371,8 @@ class OrchestratorService:
         return self._wake_requested or run_changed or watch_changed
 
     def _load_recent_run_events(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        """Load only events attributable to this life before narrative aggregation."""
+
         runs_dir = self.base_dir / "runs"
         if not runs_dir.exists():
             return []
@@ -393,8 +395,16 @@ class OrchestratorService:
                     payload = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if isinstance(payload, dict):
-                    collected.append(payload)
+                if not isinstance(payload, dict):
+                    continue
+                raw_life_id = payload.get("life_id")
+                # Unattributed legacy records are deliberately excluded.  They can
+                # only enter a narrative through an explicit migration tool.
+                if not isinstance(raw_life_id, str) or not raw_life_id.strip():
+                    continue
+                if canonical_life_id(raw_life_id) != canonical_life_id(self.base_dir):
+                    continue
+                collected.append(payload)
         return collected[-limit:]
 
     def _refresh_self_narrative(self) -> dict[str, Any]:
@@ -448,7 +458,10 @@ class OrchestratorService:
         now = self.clock()
         if now.tzinfo is None:
             now = now.replace(tzinfo=timezone.utc)
-        snapshots = load_snapshots(self.mem_dir / "self_narrative.json")
+        current_life_id = canonical_life_id(self.base_dir)
+        snapshots = load_snapshots(
+            self.mem_dir / "self_narrative.json", life_id=current_life_id
+        )
 
         def _history_values(
             group: str, name: str, current: float
@@ -515,6 +528,7 @@ class OrchestratorService:
             },
             self.mem_dir / "self_narrative.json",
             clock=self.clock,
+            life_id=current_life_id,
         )
         summary_short = summarize_short(narrative=narrative)
         summary_long = summarize_long(narrative=narrative)
