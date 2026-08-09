@@ -1,9 +1,9 @@
 import asyncio
 import inspect
 import json
+import threading
 from pathlib import Path
 from queue import Empty
-import threading
 
 import pytest
 from fastapi.testclient import TestClient

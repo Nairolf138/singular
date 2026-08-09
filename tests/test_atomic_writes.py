@@ -4,8 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from singular import memory
-from singular import io_utils
+from singular import io_utils, memory
 from singular.resource_manager import ResourceManager
 
 

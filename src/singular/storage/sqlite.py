@@ -7,10 +7,10 @@ mirrored by callers to their existing files.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 import json
 import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Mapping
 
 SCHEMA_VERSION = 1

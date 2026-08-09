@@ -1,11 +1,12 @@
 import json
-import pytest
 from pathlib import Path
 
+import pytest
+
 from singular.identity import (
+    IdentityChangePolicy,
     IdentityCoherenceGuard,
     IdentityInvariants,
-    IdentityChangePolicy,
     detect_contradictions,
 )
 

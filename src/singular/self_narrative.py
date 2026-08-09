@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
-import json
-import hashlib
 
 from singular.identity.coherence import detect_contradictions
 from singular.io_utils import append_jsonl_line, atomic_write_text

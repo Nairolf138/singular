@@ -1,23 +1,23 @@
-from pathlib import Path
 import json
 import multiprocessing as mp
 from concurrent.futures import ThreadPoolExecutor
-
-import pytest
+from pathlib import Path
 from typing import Any
 
+import pytest
+
+import singular.memory as memory
 from singular.memory import (
     add_episode,
     apply_skill_maintenance,
     controlled_delete_skill,
+    record_skill_metric,
     restore_skill,
     temporarily_disable_skill,
     update_note,
     update_score,
     update_trait,
-    record_skill_metric,
 )
-import singular.memory as memory
 from singular.organisms.birth import birth
 
 

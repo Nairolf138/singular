@@ -6,8 +6,8 @@ Metadata dates use ISO 8601 at second precision with the explicit UTC offset
 
 from __future__ import annotations
 
-import os
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable

@@ -1,5 +1,5 @@
-from singular.models.agents import Motivation
 from singular.agents import Agent
+from singular.models.agents import Motivation
 
 
 def test_update_and_choose_goal():

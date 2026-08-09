@@ -32,8 +32,8 @@ if fastapi_mode == "stub":
 
 import pytest  # noqa: E402
 
-from singular.life.checkpointing import Checkpoint, save_checkpoint  # noqa: E402
 from singular.life import sandbox as life_sandbox  # noqa: E402
+from singular.life.checkpointing import Checkpoint, save_checkpoint  # noqa: E402
 from singular.memory_layers.local_json import LocalJsonMemoryBackend  # noqa: E402
 from singular.memory_layers.service import MemoryLayerService  # noqa: E402
 

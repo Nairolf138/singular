@@ -3,7 +3,7 @@ from __future__ import annotations
 from random import Random
 from typing import Dict
 
-from .dsl import MetaSpec, MAX_POPULATION_CAP, SELECTION_STRATEGIES
+from .dsl import MAX_POPULATION_CAP, SELECTION_STRATEGIES, MetaSpec
 
 
 def _renormalize(dist: Dict[str, float]) -> None:

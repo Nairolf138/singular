@@ -1,13 +1,13 @@
 import pytest
 
 from graine.evolver.dsl import (
-    Patch,
-    DSLValidationError,
     CYCLOMATIC_LIMIT,
     OPERATOR_NAMES,
     THETA_DIFF_LIMIT,
+    DSLValidationError,
+    Patch,
 )
-from graine.evolver.generate import propose_mutations, load_zones
+from graine.evolver.generate import load_zones, propose_mutations
 
 
 def build_patch(**overrides):

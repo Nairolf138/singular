@@ -1,7 +1,7 @@
 import json
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-import warnings
 
 from singular.runs import RunLogger
 from singular.runs.explain import summarize_mutation
@@ -264,9 +264,9 @@ def test_run_logger_persists_run_and_skill_reputation_to_sqlite(tmp_path: Path) 
 
     from singular.storage import (
         RunsRepository,
+        SkillScoresRepository,
         SQLiteStorage,
         StorageConfig,
-        SkillScoresRepository,
     )
 
     storage = SQLiteStorage(StorageConfig(root=tmp_path))

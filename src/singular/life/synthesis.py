@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import ast
 import os
+from pathlib import Path
 
 # mypy: ignore-errors
-
 from . import quest
 from .skill_validation import validate_generated_skill
 

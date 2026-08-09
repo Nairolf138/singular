@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-import math
 from typing import Iterable, Mapping
 
 from .store import BeliefStore, _parse_datetime

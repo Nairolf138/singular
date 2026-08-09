@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager, nullcontext
-from pathlib import Path
-from typing import Any, Iterator
 import json
 import os
 import tempfile
 import time
+from contextlib import contextmanager, nullcontext
+from pathlib import Path
+from typing import Any, Iterator
 
 if os.name == "nt":
     import msvcrt

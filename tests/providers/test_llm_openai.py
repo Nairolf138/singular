@@ -9,8 +9,8 @@ from singular.providers import (
     ProviderQuotaExceededError,
     ProviderRetryExhaustedError,
     ProviderTimeoutError,
+    llm_openai,
 )
-from singular.providers import llm_openai
 
 
 def test_generate_reply_without_key(monkeypatch):

@@ -1,13 +1,18 @@
 import json
-import pytest
 import random
 from pathlib import Path
 
-from graine.meta.dsl import MetaSpec, MetaValidationError, MAX_POPULATION_CAP
-from graine.meta.dsl import ALLOWED_MUTABLE_SURFACES
+import pytest
+
+from graine.kernel.verifier import DIFF_LIMIT
+from graine.meta.dsl import (
+    ALLOWED_MUTABLE_SURFACES,
+    MAX_POPULATION_CAP,
+    MetaSpec,
+    MetaValidationError,
+)
 from graine.meta.evolve import propose_mutation
 from graine.meta.phantom import replay_snapshots
-from graine.kernel.verifier import DIFF_LIMIT
 
 
 def build_spec(**overrides):

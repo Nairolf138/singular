@@ -3,10 +3,10 @@ from __future__ import annotations
 import ast
 import runpy
 import sys
-import tomllib
 from pathlib import Path
 
 import pytest
+import tomllib
 
 
 def _read_project_script_target() -> str:

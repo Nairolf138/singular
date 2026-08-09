@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 import json
 import multiprocessing as mp
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import Mock
 
+from singular.governance.policy import MutationGovernancePolicy
 from singular.multiagent import (
     AgentMessage,
     CollectiveMemory,
@@ -17,7 +18,6 @@ from singular.multiagent import (
     validate_message_schema,
 )
 from singular.multiagent import protocol as protocol_module
-from singular.governance.policy import MutationGovernancePolicy
 
 
 def _send_messages_worker(path: str, start: int, count: int) -> None:

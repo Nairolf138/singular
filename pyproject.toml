@@ -76,3 +76,42 @@ extend-exclude = '''
 | ^/tests/test_mutation_absurde\.py
 )
 '''
+
+[tool.ruff]
+target-version = "py310"
+extend-exclude = [
+    # Generated/fixture sources whose deliberately unusual formatting is part
+    # of the mutation and reducer test data rather than production Python.
+    "src/graine/target/tests/test_evaluate.py",
+    "src/graine/target/tests/test_reduce_sum.py",
+    "src/singular/__main__.py",
+    "src/singular/life/reproduction.py",
+    "tests/test_mutation_absurde.py",
+]
+
+[tool.ruff.lint]
+# Keep correctness/parse errors from pycodestyle and Pyflakes, plus a stable
+# import order. Formatting remains Black's responsibility.
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# Package initializers intentionally order imports to preserve initialization
+# dependencies and their public re-export order; alphabetizing can create
+# circular imports or change optional-dependency fallbacks.
+"src/graine/kernel/__init__.py" = ["I001"]
+"src/graine/meta/__init__.py" = ["I001"]
+"src/singular/dashboard/__init__.py" = ["I001"]
+"src/singular/embodiment/__init__.py" = ["I001"]
+"src/singular/events/__init__.py" = ["I001"]
+"src/singular/governance/__init__.py" = ["I001"]
+"src/singular/learning/__init__.py" = ["I001"]
+"src/singular/memory_layers/__init__.py" = ["I001"]
+"src/singular/morals/__init__.py" = ["I001"]
+"src/singular/multiagent/__init__.py" = ["I001"]
+"src/singular/orchestrator/__init__.py" = ["I001"]
+"src/singular/providers/__init__.py" = ["I001"]
+"src/singular/sensors/__init__.py" = ["I001"]
+"src/singular/skills/__init__.py" = ["I001"]
+"src/singular/storage/__init__.py" = ["I001"]
+"src/singular/watch/__init__.py" = ["I001"]
+"tests/fastapi_stub/__init__.py" = ["I001"]

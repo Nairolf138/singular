@@ -6,13 +6,13 @@ import ast
 import difflib
 import random
 
+from graine.evolver.generate import propose_mutations
 from singular.beliefs.store import BeliefStore
 from singular.life.operators import const_tune, deadcode_elim, eq_rewrite_reduce_sum
 from singular.life.score import score
-from graine.evolver.generate import propose_mutations
 
-from ..psyche import Psyche
 from ..memory import add_episode
+from ..psyche import Psyche
 
 
 def run(seed: int | None = None) -> str:

@@ -7,14 +7,14 @@ independent evidence and a successful persistent regression-suite evaluation.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 import hashlib
 import json
 import math
+import uuid
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
-import uuid
 
 from singular.beliefs.store import BeliefStore
 from singular.io_utils import atomic_write_text, file_lock

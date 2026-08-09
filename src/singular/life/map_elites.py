@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Tuple
-import random
 
 Descriptor = Tuple[int, int]
 DescriptorFunc = Callable[[str, float], Tuple[int, int]]

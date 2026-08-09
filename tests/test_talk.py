@@ -1,5 +1,5 @@
-import random
 import os
+import random
 
 import pytest
 
@@ -14,11 +14,11 @@ from singular.organisms.talk import (
     talk,
 )
 from singular.providers import (
-    LLMProviderContract,
     LLMProviderClient,
-    ProviderUnavailableError,
+    LLMProviderContract,
     ProviderQuotaExceededError,
     ProviderTimeoutError,
+    ProviderUnavailableError,
 )
 
 

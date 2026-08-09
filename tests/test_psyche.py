@@ -2,14 +2,14 @@ from pathlib import Path
 
 import pytest
 
+from singular.motivation import GoalPolicy, Objective
 from singular.psyche import (
-    Psyche,
     Mood,
+    Psyche,
     TraitEvolutionPolicy,
     choose_action_from_psyche,
 )
 from singular.resource_manager import ResourceManager
-from singular.motivation import GoalPolicy, Objective
 
 
 def test_feel_updates_traits_and_last_mood() -> None:

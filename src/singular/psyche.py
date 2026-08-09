@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, Any, ClassVar, Mapping, Sequence
-from datetime import datetime, timezone
-from pathlib import Path
 import random
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
+from typing import Any, ClassVar, Dict, Mapping, Sequence
 
 from .memory import read_psyche, write_psyche
 from .motivation import GoalPolicy, Objective

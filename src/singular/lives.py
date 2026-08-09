@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any, Dict
 
 from .governance.policy import MutationGovernancePolicy
-from .root_config import default_registry_root, load_configured_registry_root
 from .memory import append_jsonl_line_safe
+from .root_config import default_registry_root, load_configured_registry_root
 
 _REGISTRY_DIRNAME = "lives"
 _REGISTRY_FILENAME = "registry.json"

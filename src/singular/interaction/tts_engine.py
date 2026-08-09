@@ -9,10 +9,10 @@ Le module fournit:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
 import math
 import struct
+from dataclasses import dataclass
+from enum import Enum
 from typing import Iterable, Iterator
 
 

@@ -1,7 +1,7 @@
 import pytest
 
-from singular.life.vital import VitalState, VitalStateMachine, compute_vital_timeline
 from singular.life.health import ViabilityDriftDetector
+from singular.life.vital import VitalState, VitalStateMachine, compute_vital_timeline
 
 
 def test_viability_drift_escalates_and_recovers_with_hysteresis() -> None:

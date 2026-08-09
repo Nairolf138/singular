@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from singular.security.policy_engine import ActionPolicyEngine, PolicyRule
 from singular.core.agent_runtime import (
     ActionRequest,
     ActionResult,
@@ -13,6 +12,7 @@ from singular.core.agent_runtime import (
     RuntimeEventBus,
     RuntimeSafetyConfig,
 )
+from singular.security.policy_engine import ActionPolicyEngine, PolicyRule
 
 
 class _PerceptionStub:

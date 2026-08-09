@@ -5,13 +5,13 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
-import socket
 import shutil
+import socket
 import subprocess
 import time
 from typing import Any
-from urllib.parse import urlparse
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 from . import (

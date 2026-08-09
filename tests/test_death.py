@@ -1,13 +1,13 @@
 import ast
 import functools
-import random
 import json
+import random
 from pathlib import Path
 
 import singular.life.loop as life_loop
-from singular.life.loop import run
-from singular.life.death import DeathMonitor
 from singular.events import EventBus
+from singular.life.death import DeathMonitor
+from singular.life.loop import run
 
 
 class _StablePsyche:
@@ -51,8 +51,9 @@ def _patch_logger(monkeypatch, tmp_path: Path):
 
 
 def _patch_memory(monkeypatch, tmp_path: Path):
-    import singular.runs.logger as logger_mod
     import json
+
+    import singular.runs.logger as logger_mod
 
     episodic = tmp_path / "mem" / "episodic.jsonl"
 

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import grp
 import json
 import os
 import pwd
-import grp
 import shlex
 from pathlib import Path
 

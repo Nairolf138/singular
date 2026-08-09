@@ -17,13 +17,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from singular.lives import get_registry_root, load_registry
-from singular.sensors import load_host_sensor_thresholds
-from singular.skills_daily import build_daily_skills_snapshot
 from singular.dashboard.repositories.run_records import (
     RunRecordsRepository,
     resolve_current_life_home,
 )
+from singular.lives import get_registry_root, load_registry
+from singular.sensors import load_host_sensor_thresholds
+from singular.skills_daily import build_daily_skills_snapshot
 
 
 @dataclass(slots=True)

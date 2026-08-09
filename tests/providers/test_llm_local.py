@@ -3,10 +3,10 @@ import pytest
 from singular.providers import (
     ProviderRetryExhaustedError,
     ProviderTimeoutError,
+    llm_local,
     load_llm_client,
     load_llm_provider,
 )
-from singular.providers import llm_local
 
 
 def test_load_llm_provider_local():

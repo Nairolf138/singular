@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections import deque
+from dataclasses import dataclass
 from typing import Tuple
 
 from singular.psyche import Psyche

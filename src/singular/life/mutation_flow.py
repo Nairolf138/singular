@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 import importlib
 import random
-from typing import Callable, Dict, Mapping, TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Dict, Mapping
 
 if TYPE_CHECKING:
     from singular.beliefs.meta_learning import StrategyRecommendation

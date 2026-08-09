@@ -7,18 +7,18 @@ from fastapi_stub import TestClient
 
 from singular.dashboard import create_app
 from singular.environment import sim_world
-from singular.goals.quest_generation import generate_quests
-from singular.life.death import DeathMonitor
-from singular.life import loop as life_loop
-from singular.life.loop import load_checkpoint
-from singular.organisms.birth import birth
-from singular.organisms.status import status
 from singular.events import EventBus
+from singular.goals.quest_generation import generate_quests
+from singular.life import loop as life_loop
+from singular.life.death import DeathMonitor
+from singular.life.loop import load_checkpoint
 from singular.orchestrator.service import (
     LifecyclePhase,
     OrchestratorConfig,
     OrchestratorService,
 )
+from singular.organisms.birth import birth
+from singular.organisms.status import status
 from singular.self_narrative import SCHEMA_VERSION, load, update_from_signals
 
 

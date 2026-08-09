@@ -1,6 +1,6 @@
-from singular.psyche import Psyche, Mood
-from singular.motivation import GoalPolicy, Objective, HierarchicalObjectivesManager
 from singular.goals.intrinsic import IntrinsicGoals
+from singular.motivation import GoalPolicy, HierarchicalObjectivesManager, Objective
+from singular.psyche import Mood, Psyche
 
 
 def test_curiosity_increases():

@@ -12,10 +12,10 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from .dsl import (
-    Patch,
     CYCLOMATIC_LIMIT,
     THETA_DIFF_LIMIT,
     DSLValidationError,
+    Patch,
 )
 
 

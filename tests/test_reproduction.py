@@ -1,19 +1,19 @@
-from pathlib import Path
-
 import ast
 import json
+from pathlib import Path
+
 import pytest
 
-from singular.organisms.spawn import spawn
 from singular.governance.policy import MutationGovernancePolicy
 from singular.life.reproduction import (
     InheritanceRules,
     ReproductionDecisionPolicy,
     ReproductionVariationPolicy,
     authorize_reproduction_write,
-    decide_reproduction,
     crossover,
+    decide_reproduction,
 )
+from singular.organisms.spawn import spawn
 from singular.social.graph import SocialGraph
 
 
