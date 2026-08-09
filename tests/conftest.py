@@ -9,24 +9,26 @@ src_path = Path(__file__).resolve().parent.parent / "src"
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
-# Expose the FastAPI stub and alias it as the real package
+# Expose the FastAPI stub only when tests explicitly select the lightweight mode.
+# This decision is made here, before any test can import ``singular.dashboard``.
 tests_path = Path(__file__).resolve().parent
-if str(tests_path) not in sys.path:
-    sys.path.insert(0, str(tests_path))
+fastapi_mode = os.environ.get("SINGULAR_TEST_FASTAPI", "stub")
+if fastapi_mode not in {"stub", "real"}:
+    raise RuntimeError("SINGULAR_TEST_FASTAPI must be either 'stub' or 'real'")
 
-os.environ["PYTHONPATH"] = f"{tests_path}{os.pathsep}" + os.environ.get(
-    "PYTHONPATH", ""
-)
+if fastapi_mode == "stub":
+    if str(tests_path) not in sys.path:
+        sys.path.insert(0, str(tests_path))
 
-import fastapi_stub  # noqa: E402
-import fastapi_stub.responses  # noqa: E402,F401 - imported for side effect
-import fastapi_stub.testclient  # noqa: E402,F401 - imported for side effect
-import fastapi_stub.staticfiles  # noqa: E402,F401 - imported for side effect
+    import fastapi_stub  # noqa: E402
+    import fastapi_stub.responses  # noqa: E402,F401 - imported for side effect
+    import fastapi_stub.staticfiles  # noqa: E402,F401 - imported for side effect
+    import fastapi_stub.testclient  # noqa: E402,F401 - imported for side effect
 
-sys.modules.setdefault("fastapi", fastapi_stub)
-sys.modules.setdefault("fastapi.responses", fastapi_stub.responses)
-sys.modules.setdefault("fastapi.testclient", fastapi_stub.testclient)
-sys.modules.setdefault("fastapi.staticfiles", fastapi_stub.staticfiles)
+    sys.modules.setdefault("fastapi", fastapi_stub)
+    sys.modules.setdefault("fastapi.responses", fastapi_stub.responses)
+    sys.modules.setdefault("fastapi.staticfiles", fastapi_stub.staticfiles)
+    sys.modules.setdefault("fastapi.testclient", fastapi_stub.testclient)
 
 import pytest  # noqa: E402
 
