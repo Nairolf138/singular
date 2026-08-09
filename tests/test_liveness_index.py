@@ -150,3 +150,15 @@ def test_liveness_index_reports_mutation_viability_separately() -> None:
 
     assert payload["mutation_viability"]["score"] == 100.0
     assert payload["mutation_viability"]["accepted_useful_changes"] == 1
+
+
+def test_mutation_viability_distinguishes_durable_candidate() -> None:
+    payload = compute_liveness_index([
+        {"event": "mutation", "accepted": False, "useful": True,
+         "durably_viable": False, "score_base": 10, "score_new": 5},
+        {"event": "mutation", "accepted": True, "useful": True,
+         "durably_viable": True, "score_base": 10, "score_new": 8},
+    ], now=NOW)
+    assert payload["mutation_viability"]["accepted_count"] == 1
+    assert payload["mutation_viability"]["accepted_useful_changes"] == 1
+    assert payload["mutation_viability"]["durably_viable_count"] == 1

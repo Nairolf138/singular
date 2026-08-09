@@ -90,7 +90,10 @@ def select_operator(
 
     def expected(name: str) -> float:
         s = stats[name]
-        exploitation = s["reward"] / s["count"] if s["count"] else 0.0
+        # New runs learn from combined lifecycle fitness.  The reward fallback
+        # preserves checkpoints written before lifecycle fitness version 1.
+        reward = s.get("fitness_reward", s["reward"])
+        exploitation = reward / s["count"] if s["count"] else 0.0
         return exploitation + float((objective_bias or {}).get(name, 0.0))
 
     return max(names, key=expected)

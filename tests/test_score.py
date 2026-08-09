@@ -1,5 +1,6 @@
 import pytest
 
+from singular.life.fitness import LifecycleFitnessConfig, evaluate_mutation_fitness
 from singular.life import sandbox
 from singular.life.score import score
 from singular.life.sandbox_scoring import (
@@ -10,6 +11,26 @@ from singular.life.sandbox_scoring import (
 )
 
 pytestmark = pytest.mark.usefixtures("local_sandbox")
+
+
+def test_technical_gain_is_rejected_when_it_destroys_health():
+    weights = {name: 0.0 for name in (
+        "functional_gain", "health", "vital_risk", "resources",
+        "sandbox_stability", "cost", "quest_progress", "identity_continuity",
+        "useful_skills_retention",
+    )}
+    weights.update(functional_gain=0.3, health=0.18, vital_risk=-0.18)
+    config = LifecycleFitnessConfig(weights, 2, 0.0, 0.15)
+    decision = evaluate_mutation_fitness(
+        {"health": 1.0, "vital_risk": 0.0},
+        {"functional_gain": 1.0, "health": 0.1, "vital_risk": 0.8},
+        config,
+        observations=2,
+    )
+    assert decision.useful is True
+    assert decision.accepted is False
+    assert decision.viable is False
+    assert "vital_regression_threshold_exceeded" in decision.rejection_reasons
 
 
 def test_score_single_run_variance_zero():

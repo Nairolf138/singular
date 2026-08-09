@@ -68,6 +68,15 @@ def test_operator_selection_uses_analyze_and_objective_bias() -> None:
     )
 
 
+def test_operator_selection_prefers_combined_fitness_history() -> None:
+    operators = {"technical_only": _dec_operator, "viable": _inc_operator}
+    stats = {
+        "technical_only": {"count": 2, "reward": 10.0, "fitness_reward": -1.0},
+        "viable": {"count": 2, "reward": 1.0, "fitness_reward": 2.0},
+    }
+    assert select_operator(operators, stats, "exploit", random.Random(0)) == "viable"
+
+
 def test_sandbox_scoring_reports_success_and_failure() -> None:
     ok = score_code_with_error("result = 1\n")
     bad = score_code_with_error("raise RuntimeError('boom')\n")
