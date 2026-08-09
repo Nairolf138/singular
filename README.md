@@ -4,6 +4,8 @@
 
 # 🌱 Singular — Un organisme numérique vivant interactif
 
+**Singular** est un laboratoire open-source de vies numériques persistantes, capables d’évoluer d’abord en simulation, puis de s’incarner progressivement dans le monde réel à travers des capteurs, un corps robotique et une gouvernance de sécurité.
+
 **Singular** n’est pas seulement un programme informatique.  
 C’est une expérience : la tentative de créer un **organisme numérique vivant**, un compagnon logiciel qui **naît, évolue, apprend, interagit** et garde une **trace unique de sa vie**.
 
