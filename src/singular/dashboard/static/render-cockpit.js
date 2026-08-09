@@ -256,6 +256,10 @@ const renderSandboxGovernance=governance=>{
     emptyEl.textContent=violations>0?'Violations sandbox récentes détectées.':(payload.empty_state||'aucune violation sandbox récente');
   }
   setText('sandbox-breaker-status',status);
+  setText('sandbox-persistent-state',payload.persistent_state||'closed');
+  setText('sandbox-initial-cause',(payload.initial_cause&&payload.initial_cause.category)||na());
+  setText('sandbox-last-probe',payload.last_probe?(payload.last_probe.success?'succès':'échec'):na());
+  setText('sandbox-closure-decision',(payload.closure_decision&&payload.closure_decision.decision)||na());
   setText('sandbox-recent-violations',String(violations));
   setText('sandbox-last-skill',payload.last_faulty_skill||na());
   setText('sandbox-cooldown-remaining',formatCooldownSeconds(payload.cooldown_remaining_seconds));

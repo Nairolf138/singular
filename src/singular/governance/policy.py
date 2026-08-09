@@ -37,6 +37,8 @@ SANDBOX_POLICY_VIOLATION_ERROR_TYPES = frozenset({"forbidden_syntax", "forbidden
 
 _ROOT_POLICY_FILE = "policy.yaml"
 _POLICY_DECISIONS_LOG = "policy_decisions.jsonl"
+_CIRCUIT_STATE_FILE = "governance_circuit.json"
+_CIRCUIT_AUDIT_LOG = "governance_circuit_audit.jsonl"
 
 
 class PolicySchemaError(ValueError):
@@ -703,6 +705,83 @@ class CircuitBreakerState:
         }
 
 
+def circuit_state_path(home: Path | str | None = None) -> Path:
+    """Return the single durable source of truth used by CLI and dashboard."""
+
+    root = Path(home or os.environ.get("SINGULAR_HOME", "."))
+    return root / "mem" / _CIRCUIT_STATE_FILE
+
+
+def load_circuit_state(home: Path | str | None = None) -> dict[str, Any]:
+    """Load a circuit snapshot, tolerating a missing (never opened) circuit."""
+
+    path = circuit_state_path(home)
+    default = {
+        "schema_version": 1,
+        "state": "closed",
+        "initial_cause": None,
+        "violations": {"total": 0, "by_category": {}, "evidence": []},
+        "opened_at": None,
+        "cooldown_deadline": None,
+        "last_probe": None,
+        "closure_decision": None,
+        "updated_at": None,
+    }
+    if not path.is_file():
+        return default
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default
+    return {**default, **payload} if isinstance(payload, dict) else default
+
+
+def save_circuit_state(
+    payload: Mapping[str, Any], home: Path | str | None = None
+) -> Path:
+    """Atomically persist a circuit snapshot."""
+
+    path = circuit_state_path(home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(
+        json.dumps(dict(payload), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    os.replace(temporary, path)
+    return path
+
+
+def audit_circuit_transition(
+    *,
+    home: Path | str | None,
+    operator: str,
+    justification: str,
+    old_state: str,
+    new_state: str,
+    emergency: bool = False,
+    evidence: Mapping[str, Any] | None = None,
+) -> None:
+    """Append a mandatory, attributable state transition audit record."""
+
+    if not operator.strip() or not justification.strip():
+        raise ValueError(
+            "operator and justification are mandatory; silent reset refused"
+        )
+    path = circuit_state_path(home).parent / _CIRCUIT_AUDIT_LOG
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "operator": operator,
+        "justification": justification,
+        "old_state": old_state,
+        "new_state": new_state,
+        "emergency": emergency,
+        "evidence": dict(evidence or {}),
+    }
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
 @dataclass(frozen=True)
 class GovernanceDecision:
     """Decision returned by policy simulation or enforcement."""
@@ -749,6 +828,7 @@ class MutationGovernancePolicy:
         skill_circuit_breaker_cost_threshold: float = 5.0,
         skill_circuit_breaker_cooldown_seconds: float = 600.0,
         safe_mode: bool = False,
+        circuit_state_file: Path | str | None = None,
     ) -> None:
         runtime_policy = load_runtime_policy()
         self.runtime_policy = runtime_policy
@@ -964,6 +1044,73 @@ class MutationGovernancePolicy:
         self._social_conflict_timestamps: dict[tuple[str, str], deque[datetime]] = {}
         self._social_mediation_until: dict[tuple[str, str], datetime] = {}
         self._social_prudent_until: datetime | None = None
+        self._circuit_state_file = (
+            Path(circuit_state_file)
+            if circuit_state_file
+            else (circuit_state_path() if os.environ.get("SINGULAR_HOME") else None)
+        )
+        if self._circuit_state_file and self._circuit_state_file.is_file():
+            persisted = load_circuit_state(self._circuit_state_file.parent.parent)
+            deadline = persisted.get("cooldown_deadline")
+            try:
+                self._circuit_open_until = (
+                    datetime.fromisoformat(deadline) if deadline else None
+                )
+            except (TypeError, ValueError):
+                self._circuit_open_until = None
+            self._circuit_half_open = persisted.get("state") == "half_open"
+            for item in persisted.get("violations", {}).get("evidence", []):
+                try:
+                    happened_at = datetime.fromisoformat(str(item["timestamp"]))
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if self._now() - happened_at <= timedelta(
+                    seconds=self.circuit_breaker_window_seconds
+                ):
+                    self._violation_timestamps.append(happened_at)
+
+    def _persist_circuit(
+        self,
+        *,
+        state: str,
+        cause: str | None = None,
+        severity: str | None = None,
+        closure: Mapping[str, Any] | None = None,
+        probe: Mapping[str, Any] | None = None,
+    ) -> None:
+        if self._circuit_state_file is None:
+            return
+        home = self._circuit_state_file.parent.parent
+        payload = load_circuit_state(home)
+        now = self._now().isoformat()
+        payload.update({"state": state, "updated_at": now})
+        if cause:
+            violations = payload["violations"]
+            violations["total"] = int(violations.get("total", 0)) + 1
+            by_category = violations.setdefault("by_category", {})
+            by_category[cause] = int(by_category.get(cause, 0)) + 1
+            violations.setdefault("evidence", []).append(
+                {"timestamp": now, "category": cause, "severity": severity}
+            )
+            violations["evidence"] = violations["evidence"][-50:]
+            if payload.get("initial_cause") is None:
+                payload["initial_cause"] = {
+                    "category": cause,
+                    "severity": severity,
+                    "timestamp": now,
+                }
+        if state == "open":
+            payload["opened_at"] = payload.get("opened_at") or now
+            payload["cooldown_deadline"] = (
+                self._circuit_open_until.isoformat()
+                if self._circuit_open_until
+                else None
+            )
+        if probe is not None:
+            payload["last_probe"] = dict(probe)
+        if closure is not None:
+            payload["closure_decision"] = dict(closure)
+        save_circuit_state(payload, home)
 
     def allow_sensor(self, sensor_name: str) -> bool:
         name = sensor_name.strip().lower()
@@ -1065,6 +1212,7 @@ class MutationGovernancePolicy:
         if self._now() < self._circuit_open_until:
             return False
         self._circuit_half_open = True
+        self._persist_circuit(state="half_open")
         return False
 
     def circuit_breaker_state(self) -> str:
@@ -1075,6 +1223,7 @@ class MutationGovernancePolicy:
         if self._now() < self._circuit_open_until:
             return "open"
         self._circuit_half_open = True
+        self._persist_circuit(state="half_open")
         return "half-open"
 
     def record_safe_probe(
@@ -1099,15 +1248,29 @@ class MutationGovernancePolicy:
             return False
         if not self._circuit_half_open:
             return False
+        probe = {
+            "timestamp": self._now().isoformat(),
+            "success": bool(success),
+            "kind": "low_risk_mutation",
+        }
         if success:
             self._circuit_open_until = None
             self._circuit_half_open = False
             self._violation_timestamps.clear()
+            self._persist_circuit(
+                state="closed",
+                probe=probe,
+                closure={
+                    "decision": "closed_after_successful_probe",
+                    "timestamp": self._now().isoformat(),
+                },
+            )
             return True
         self._circuit_open_until = self._now() + timedelta(
             seconds=self.circuit_breaker_cooldown_seconds
         )
         self._circuit_half_open = False
+        self._persist_circuit(state="open", probe=probe)
         return False
 
     def mutation_lock_reason(self) -> str | None:
@@ -1206,6 +1369,11 @@ class MutationGovernancePolicy:
             return None
 
         now = self._now()
+        self._persist_circuit(
+            state=self.circuit_breaker_state().replace("-", "_"),
+            cause=category,
+            severity=severity,
+        )
         was_open = (
             self._circuit_open_until is not None and now < self._circuit_open_until
         )
@@ -1229,6 +1397,7 @@ class MutationGovernancePolicy:
                 corrective_action="halt mutations until the security circuit-breaker cooldown expires",
             )
             self._last_circuit_breaker_state = state
+            self._persist_circuit(state="open")
             log.error(
                 "governance circuit breaker opened: category=%s severity=%s threshold=%s cooldown=%ss",
                 category,
