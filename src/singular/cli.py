@@ -612,6 +612,127 @@ def _diagnose_evolution(*, output_format: str = "plain") -> int:
     return 1 if any(row["detected"] for row in patterns) else 0
 
 
+def _diagnose_governance(*, output_format: str = "plain") -> int:
+    """Show durable breaker evidence rather than only the last log message."""
+    from .governance.policy import load_circuit_state
+
+    state = load_circuit_state(os.environ.get("SINGULAR_HOME"))
+    deadline = state.get("cooldown_deadline")
+    payload = {**state, "recommended_action": _circuit_corrective_action(state)}
+    if output_format == "json":
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"Circuit gouvernance: {state['state']}")
+        print(f"Cause initiale: {state.get('initial_cause') or '-'}")
+        print(f"Violations agrégées: {state.get('violations')}")
+        print(f"Échéance cooldown: {deadline or '-'}")
+        print(f"Dernière sonde: {state.get('last_probe') or '-'}")
+        print(f"Décision de fermeture: {state.get('closure_decision') or '-'}")
+        print(f"Action exacte: {payload['recommended_action']}")
+    return 1 if state["state"] != "closed" else 0
+
+
+def _circuit_corrective_action(state: dict[str, Any]) -> str:
+    cause = str((state.get("initial_cause") or {}).get("category", ""))
+    actions = {
+        "confirmed_root_escape": "Corriger le chemin qui sort de la racine puis relancer la sonde isolée.",
+        "outbound_symlink": "Supprimer le lien symbolique sortant puis relancer la sonde isolée.",
+        "forbidden_syntax": "Retirer la syntaxe interdite de la skill fautive puis relancer la sonde isolée.",
+        "timeout": "Borner la boucle ou réduire le calcul fautif puis relancer la sonde isolée.",
+    }
+    return actions.get(
+        cause,
+        "Corriger la cause initiale documentée puis lancer `singular governance recover`.",
+    )
+
+
+def _recover_governance(*, operator: str, justification: str, emergency: bool) -> int:
+    """Move open -> half_open -> closed only through an audited safe mutation probe."""
+    from datetime import datetime, timezone
+    from .governance.policy import (
+        audit_circuit_transition,
+        load_circuit_state,
+        save_circuit_state,
+    )
+    from .life.loop import score_code_with_error
+
+    home = Path(os.environ.get("SINGULAR_HOME", "."))
+    state = load_circuit_state(home)
+    old_state = str(state["state"])
+    if old_state == "closed":
+        print("Circuit déjà fermé; aucune remise à zéro effectuée.")
+        return 0
+    deadline = state.get("cooldown_deadline")
+    cooldown_active = False
+    if deadline:
+        try:
+            cooldown_active = datetime.now(timezone.utc) < datetime.fromisoformat(
+                str(deadline)
+            )
+        except ValueError:
+            cooldown_active = True
+    diagnostics_ok = all(
+        score_code_with_error(path.read_text(encoding="utf-8")).ok
+        for path in _iter_sandbox_skill_files(home / "skills")
+    )
+    if (cooldown_active or not diagnostics_ok) and not emergency:
+        reason = (
+            "cooldown non échu"
+            if cooldown_active
+            else "cause non corrigée (diagnostic sandbox KO)"
+        )
+        print(
+            f"Reset refusé: {reason}. Utilisez --emergency uniquement avec justification auditée.",
+            file=sys.stderr,
+        )
+        return 1
+    now = datetime.now(timezone.utc).isoformat()
+    state.update({"state": "half_open", "updated_at": now})
+    save_circuit_state(state, home)
+    audit_circuit_transition(
+        home=home,
+        operator=operator,
+        justification=justification,
+        old_state=old_state,
+        new_state="half_open",
+        emergency=emergency,
+        evidence={
+            "diagnostics_corrected": diagnostics_ok,
+            "cooldown_active": cooldown_active,
+        },
+    )
+    probe = score_code_with_error("result = 1\n")
+    state["last_probe"] = {
+        "timestamp": now,
+        "kind": "low_risk_mutation",
+        "success": probe.ok,
+        "error_type": probe.error_type,
+    }
+    new_state = "closed" if probe.ok else "open"
+    state["state"] = new_state
+    if probe.ok:
+        state["closure_decision"] = {
+            "timestamp": now,
+            "decision": "closed_after_successful_probe",
+            "operator": operator,
+            "justification": justification,
+        }
+    save_circuit_state(state, home)
+    audit_circuit_transition(
+        home=home,
+        operator=operator,
+        justification=justification,
+        old_state="half_open",
+        new_state=new_state,
+        emergency=emergency,
+        evidence={"probe": state["last_probe"]},
+    )
+    print(
+        f"Sonde à faible risque: {'succès' if probe.ok else 'échec'}; circuit {new_state}."
+    )
+    return 0 if probe.ok else 1
+
+
 def _doctor_fix_windows_user_path(scripts_path: Path) -> bool:
     """Add scripts_path to the Windows user Path variable when missing."""
 
@@ -1614,6 +1735,32 @@ def _build_parser() -> argparse.ArgumentParser:
         "sandbox",
         help="Diagnostiquer les skills de SINGULAR_HOME/skills via la sandbox",
     )
+    diagnose_subparsers.add_parser(
+        "governance", help="Afficher l'état persistant et ses preuves"
+    )
+    governance_parser = subparsers.add_parser(
+        "governance", help="Diagnostic et récupération du circuit"
+    )
+    governance_subparsers = governance_parser.add_subparsers(
+        dest="governance_command", required=True
+    )
+    governance_subparsers.add_parser(
+        "diagnose", help="Afficher l'état persistant et ses preuves"
+    )
+    governance_recover = governance_subparsers.add_parser(
+        "recover", aliases=["reset"], help="Exécuter une récupération auditée"
+    )
+    governance_recover.add_argument(
+        "--operator", required=True, help="Identité de l'opérateur"
+    )
+    governance_recover.add_argument(
+        "--justification", required=True, help="Justification consignée dans l'audit"
+    )
+    governance_recover.add_argument(
+        "--emergency",
+        action="store_true",
+        help="Contourner correction/cooldown en l'auditant explicitement",
+    )
     diagnose_evolution_parser = diagnose_subparsers.add_parser(
         "evolution",
         help="Analyser statiquement les runs et mémoires récents",
@@ -2378,6 +2525,17 @@ def main(argv: list[str] | None = None) -> int:
             if args.life or not os.environ.get("SINGULAR_HOME"):
                 _ensure_active_life(resolve_life, args.life)
             return _diagnose_evolution(output_format=args.output_format)
+        if args.diagnose_command == "governance":
+            return _diagnose_governance(output_format=args.output_format)
+
+    elif args.command == "governance":
+        if args.governance_command == "diagnose":
+            return _diagnose_governance(output_format=args.output_format)
+        return _recover_governance(
+            operator=args.operator,
+            justification=args.justification,
+            emergency=bool(args.emergency),
+        )
 
     elif args.command == "retention":
         _ensure_active_life(resolve_life, args.life)

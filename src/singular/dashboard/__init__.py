@@ -26,7 +26,7 @@ from singular.storage_retention import retention_status_snapshot
 from singular.providers import provider_diagnostics
 
 from singular.dashboard.actions import DashboardActionService
-from singular.governance.policy import load_runtime_policy
+from singular.governance.policy import load_circuit_state, load_runtime_policy
 from singular.skills_daily import build_daily_skills_snapshot
 from fastapi.responses import HTMLResponse
 
@@ -745,8 +745,27 @@ def create_app(
         if latest_halted and not latest_breaker:
             breaker_status = "mutations arrêtées"
 
-        corrective_action = "Surveiller le prochain run."
-        if latest_breaker and latest_breaker.get("corrective_action"):
+        persistent = load_circuit_state(base_dir)
+        persistent_state = str(persistent.get("state", "closed"))
+        if persistent_state == "open":
+            breaker_status = "ouvert"
+            cooldown_remaining = max(
+                cooldown_remaining,
+                _seconds_until(persistent.get("cooldown_deadline"), now=now),
+            )
+        elif persistent_state == "half_open":
+            breaker_status = "semi-ouvert (sonde requise)"
+        cause = str((persistent.get("initial_cause") or {}).get("category", ""))
+        cause_actions = {
+            "confirmed_root_escape": "Corriger le chemin qui sort de la racine puis lancer la sonde isolée.",
+            "outbound_symlink": "Supprimer le lien symbolique sortant puis lancer la sonde isolée.",
+            "forbidden_syntax": "Retirer la syntaxe interdite de la skill fautive puis lancer la sonde isolée.",
+            "timeout": "Borner la boucle fautive puis lancer la sonde isolée.",
+        }
+        corrective_action = cause_actions.get(cause, "Surveiller le prochain run.")
+        if cause in cause_actions:
+            pass
+        elif latest_breaker and latest_breaker.get("corrective_action"):
             corrective_action = str(latest_breaker["corrective_action"])
         elif latest_quarantine:
             corrective_action = "Inspecter la skill en quarantaine avant réactivation."
@@ -758,6 +777,13 @@ def create_app(
             )
 
         return {
+            "persistent_state": persistent_state,
+            "initial_cause": persistent.get("initial_cause"),
+            "aggregated_violations": persistent.get("violations"),
+            "opened_at": persistent.get("opened_at"),
+            "cooldown_deadline": persistent.get("cooldown_deadline"),
+            "last_probe": persistent.get("last_probe"),
+            "closure_decision": persistent.get("closure_decision"),
             "circuit_breaker_status": breaker_status,
             "recent_violations_count": len(sandbox_violations),
             "last_faulty_skill": latest_fault.get("skill") if latest_fault else None,
@@ -1011,7 +1037,9 @@ def create_app(
                     "decision": (
                         "accepted"
                         if accepted is True
-                        else "rejected" if accepted is False else record.get("decision")
+                        else "rejected"
+                        if accepted is False
+                        else record.get("decision")
                     ),
                     "reason": record.get("decision_reason", record.get("reason")),
                     "operator": record.get("operator", record.get("op")),
@@ -1730,9 +1758,7 @@ def create_app(
         trajectory = _build_trajectory(records)
         objectives = trajectory.get("objectives", {})
         active_objectives = (
-            objectives.get("in_progress", [])
-            if isinstance(objectives, dict)
-            else []
+            objectives.get("in_progress", []) if isinstance(objectives, dict) else []
         )
         mutations = [record for record in records if _is_mutation_record(record)]
         decisions = [
@@ -1754,7 +1780,9 @@ def create_app(
             for item in read_causal_timeline(life_dir / "mem" / "causal_timeline.jsonl")
             if isinstance(item, dict)
         ]
-        causal_items.sort(key=lambda item: str(item.get("ts", item.get("recorded_at", ""))))
+        causal_items.sort(
+            key=lambda item: str(item.get("ts", item.get("recorded_at", "")))
+        )
 
         def _label(item: object, *keys: str, fallback: str = "Non disponible") -> str:
             if not isinstance(item, dict):
@@ -1771,51 +1799,85 @@ def create_app(
         alerts = alerts_from_records(records)
         primary_alert = alerts[-1] if alerts else {}
         trend = _label(comparison_row, "trend", fallback="plateau")
-        health = comparison_row.get("current_health_score") if isinstance(comparison_row, dict) else None
-        current_state = _label(latest, "status", "state", "event", fallback="Aucune observation")
+        health = (
+            comparison_row.get("current_health_score")
+            if isinstance(comparison_row, dict)
+            else None
+        )
+        current_state = _label(
+            latest, "status", "state", "event", fallback="Aucune observation"
+        )
         if health is not None:
             current_state = f"{current_state} · santé {health}"
 
         need = _label(latest, "dominant_need", "need", "motivation", "drive")
-        decision = _label(decisions[-1] if decisions else None, "decision", "human_summary", "event")
+        decision = _label(
+            decisions[-1] if decisions else None, "decision", "human_summary", "event"
+        )
         action = _label(actions[-1] if actions else None, "action", "operator", "op")
         consequence = _label(last_causal, "consequence", "effect", "outcome", "result")
         remembered = _label(last_causal, "change", "memory", "summary", "event")
-        alert_label = _label(primary_alert, "message", "kind", "severity", fallback="Aucune alerte")
+        alert_label = _label(
+            primary_alert, "message", "kind", "severity", fallback="Aucune alerte"
+        )
 
         recommendations: list[str] = []
         liveness = compute_liveness_index_service(records) if records else {}
-        raw_recommendations = liveness.get("recommendations", []) if isinstance(liveness, dict) else []
+        raw_recommendations = (
+            liveness.get("recommendations", []) if isinstance(liveness, dict) else []
+        )
         if isinstance(raw_recommendations, list):
             recommendations.extend(str(item) for item in raw_recommendations if item)
         if alerts:
-            recommendations.append("Examiner l’alerte principale et ses preuves avant la prochaine mutation.")
+            recommendations.append(
+                "Examiner l’alerte principale et ses preuves avant la prochaine mutation."
+            )
 
         evidence: list[dict[str, object]] = []
         for item in causal_items[-5:]:
-            evidence.append({
-                "kind": _label(item, "event", "cause", fallback="causalité"),
-                "at": _label(item, "ts", "recorded_at"),
-                "description": _label(item, "summary", "consequence", "effect", "outcome", fallback=json.dumps(item, ensure_ascii=False)),
-            })
+            evidence.append(
+                {
+                    "kind": _label(item, "event", "cause", fallback="causalité"),
+                    "at": _label(item, "ts", "recorded_at"),
+                    "description": _label(
+                        item,
+                        "summary",
+                        "consequence",
+                        "effect",
+                        "outcome",
+                        fallback=json.dumps(item, ensure_ascii=False),
+                    ),
+                }
+            )
         if last_mutation:
-            evidence.append({
-                "kind": "mutation",
-                "at": _label(last_mutation, "ts"),
-                "description": _label(last_mutation, "human_summary", "operator", "op"),
-            })
+            evidence.append(
+                {
+                    "kind": "mutation",
+                    "at": _label(last_mutation, "ts"),
+                    "description": _label(
+                        last_mutation, "human_summary", "operator", "op"
+                    ),
+                }
+            )
 
         conversation_items: list[dict[str, object]] = []
         latest_run = _latest_run_file(current_life_only=False)
         if latest_run is not None:
-            consciousness_path = _resolve_consciousness_path(_run_file_id(latest_run), current_life_only=False)
+            consciousness_path = _resolve_consciousness_path(
+                _run_file_id(latest_run), current_life_only=False
+            )
             if consciousness_path is not None:
-                for line in consciousness_path.read_text(encoding="utf-8").splitlines()[-20:]:
+                for line in consciousness_path.read_text(encoding="utf-8").splitlines()[
+                    -20:
+                ]:
                     try:
                         item = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    if isinstance(item, dict) and _label(item, "life", "owner", fallback=life) == life:
+                    if (
+                        isinstance(item, dict)
+                        and _label(item, "life", "owner", fallback=life) == life
+                    ):
                         conversation_items.append(item)
 
         return {
@@ -1824,13 +1886,17 @@ def create_app(
                 "current_state": current_state,
                 "recent_evolution": trend,
                 "dominant_need": need,
-                "active_objective": str(active_objectives[0]) if active_objectives else "Aucun objectif actif",
+                "active_objective": str(active_objectives[0])
+                if active_objectives
+                else "Aucun objectif actif",
                 "last_decision": decision,
                 "last_action": action,
                 "observed_consequence": consequence,
                 "memorized_change": remembered,
                 "primary_alert": alert_label,
-                "recommended_next_action": recommendations[0] if recommendations else "Poursuivre l’observation",
+                "recommended_next_action": recommendations[0]
+                if recommendations
+                else "Poursuivre l’observation",
             },
             "evidence": evidence,
             "technical": {
@@ -2224,11 +2290,18 @@ def create_app(
             raise HTTPException(status_code=404, detail="life not found")
         display_name = life_meta_get(meta, "name", slug)
         aliases = {life, slug, str(display_name)}
-        records = [rec for rec in _load_run_records(False) if _record_life(rec) in aliases]
+        records = [
+            rec for rec in _load_run_records(False) if _record_life(rec) in aliases
+        ]
         try:
             return build_life_timeseries(
-                records, life=slug, time_window=time_window, resolution=resolution,
-                limit=limit, mutation_index=mutation_index, record_run_id=_record_run_id,
+                records,
+                life=slug,
+                time_window=time_window,
+                resolution=resolution,
+                limit=limit,
+                mutation_index=mutation_index,
+                record_run_id=_record_run_id,
             )
         except (ValueError, IndexError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -3077,9 +3150,7 @@ def create_app(
         async def _send(payload: dict[str, object]) -> None:
             """Disconnect slow consumers instead of accumulating unbounded writes."""
             try:
-                await asyncio.wait_for(
-                    ws.send_json(payload), timeout=ws_send_timeout
-                )
+                await asyncio.wait_for(ws.send_json(payload), timeout=ws_send_timeout)
             except asyncio.CancelledError:
                 # ``wait_for`` must not turn application shutdown into a send failure.
                 raise
@@ -3190,14 +3261,26 @@ def create_app(
                     else:
                         last_quests_mtime_ns = mtime_ns
                     if error is not None:
-                        await _send({"type": "stream_error", "source": source, "error": type(error).__name__})
+                        await _send(
+                            {
+                                "type": "stream_error",
+                                "source": source,
+                                "error": type(error).__name__,
+                            }
+                        )
                     elif data is not None:
                         await _send({"type": source, "data": data})
 
                 incremental_events: list[dict[str, object]] = []
                 run_files, discovery_error = await asyncio.to_thread(_list_run_files)
                 if discovery_error is not None:
-                    incremental_events.append({"type": "stream_error", "source": "runs", "error": type(discovery_error).__name__})
+                    incremental_events.append(
+                        {
+                            "type": "stream_error",
+                            "source": "runs",
+                            "error": type(discovery_error).__name__,
+                        }
+                    )
                     run_files = [Path(name) for name in log_cursors]
                 if run_files:
                     current_files: set[str] = set()
