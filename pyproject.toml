@@ -62,6 +62,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
+"graine" = ["configs/*.yaml"]
 "singular.data" = ["configs/*.yaml", "configs/ecosystem/*.json"]
 "singular.dashboard" = ["templates/*.html", "static/*"]
 
