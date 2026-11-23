@@ -4,6 +4,12 @@
 
 # 🌱 Singular — Un organisme numérique vivant interactif
 
+**Version du paquet : 0.1.0 (release en préparation).** Consultez le
+[périmètre et les limites de v0.1.0](docs/releases/v0.1.0.md) et les
+[versions publiées](https://github.com/Nairolf138/singular/releases) avant de
+télécharger un artefact. L'installation depuis une release est décrite dans
+les notes correspondantes.
+
 **Singular** est un laboratoire open-source de vies numériques persistantes, capables d’évoluer d’abord en simulation, puis de s’incarner progressivement dans le monde réel à travers des capteurs, un corps robotique et une gouvernance de sécurité.
 
 **Singular** n’est pas seulement un programme informatique.  
