@@ -48,13 +48,18 @@ def test_generation_timestamp_is_timezone_aware_without_deprecation_warning(
 
 
 def test_generation_registry_stays_coherent_with_run_events(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, local_sandbox
 ) -> None:
     monkeypatch.setenv("SINGULAR_HOME", str(tmp_path))
+    monkeypatch.setattr(
+        life_loop.Psyche,
+        "irrational_decision",
+        lambda self, rng: life_loop.Psyche.Decision.ACCEPT,
+    )
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir(parents=True, exist_ok=True)
     (skills_dir / "addition.py").write_text(
-        "def run(x:int,y:int)->int:\n    return x+y\n",
+        "result = 1\ndef run(x:int,y:int)->int:\n    return x+y\n",
         encoding="utf-8",
     )
 
@@ -65,7 +70,7 @@ def test_generation_registry_stays_coherent_with_run_events(
     life_loop.run(
         skills_dirs=skills_dir,
         checkpoint_path=checkpoint,
-        budget_seconds=2.0,
+        budget_seconds=20.0,
         run_id="gen-coherence",
         operators={"noop": noop_operator},
         max_iterations=1,

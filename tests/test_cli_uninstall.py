@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 import singular.cli as cli
 
 
@@ -112,3 +114,28 @@ def test_uninstall_purge_accepts_dev_repo_root_with_force(tmp_path: Path) -> Non
     assert not (root / "lives").exists()
     assert not (root / "mem").exists()
     assert not (root / "runs").exists()
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        (
+            PermissionError(13, "Permission denied", "protected"),
+            "permissions insuffisantes",
+        ),
+        (OSError("disk failure"), "disk failure"),
+    ],
+)
+def test_uninstall_reports_filesystem_failure_without_claiming_success(
+    tmp_path: Path, monkeypatch, capsys, failure, expected
+) -> None:
+    root = tmp_path / "universe"
+    _mkdir(root / "mem")
+
+    def fail(*, purge_lives):
+        raise failure
+
+    monkeypatch.setattr("singular.lives.uninstall_singular", fail)
+    assert cli.main(["--root", str(root), "uninstall", "--keep-lives", "--yes"]) == 1
+    assert expected in capsys.readouterr().err
+    assert (root / "mem").exists()
