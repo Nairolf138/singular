@@ -55,15 +55,17 @@ thresholds:
   dying_degradation_minimum_score: 40
 
 statuses:
-  not_alive_yet: not_alive_yet
-  fragile: fragile
-  alive: alive
-  dying: dying
-  extinct: extinct
+  running: running
+  budget_exhausted: budget_exhausted
+  degraded: degraded
+  mutation_paused: mutation_paused
+  terminal: terminal
+  dead: dead
 
 status_rules:
-  not_alive_yet: "Score insuffisant ou signaux fondamentaux absents."
-  fragile: "Score intermédiaire mais continuité incomplète."
-  alive: "Score supérieur ou égal au seuil alive et aucun signal terminal."
-  dying: "Signal terminal ou dégradation forte détectés, sans extinction confirmée."
-  extinct: "Autopsy présente, registre extinct ou événement death confirmé."
+  running: "Score et critères fondamentaux établis, sans signal terminal."
+  budget_exhausted: "Budget volontaire épuisé, sans preuve de mort."
+  degraded: "Critères fondamentaux incomplets ou score insuffisant."
+  mutation_paused: "Mutations suspendues, sans preuve de mort."
+  terminal: "Dégradation terminale observée, sans extinction confirmée."
+  dead: "Extinction corroborée et durable selon les règles vitales."

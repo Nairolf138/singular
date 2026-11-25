@@ -18,6 +18,7 @@ def _write_spec(path: Path, name: str, examples: list[dict]) -> None:
     path.write_text(json.dumps(spec), encoding="utf-8")
 
 
+@pytest.mark.usefixtures("local_sandbox")
 def test_quest_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     root = tmp_path / "world"
     spec_path = tmp_path / "square.json"
@@ -58,6 +59,7 @@ def test_quest_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     assert psyche["last_mood"] == "proud"
 
 
+@pytest.mark.usefixtures("local_sandbox")
 def test_quest_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     root = tmp_path / "world"
     spec_path = tmp_path / "bad.json"

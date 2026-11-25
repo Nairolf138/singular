@@ -7,7 +7,12 @@ from singular.life.test_coevolution import (
 )
 
 
-def test_regression_detection_rate():
+def test_regression_detection_rate(monkeypatch):
+    # Exercise the pool's comparison independently of the OCI runtime.
+    monkeypatch.setattr(
+        "singular.life.test_coevolution.sandbox.run",
+        lambda probe: 1 if probe.startswith("result = 1\n") else 0,
+    )
     pool = LivingTestPool(tests=[TestCandidate("result == 1")], ttl={"result == 1": 3})
     rate = pool.regression_detection_rate("result = 1", "result = 2")
     assert rate == 1.0

@@ -10,7 +10,7 @@ from singular.runs.run import run
 from singular.runs.synthesize import synthesize
 
 
-def test_full_workflow(monkeypatch, tmp_path):
+def test_full_workflow(monkeypatch, tmp_path, local_sandbox):
     """Ensure the basic workflow stores code and recalls it in conversation."""
 
     monkeypatch.chdir(tmp_path)

@@ -532,7 +532,7 @@ def test_dashboard_index_exposes_interactive_contracts(tmp_path: Path) -> None:
     response = TestClient(app).get("/")
 
     assert response.status_code == 200
-    body = response.json()
+    body = response.text
 
     tab_contracts = {
         "tab-btn-decider": ("decider-maintenant", "tab-decider-maintenant"),

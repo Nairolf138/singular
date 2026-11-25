@@ -4,10 +4,19 @@ import json
 import random
 from pathlib import Path
 
+import pytest
+
 import singular.life.loop as life_loop
 from singular.events import EventBus
 from singular.life.death import DeathMonitor
 from singular.life.loop import run
+
+pytestmark = pytest.mark.usefixtures("local_sandbox")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_death_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path / "life-home"))
 
 
 class _StablePsyche:

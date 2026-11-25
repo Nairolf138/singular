@@ -11,6 +11,7 @@ from singular.multiagent import (
 
 def test_multi_life_help_improves_success_without_policy_violation(
     tmp_path: Path,
+    local_sandbox,
 ) -> None:
     requester_root = tmp_path / "life-a"
     helper_root = tmp_path / "life-b"

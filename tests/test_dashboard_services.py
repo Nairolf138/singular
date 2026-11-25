@@ -291,18 +291,23 @@ def test_lives_comparison_normalizes_registry_life_statuses() -> None:
         registry_life_meta=lambda life_name, lives: (life_name, lives.get(life_name)),
     )
 
-    assert comparison["alpha"]["life_status"] == "active"
+    assert comparison["alpha"]["registry_status"] == "active"
+    assert comparison["alpha"]["life_status"] is None
     assert comparison["alpha"]["is_registry_active_life"] is True
-    assert comparison["beta"]["life_status"] == "archived"
+    assert comparison["beta"]["registry_status"] == "archived"
+    assert comparison["beta"]["life_status"] is None
     assert comparison["beta"]["is_registry_active_life"] is False
     assert comparison["gamma"]["life_status"] == "dead"
     assert comparison["gamma"]["extinction_seen_in_runs"] is True
     assert comparison["gamma"]["run_terminated"] is True
     assert comparison["gamma"]["status_reconciliation_suggestion"] is None
-    assert comparison["delta"]["life_status"] == "stopped"
+    assert comparison["delta"]["registry_status"] == "stopped"
+    assert comparison["delta"]["life_status"] is None
     assert comparison["delta"]["run_terminated"] is True
-    assert comparison["epsilon"]["life_status"] == "unknown"
-    assert comparison["zeta"]["life_status"] == "unknown"
+    assert comparison["epsilon"]["registry_status"] == "unknown"
+    assert comparison["epsilon"]["life_status"] is None
+    assert comparison["zeta"]["registry_status"] == "unknown"
+    assert comparison["zeta"]["life_status"] is None
 
 
 def test_code_evolution_service_aggregates_by_life_and_metrics() -> None:

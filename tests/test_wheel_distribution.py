@@ -34,7 +34,8 @@ def test_installed_wheel_contains_all_runtime_resources(tmp_path: Path) -> None:
     )
     python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     subprocess.run(
-        [python, "-m", "pip", "install", "--no-deps", str(wheel)], check=True
+        [python, "-m", "pip", "install", "--no-deps", "--force-reinstall", str(wheel)],
+        check=True,
     )
 
     execution_dir = tmp_path / "installed-runtime"
@@ -44,6 +45,7 @@ from importlib.resources import as_file, files
 from pathlib import Path
 
 from singular.life.ecosystem import EcosystemRulesConfig
+from singular.life.life_definition import load_life_definition_config
 from singular.orchestrator.lifecycle_clock import load_lifecycle_clock_config
 from singular.organisms.birth import _load_starter_profiles, birth
 from singular.resources import config_resource
@@ -62,6 +64,7 @@ assert OPERATOR_NAMES
 assert load_zones()
 assert load_lifecycle_clock_config().cycle.veille_seconds == 2.0
 assert config_resource("life_definition.yaml").is_file()
+assert load_life_definition_config().statuses["running"] == "running"
 for mode in ("lab", "production"):
     with as_file(config_resource("ecosystem", f"{mode}.json")) as config_path:
         config = EcosystemRulesConfig.from_file(config_path)

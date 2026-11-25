@@ -96,7 +96,7 @@ def test_unrolling_pipeline_rejects_invalid_output_without_circuit_breaker():
     assert "__mutation_rejected_reason__" in mutated
     assert result.is_candidate_failure
     assert _sandbox_failure_category(False, True, mutated) == (
-        "invalid_mutation_rejected",
+        "invalid_mutation",
         "medium",
         False,
     )

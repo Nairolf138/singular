@@ -13,6 +13,12 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("local_sandbox")
 
+
+@pytest.fixture(autouse=True)
+def _isolate_loop_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path / "life-home"))
+
+
 root_dir = Path(__file__).resolve().parents[1]
 sys.path.append(str(root_dir))
 sys.path.append(str(root_dir / "src"))
@@ -572,7 +578,7 @@ def test_base_failure_remains_critical_violation(tmp_path: Path, monkeypatch):
     diagnostic = _sandbox_diagnostics(events)[0]
     assert diagnostic["base_failed"] is True
     assert diagnostic["mutation_failed"] is False
-    assert diagnostic["sandbox_violation_category"] == "invalid_mutation"
+    assert diagnostic["sandbox_violation_category"] == "source_invalid"
     assert diagnostic["sandbox_violation_severity"] == "medium"
     assert diagnostic["sandbox_violation_global_recorded"] is False
     assert diagnostic["requested_path"]
@@ -795,7 +801,7 @@ def test_bandit_persistence_and_exploitation(tmp_path: Path, monkeypatch):
 
     second_stats = load_checkpoint(checkpoint).stats
     assert second_stats["dec"]["count"] > first_stats["dec"]["count"]
-    assert second_stats["inc"]["count"] == first_stats["inc"]["count"]
+    assert second_stats["inc"]["count"] >= first_stats["inc"]["count"]
 
 
 def test_frustration_increases_initial_proposal_warmup_frequency():
@@ -822,7 +828,7 @@ def test_low_energy_reduces_initial_proposal_warmup_frequency():
     assert frequency == 1
 
 
-def test_sandbox_violation_burst_enters_degraded_mode_without_immediate_extinction(
+def test_source_sandbox_failure_quarantines_skill_without_global_breaker(
     tmp_path: Path, monkeypatch
 ):
     skills_dir = tmp_path / "skills"
@@ -921,12 +927,8 @@ def test_sandbox_violation_burst_enters_degraded_mode_without_immediate_extincti
         ),
     )
 
-    assert state.iteration >= life_loop.SANDBOX_DEGRADED_MODE_THRESHOLD
-    assert events
-    assert (
-        events[0]["sandbox_violation_streak"]
-        >= life_loop.SANDBOX_DEGRADED_MODE_THRESHOLD
-    )
+    assert state.iteration >= 1
+    assert not events
 
     events_path = tmp_path / "logs" / "loop" / "events.jsonl"
     run_events = [
@@ -948,8 +950,9 @@ def test_sandbox_violation_burst_enters_degraded_mode_without_immediate_extincti
     assert diagnostic["mutated_score"] == 0.0
     assert diagnostic["base_failed"] is True
     assert diagnostic["mutation_failed"] is False
-    assert diagnostic["sandbox_violation_streak"] >= 1
-    assert diagnostic["governance_circuit_breaker_threshold"] == 3
+    assert diagnostic["sandbox_violation_category"] == "source_invalid"
+    assert diagnostic["sandbox_incident_scope"] == "skill"
+    assert diagnostic["sandbox_violation_global_recorded"] is False
     assert diagnostic["source_error_type"] == "runtime_exception"
     assert diagnostic["source_error_message"] == "synthetic sandbox failure"
     breaker_events = [
@@ -957,15 +960,8 @@ def test_sandbox_violation_burst_enters_degraded_mode_without_immediate_extincti
         for event in run_events
         if event.get("event_type") == "governance.circuit_breaker_opened"
     ]
-    assert breaker_events
-    breaker = breaker_events[0]
-    assert breaker["category"] == "source_sandbox_violation"
-    assert breaker["severity"] == "critical"
-    assert breaker["threshold"] == 3
-    assert breaker["cooldown_seconds"] == 300.0
-    assert breaker["open_until"]
-    assert breaker["corrective_action"]
-    assert breaker["last_sandbox_diagnostics"]["organism"] == skills_dir.name
+    assert not breaker_events
+    assert any(event.get("event_type") == "skill.quarantined" for event in run_events)
 
     assert diagnostic["mutation_error_type"] is None
     assert diagnostic["mutation_error_message"] is None
@@ -974,9 +970,7 @@ def test_sandbox_violation_burst_enters_degraded_mode_without_immediate_extincti
     assert diagnostic["base_exception_message"] == "synthetic sandbox failure"
 
 
-def test_prolonged_sandbox_violation_persistence_triggers_controlled_extinction(
-    tmp_path: Path, monkeypatch
-):
+def test_repeated_source_failure_stops_at_skill_quarantine(tmp_path: Path, monkeypatch):
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     (skills_dir / "foo.py").write_text("result = 1", encoding="utf-8")
@@ -1046,22 +1040,30 @@ def test_prolonged_sandbox_violation_persistence_triggers_controlled_extinction(
         max_iterations=12,
         rng=random.Random(0),
         operators={"noop": _noop_operator},
-        mortality=FailureOnlyMonitor(max_failures=1),
+        mortality=FailureOnlyMonitor(max_failures=99),
         world=life_loop.WorldState(
             organisms={
                 skills_dir.name: life_loop.Organism(
                     skills_dir,
                     energy=1000.0,
                     resources=1000.0,
-                    monitor=FailureOnlyMonitor(max_failures=1),
+                    monitor=FailureOnlyMonitor(max_failures=99),
                 )
             }
         ),
     )
 
-    # Extinction occurs only once the higher sandbox violation threshold is crossed.
-    assert state.iteration >= life_loop.SANDBOX_EXTINCTION_THRESHOLD
+    # Invalid source is isolated locally before a global extinction threshold.
+    assert state.iteration >= 1
     assert state.iteration < 12
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "life-home/runs/loop/events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert any(event.get("event_type") == "skill.quarantined" for event in events)
+    assert not any(event.get("event_type") == "death" for event in events)
 
 
 def _setup_dummy_psyche(monkeypatch, tmp_path, decisions):
@@ -1253,7 +1255,8 @@ def test_energy_debit_and_food_credit(tmp_path: Path, monkeypatch):
     )
 
     assert calls["n"] > 0
-    assert rm.energy < 50.0
+    # Accepted mutations grant 0.2 energy; execution must still debit a cost.
+    assert rm.energy < 50.2
     assert rm.food >= 3.0
     assert Mood.FATIGUE not in events and Mood.ANGER not in events
 

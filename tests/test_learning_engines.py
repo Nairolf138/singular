@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from singular.learning.curiosity import CuriosityEngine
 from singular.learning.imitation import Demonstration, ImitationEngine
 
@@ -15,7 +17,10 @@ def _demo(name: str = "traffic") -> Demonstration:
     )
 
 
-def test_imitation_improves_over_baseline_and_persists_curve(tmp_path: Path) -> None:
+def test_imitation_improves_over_baseline_and_persists_curve(
+    tmp_path: Path, local_sandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("singular.learning.imitation.sandbox_run", local_sandbox)
     engine = ImitationEngine(tmp_path)
     engine.ingest(_demo())
     outcome = engine.learn_next()
@@ -59,7 +64,10 @@ def test_curiosity_limits_unproductive_exploration() -> None:
     assert not curiosity.authorize(score)
 
 
-def test_pending_learning_resumes_after_restart(tmp_path: Path) -> None:
+def test_pending_learning_resumes_after_restart(
+    tmp_path: Path, local_sandbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("singular.learning.imitation.sandbox_run", local_sandbox)
     first = ImitationEngine(tmp_path)
     first.ingest(_demo("resumed"))
 

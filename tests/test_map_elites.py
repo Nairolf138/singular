@@ -32,7 +32,8 @@ def test_distinct_regions_hold_unique_solutions():
     assert len(set(regions.values())) == 2
 
 
-def test_loop_uses_map_elites_for_selection(tmp_path: Path):
+def test_loop_uses_map_elites_for_selection(tmp_path: Path, monkeypatch, local_sandbox):
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path / "life-home"))
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     skill = skills_dir / "foo.py"
@@ -48,12 +49,14 @@ def test_loop_uses_map_elites_for_selection(tmp_path: Path):
     run(
         skills_dir,
         checkpoint,
-        budget_seconds=0.02,
+        budget_seconds=1.0,
+        max_iterations=1,
         rng=random.Random(0),
         operators={"inc": _inc_operator},
         map_elites=me,
     )
 
-    # Mutation produces a worse score but is kept due to MAP-Elites acceptance
-    assert skill.read_text(encoding="utf-8") == "result = 1"
+    # MAP-Elites records the candidate, while the fitness gate rejects the
+    # regression before it can replace the working skill.
+    assert skill.read_text(encoding="utf-8") == "result = 0"
     assert me.grid

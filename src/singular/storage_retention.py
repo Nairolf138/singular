@@ -118,18 +118,22 @@ def _latest_mtime(path: Path) -> datetime | None:
         return None
     timestamps: list[float] = []
     try:
-        timestamps.append(path.stat().st_mtime)
+        fallback_mtime = path.stat().st_mtime
     except OSError:
         return None
     if path.is_dir():
         for file in path.rglob("*"):
+            if not file.is_file():
+                continue
             try:
                 timestamps.append(file.stat().st_mtime)
             except OSError:
                 continue
-    if not timestamps:
-        return None
-    return datetime.fromtimestamp(max(timestamps), tz=timezone.utc)
+    # A directory's own mtime changes when its entries are created, so it is
+    # not a reliable timestamp for the run content (e.g. imported old runs).
+    return datetime.fromtimestamp(
+        max(timestamps, default=fallback_mtime), tz=timezone.utc
+    )
 
 
 def _run_id_from_legacy_file(path: Path) -> str:

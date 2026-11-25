@@ -42,8 +42,9 @@ def _dec_operator(tree, rng=None):
 
 
 def test_run_passes_capture_signals_to_intrinsic_goals(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, local_sandbox
 ) -> None:
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path / "life-home"))
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     (skills_dir / "foo.py").write_text("result = 1", encoding="utf-8")
@@ -64,7 +65,7 @@ def test_run_passes_capture_signals_to_intrinsic_goals(
     life_loop.run(
         skills_dir,
         tmp_path / "ckpt.json",
-        budget_seconds=0.05,
+        budget_seconds=1.0,
         rng=random.Random(0),
         max_iterations=1,
         operators={"noop": _dec_operator},

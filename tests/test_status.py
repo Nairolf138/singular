@@ -130,9 +130,11 @@ def test_status_filters_non_mutation_records_for_success_rate(
     assert payload["success_rate"] == 50.0
     assert payload["vital_timeline"]["age"] == 3
     assert payload["vital_timeline"]["state"] in {
-        "mature",
-        "declining",
+        "stable",
+        "at_risk",
+        "critical",
         "terminal",
+        "dead",
         "extinct",
     }
     assert payload["life_status"]["status"] == "fragile"

@@ -187,7 +187,7 @@ def test_compute_life_status_terminal_signal_dominates(tmp_path) -> None:
     result = compute_life_status(
         life_home,
         registry_entry={"name": "Alpha", "slug": "alpha", "status": "active"},
-        runs=[],
+        runs=[{"event": "death.confirmed"} for _ in range(3)],
     )
 
     assert result.status == LifeStatus.DEAD
@@ -259,7 +259,7 @@ def test_compute_life_status_uses_vital_reproduction_eligibility(tmp_path) -> No
     assert result.signals["reproduction_capability"] is True
     assert result.evidence["vital_timeline"]["reproduction_eligible"] is True
     assert result.evidence["reproduction_capability"]["vital_age"] == 3
-    assert result.evidence["reproduction_capability"]["vital_state"] == "mature"
+    assert result.evidence["reproduction_capability"]["vital_state"] == "stable"
     assert result.evidence["reproduction_capability"]["vital_thresholds"][
         "reproduction_age_window"
     ] == [3, 80]
@@ -533,7 +533,7 @@ def test_compute_life_status_terminal_health_or_long_failures_are_dying(
         ({}, "active", [{"event": "death", "ts": "2026-06-05T00:00:00+00:00"}]),
     ],
 )
-def test_compute_life_status_extinction_evidence_is_extinct(
+def test_compute_life_status_single_extinction_source_is_not_death(
     life_home_factory, autopsy, registry_status, runs
 ) -> None:
     from singular.life.life_status import LifeStatus, compute_life_status
@@ -552,9 +552,39 @@ def test_compute_life_status_extinction_evidence_is_extinct(
         runs=runs,
     )
 
+    assert result.status == LifeStatus.DEGRADED
+    assert result.signals["extinction"] is False
+    assert result.signals["structured"]["extinction"]["ok"] is True
+    assert (
+        result.evidence["vital_timeline"]["extinction_evidence"]["confirmed"] is False
+    )
+    _assert_status_contract(result)
+
+
+def test_compute_life_status_death_requires_concordant_sustained_evidence(
+    life_home_factory,
+) -> None:
+    from singular.life.life_status import LifeStatus, compute_life_status
+
+    life_home, mem = life_home_factory()
+    _write_json(mem / "autopsy.json", {"technical_causes": ["mortality"]})
+    runs = [{"event": "death.confirmed"} for _ in range(3)]
+
+    result = compute_life_status(
+        life_home,
+        registry_entry={"slug": "alpha", "status": "extinct"},
+        runs=runs,
+    )
+
     assert result.status == LifeStatus.DEAD
     assert result.signals["extinction"] is True
-    _assert_status_contract(result)
+    assert result.evidence["vital_timeline"]["extinction_evidence"] == {
+        "signals": ["autopsy_present", "extinction_event", "registry_extinct"],
+        "duration": 3,
+        "confirmed": True,
+        "required_signals": 2,
+        "required_duration": 3,
+    }
 
 
 def test_compute_life_status_corrupt_json_and_missing_files_are_explanatory(
