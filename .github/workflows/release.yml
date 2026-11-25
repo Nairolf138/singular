@@ -105,7 +105,7 @@ jobs:
         with:
           name: release-distributions
       - name: Verify downloaded assets
-        run: sha256sum -c SHA256SUMS
+        run: cd dist && sha256sum -c ../SHA256SUMS
       - name: Publish version and assets
         env:
           GH_TOKEN: ${{ github.token }}
