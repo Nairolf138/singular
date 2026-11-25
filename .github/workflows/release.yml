@@ -3,6 +3,8 @@ name: Release v0.1.0
 on:
   pull_request:
   push:
+    branches:
+      - release/v0.1.0
     tags:
       - v0.1.0
 
@@ -36,7 +38,7 @@ jobs:
 
   distributions:
     name: Build and install both distributions
-    if: github.ref == 'refs/tags/v0.1.0'
+    if: github.ref == 'refs/tags/v0.1.0' || github.ref == 'refs/heads/release/v0.1.0'
     needs: stable-cli
     runs-on: ubuntu-latest
     steps:
@@ -108,7 +110,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
+          if [ "$GITHUB_REF" = 'refs/heads/release/v0.1.0' ]; then
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref=refs/tags/v0.1.0 -f sha="$GITHUB_SHA"
+          fi
+          gh release create v0.1.0 \
             dist/singular-0.1.0-py3-none-any.whl \
             dist/singular-0.1.0.tar.gz SHA256SUMS \
             --verify-tag --title 'Singular v0.1.0' \
