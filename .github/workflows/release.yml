@@ -31,7 +31,8 @@ jobs:
           pytest -q \
             tests/test_cli_lives.py tests/test_lives.py \
             tests/test_birth_starter_profiles.py tests/test_living_starter_integration.py \
-            tests/test_talk.py tests/test_report.py \
+            tests/test_talk.py tests/test_report.py tests/test_status.py \
+            tests/test_life_status.py tests/test_life_definition_config.py \
             tests/test_cli_doctor.py tests/providers/test_provider_doctor.py \
             tests/test_cli_retention.py tests/test_retention.py \
             tests/test_wheel_distribution.py

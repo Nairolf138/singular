@@ -41,63 +41,47 @@ Le barème de qualification vitale est défini dans `configs/life_definition.yam
 - reproduction possible: 10 points,
 - narration cohérente sur N jours: 15 points.
 
-`N` correspond à `thresholds.minimum_narrative_trajectory_days`. Les signaux fondamentaux sont tous les critères ci-dessus sauf la reproduction possible, qui reste contributive mais non bloquante pour l'état `alive`.
+`N` correspond à `thresholds.minimum_narrative_trajectory_days`. Les signaux fondamentaux sont tous les critères ci-dessus sauf la reproduction possible, qui reste contributive mais non bloquante pour l'état `running`.
 
 ## Statuts de qualification vitale
 
-La qualification vitale produit les statuts suivants:
+La qualification émet exclusivement `running`, `budget_exhausted`, `degraded`,
+`mutation_paused`, `terminal` et `dead`. Une extinction corroborée et durable
+prime sur la terminalité, puis viennent l'épuisement du budget, la pause des
+mutations, le fonctionnement établi et enfin la dégradation. `running` exige
+le score minimum et tous les critères fondamentaux ; la reproduction est
+contributive, sans être obligatoire.
 
-1. **Extinct** (`status=extinct`)
-   - si `autopsy_present == true`,
-   - ou `registry_status == "extinct"`,
-   - ou `extinction_seen == true`.
-2. **Dying** (`status=dying`)
-   - si un signal terminal ou une dégradation forte est détecté,
-   - et qu'aucune extinction confirmée n'est encore disponible.
-3. **Alive** (`status=alive`)
-   - si `life_score >= alive_minimum_score`,
-   - et `fundamental_signals_present == true`,
-   - et aucun signal terminal n'est présent.
-4. **Fragile** (`status=fragile`)
-   - si `life_score >= fragile_minimum_score`,
-   - mais que la continuité est incomplète ou qu'un critère fondamental reste partiel.
-5. **Not alive yet** (`status=not_alive_yet`)
-   - si le score est insuffisant,
-   - ou si des signaux fondamentaux sont absents.
-
-Priorité d'évaluation: `extinct` domine `dying`, qui domine `alive`, qui domine `fragile`, qui domine `not_alive_yet`. Cette priorité évite qu'un score élevé masque une extinction ou une trajectoire terminale.
+Une autopsie seule, un registre `extinct` seul ou un événement `death` seul
+reste une observation. Le verdict `dead` exige deux sources indépendantes
+parmi autopsie, registre et événement de mort, et au moins trois événements
+confirmés dans la trace. Ces seuils sont exposés dans
+`evidence.vital_timeline.extinction_evidence`.
 
 ## États et transitions
 
-Ordre de priorité des transitions:
-
-1. **Extinction** (`state=extinct`)
-   - si `extinction_seen == true` **ou** `registry_status == "extinct"`.
-2. **Terminal** (`state=terminal`)
-   - si `age >= terminal_age`
-   - ou `current_health <= terminal_health`
-   - ou `failure_streak >= terminal_failure_streak`.
-3. **Déclin** (`state=declining`)
-   - si `age >= decline_age`
-   - ou `failure_rate >= high_failure_rate`.
-4. **Mature** (`state=mature`) sinon.
+La dynamique technique `vital_timeline.state` est distincte du verdict
+`life_status`. Ses valeurs sont `stable`, `at_risk`, `critical`, `terminal`,
+`dead` et `extinct`. L'extinction corroborée prime sur les autres seuils ;
+`terminal` est atteint par l'âge, la santé ou une série d'échecs ; `critical`
+par une santé basse ou un taux d'échec élevé ; `at_risk` par l'âge de déclin ;
+`stable` décrit l'absence de ces signaux.
 
 ## Risque et indicateurs dérivés
 
-- `risk_level=low` pour `mature`.
-- `risk_level=medium` pour `declining`.
-- `risk_level=high` pour `terminal` et `extinct`.
-- `terminal=true` pour `terminal` et `extinct`, sinon `false`.
+- `risk_level=low` pour `stable`.
+- `risk_level=medium` pour `at_risk`.
+- `risk_level=high` pour `critical`, `terminal`, `dead` et `extinct`.
+- `terminal=true` pour `terminal`, `dead` et `extinct`, sinon `false`.
 - `causes`: liste des causes observées (ex: `high_failure_rate`, `critical_health_score`).
 
 ## Éligibilité reproduction
 
 `reproduction_eligible=true` si et seulement si:
 
-- état ∈ `{mature, declining}`,
+- état ∈ `{stable, at_risk}`,
 - `age` dans `[3, 80]`,
-- `failure_rate < 0.60` (si disponible),
-- `current_health > 25.0` (si disponible).
+- les seuils de risque vital ne classent pas l'état en `critical` ou pire.
 
 Sinon `false`.
 
@@ -105,7 +89,7 @@ Sinon `false`.
 
 - Si aucune donnée de santé n’est disponible, on n’applique pas la règle `current_health`.
 - Si aucune donnée de réussite/échec n’est disponible, on n’applique pas la règle `failure_rate`.
-- L’extinction observée domine toujours les autres états.
+- Une observation isolée d'extinction ne constitue pas un décès confirmé.
 
 ## Contrats de persistance (JSON)
 

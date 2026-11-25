@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 import singular.cli as cli
 
 
@@ -23,6 +25,7 @@ def _write_skill(home: Path, name: str, source: str) -> None:
     (skills / name).write_text(source, encoding="utf-8")
 
 
+@pytest.mark.usefixtures("local_sandbox")
 def test_diagnose_sandbox_reports_ok_skill(monkeypatch, tmp_path, capsys) -> None:
     home = tmp_path / "life"
     _write_skill(home, "ok.py", "result = 1\n")
@@ -35,6 +38,7 @@ def test_diagnose_sandbox_reports_ok_skill(monkeypatch, tmp_path, capsys) -> Non
     assert "ok.py | OK | 1 | - | - | Aucune correction nécessaire." in out
 
 
+@pytest.mark.usefixtures("local_sandbox")
 def test_diagnose_sandbox_reports_missing_result(monkeypatch, tmp_path, capsys) -> None:
     home = tmp_path / "life"
     _write_skill(home, "missing.py", "value = 1\n")
@@ -62,6 +66,7 @@ def test_diagnose_sandbox_reports_forbidden_import(
     assert "Supprimez les imports/with" in out
 
 
+@pytest.mark.usefixtures("local_sandbox")
 def test_diagnose_sandbox_reports_non_numeric_result(
     monkeypatch, tmp_path, capsys
 ) -> None:
@@ -77,6 +82,10 @@ def test_diagnose_sandbox_reports_non_numeric_result(
 
 
 def test_diagnose_sandbox_reports_timeout(monkeypatch, tmp_path, capsys) -> None:
+    def timeout(_code: str) -> None:
+        raise TimeoutError("sandbox execution timed out")
+
+    monkeypatch.setattr("singular.life.sandbox.run", timeout)
     home = tmp_path / "life"
     _write_skill(home, "timeout.py", "while True:\n    pass\n")
 

@@ -132,7 +132,12 @@ def compute_reproduction_compatibility(
         reliability = _clamp01(float(mental.get("reliability", 0.5)))
         reciprocity = _clamp01((float(mental.get("reciprocity", 0.0)) + 1.0) / 2.0)
         predicted = (0.7 * reliability) + (0.3 * reciprocity)
-        social_score = _clamp01((social_score * mental_confidence) + (predicted * mental_confidence)) / 2.0
+        social_score = (
+            _clamp01(
+                (social_score * mental_confidence) + (predicted * mental_confidence)
+            )
+            / 2.0
+        )
     skills_score = _clamp01(_skills_complementarity(parent_a_skills, parent_b_skills))
     viability_score = _clamp01((float(parent_a_health) + float(parent_b_health)) / 2.0)
     governance_score = 1.0 if governance_allowed else 0.0
@@ -203,8 +208,6 @@ def decide_reproduction(
     )
 
 
-
-
 def authorize_reproduction_write(
     target_path: Path,
     code: str,
@@ -213,18 +216,30 @@ def authorize_reproduction_write(
     """Simulate then enforce policy for reproduction output writes."""
 
     policy = governance_policy or MutationGovernancePolicy()
-    root = target_path.parent.parent if target_path.parent.name == "skills" else target_path.parent
+    root = (
+        target_path.parent.parent
+        if target_path.parent.name == "skills"
+        else target_path.parent
+    )
     decision = policy.simulate_write(target_path, root=root)
     if not decision.allowed:
-        return False, f"{decision.reason}; corrective_action={decision.corrective_action}"
+        return (
+            False,
+            f"{decision.reason}; corrective_action={decision.corrective_action}",
+        )
 
     enforced = policy.enforce_write(target_path, code, root=root)
     if not enforced.allowed:
-        return False, f"{enforced.reason}; corrective_action={enforced.corrective_action}"
+        return (
+            False,
+            f"{enforced.reason}; corrective_action={enforced.corrective_action}",
+        )
     return True, "authorized"
 
 
-def compute_parent_compatibility(parent_a: dict[str, Any], parent_b: dict[str, Any]) -> float:
+def compute_parent_compatibility(
+    parent_a: dict[str, Any], parent_b: dict[str, Any]
+) -> float:
     """Estimate compatibility based on shared psyche keys."""
 
     keys_a = set(parent_a.keys())
@@ -356,31 +371,40 @@ def crossover(
 
     rng = rng or random.Random()
 
-    skills_a = list(Path(parent_a).glob("*.py"))
-    skills_b = list(Path(parent_b).glob("*.py"))
+    skills_a = sorted(Path(parent_a).glob("*.py"))
+    skills_b = sorted(Path(parent_b).glob("*.py"))
     if not skills_a or not skills_b:
         raise ValueError("both parents must have at least one skill")
 
-    file_a = rng.choice(skills_a)
-    file_b = rng.choice(skills_b)
+    def functions(files: list[Path]) -> list[ast.FunctionDef]:
+        found: list[ast.FunctionDef] = []
+        for file in files:
+            try:
+                tree = ast.parse(file.read_text(encoding="utf-8"))
+            except SyntaxError as exc:
+                raise ValueError(f"invalid syntax in skill file {file}") from exc
+            first = next(
+                (node for node in tree.body if isinstance(node, ast.FunctionDef)),
+                None,
+            )
+            if first is not None:
+                found.append(first)
+        return found
 
-    try:
-        tree_a = ast.parse(file_a.read_text(encoding="utf-8"))
-    except SyntaxError as e:
-        raise ValueError(f"invalid syntax in skill file {file_a}") from e
-
-    try:
-        tree_b = ast.parse(file_b.read_text(encoding="utf-8"))
-    except SyntaxError as e:
-        raise ValueError(f"invalid syntax in skill file {file_b}") from e
-
-    func_a = next((n for n in tree_a.body if isinstance(n, ast.FunctionDef)), None)
-    func_b = next((n for n in tree_b.body if isinstance(n, ast.FunctionDef)), None)
-    if func_a is None or func_b is None:
+    functions_a = functions(skills_a)
+    functions_b = functions(skills_b)
+    if not functions_a or not functions_b:
         raise ValueError("skills must contain a function definition")
 
-    if ast.dump(func_a.args) != ast.dump(func_b.args):
+    compatible = [
+        (left, right)
+        for left in functions_a
+        for right in functions_b
+        if ast.dump(left.args) == ast.dump(right.args)
+    ]
+    if not compatible:
         raise ValueError("parent functions must have matching signatures")
+    func_a, func_b = rng.choice(compatible)
 
     if not func_a.body or not func_b.body:
         raise ValueError("parent functions must not have empty bodies")

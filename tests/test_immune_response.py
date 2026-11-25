@@ -72,7 +72,7 @@ def test_three_non_dangerous_invalid_mutations_do_not_stop_global_breaker() -> N
     assert policy.last_circuit_breaker_state() is None
 
 
-def test_invalid_mutations_open_only_the_responsible_local_breaker() -> None:
+def test_invalid_skill_sources_open_only_the_responsible_local_breaker() -> None:
     policy = MutationGovernancePolicy(
         circuit_breaker_threshold=15,
         circuit_breaker_critical_threshold=2,
@@ -81,7 +81,7 @@ def test_invalid_mutations_open_only_the_responsible_local_breaker() -> None:
 
     for _ in range(3):
         policy.record_violation(
-            category="invalid_mutation", severity="critical", responsible="skill.bad"
+            category="source_invalid", severity="critical", responsible="skill.bad"
         )
 
     assert policy.evaluate_skill_execution(skill_name="skill.bad").allowed is False

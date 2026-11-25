@@ -21,11 +21,12 @@ def test_load_life_definition_defaults_when_file_missing(tmp_path: Path) -> None
     assert cfg.thresholds.alive_minimum_score == 0.8
     assert cfg.thresholds.fragile_minimum_score == 0.5
     assert set(cfg.statuses) == {
-        "not_alive_yet",
-        "fragile",
-        "alive",
-        "dying",
-        "extinct",
+        "running",
+        "budget_exhausted",
+        "degraded",
+        "mutation_paused",
+        "terminal",
+        "dead",
     }
 
 
@@ -44,11 +45,9 @@ thresholds:
   alive_minimum_score: 0.9
   fragile_minimum_score: 0.4
 statuses:
-  not_alive_yet: not_alive_yet
-  fragile: fragile
-  alive: alive
-  dying: dying
-  extinct: extinct
+  running: running
+  degraded: degraded
+  dead: dead
 """.strip(),
         encoding="utf-8",
     )
@@ -63,6 +62,22 @@ statuses:
     assert cfg.thresholds.maximum_cycle_anomalies == 2
     assert cfg.thresholds.alive_minimum_score == 0.9
     assert cfg.thresholds.fragile_minimum_score == 0.4
+    assert cfg.statuses["running"] == "running"
+
+
+def test_packaged_life_definition_uses_authorized_statuses() -> None:
+    cfg = load_life_definition_config()
+
+    assert set(cfg.statuses) == set(life_definition.AUTHORIZED_LIFE_STATUSES)
+    assert cfg.schema_version == "1.1"
+
+
+def test_load_life_definition_rejects_legacy_status_keys(tmp_path: Path) -> None:
+    file_path = tmp_path / "legacy.yaml"
+    file_path.write_text("statuses:\n  alive: alive\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unauthorized keys: alive"):
+        load_life_definition_config(file_path)
 
 
 def test_load_life_definition_from_lifecycle_section(tmp_path: Path) -> None:

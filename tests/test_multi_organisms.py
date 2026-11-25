@@ -3,11 +3,19 @@ import json
 import random
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 import singular.life.loop as life_loop
 from singular.dashboard import create_app
 from singular.life.loop import EcosystemRules, WorldState
+
+pytestmark = pytest.mark.usefixtures("local_sandbox")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_multi_organism_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("SINGULAR_HOME", str(tmp_path / "life-home"))
 
 
 def _dec_operator(tree: ast.AST, rng=None) -> ast.AST:
@@ -164,7 +172,7 @@ def test_normalize_organism_inputs_mapping_collision_raises_clear_error(
     assert str(two) in message
 
 
-def test_ecosystem_rules_and_reputation_influence_crossover(tmp_path: Path) -> None:
+def test_ecosystem_rules_and_reputation_can_block_crossover(tmp_path: Path) -> None:
     org1 = tmp_path / "org1" / "skills"
     org2 = tmp_path / "org2" / "skills"
     org1.mkdir(parents=True)
@@ -200,4 +208,19 @@ def test_ecosystem_rules_and_reputation_influence_crossover(tmp_path: Path) -> N
 
     # Resource competition uses rule-defined increment/decrement unit.
     assert world.resource_pool <= 1.5
-    assert "child_1" in world.organisms
+    # Poor parent compatibility must prevent the periodic crossover.
+    assert "child_1" not in world.organisms
+    events = [
+        json.loads(line)["payload"]
+        for line in (tmp_path / "life-home/runs/loop/events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    decision = next(
+        event for event in events if event.get("interaction") == "reproduction_decision"
+    )
+    assert decision["accepted"] is False
+    assert any(
+        "compatibility_score_below_threshold" in reason
+        for reason in decision["reasons"]
+    )

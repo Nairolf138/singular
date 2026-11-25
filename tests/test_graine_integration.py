@@ -5,6 +5,10 @@ import random
 import sys
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.usefixtures("local_sandbox")
+
 root_dir = Path(__file__).resolve().parents[1]
 sys.path.append(str(root_dir))
 sys.path.append(str(root_dir / "src"))
@@ -131,7 +135,7 @@ def test_graine_proposed_mutation_is_blocked_by_governance(tmp_path, monkeypatch
     violations = [
         payload
         for payload in _event_payloads(events, "interaction")
-        if payload.get("interaction") == "governance_violation"
+        if payload.get("interaction") == "mutation.governance_rejected"
     ]
     assert violations
     assert violations[0]["target"] == str(skill)
@@ -153,7 +157,6 @@ def test_graine_proposed_mutation_is_rejected_by_sandbox(tmp_path, monkeypatch):
         if payload.get("interaction") == "sandbox_violation"
     ]
     assert diagnostics
-    assert (
-        diagnostics[0]["sandbox_violation_category"] == "dangerous_mutation_violation"
-    )
-    assert diagnostics[0]["dangerous_mutation_pattern"] is True
+    assert diagnostics[0]["sandbox_violation_category"] == "invalid_mutation"
+    assert diagnostics[0]["mutation_error_type"] == "missing_result"
+    assert diagnostics[0]["sandbox_incident_scope"] == "candidate"

@@ -776,9 +776,9 @@ def compute_life_status(
     ``life_home/runs``, and the matching entry from ``lives/registry.json``.
     """
 
-    from singular.life.life_definition import LifeDefinitionConfig
+    from singular.life.life_definition import load_life_definition_config
 
-    cfg = config or LifeDefinitionConfig()
+    cfg = config if config is not None else load_life_definition_config()
     life_home = Path(life_home)
     mem = life_home / "mem"
     paths = {
@@ -926,6 +926,13 @@ def compute_life_status(
         if isinstance(extinction_evidence, Mapping)
         else 0
     )
+    # Keep independent evidence sources separate: an autopsy or an administrative
+    # status alone is not enough to satisfy the vital timeline's confirmation gate.
+    extinction_sources: list[str] = []
+    if autopsy:
+        extinction_sources.append("autopsy_present")
+    if registry_status == "extinct":
+        extinction_sources.append("registry_extinct")
     vital_timeline = compute_vital_timeline(
         age=len(mutation_rows),
         current_health=health_scores[-1] if health_scores else None,
@@ -933,8 +940,10 @@ def compute_life_status(
             (1 - (ok_count / len(success_records))) if success_records else None
         ),
         failure_streak=_failure_streak(success_records),
-        extinction_seen=bool(extinction_signal["ok"]),
+        extinction_seen=confirmed_extinction_events_count > 0,
         registry_status=registry_status or None,
+        extinction_signals=extinction_sources,
+        extinction_duration=confirmed_extinction_events_count,
     )
     vital_state = str(vital_timeline.get("state", ""))
     latest_event = (
@@ -946,7 +955,7 @@ def compute_life_status(
         for row in run_rows[-10:]
         for token in MUTATION_PAUSED_TOKENS
     )
-    terminal = vital_state in {"terminal", "extinct"}
+    terminal = vital_state in {"terminal", "dead", "extinct"}
     reproduction_eligible = vital_timeline.get("reproduction_eligible") is True
     reproduction_capability = bool(
         reproduction_eligible or reproduction_events or detected_descendants
@@ -991,7 +1000,7 @@ def compute_life_status(
         and weighted_criteria[name].required_for_alive
     ]
     required_for_alive_present = all(criteria[name][1] for name in required_for_alive)
-    if vital_state == "extinct":
+    if vital_state in {"dead", "extinct"}:
         score = min(score, 20.0)
         status = LifeStatus.DEAD
     elif vital_state == "terminal":

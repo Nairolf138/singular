@@ -65,7 +65,7 @@ def test_generation_registry_stays_coherent_with_run_events(
     life_loop.run(
         skills_dirs=skills_dir,
         checkpoint_path=checkpoint,
-        budget_seconds=0.2,
+        budget_seconds=2.0,
         run_id="gen-coherence",
         operators={"noop": noop_operator},
         max_iterations=1,

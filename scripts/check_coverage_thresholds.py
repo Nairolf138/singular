@@ -46,6 +46,11 @@ def normalize_path(raw_path: str) -> str:
 def extract_file_coverages(coverage_xml: Path) -> dict[str, float]:
     tree = ET.parse(coverage_xml)
     root = tree.getroot()
+    sources = [
+        normalize_path(source.text or "")
+        for source in root.findall("./sources/source")
+        if source.text
+    ]
 
     results: dict[str, float] = {}
     for cls in root.findall(".//class"):
@@ -55,7 +60,10 @@ def extract_file_coverages(coverage_xml: Path) -> dict[str, float]:
             continue
 
         normalized = normalize_path(filename)
-        results[normalized] = float(line_rate) * 100.0
+        coverage = float(line_rate) * 100.0
+        results[normalized] = coverage
+        for source in sources:
+            results[normalize_path(f"{source}/{filename}")] = coverage
 
     return results
 
@@ -69,7 +77,7 @@ def resolve_coverage(
         return normalized_target, coverages[normalized_target]
 
     for filename, pct in coverages.items():
-        if filename.endswith(normalized_target):
+        if filename.endswith(f"/{normalized_target}"):
             return filename, pct
 
     return None, None

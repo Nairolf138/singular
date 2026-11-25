@@ -38,11 +38,25 @@ from singular.memory_layers.local_json import LocalJsonMemoryBackend  # noqa: E4
 from singular.memory_layers.service import MemoryLayerService  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def restore_cli_environment():
+    """Keep CLI invocations from changing the next test's implicit life/root."""
+
+    names = ("SINGULAR_ROOT", "SINGULAR_HOME", "SINGULAR_SAFE_MODE")
+    original = {name: os.environ.get(name) for name in names}
+    yield
+    for name, value in original.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
+
+
 @pytest.fixture
 def local_sandbox(monkeypatch):
     """Emulate the trusted worker protocol without starting an OCI container."""
 
-    def execute(code):
+    def execute(code, **_kwargs):
         life_sandbox._validate_ast(ast.parse(code, mode="exec"))
         namespace = {"__builtins__": vars(builtins)}
         exec(compile(code, "<unit-sandbox>", "exec"), namespace, namespace)

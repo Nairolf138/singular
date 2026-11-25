@@ -66,6 +66,17 @@ pour ces suspensions explicites, `running` lorsque la checklist contractuelle
 est satisfaite, et `degraded` sinon. Un score élevé ne peut jamais masquer une
 preuve terminale.
 
+La configuration distribuée `life_definition.yaml` emploie les mêmes six clés
+canoniques. Les anciennes clés (`alive`, `fragile`, etc.) ne sont plus acceptées
+dans une configuration explicite. Le calcul utilise cette configuration par
+défaut lorsqu'aucune configuration n'est injectée.
+
+Une autopsie isolée, un registre `extinct` isolé ou un seul événement de mort
+est une **observation**, pas une confirmation irréversible. La confirmation
+vitale requiert au moins deux sources indépendantes parmi autopsie, registre et
+événements de mort, ainsi que trois événements confirmés dans la trace du run.
+`evidence.vital_timeline.extinction_evidence` expose ces preuves et seuils.
+
 ## Distinction des notions
 
 - `registry_status` décrit uniquement l’administration de la vie.
@@ -75,13 +86,13 @@ preuve terminale.
 
 Aucun de ces champs ne prend une autre signification selon l’endpoint.
 
-Exemple complet de payload `life_status`:
+Extrait illustratif du payload `life_status` (le score est en points sur 100):
 
 ```json
 {
   "status": "running",
-  "score": 0.91,
-  "explanation": "Identité persistante, cycle stable, objectifs intrinsèques et continuité narrative observés. Vital: état mature, risque low.",
+  "score": 90.0,
+  "explanation": "Statut running: 5/6 sous-signaux configurés sont établis, score 90/100.",
   "signals": {
     "persistent_identity": true,
     "generation_registry": true,
@@ -89,28 +100,26 @@ Exemple complet de payload `life_status`:
     "intrinsic_goals": true,
     "narrative_continuity": true,
     "reproduction_possible": false,
-    "terminal_signal": false,
+    "terminal": false,
     "extinction": false,
-    "vital_state": "mature",
+    "vital_state": "stable",
     "vital_risk_level": "low"
   },
   "missing_signals": [],
   "evidence": {
-    "registry_status": "active",
+    "registry": {"status": "active"},
     "vital_timeline": {
-      "age": 42,
-      "state": "mature",
+      "age": 0,
+      "state": "stable",
       "risk_level": "low",
-      "causes": [],
-      "reproduction_eligible": false
-    },
-    "score_breakdown": {
-      "persistent_identity": 20,
-      "generation_registry": 15,
-      "stable_cycle": 20,
-      "intrinsic_goals": 20,
-      "reproduction_possible": 0,
-      "narrative_continuity": 15
+      "reproduction_eligible": false,
+      "extinction_evidence": {
+        "signals": [],
+        "duration": 0,
+        "confirmed": false,
+        "required_signals": 2,
+        "required_duration": 3
+      }
     }
   },
   "computed_at": "2026-07-07T12:30:00+00:00"

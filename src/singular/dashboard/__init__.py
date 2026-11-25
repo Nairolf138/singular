@@ -2376,7 +2376,11 @@ def create_app(
         active_life = registry.get("active")
         comparison, life_identities = normalize_life_metrics(
             comparison,
-            selected_life_id=life_id,
+            selected_life_id=(
+                life_id
+                if life_id is not None
+                else active_life if isinstance(active_life, str) else None
+            ),
             registry_active_life_id=(
                 active_life if isinstance(active_life, str) else None
             ),

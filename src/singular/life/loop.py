@@ -1945,9 +1945,6 @@ def run(
             candidate_accepted = (
                 candidate_accepted and not mutation_failed and scores_comparable
             )
-            if mutated_comparable_score is not None:
-                org.last_score = mutated_comparable_score
-
             # Account for sandbox execution before deciding whether enough
             # resources remain for the mutation itself.  All gates below are
             # evaluated before the governed write, so no observer can see a
@@ -2052,6 +2049,11 @@ def run(
             # From here on every reward, statistic, reputation update and event
             # consumes this single immutable persistence verdict.
             accepted = final_accepted
+            active_score = (
+                mutated_comparable_score if accepted else base_comparable_score
+            )
+            if active_score is not None:
+                org.last_score = active_score
             if accepted:
                 org.energy += 0.2
                 effect_type = ACTION_TYPE_FROM_LOOP_EVENT["mutation.accepted"]
@@ -2826,7 +2828,7 @@ def run(
             )
 
             key = selected_skill_key
-            update_score(key, mutated_score)
+            update_score(key, org.last_score)
             mutation_payload = {
                 "iteration": state.iteration,
                 "skill": key,
