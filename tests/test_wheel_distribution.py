@@ -67,7 +67,7 @@ for mode in ("lab", "production"):
         config = EcosystemRulesConfig.from_file(config_path)
     assert config.resource_competition_unit > 0
 
-dashboard = files("singular.dashboard")
+dashboard = files("singular").joinpath("dashboard")
 assert dashboard.joinpath("templates", "dashboard.html").is_file()
 assert dashboard.joinpath("templates", "mutation_detail.html").is_file()
 assert dashboard.joinpath("static", "dashboard.css").is_file()
