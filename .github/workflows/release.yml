@@ -1,6 +1,7 @@
 name: Release v0.1.0
 
 on:
+  pull_request:
   push:
     tags:
       - v0.1.0
@@ -35,6 +36,7 @@ jobs:
 
   distributions:
     name: Build and install both distributions
+    if: github.ref == 'refs/tags/v0.1.0'
     needs: stable-cli
     runs-on: ubuntu-latest
     steps:
