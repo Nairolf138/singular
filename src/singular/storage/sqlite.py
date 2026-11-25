@@ -53,7 +53,8 @@ class SQLiteStorage:
                 row[0] for row in conn.execute("SELECT version FROM schema_migrations")
             }
             if SCHEMA_VERSION not in applied:
-                conn.executescript("""
+                conn.executescript(
+                    """
                     CREATE TABLE IF NOT EXISTS episodes (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         ts TEXT,
@@ -107,7 +108,8 @@ class SQLiteStorage:
                         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
                         payload_json TEXT NOT NULL
                     );
-                    """)
+                    """
+                )
                 conn.execute(
                     "INSERT OR IGNORE INTO schema_migrations(version) VALUES (?)",
                     (SCHEMA_VERSION,),

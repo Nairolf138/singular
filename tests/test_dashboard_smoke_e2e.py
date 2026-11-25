@@ -81,7 +81,8 @@ def test_dashboard_browser_remains_responsive_when_backends_fail(
             pytest.skip(f"Playwright Chromium is not installed: {error}")
 
         page = browser.new_page()
-        page.add_init_script("""
+        page.add_init_script(
+            """
             window.__dashboardProbe = {mutations: 0, scheduled: 0, network: 0};
             const NativeObserver = window.MutationObserver;
             window.MutationObserver = class extends NativeObserver {
@@ -110,7 +111,8 @@ def test_dashboard_browser_remains_responsive_when_backends_fail(
               }
             };
             window.confirm = () => true;
-            """)
+            """
+        )
         page.route(
             "**/api/cockpit*",
             lambda route: route.fulfill(

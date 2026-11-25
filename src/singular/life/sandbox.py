@@ -176,7 +176,9 @@ try:
     print(json.dumps({"status": "result", "payload": env["result"]}))
 except BaseException as exc:
     print(json.dumps({"status": "error", "type": type(exc).__name__, "message": str(exc)}))
-""".replace("__ALLOWED_BUILTINS__", repr(ALLOWED_BUILTINS))
+""".replace(
+    "__ALLOWED_BUILTINS__", repr(ALLOWED_BUILTINS)
+)
 
 
 def _command(runtime: str, config: SandboxConfig) -> list[str]:

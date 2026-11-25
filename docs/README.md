@@ -32,7 +32,7 @@ acceptation. Une fonction conditionnée par un extra ou un système externe est
 ## Registre des capacités `stable`
 
 Toutes les commandes partent de la racine du dépôt. Le prérequis commun est
-Python 3.10+ et une installation `pip install -e .`; chaque scénario utilise un
+Python 3.11+ et une installation `pip install -e .`; chaque scénario utilise un
 répertoire temporaire fourni par pytest.
 
 | Capacité stable | Point d'entrée | Prérequis spécifiques | Test ou scénario d'acceptation |

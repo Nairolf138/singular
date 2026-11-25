@@ -162,7 +162,7 @@ def test_cli_retention_run_dry_run_has_no_side_effects(
     import os
     from datetime import datetime, timedelta, timezone
 
-    now = datetime(2026, 4, 15, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
     os.utime((new_run / "events.jsonl"), (now.timestamp(), now.timestamp()))
     older = (now - timedelta(days=2)).timestamp()
     os.utime((old_run / "events.jsonl"), (older, older))
