@@ -319,7 +319,7 @@ def test_cycle_complet_creation_tick_mutation_learning_reproduction_and_stop(
 
     assert state.iteration == 1
     assert state.stats["dec"]["count"] == 1
-    assert list(Path("runs").glob("**/*.jsonl"))
+    assert list((temp_life["root"] / "runs").glob("**/*.jsonl"))
     assert (
         any(path.name.startswith("child_") for path in temp_life["root"].iterdir())
         or world.reproduction_cooldowns
