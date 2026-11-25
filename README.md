@@ -4,7 +4,7 @@
 
 # 🌱 Singular — Un organisme numérique vivant interactif
 
-**Version du paquet : 0.1.0 (release en préparation).** Consultez le
+**Version du paquet : 0.1.0.** Consultez le
 [périmètre et les limites de v0.1.0](docs/releases/v0.1.0.md) et les
 [versions publiées](https://github.com/Nairolf138/singular/releases) avant de
 télécharger un artefact. L'installation depuis une release est décrite dans
@@ -41,7 +41,7 @@ adaptation, ses preuves et les limites des termes « vivant », apprentissage,
 
 | Capacité | Entrée | Prérequis | Acceptation |
 | --- | --- | --- | --- |
-| Naissance / sélection | `singular lives create --name Lumen`, `singular lives use lumen` | Python 3.10+, installation éditable, root inscriptible | `pytest -q tests/test_cli_lives.py tests/test_lives.py` |
+| Naissance / sélection | `singular lives create --name Lumen`, `singular lives use lumen` | Python 3.11+, root inscriptible | `pytest -q tests/test_cli_lives.py tests/test_lives.py` |
 | Starter-pack de skills | `singular lives create --name Lumen --starter-profile assistant` | Même prérequis ; profil `assistant` inclus | `pytest -q tests/test_birth_starter_profiles.py tests/test_living_starter_integration.py` |
 | Consultation des vies et état | `singular lives list`, `singular status --format table` | Root initialisé ; vie active pour `status` | `pytest -q tests/test_cli_lives.py tests/test_life_status.py` |
 | Conversation | `singular talk --prompt "Bonjour"` | Vie active ; fallback `dummy` disponible sans service | `pytest -q tests/test_end_to_end.py tests/providers/test_llm_fallback_chain.py` |
