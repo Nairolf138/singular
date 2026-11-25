@@ -1,6 +1,6 @@
 # Historique des versions
 
-## [0.1.0] — en préparation
+## [0.1.0]
 
 Première version destinée aux parcours CLI décrits comme `stable` dans le
 [registre canonique](docs/README.md#registre-des-capacités-stable). Consultez
