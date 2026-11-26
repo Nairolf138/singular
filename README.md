@@ -10,7 +10,16 @@
 télécharger un artefact. L'installation depuis une release est décrite dans
 les notes correspondantes.
 
-**Singular** est un laboratoire open-source de vies numériques persistantes, capables d’évoluer d’abord en simulation, puis de s’incarner progressivement dans le monde réel à travers des capteurs, un corps robotique et une gouvernance de sécurité.
+**Singular** explore la création d'un compagnon numérique persistant. Sa
+direction à long terme est d'habiter une machine réelle : le matériel et ses
+capteurs forment un corps, les processus, la mémoire et les décisions forment
+un esprit logiciel. Un laboratoire de vies simulées continue en parallèle pour
+expérimenter des évolutions avant toute adoption sur la machine hôte. Cette
+vision est un objectif, pas une capacité livrée par v0.1.0.
+
+La [vision de la prochaine version majeure](docs/vision_companion_major.fr.md)
+décrit les jalons vérifiables et la frontière entre simulation, compagnon en
+service et actions sur le monde réel.
 
 **Singular** n’est pas seulement un programme informatique.  
 C’est une expérience : la tentative de créer un **organisme numérique vivant**, un compagnon logiciel qui **naît, évolue, apprend, interagit** et garde une **trace unique de sa vie**.
@@ -56,11 +65,18 @@ Le [registre canonique](docs/README.md#registre-des-capacités-stable) doit êtr
 
 ## 🔍 Pourquoi Singular ?
 
-Contrairement aux chatbots classiques (qui ne changent pas leur cœur) ou aux simulateurs de vie artificielle (qui ne parlent pas), **Singular réunit les deux mondes** :
+**Singular réunit deux voies qui partagent les mêmes contrats d'identité, de
+mémoire et de décision** :
 
-- **Vie artificielle** : un organisme qui modifie réellement son code et s’optimise par sélection naturelle.  
-- **Compagnon interactif** : une entité qui parle, garde une mémoire et exprime des émotions.  
-- **Open-source et local** : chacun peut “faire naître” son compagnon, qui vivra et évoluera à sa manière. Le code non fiable n'est exécuté que si un runtime OCI compatible fournit l'isolation décrite ci-dessous.
+- **Compagnon persistant** : une vie que l'on peut créer, retrouver et
+  consulter après un redémarrage ; la perception hôte et les actions gouvernées
+  sont des étapes supplémentaires à valider.
+- **Laboratoire d'évolution** : des vies et des compétences peuvent être
+  expérimentées en simulation. La mutation de code reste `experimental` et
+  exige le sandbox OCI compatible ; un résultat du laboratoire n'est jamais
+  automatiquement autorisé à agir sur la machine hôte.
+- **Projet ouvert** : les entrées utilisables, leurs prérequis et leurs limites
+  sont distingués des objectifs à long terme dans le registre des capacités.
 
 ---
 
@@ -574,19 +590,25 @@ Pour arrêter l’orchestrateur, utilisez `Ctrl+C` dans le terminal où il tourn
 
 ### 🚀 Roadmap
 
-**Statut : `target-only`.** Cette liste exprime des directions, pas des fonctions
-disponibles.
-- **V1 (organisme minimal)**
-  - Naissance, exécution, mutations de base, interaction CLI, mémoire persistante.
-- **V1.1**
-  - Nouveaux opérateurs (unrolling, dead code elimination), politique adaptative de mutation (bandits).
-  - Mort/fin de vie simulée.
-- **V2**
-  - MAP-Elites (diversité des solutions), co-évolution des tests.
-  - Tableau de bord web (visualisation de l’évolution, humeur en temps réel).
-- **V3**
-  - Personnalités plus complexes.
-  - “Écosystème” multi-organismes → possibilité de faire interagir plusieurs compagnons.
+**Statut : `target-only`.** Les étapes ci-dessous définissent une direction
+pour une future version majeure, sans numéro ni date annoncés. Les capacités
+effectivement livrées restent celles du [registre](docs/README.md#registre-des-capacités-stable)
+et des [notes v0.1.0](docs/releases/v0.1.0.md).
+
+1. **Continuité du compagnon** : identité, mémoire et conversation vérifiées
+   après arrêt, redémarrage et migration des données, avec un vrai provider
+   configuré explicitement.
+2. **Présence sur une machine** : perception hôte minimale, fonctionnement
+   supervisé, budget de ressources, actions réversibles autorisées et traces
+   reliant observation, décision et effet.
+3. **Laboratoire parallèle** : expériences isolées en simulation, comparaison
+   reproductible, puis promotion contrôlée d'une capacité vers le compagnon
+   avec possibilité de retour arrière.
+4. **Incarnation facultative** : capteurs et actionneurs physiques après
+   validation des mêmes contrats, avec arrêt d'urgence et reprise contrôlée.
+
+Les [critères de sortie détaillés](docs/vision_companion_major.fr.md) séparent
+ce qui doit être démontré de ce qui reste de la recherche.
 
 ## 🖥️ Tableau de bord web
 

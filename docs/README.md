@@ -87,6 +87,7 @@ répertoire temporaire fourni par pytest.
 
 Ces documents sont `target-only` sauf statut explicite d'une sous-capacité :
 
+- [Vision de la future version majeure — compagnon incarné et laboratoire](vision_companion_major.fr.md)
 - [Spécification cible AGI](agi_target_spec.md)
 - [Matrice des capacités cognitives](cognitive-capabilities-matrix.md)
 
@@ -95,5 +96,5 @@ Ces documents sont `target-only` sauf statut explicite d'une sous-capacité :
 Ces documents décrivent du travail et des portes de sortie, pas des fonctions
 livrées :
 
-- [Critères de sortie release v2](release_v2.md)
+- [Ancien plan technique « release v2 »](release_v2.md)
 - [Plan Dashboard Recovery](dashboard-recovery-plan.md)
