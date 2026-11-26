@@ -4,6 +4,12 @@
 > livraison ; il ne prouve pas que les phases ou capacités sont disponibles. Les
 > statuts produit suivent la [taxonomie canonique](README.md#taxonomie-de-statut).
 
+> **Plan historique.** Les versions Python, jobs et phases ci-dessous reflètent
+> une proposition antérieure ; ils ne définissent plus le périmètre, le numéro
+> ni les conditions de publication de la prochaine version majeure. Voir la
+> [vision actuelle du compagnon et du laboratoire](vision_companion_major.fr.md)
+> et les workflows CI pour les contrôles en vigueur.
+
 Ce document définit les garde-fous de sortie pour publier **v2** en réduisant les régressions produit et les risques de sécurité.
 
 ## 1) Qualité automatique (CI)
