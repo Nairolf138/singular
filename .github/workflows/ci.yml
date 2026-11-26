@@ -208,6 +208,12 @@ jobs:
           "$RUNNER_TEMP/singular-release-smoke/bin/singular" talk --prompt Bonjour
           "$RUNNER_TEMP/singular-release-smoke/bin/singular" doctor
           "$RUNNER_TEMP/singular-release-smoke/bin/singular" retention run --dry-run
+      - name: Demonstrate persisted memory with installed wheel
+        run: |
+          "$RUNNER_TEMP/singular-release-smoke/bin/python" \
+            "$GITHUB_WORKSPACE/examples/demo_persistent_life.py" \
+            --root "$RUNNER_TEMP/singular-persistent-demo" \
+            --singular "$RUNNER_TEMP/singular-release-smoke/bin/singular"
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:

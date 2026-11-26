@@ -49,6 +49,7 @@ répertoire temporaire fourni par pytest.
 ## Guides utilisateur
 
 - [README et démarrage rapide](../README.md)
+- [Démo — une vie et sa mémoire après redémarrage](demo_persistent_life.fr.md)
 - [Tutoriel FR — créer une vie](tutorial_create_life.fr.md)
 - [Tutorial EN — create a life](tutorial_create_life.en.md)
 - [Dashboard : installation et utilisation](dashboard.md)
